@@ -2,8 +2,7 @@
 
 CC="clang -std=c99 -Wall"
 CXX="clang++ -std=c++11 -Wall"
-FLAGS="-DNDEBUG"
-#FLAGS=""
+FLAGS=""
 LLC="llc"
 LINK="llvm-link"
 OPT="opt"
