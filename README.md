@@ -34,3 +34,105 @@ An asynchronous call occupies a slot until the host has read the corresponding d
 
 Bitmaps:
 Distinguish between cpu-internal, cpu-external, gpu-internal, gpu-external. The external ones are periodically read by the other machine, the internal ones never are.
+
+Call process:
+
+Slot is a uint16_t representing an offset into an array of N 4kb pages in host memory.
+Four booleans involved per slot. Trying to give them unambiguous names - thread is on the x86 host. All four zero indicates available, though thread is not directly readable. Process starts on a wave.
+
+GPU, WAVE, HOST, THREAD
+GPU is written by device, read by host. HOST is written by host, read by device.
+WAVE is RW only by device, THREAD is RW only by HOST
+
+Available
+  G W H T
+H 0   0 0
+D 0 0 0
+
+Wave acquires a slot by CAS into W. If the CAS fails, try another slot index
+  G W H T
+H 0   0 0
+D 0 1 0
+
+
+Wave writes 4k into the kth slot on the host. Sets G when the write is complete with CAS.
+No risk of another wave writing to that slot, but it's a bitmap and can't lose other wave's update.
+  G W H T
+H 0   0 0
+D 1 1 0
+
+Host reads gpu bitmap, compares to host bitmap. G1 && H0 indicates work to do.
+  G W H T
+H 1   0 0
+D 1 1 0
+
+
+Host thread acquires a slot that has the bit set in G by CAS into T. If CAS fails, try another slot, or do something else.
+
+  G W H T
+H 1   0 1
+D 1 1 0
+
+Host thread now exclusively holds the slot. Reads the data, writes stuff back. Atomic cas into the known zero H to avoid losing other updates.
+
+  G W H T
+H 1   1 1
+D 1 1 0
+
+Host thread no longer needs to do anything, CAS 0 into T if H=1 or G=1
+  G W H T
+H 1   1 0
+D 1 1 0
+
+GPU is spinning on reads to H. Replaces its local cache of the value:
+
+  G W H T
+H 1   1 1
+D 1 1 1
+
+H set for current slot, G & W will still be set. Read the results out.
+
+Clearing G will be noticed by the host and interpreted as slot available.
+Clearing W will be noticed by the GPU and interpreted as slot available.
+Thus clear G first, then W. 
+
+  G W H T       G W H T
+H 1   1 1  >  H 0   1 1
+D 0 1 1       D 0 1 1  
+
+    v
+
+  G W H T
+H 1   1 1
+D 0 0 1  
+
+GPU now considers the slot is available, but we haven't yet reached all-zero to start again
+
+G=0 is noticed by host after some delay, indicates that gpu is no longer interested in that slot
+
+  G W H T       G W H T       G W H T
+H 0   1 1  >  H 0   0 1  >  H 0   0 0
+D 0 1 1       D 0 1 1         D 0 1 1  
+
+H=0 is noticed by gpu after some delay, indicates that host is no longer interested in that slot
+
+  G W H T
+H 0   0 0
+D 0 1 0  
+
+Once G & H both zero, can zero W and return.
+
+Quite a lot of transitions. 64 states. Some can occur independently of processing a given call.
+
+H=1 => T->0, because T publishes to H to indicate it's finished
+
+Device G=1 -> host   G->1
+Host   H=1 -> device H->1
+
+
+
+
+
+
+
+
