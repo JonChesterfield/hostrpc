@@ -19,6 +19,7 @@ struct slot
 {
   host_machine host;
   gpu_machine gpu;
+  uint64_t state;
 
   void dump();
 };
@@ -178,6 +179,8 @@ void wave_populate(slot &s)
   assert(s.host.H == 0);
   assert(s.gpu.W);
   assert(!s.gpu.G);
+
+  s.state = 42;
 }
 
 void wave_publish(slot &s)
@@ -185,6 +188,7 @@ void wave_publish(slot &s)
   assert(s.host.H == 0);
   assert(s.gpu.W);
   assert(s.gpu.G == 0);
+
   s.gpu.G = 1;
 }
 
@@ -192,6 +196,7 @@ void wave_receive(slot &s)
 {
   assert(s.gpu.H);
   assert(s.gpu.W);
+  assert(s.state = 84);
 }
 
 void wave_release_slot(slot &s)
@@ -205,6 +210,7 @@ bool try_thread_acquire_slot(slot &s)
   assert(s.host.G);
   if (s.host.T == 0)
     {
+      assert(s.host.H == 0);
       s.host.T = 1;
       return true;
     }
@@ -218,6 +224,7 @@ void thread_process(slot &s)
 {
   assert(s.host.T);
   assert(!s.host.H);
+  s.state *= 2;
 }
 
 void thread_publish(slot &s)
@@ -233,7 +240,13 @@ void thread_release_slot(slot &s)
   s.host.T = 0;
 }
 
-static const bool verbose = true;
+void dump_transition(const char *name, operation from_op, operation to_op,
+                     slot from_slot, slot to_slot)
+{
+  printf("%s: %s => %s\n", name, str(from_op), str(to_op));
+  dump(from_slot, to_slot);
+  printf("\n");
+}
 
 struct host_sm
 {
@@ -241,8 +254,12 @@ struct host_sm
   slot &s;
   uint64_t packet_limit = 1;
   uint64_t packet_count = 0;
-
-  host_sm(slot &s) : s(s) {}
+  bool verbose;
+  const char *name;
+  host_sm(slot &s, bool verbose = false, const char *name = "host")
+      : s(s), verbose(verbose), name(name)
+  {
+  }
 
   bool step()
   {
@@ -304,6 +321,12 @@ struct host_sm
           }
         case operation::thread_process:
           {
+            if (s.host.H)
+              {
+                printf("Fail on\n");
+                dump(s);
+              }
+            assert(!s.host.H);
             thread_process(s);
             next = operation::thread_publish;
             break;
@@ -344,9 +367,7 @@ struct host_sm
 
     if (verbose)
       {
-        printf("%s => %s\n", str(current_op), str(next));
-        dump(current_slot, s);
-        printf("\n");
+        dump_transition(name, current_op, next, current_slot, s);
       }
 
     return current_op != next;
@@ -360,8 +381,13 @@ struct gpu_sm
 
   uint64_t packet_limit = 1;
   uint64_t packet_count = 0;
+  bool verbose;
+  const char *name;
 
-  gpu_sm(slot &s) : s(s) {}
+  gpu_sm(slot &s, bool verbose = false, const char *name = "gpu")
+      : s(s), verbose(verbose), name(name)
+  {
+  }
 
   bool step()
   {
@@ -470,9 +496,7 @@ struct gpu_sm
 
     if (verbose)
       {
-        printf("%s => %s\n", str(current_op), str(next));
-        dump(current_slot, s);
-        printf("\n");
+        dump_transition(name, current_op, next, current_slot, s);
       }
 
     return current_op != next;
@@ -602,5 +626,48 @@ TEST_CASE("interleave, gpu first")
     }
 
   CHECK(h.next == operation::host_end);
+  CHECK(g.next == operation::gpu_end);
+}
+
+TEST_CASE("two gpu, one host")
+{
+  slot s;
+  host_sm h(s);
+  gpu_sm g[2] = {s, s};
+
+  bool progress = true;
+  while (progress)
+    {
+      progress = false;
+      progress |= g[0].step();
+      progress |= g[1].step();
+      progress |= h.step();
+    }
+
+  CHECK(h.next == operation::host_end);
+  CHECK(g[0].next == operation::gpu_end);
+  CHECK(g[1].next == operation::gpu_wait_for_H1);
+}
+
+TEST_CASE("two host, one gpu")
+{
+  slot s;
+  host_sm h[2] = {
+      {s, true, "h[0]"},
+      {s, true, "h[1]"},
+  };
+  gpu_sm g = {s, true, "g[0]"};
+
+  bool progress = true;
+  while (progress)
+    {
+      progress = false;
+      progress |= g.step();
+      progress |= h[0].step();
+      progress |= h[1].step();
+    }
+
+  CHECK(h[0].next == operation::host_end);
+  CHECK(h[1].next == operation::host_wait_for_G1);
   CHECK(g.next == operation::gpu_end);
 }
