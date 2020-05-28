@@ -11,7 +11,7 @@ OPT="opt"
 
 rm -rf *.ll
 
-$CXX $FLAGS -O2 states.cpp -emit-llvm -c -o states.bc
+$CXX $FLAGS -O0 -g states.cpp -emit-llvm -c -o states.bc
 
 $CXX states.bc catch.o -o states.exe
 

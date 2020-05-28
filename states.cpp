@@ -1,5 +1,6 @@
 #include "catch.hpp"
 #include <cstdio>
+#include <random>
 
 struct host_machine
 {
@@ -24,6 +25,18 @@ struct slot
   void dump();
 };
 
+uint64_t slot_diff_count(slot x, slot y)
+{
+  uint64_t count = 0;
+  count += (x.host.G != y.host.G);
+  count += (x.host.H != y.host.H);
+  count += (x.host.T != y.host.T);
+  count += (x.gpu.G != y.gpu.G);
+  count += (x.gpu.W != y.gpu.W);
+  count += (x.gpu.H != y.gpu.H);
+  return count;
+}
+
 void dump(slot s)
 {
   printf(
@@ -36,9 +49,9 @@ void dump(slot s)
 void dump(slot f, slot t)
 {
   printf(
-      "  G W H T          G W H T\n"
-      "H %u   %u %u   >    H %u   %u %u\n"
-      "D %u %u %u          D %u %u %u  \n",
+      "  G W H T         G W H T\n"
+      "H %u   %u %u   >   H %u   %u %u\n"
+      "D %u %u %u         D %u %u %u  \n",
       f.host.G, f.host.H, f.host.T, t.host.G, t.host.H, t.host.T, f.gpu.G,
       f.gpu.W, f.gpu.H, t.gpu.G, t.gpu.W, t.gpu.H);
 }
@@ -161,8 +174,13 @@ void gpu_release_slot(slot &s)
   s.gpu.G = 0;
 }
 
-bool try_wave_acquire_slot(slot &s)
+bool try_wave_acquire_slot(slot &s, uint64_t &fail_count)
 {
+  if (fail_count != 0)
+    {
+      fail_count--;
+      return false;
+    }
   if (s.gpu.W == 0)
     {
       s.gpu.W = 1;
@@ -172,6 +190,12 @@ bool try_wave_acquire_slot(slot &s)
     {
       return false;
     }
+}
+
+bool try_wave_acquire_slot(slot &s)
+{
+  uint64_t fc = 0;
+  return try_wave_acquire_slot(s, fc);
 }
 
 void wave_populate(slot &s)
@@ -205,9 +229,19 @@ void wave_release_slot(slot &s)
   s.gpu.W = 0;
 }
 
-bool try_thread_acquire_slot(slot &s)
+bool try_thread_acquire_slot(slot &s, uint64_t &fail_count)
 {
+  if (!s.host.G)
+    {
+      printf("asserting on:\n");
+      dump(s);
+    }
   assert(s.host.G);
+  if (fail_count != 0)
+    {
+      fail_count--;
+      return false;
+    }
   if (s.host.T == 0)
     {
       assert(s.host.H == 0);
@@ -218,6 +252,12 @@ bool try_thread_acquire_slot(slot &s)
     {
       return false;
     }
+}
+
+bool try_thread_acquire_slot(slot &s)
+{
+  uint64_t fc = 0;
+  return try_thread_acquire_slot(s, fc);
 }
 
 void thread_process(slot &s)
@@ -235,7 +275,7 @@ void thread_publish(slot &s)
 
 void thread_release_slot(slot &s)
 {
-  assert(s.host.H);
+  assert(!s.host.H);
   assert(s.host.T);
   s.host.T = 0;
 }
@@ -248,12 +288,39 @@ void dump_transition(const char *name, operation from_op, operation to_op,
   printf("\n");
 }
 
+struct host_reader
+{
+  slot &s;
+  host_reader(slot &s) : s(s) {}
+
+  bool step()
+  {
+    host_read(s);
+    return false;
+  }
+};
+
+struct gpu_reader
+{
+  slot &s;
+  gpu_reader(slot &s) : s(s) {}
+
+  bool step()
+  {
+    gpu_read(s);
+    return false;
+  }
+};
+
 struct host_sm
 {
   operation next = operation::host_begin;
   slot &s;
+
   uint64_t packet_limit = 1;
   uint64_t packet_count = 0;
+  uint64_t try_acquire_fail_count = 0;
+
   bool verbose;
   const char *name;
   host_sm(slot &s, bool verbose = false, const char *name = "host")
@@ -265,6 +332,8 @@ struct host_sm
   {
     operation current_op = next;
     slot current_slot = s;
+
+    // printf("STEP-%s: ", name); dump(s);
 
     switch (next)
       {
@@ -290,7 +359,6 @@ struct host_sm
               }
             break;
           }
-
         case operation::host_wait_for_G1:
           {
             host_read(s);
@@ -305,10 +373,9 @@ struct host_sm
 
             break;
           }
-
         case operation::try_thread_acquire_slot:
           {
-            bool got = try_thread_acquire_slot(s);
+            bool got = try_thread_acquire_slot(s, try_acquire_fail_count);
             if (got)
               {
                 next = operation::thread_process;
@@ -334,12 +401,6 @@ struct host_sm
         case operation::thread_publish:
           {
             thread_publish(s);
-            next = operation::thread_release_slot;
-            break;
-          }
-        case operation::thread_release_slot:
-          {
-            thread_release_slot(s);
             next = operation::host_wait_for_G0;
             break;
           }
@@ -360,16 +421,23 @@ struct host_sm
           {
             host_release_slot(s);
             packet_count++;
+            next = operation::thread_release_slot;
+            break;
+          }
+        case operation::thread_release_slot:
+          {
+            thread_release_slot(s);
             next = operation::host_end;
             break;
           }
       }
 
-    if (verbose)
+    if (verbose & (current_op != next))
       {
         dump_transition(name, current_op, next, current_slot, s);
       }
 
+    assert(slot_diff_count(current_slot, s) <= 1);
     return current_op != next;
   }
 };
@@ -381,6 +449,8 @@ struct gpu_sm
 
   uint64_t packet_limit = 1;
   uint64_t packet_count = 0;
+  uint64_t try_acquire_fail_count = 0;
+
   bool verbose;
   const char *name;
 
@@ -418,10 +488,9 @@ struct gpu_sm
               }
             break;
           }
-
         case operation::try_wave_acquire_slot:
           {
-            if (try_wave_acquire_slot(s))
+            if (try_wave_acquire_slot(s, try_acquire_fail_count))
               {
                 next = operation::wave_populate;
               }
@@ -443,7 +512,6 @@ struct gpu_sm
             next = operation::gpu_wait_for_H1;
             break;
           }
-
         case operation::gpu_wait_for_H1:
           {
             gpu_read(s);
@@ -469,7 +537,6 @@ struct gpu_sm
             next = operation::gpu_wait_for_H0;
             break;
           }
-
         case operation::gpu_wait_for_H0:
           {
             gpu_read(s);
@@ -483,7 +550,6 @@ struct gpu_sm
               }
             break;
           }
-
         case operation::wave_release_slot:
           {
             wave_release_slot(s);
@@ -494,11 +560,12 @@ struct gpu_sm
           }
       }
 
-    if (verbose)
+    if (verbose & (current_op != next))
       {
         dump_transition(name, current_op, next, current_slot, s);
       }
 
+    assert(slot_diff_count(current_slot, s) <= 1);
     return current_op != next;
   }
 };
@@ -522,8 +589,8 @@ TEST_CASE("happy path")
   gpu_release_slot(s);
 
   host_read(s);
-  thread_release_slot(s);
   host_release_slot(s);
+  thread_release_slot(s);
   gpu_read(s);
 
   wave_release_slot(s);
@@ -593,37 +660,48 @@ TEST_CASE("Run one packet sequentially, gpu first")
   CHECK(g.next == operation::gpu_end);
 }
 
-TEST_CASE("interleave, host first")
+TEST_CASE("interleave")
 {
   slot s;
   host_sm h(s);
   gpu_sm g(s);
+  host_reader hr = {s};
+  gpu_reader gr = {s};
 
-  bool progress = true;
-  while (progress)
-    {
-      progress = false;
-      progress |= h.step();
-      progress |= g.step();
-    }
+  h.packet_limit = 4;
+  g.packet_limit = 4;
+  h.try_acquire_fail_count = 3;
+  g.try_acquire_fail_count = 7;
 
-  CHECK(h.next == operation::host_end);
-  CHECK(g.next == operation::gpu_end);
-}
+  auto done = [](operation h, operation g) -> bool {
+    return h == operation::host_end && g == operation::gpu_end;
+  };
 
-TEST_CASE("interleave, gpu first")
-{
-  slot s;
-  host_sm h(s);
-  gpu_sm g(s);
+  SECTION("gpu first")
+  {
+    while (!done(h.next, g.next))
+      {
+        g.step();
+        hr.step();
+        gr.step();
+        h.step();
+        hr.step();
+        gr.step();
+      }
+  }
 
-  bool progress = true;
-  while (progress)
-    {
-      progress = false;
-      progress |= g.step();
-      progress |= h.step();
-    }
+  SECTION("host first")
+  {
+    while (!done(h.next, g.next))
+      {
+        h.step();
+        hr.step();
+        gr.step();
+        g.step();
+        hr.step();
+        gr.step();
+      }
+  }
 
   CHECK(h.next == operation::host_end);
   CHECK(g.next == operation::gpu_end);
@@ -634,15 +712,40 @@ TEST_CASE("two gpu, one host")
   slot s;
   host_sm h(s);
   gpu_sm g[2] = {s, s};
-
   bool progress = true;
-  while (progress)
-    {
-      progress = false;
-      progress |= g[0].step();
-      progress |= g[1].step();
-      progress |= h.step();
-    }
+
+  SECTION("ggh")
+  {
+    while (progress)
+      {
+        progress = false;
+        progress |= g[0].step();
+        progress |= g[1].step();
+        progress |= h.step();
+      }
+  }
+
+  SECTION("ghg")
+  {
+    while (progress)
+      {
+        progress = false;
+        progress |= g[0].step();
+        progress |= h.step();
+        progress |= g[1].step();
+      }
+  }
+
+  SECTION("hgg")
+  {
+    while (progress)
+      {
+        progress = false;
+        progress |= h.step();
+        progress |= g[0].step();
+        progress |= g[1].step();
+      }
+  }
 
   CHECK(h.next == operation::host_end);
   CHECK(g[0].next == operation::gpu_end);
@@ -652,22 +755,246 @@ TEST_CASE("two gpu, one host")
 TEST_CASE("two host, one gpu")
 {
   slot s;
-  host_sm h[2] = {
-      {s, true, "h[0]"},
-      {s, true, "h[1]"},
-  };
-  gpu_sm g = {s, true, "g[0]"};
+  host_sm h[2] = {s, s};
+  gpu_sm g = {s};
+  bool progress = true;
+
+  SECTION("hhg")
+  {
+    while (progress)
+      {
+        progress = false;
+        progress |= h[0].step();
+        progress |= h[1].step();
+        progress |= g.step();
+      }
+  }
+
+  SECTION("hgh")
+  {
+    while (progress)
+      {
+        progress = false;
+        progress |= h[1].step();
+        progress |= g.step();
+        progress |= h[0].step();
+      }
+  }
+
+  SECTION("ghh")
+  {
+    while (progress)
+      {
+        progress = false;
+        progress |= g.step();
+        progress |= h[0].step();
+        progress |= h[1].step();
+      }
+  }
+
+  CHECK(h[0].next == operation::host_end);
+  CHECK(h[1].next == operation::host_wait_for_G1);
+  CHECK(g.next == operation::gpu_end);
+}
+
+TEST_CASE("two host, two gpu")
+{
+  slot s;
+  host_sm h[2] = {s, s};
+  gpu_sm g[2] = {s, s};
+  bool progress = true;
+
+  SECTION("gghh")
+  {
+    while (progress)
+      {
+        progress = false;
+        progress |= g[0].step();
+        progress |= g[1].step();
+        progress |= h[0].step();
+        progress |= h[1].step();
+      }
+  }
+
+  SECTION("hggh")
+  {
+    while (progress)
+      {
+        progress = false;
+        progress |= h[0].step();
+        progress |= g[0].step();
+        progress |= g[1].step();
+        progress |= h[1].step();
+      }
+  }
+
+  SECTION("hhgg")
+  {
+    while (progress)
+      {
+        progress = false;
+        progress |= h[0].step();
+        progress |= h[1].step();
+        progress |= g[0].step();
+        progress |= g[1].step();
+      }
+  }
+
+  SECTION("ghhg")
+  {
+    while (progress)
+      {
+        progress = false;
+        progress |= g[0].step();
+        progress |= h[0].step();
+        progress |= h[1].step();
+        progress |= g[1].step();
+      }
+  }
+
+  SECTION("ghgh")
+  {
+    while (progress)
+      {
+        progress = false;
+        progress |= g[0].step();
+        progress |= h[0].step();
+        progress |= g[1].step();
+        progress |= h[1].step();
+      }
+  }
+
+  SECTION("hghg")
+  {
+    while (progress)
+      {
+        progress = false;
+        progress |= h[0].step();
+        progress |= g[0].step();
+        progress |= h[1].step();
+        progress |= g[1].step();
+      }
+  }
+
+  CHECK(h[0].next == operation::host_end);
+  CHECK(h[1].next == operation::host_end);
+  CHECK(g[0].next == operation::gpu_end);
+  CHECK(g[1].next == operation::gpu_end);
+}
+
+TEST_CASE("Run sequentially with copies from other threads")
+{
+  slot s;
+  host_sm h = {s};
+  gpu_sm g = {s};
+  host_reader hr = {s};
+  gpu_reader gr = {s};
 
   bool progress = true;
   while (progress)
     {
       progress = false;
+      hr.step();
+      gr.step();
+      progress |= h.step();
+      hr.step();
+      gr.step();
       progress |= g.step();
-      progress |= h[0].step();
-      progress |= h[1].step();
     }
 
-  CHECK(h[0].next == operation::host_end);
-  CHECK(h[1].next == operation::host_wait_for_G1);
+  CHECK(h.next == operation::host_end);
   CHECK(g.next == operation::gpu_end);
+}
+
+TEST_CASE("Random")
+{
+  slot s;
+  host_reader hr = {s};
+  gpu_reader gr = {s};
+  host_sm h[4] = {s, s, s, s};
+  gpu_sm g[4] = {s, s, s, s};
+
+  std::mt19937 gen;
+  gen.seed(1);
+  std::uniform_int_distribution<> dis(0, 9);
+
+  for (uint64_t i = 0; i < 1024 * 1024 * 1024u; i++)
+    {
+      int n = dis(gen);
+
+      if (i == 180)
+        {
+          for (unsigned i = 0; i < 4; i++)
+            {
+              h[i].verbose = 1;
+              g[i].verbose = 1;
+            }
+          h[0].name = "h[0]";
+          h[1].name = "h[1]";
+          h[2].name = "h[2]";
+          h[3].name = "h[3]";
+          g[0].name = "g[0]";
+          g[1].name = "g[1]";
+          g[2].name = "g[2]";
+          g[3].name = "g[3]";
+        }
+
+      switch (n)
+        {
+          case 0:
+            {
+              h[0].step();
+              break;
+            }
+          case 1:
+            {
+              h[1].step();
+              break;
+            }
+          case 2:
+            {
+              h[2].step();
+              break;
+            }
+          case 3:
+            {
+              h[3].step();
+              break;
+            }
+
+          case 4:
+            {
+              g[0].step();
+              break;
+            }
+          case 5:
+            {
+              g[1].step();
+              break;
+            }
+          case 6:
+            {
+              g[2].step();
+              break;
+            }
+          case 7:
+            {
+              g[3].step();
+              break;
+            }
+
+          case 8:
+            {
+              hr.step();
+              break;
+            }
+          case 9:
+            {
+              gr.step();
+              break;
+            }
+          default:
+            break;
+        }
+    }
 }
