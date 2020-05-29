@@ -71,7 +71,7 @@ inline uint64_t clearnthbit64(uint64_t x, uint64_t n)
 
 // probably need scope as a template parameter on this
 // not a general purpose bitmap
-template <size_t N, size_t scope = 0>
+template <size_t N, size_t scope = __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>
 struct slot_bitmap
 {
   static_assert(N != 0, "");
@@ -113,6 +113,11 @@ struct slot_bitmap
         // *expected, void *desired, int success_order, int failure_order)
         // not sure about the memory orders
         // need to use an intrinsic which understand scope
+
+        // opencl wants the array marked atomic, which might be fair enough
+        //(void)__opencl_atomic_compare_exchange_strong(
+        // (_Atomic volatile T *)address, &compare, val, __ATOMIC_SEQ_CST,
+        // __ATOMIC_RELAXED, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
 
         uint64_t compare = d;
         bool r = __atomic_compare_exchange(addr, &compare, &proposed, false,
