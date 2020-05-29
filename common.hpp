@@ -187,10 +187,12 @@ struct slot_bitmap
 
   uint64_t load_relaxed(size_t i) const
   {
-    return __atomic_load_n(&data[i], __ATOMIC_RELAXED);
+    // TODO: Can probably do this with very narrow scope
+    return __opencl_atomic_load(&data[i], __ATOMIC_RELAXED,
+                                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
   }
 
-  alignas(64) uint64_t data[N / 64] = {0};
+  alignas(64) _Atomic uint64_t data[N / 64] = {};
 };
 
 template <size_t N, size_t scope>
@@ -201,7 +203,7 @@ bool slot_bitmap<N, scope>::claim_slot(size_t i)
   uint64_t subindex = index_to_subindex(i);
 
   uint64_t d = load_relaxed(w);
-  uint64_t* addr = &data[w];
+  _Atomic uint64_t* addr = &data[w];
 
   for (;;)
     {
@@ -215,19 +217,10 @@ bool slot_bitmap<N, scope>::claim_slot(size_t i)
           return false;
         }
 
-      // bool __atomic_compare_exchange(size_t size, void *ptr, void
-      // *expected, void *desired, int success_order, int failure_order)
-      // not sure about the memory orders
-      // need to use an intrinsic which understand scope
-
-      // opencl wants the array marked atomic, which might be fair enough
-      //(void)__opencl_atomic_compare_exchange_strong(
-      // (_Atomic volatile T *)address, &compare, val, __ATOMIC_SEQ_CST,
-      // __ATOMIC_RELAXED, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-
       uint64_t compare = d;
-      bool r = __atomic_compare_exchange(addr, &compare, &proposed, false,
-                                         __ATOMIC_SEQ_CST, __ATOMIC_RELAXED);
+      bool r = __opencl_atomic_compare_exchange_weak(
+          addr, &compare, proposed, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED,
+          __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
 
       if (r)
         {
@@ -256,7 +249,7 @@ void slot_bitmap<N, scope>::release_slot(size_t i)
   uint64_t subindex = index_to_subindex(i);
 
   uint64_t d = load_relaxed(w);
-  uint64_t* addr = &data[w];
+  _Atomic uint64_t* addr = &data[w];
 
   for (;;)
     {
@@ -266,8 +259,10 @@ void slot_bitmap<N, scope>::release_slot(size_t i)
       assert(proposed != d);
 
       uint64_t compare = d;
-      bool r = __atomic_compare_exchange(addr, &compare, &proposed, false,
-                                         __ATOMIC_SEQ_CST, __ATOMIC_RELAXED);
+
+      bool r = __opencl_atomic_compare_exchange_weak(
+          addr, &compare, proposed, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED,
+          __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
 
       if (r)
         {
