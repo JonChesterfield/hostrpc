@@ -6,9 +6,11 @@
 
 namespace hostrpc
 {
-  class server
+  struct server
   {
-
+    page_t * buffer_start = nullptr;
+    page_t * buffer_end = buffer_start;
+    
     
 
     
