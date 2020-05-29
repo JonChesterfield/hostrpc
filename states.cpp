@@ -20,7 +20,9 @@ struct slot
 {
   host_machine host;
   gpu_machine gpu;
-  uint64_t state;
+  uint64_t *state;
+
+  slot(uint64_t *state) : state(state) {}
 
   void dump();
 };
@@ -158,9 +160,17 @@ const char *str(operation op)
 
 void on_error(slot &) {}
 
-void host_read(slot &s) { s.host.G = s.gpu.G; }
+void host_read(slot &s)
+{
+  assert(!"meaningless");
+  s.host.G = s.gpu.G;
+}
 
-void gpu_read(slot &s) { s.gpu.H = s.host.H; }
+void gpu_read(slot &s)
+{
+  assert(!"meaningless");
+  s.gpu.H = s.host.H;
+}
 
 void host_release_slot(slot &s)
 {
@@ -204,7 +214,7 @@ void wave_populate(slot &s)
   assert(s.gpu.W);
   assert(!s.gpu.G);
 
-  s.state = 42;
+  *s.state = 42;
 }
 
 void wave_publish(slot &s)
@@ -220,7 +230,7 @@ void wave_receive(slot &s)
 {
   assert(s.gpu.H);
   assert(s.gpu.W);
-  assert(s.state = 84);
+  assert(*s.state == 84);
 }
 
 void wave_release_slot(slot &s)
@@ -264,7 +274,7 @@ void thread_process(slot &s)
 {
   assert(s.host.T);
   assert(!s.host.H);
-  s.state *= 2;
+  *s.state *= 2;
 }
 
 void thread_publish(slot &s)
@@ -288,6 +298,12 @@ void dump_transition(const char *name, operation from_op, operation to_op,
   printf("\n");
 }
 
+struct gpu_sm;
+struct host_sm;
+
+bool host_read(gpu_sm *x);
+bool gpu_read(host_sm *x);
+
 struct host_reader
 {
   slot &s;
@@ -295,7 +311,7 @@ struct host_reader
 
   bool step()
   {
-    host_read(s);
+    // host_read(s);
     return false;
   }
 };
@@ -307,7 +323,7 @@ struct gpu_reader
 
   bool step()
   {
-    gpu_read(s);
+    // gpu_read(s);
     return false;
   }
 };
@@ -315,7 +331,7 @@ struct gpu_reader
 struct host_sm
 {
   operation next = operation::host_begin;
-  slot &s;
+  slot s;
 
   uint64_t packet_limit = 1;
   uint64_t packet_count = 0;
@@ -323,13 +339,17 @@ struct host_sm
 
   bool verbose;
   const char *name;
-  host_sm(slot &s, bool verbose = false, const char *name = "host")
+
+  gpu_sm *remote_gpu = NULL;
+
+  host_sm(slot s, bool verbose = false, const char *name = "host")
       : s(s), verbose(verbose), name(name)
   {
   }
 
   bool step()
   {
+    assert(remote_gpu && "No remote gpu, missing bind?");
     operation current_op = next;
     slot current_slot = s;
 
@@ -361,7 +381,7 @@ struct host_sm
           }
         case operation::host_wait_for_G1:
           {
-            host_read(s);
+            s.host.G = host_read(remote_gpu);
             if (s.host.G)
               {
                 next = operation::try_thread_acquire_slot;
@@ -406,7 +426,7 @@ struct host_sm
           }
         case operation::host_wait_for_G0:
           {
-            host_read(s);
+            s.host.G = host_read(remote_gpu);
             if (s.host.G)
               {
                 next = operation::host_wait_for_G0;
@@ -445,7 +465,7 @@ struct host_sm
 struct gpu_sm
 {
   operation next = operation::gpu_begin;
-  slot &s;
+  slot s;
 
   uint64_t packet_limit = 1;
   uint64_t packet_count = 0;
@@ -454,13 +474,16 @@ struct gpu_sm
   bool verbose;
   const char *name;
 
-  gpu_sm(slot &s, bool verbose = false, const char *name = "gpu")
+  host_sm *remote_host = NULL;
+
+  gpu_sm(slot s, bool verbose = false, const char *name = "gpu")
       : s(s), verbose(verbose), name(name)
   {
   }
 
   bool step()
   {
+    assert(remote_host && "No remote host, missing bind?");
     operation current_op = next;
     slot current_slot = s;
 
@@ -514,7 +537,7 @@ struct gpu_sm
           }
         case operation::gpu_wait_for_H1:
           {
-            gpu_read(s);
+            s.gpu.H = gpu_read(remote_host);
             if (s.gpu.H)
               {
                 next = operation::wave_receive;
@@ -539,7 +562,8 @@ struct gpu_sm
           }
         case operation::gpu_wait_for_H0:
           {
-            gpu_read(s);
+            s.gpu.H = gpu_read(remote_host);
+
             if (s.gpu.H)
               {
                 next = operation::gpu_wait_for_H0;
@@ -570,37 +594,55 @@ struct gpu_sm
   }
 };
 
+bool host_read(gpu_sm *x) { return x->s.gpu.G; }
+
+bool gpu_read(host_sm *x) { return x->s.host.H; }
+
+void bind(gpu_sm *g, host_sm *h)
+{
+  g->remote_host = h;
+  h->remote_gpu = g;
+}
+
 TEST_CASE("happy path")
 {
-  slot s;
+  if (0)
+    {
+      uint64_t state = 0;
+      slot s(&state);
 
-  try_wave_acquire_slot(s);
-  wave_populate(s);
-  wave_publish(s);
+      try_wave_acquire_slot(s);
+      wave_populate(s);
+      wave_publish(s);
 
-  host_read(s);
-  try_thread_acquire_slot(s);
-  thread_process(s);
-  thread_publish(s);
+      host_read(s);
+      try_thread_acquire_slot(s);
+      thread_process(s);
+      thread_publish(s);
 
-  gpu_read(s);
-  wave_receive(s);
+      gpu_read(s);
+      wave_receive(s);
 
-  gpu_release_slot(s);
+      gpu_release_slot(s);
 
-  host_read(s);
-  host_release_slot(s);
-  thread_release_slot(s);
-  gpu_read(s);
+      host_read(s);
+      host_release_slot(s);
+      thread_release_slot(s);
+      gpu_read(s);
 
-  wave_release_slot(s);
+      wave_release_slot(s);
+    }
 }
 
 TEST_CASE("Run one packet sequentially, host first")
 {
-  slot s;
-  host_sm h(s);
-  gpu_sm g(s);
+  uint64_t state = 0;
+  slot s(&state);
+
+  host_sm h(s, 1);
+  gpu_sm g(s, 1);
+
+  bind(&g, &h);
 
   CHECK(h.next == operation::host_begin);
   CHECK(g.next == operation::gpu_begin);
@@ -632,9 +674,12 @@ TEST_CASE("Run one packet sequentially, host first")
 
 TEST_CASE("Run one packet sequentially, gpu first")
 {
-  slot s;
+  uint64_t state = 0;
+  slot s(&state);
+
   host_sm h(s);
   gpu_sm g(s);
+  bind(&g, &h);
 
   CHECK(h.next == operation::host_begin);
   CHECK(g.next == operation::gpu_begin);
@@ -662,9 +707,14 @@ TEST_CASE("Run one packet sequentially, gpu first")
 
 TEST_CASE("interleave")
 {
-  slot s;
+  uint64_t state = 0;
+  slot s(&state);
+
   host_sm h(s);
   gpu_sm g(s);
+
+  bind(&g, &h);
+
   host_reader hr = {s};
   gpu_reader gr = {s};
 
@@ -709,8 +759,10 @@ TEST_CASE("interleave")
 
 TEST_CASE("two gpu, one host")
 {
-  slot s;
-  host_sm h(s);
+  uint64_t state = 0;
+  slot s(&state);
+
+  host_sm h = {s};
   gpu_sm g[2] = {s, s};
   bool progress = true;
 
@@ -754,7 +806,9 @@ TEST_CASE("two gpu, one host")
 
 TEST_CASE("two host, one gpu")
 {
-  slot s;
+  uint64_t state = 0;
+  slot s(&state);
+
   host_sm h[2] = {s, s};
   gpu_sm g = {s};
   bool progress = true;
@@ -799,7 +853,9 @@ TEST_CASE("two host, one gpu")
 
 TEST_CASE("two host, two gpu")
 {
-  slot s;
+  uint64_t state = 0;
+  slot s(&state);
+
   host_sm h[2] = {s, s};
   gpu_sm g[2] = {s, s};
   bool progress = true;
@@ -884,7 +940,9 @@ TEST_CASE("two host, two gpu")
 
 TEST_CASE("Run sequentially with copies from other threads")
 {
-  slot s;
+  uint64_t state = 0;
+  slot s(&state);
+
   host_sm h = {s};
   gpu_sm g = {s};
   host_reader hr = {s};
@@ -908,7 +966,9 @@ TEST_CASE("Run sequentially with copies from other threads")
 
 TEST_CASE("Random")
 {
-  slot s;
+  uint64_t state = 0;
+  slot s(&state);
+
   host_reader hr = {s};
   gpu_reader gr = {s};
   host_sm h[4] = {s, s, s, s};
