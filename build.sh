@@ -13,7 +13,9 @@ rm -rf *.ll
 
 $CXX $FLAGS -O0 -g states.cpp -emit-llvm -c -o states.bc
 
-$CXX states.bc catch.o -o states.exe
+$CXX $FLAGS -O0 -g tests.cpp -emit-llvm -c -o tests.bc
+
+$CXX tests.bc states.bc catch.o -o states.exe
 
 # for i in *.ll; do $LLC $i; done
 time  ./states.exe
