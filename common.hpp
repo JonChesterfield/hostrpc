@@ -66,6 +66,44 @@ inline uint64_t clearnthbit64(uint64_t x, uint64_t n)
   return x & ~(1ull << n);
 }
 
+inline uint64_t ctz64(uint64_t value)
+{
+  if (value == 0)
+    {
+      return 64;
+    }
+#if defined(__has_builtin) && __has_builtin(__builtin_ctzl)
+  static_assert(
+      sizeof(unsigned long) == sizeof(uint64_t),
+      "Calling __builtin_ctzl on a uint64_t requires 64 bit unsigned long");
+  return (uint64_t)__builtin_ctzl(value);
+#else
+  uint64_t pos = 0;
+  while (!(value & 1))
+    {
+      value >>= 1;
+      ++pos;
+    }
+  return pos;
+#endif
+}
+
+inline uint64_t clz64(uint64_t value)
+{
+  if (value == 0)
+    {
+      return 64;
+    }
+#if defined(__has_builtin) && __has_builtin(__builtin_clzl)
+  static_assert(
+      sizeof(unsigned long) == sizeof(uint64_t),
+      "Calling __builtin_clzl on a uint64_t requires 64 bit unsigned long");
+  return (uint64_t)__builtin_clzl(value);
+#else
+#error "Unimplemented clz64"
+#endif
+}
+
 }  // namespace detail
 }  // namespace
 
@@ -75,6 +113,7 @@ template <size_t N, size_t scope = __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>
 struct slot_bitmap
 {
   static_assert(N != 0, "");
+  static_assert(N != SIZE_MAX, "Used as a sentinel");
   static_assert(N % 64 == 0, "Size must be multiple of 64");
 
   constexpr slot_bitmap() = default;
@@ -88,10 +127,50 @@ struct slot_bitmap
     return detail::nthbitset64(d, index_to_subindex(i));
   }
 
-  // probably want a specialisation where the slot is required to be empty initially
+  void dump() const
+  {
+    uint64_t w = N / 64;
+    printf("Size %lu / words %lu\n", size(), w);
+    for (uint64_t i = 0; i < w; i++)
+      {
+        printf("[%2lu]:", i);
+        for (uint64_t j = 0; j < 64; j++)
+          {
+            if (j % 8 == 0)
+              {
+                printf(" ");
+              }
+            printf("%c", this->operator[](64 * i + j) ? '1' : '0');
+          }
+        printf("\n");
+      }
+  }
+
+  // probably want a specialisation where the slot is required to be empty
+  // initially
   bool claim_slot(size_t i);
 
   void release_slot(size_t i);
+
+  size_t find_slot()  // SIZE_MAX if none available
+  {
+    // find a zero. May be worth inverting in order to find a set
+    const size_t words = N / 64;
+    for (size_t i = 0; i < words; i++)
+      {
+        uint64_t w = ~load_relaxed(i);
+        if (w != 0)
+          {
+            static_assert(sizeof(unsigned long) == sizeof(uint64_t),
+                          "Calling __builtin_ctzl on a uint64_t requires 64 "
+                          "bit unsigned long");
+
+            return 64 * i + (detail::ctz64(w));
+          }
+      }
+
+    return SIZE_MAX;
+  }
 
  private:
   static uint64_t index_to_element(uint64_t x)
@@ -106,7 +185,7 @@ struct slot_bitmap
     return x % 64u;
   }
 
-  uint64_t load_relaxed(size_t i)
+  uint64_t load_relaxed(size_t i) const
   {
     return __atomic_load_n(&data[i], __ATOMIC_RELAXED);
   }
