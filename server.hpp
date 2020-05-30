@@ -3,20 +3,25 @@
 
 #include "common.hpp"
 
-
 namespace hostrpc
 {
-  struct server
+template <size_t N>
+struct server
+{
+  server(const mailbox_t<N>* inbox, mailbox_t<N>* outbox, page_t* buffer)
+      : inbox(inbox), outbox(outbox), buffer(buffer)
   {
-    page_t * buffer_start = nullptr;
-    page_t * buffer_end = buffer_start;
-    
-    
+  }
 
-    
+  void rpc_handle() {}
 
-  };
+  const mailbox_t<N>* inbox;
+  mailbox_t<N>* outbox;
+  page_t* buffer;
 
-}
+  slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active;
+};
+
+}  // namespace hostrpc
 
 #endif

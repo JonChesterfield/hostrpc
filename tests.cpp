@@ -12,7 +12,7 @@ TEST_CASE("Bitmap")
       for (size_t i = 0; i < b.size(); i++)
         {
           CHECK(!b[i]);
-          CHECK(b.try_claim_slot(i));
+          CHECK(b.try_claim_empty_slot(i));
           CHECK(b[i]);
           b.release_slot(i);
           CHECK(!b[i]);
@@ -26,14 +26,14 @@ TEST_CASE("Bitmap")
     hostrpc::slot_bitmap<128> b;
     for (size_t i = 0; i < b.size(); i++)
       {
-        size_t e = b.find_slot();
+        size_t e = b.find_empty_slot();
         CHECK(e != SIZE_MAX);
         CHECK(!b[e]);
         b.claim_slot(e);
         CHECK(b[e]);
       }
 
-    CHECK(b.find_slot() == SIZE_MAX);
+    CHECK(b.find_empty_slot() == SIZE_MAX);
   }
 
   SECTION("find and try claim each element")
@@ -41,14 +41,14 @@ TEST_CASE("Bitmap")
     hostrpc::slot_bitmap<128> b;
     for (size_t i = 0; i < b.size(); i++)
       {
-        size_t e = b.find_slot();
+        size_t e = b.find_empty_slot();
         CHECK(e != SIZE_MAX);
         CHECK(!b[e]);
-        CHECK(b.try_claim_slot(e));
+        CHECK(b.try_claim_empty_slot(e));
         CHECK(b[e]);
       }
 
-    CHECK(b.find_slot() == SIZE_MAX);
+    CHECK(b.find_empty_slot() == SIZE_MAX);
   }
 
   SECTION("find elements in the middle of the bitmap")
@@ -56,7 +56,7 @@ TEST_CASE("Bitmap")
     hostrpc::slot_bitmap<128> b;
     for (size_t i = 0; i < b.size(); i++)
       {
-        b.try_claim_slot(i);
+        b.try_claim_empty_slot(i);
       }
 
     for (unsigned L : {0, 3, 63, 64, 65, 126, 127})
@@ -64,12 +64,12 @@ TEST_CASE("Bitmap")
         CHECK(b[L]);
         b.release_slot(L);
         CHECK(!b[L]);
-        CHECK(b.find_slot() == L);
+        CHECK(b.find_empty_slot() == L);
         b.claim_slot(L);
         CHECK(b[L]);
         b.release_slot(L);
         CHECK(!b[L]);
-        CHECK(b.try_claim_slot(L));
+        CHECK(b.try_claim_empty_slot(L));
         CHECK(b[L]);
       }
   }
@@ -81,4 +81,10 @@ TEST_CASE("Instantiate bitmap")
   hostrpc::slot_bitmap<128> bm128;
   (void)bm64;
   (void)bm128;
+
+  hostrpc::client<192> client(0, 0, 0);
+  (void)client;
+
+  hostrpc::server<192> server(0, 0, 0);
+  (void)server;
 }

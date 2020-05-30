@@ -109,12 +109,26 @@ inline uint64_t clz64(uint64_t value)
 
 // probably need scope as a template parameter on this
 // not a general purpose bitmap
+
 template <size_t N, size_t scope = __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>
+struct slot_bitmap;
+
+template <size_t N>
+using mailbox_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>;
+template <size_t N>
+using cache_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>;
+
+template <size_t N>
+void update_cache(const mailbox_t<N>* mbox, cache_t<N>* cache);
+
+template <size_t N, size_t scope>
 struct slot_bitmap
 {
   static_assert(N != 0, "");
   static_assert(N != SIZE_MAX, "Used as a sentinel");
   static_assert(N % 64 == 0, "Size must be multiple of 64");
+
+  friend void update_cache(const mailbox_t<N>* mbox, cache_t<N>* cache);
 
   constexpr slot_bitmap() = default;
 
@@ -147,15 +161,47 @@ struct slot_bitmap
   }
 
   // cas, true on success
-  bool try_claim_slot(size_t i);
+  bool try_claim_empty_slot(size_t i);
 
-   // assumes slot available
-  void claim_slot(size_t i) { set_slot_given_already_clear(i);}
+
+
+
+  size_t try_claim_any_empty_slot()
+  {
+    size_t slot = find_empty_slot();
+    if (slot != SIZE_MAX)
+      {
+        if (try_claim_empty_slot(slot))
+          {
+            return slot;
+          }
+      }
+    return SIZE_MAX;
+  }
+
+
+  // not yet implemented, may be able to achieve the same
+  // effect by toggling 0/1
+
+  bool try_claim_full_slot(size_t)
+  {
+    return false;
+  }
+  size_t try_claim_any_full_slot()
+  {
+    return SIZE_MAX;
+  }
+  size_t find_full_slot() { return SIZE_MAX; }
+
+  
+  // assumes slot available
+  void claim_slot(size_t i) { set_slot_given_already_clear(i); }
 
   // assumes slot taken
   void release_slot(size_t i) { clear_slot_given_already_set(i); }
 
-  size_t find_slot()  // SIZE_MAX if none available
+
+  size_t find_empty_slot()  // SIZE_MAX if none available
   {
     // find a zero. May be worth inverting in order to find a set
     const size_t words = N / 64;
@@ -233,7 +279,7 @@ struct slot_bitmap
 };
 
 template <size_t N, size_t scope>
-bool slot_bitmap<N, scope>::try_claim_slot(size_t i)
+bool slot_bitmap<N, scope>::try_claim_empty_slot(size_t i)
 {
   assert(i < N);
   size_t w = index_to_element(i);
@@ -276,6 +322,18 @@ bool slot_bitmap<N, scope>::try_claim_slot(size_t i)
       d = proposed;  // docs not totally clear, but an updated copy of the
                      // word should be in one of the passed parameters. Might
                      // be in compare
+    }
+}
+
+template <size_t N>
+void update_cache(const mailbox_t<N>* mbox, cache_t<N>* cache)
+{
+  for (size_t i = 0; i < N / 64; i++)
+    {
+      uint64_t l = __opencl_atomic_load(&mbox->data[i], __ATOMIC_ACQUIRE,
+                                        __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+      __opencl_atomic_store(&cache->data[i], l, __ATOMIC_RELEASE,
+                            __OPENCL_MEMORY_SCOPE_DEVICE);
     }
 }
 
