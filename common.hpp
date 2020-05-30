@@ -133,11 +133,12 @@ struct slot_bitmap
   constexpr slot_bitmap() = default;
 
   static constexpr size_t size() { return N; }
-
+  static constexpr size_t words() { return N/64;}
+  
   bool operator[](size_t i) const
   {
     size_t w = index_to_element(i);
-    uint64_t d = load_relaxed(w);
+    uint64_t d = load_word(w);
     return detail::nthbitset64(d, index_to_subindex(i));
   }
 
@@ -207,7 +208,7 @@ struct slot_bitmap
     const size_t words = N / 64;
     for (size_t i = 0; i < words; i++)
       {
-        uint64_t w = ~load_relaxed(i);
+        uint64_t w = ~load_word(i);
         if (w != 0)
           {
             static_assert(sizeof(unsigned long) == sizeof(uint64_t),
@@ -221,13 +222,22 @@ struct slot_bitmap
     return SIZE_MAX;
   }
 
- private:
+  uint64_t load_word(size_t i) const
+  {
+    assert(i < words());
+    // TODO: Can probably do this with very narrow scope
+    return __opencl_atomic_load(&data[i], __ATOMIC_SEQ_CST,
+                                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+  }
+
+
+private:
   void clear_slot_given_already_set(size_t i)
   {
     assert(i < N);
     size_t w = index_to_element(i);
     uint64_t subindex = index_to_subindex(i);
-    assert(detail::nthbitset64(load_relaxed(w), subindex));
+    assert(detail::nthbitset64(load_word(w), subindex));
 
     // and with everything other than the slot set
     uint64_t mask = ~detail::setnthbit64(0, subindex);
@@ -244,7 +254,7 @@ struct slot_bitmap
     assert(i < N);
     size_t w = index_to_element(i);
     uint64_t subindex = index_to_subindex(i);
-    assert(!detail::nthbitset64(load_relaxed(w), subindex));
+    assert(!detail::nthbitset64(load_word(w), subindex));
 
     // or with only the slot set
     uint64_t mask = detail::setnthbit64(0, subindex);
@@ -259,7 +269,9 @@ struct slot_bitmap
   static uint64_t index_to_element(uint64_t x)
   {
     assert(x < size());
-    return x / 64u;
+    uint64_t r = x / 64u;
+    assert(r < words());
+    return r;
   }
 
   static uint64_t index_to_subindex(uint64_t x)
@@ -268,14 +280,7 @@ struct slot_bitmap
     return x % 64u;
   }
 
-  uint64_t load_relaxed(size_t i) const
-  {
-    // TODO: Can probably do this with very narrow scope
-    return __opencl_atomic_load(&data[i], __ATOMIC_RELAXED,
-                                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-  }
-
-  alignas(64) _Atomic uint64_t data[N / 64] = {};
+  alignas(64) _Atomic uint64_t data[words()] = {};
 };
 
 template <size_t N, size_t scope>
@@ -285,7 +290,7 @@ bool slot_bitmap<N, scope>::try_claim_empty_slot(size_t i)
   size_t w = index_to_element(i);
   uint64_t subindex = index_to_subindex(i);
 
-  uint64_t d = load_relaxed(w);
+  uint64_t d = load_word(w);
   _Atomic uint64_t* addr = &data[w];
 
   for (;;)
