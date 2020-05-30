@@ -83,12 +83,6 @@ TEST_CASE("Instantiate bitmap")
   hostrpc::slot_bitmap<128> bm128;
   (void)bm64;
   (void)bm128;
-
-  hostrpc::client<192> client(0, 0, 0);
-  (void)client;
-
-  hostrpc::server<192> server(0, 0, 0);
-  (void)server;
 }
 
 struct safe_thread
@@ -124,7 +118,8 @@ TEST_CASE("set up single word system")
 
   {
     safe_thread cl([&]() {
-      auto cl = client<64>(&recv, &send, &buffer[0], fill, use);
+      auto cl = client<64, nop_stepper>(&recv, &send, &buffer[0], nop_stepper{},
+                                        fill, use);
       printf("Built a client\n");
 
       for (int x = 0; x < 3; x++)
@@ -139,11 +134,12 @@ TEST_CASE("set up single word system")
     });
 
     safe_thread sv([&]() {
-      auto sv = server<64>(&send, &recv, &buffer[0], operate);
+      auto sv = server<64, nop_stepper>(&send, &recv, &buffer[0], nop_stepper{},
+                                        operate);
 
       printf("Built a server\n");
 
-      for (;;)
+      for (int x = 0; x < 3; x++)
         {
           sv.rpc_handle();
 

@@ -8,12 +8,13 @@ namespace hostrpc
 {
 void operate_nop(page_t*) {}
 
-template <size_t N>
+template <size_t N, typename S>
 struct server
 {
   server(const mailbox_t<N>* inbox, mailbox_t<N>* outbox, page_t* buffer,
+         S stepper,
          std::function<void(page_t*)> operate = operate_nop)
-      : inbox(inbox), outbox(outbox), buffer(buffer), operate(operate)
+    : inbox(inbox), outbox(outbox), buffer(buffer), stepper(stepper), operate(operate)
   {
   }
 
@@ -91,9 +92,10 @@ struct server
   const mailbox_t<N>* inbox;
   mailbox_t<N>* outbox;
   page_t* buffer;
+  S stepper;
   std::function<void(page_t*)> operate;
-
   slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active;
+
 };
 
 }  // namespace hostrpc

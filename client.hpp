@@ -13,14 +13,14 @@ namespace hostrpc
 void fill_nop(page_t*) {}
 void use_nop(page_t*) {}
 
-template <size_t N>
+  template <size_t N, typename S>
 struct client
 {
-  client(const mailbox_t<N>* inbox, mailbox_t<N>* outbox, page_t* buffer,
+  client(const mailbox_t<N>* inbox, mailbox_t<N>* outbox, page_t* buffer, S stepper,
          std::function<void(page_t*)> fill = fill_nop,
          std::function<void(page_t*)> use = use_nop)
 
-      : inbox(inbox), outbox(outbox), buffer(buffer), fill(fill), use(use)
+    : inbox(inbox), outbox(outbox), buffer(buffer), stepper(stepper), fill(fill), use(use)
   {
   }
 
@@ -68,11 +68,10 @@ struct client
   const mailbox_t<N>* inbox;
   mailbox_t<N>* outbox;
   page_t* buffer;
-
-  slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active;
-
+  S stepper;
   std::function<void(page_t*)> fill;
   std::function<void(page_t*)> use;
+  slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active;
 };
 }  // namespace hostrpc
 
