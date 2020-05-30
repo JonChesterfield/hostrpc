@@ -2,7 +2,7 @@
 
 CC="clang -std=c99 -Wall"
 CXX="clang++ -std=c++11 -Wall"
-FLAGS=""
+FLAGS="-pthread"
 LLC="llc"
 LINK="llvm-link"
 OPT="opt"
@@ -15,8 +15,5 @@ $CXX $FLAGS -O0 -g states.cpp -emit-llvm -c -o states.bc
 
 $CXX $FLAGS -O0 -g tests.cpp -emit-llvm -c -o tests.bc
 
-$CXX tests.bc states.bc catch.o -o states.exe
-
-# for i in *.ll; do $LLC $i; done
-time  ./states.exe
+$CXX $FLAGS tests.bc states.bc catch.o -o states.exe && time  ./states.exe
 

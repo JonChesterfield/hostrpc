@@ -2,6 +2,7 @@
 #define HOSTRPC_CLIENT_HPP_INCLUDED
 
 #include "common.hpp"
+#include <functional>
 
 // Intend to have call and service working across gcn and x86
 // The normal terminology is:

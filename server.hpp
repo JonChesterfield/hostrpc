@@ -6,13 +6,14 @@
 
 namespace hostrpc
 {
-  void operate_nop(page_t *) {}
+void operate_nop(page_t*) {}
 
-  template <size_t N>
+template <size_t N>
 struct server
 {
-  server(const mailbox_t<N>* inbox, mailbox_t<N>* outbox, page_t* buffer, std::function<void(page_t*)> operate = operate_nop)
-    : inbox(inbox), outbox(outbox), buffer(buffer), operate(operate)
+  server(const mailbox_t<N>* inbox, mailbox_t<N>* outbox, page_t* buffer,
+         std::function<void(page_t*)> operate = operate_nop)
+      : inbox(inbox), outbox(outbox), buffer(buffer), operate(operate)
   {
   }
 
@@ -25,10 +26,11 @@ struct server
 
   size_t find_and_claim_slot()  // or SIZE_MAX
   {
-    static_assert(inbox->words() == active.words(), "");
+    // static_assert(decltype(*inbox)::words() == decltype(active)::words(),
+    // "");
     for (uint64_t w = 0; w < inbox->words(); w++)
       {
-        uint64_t work_available = work_todo() & ~active.load_word(w);
+        uint64_t work_available = work_todo(w) & ~active.load_word(w);
 
         while (work_available != 0)
           {
@@ -40,13 +42,13 @@ struct server
             if (r)
               {
                 // got the slot, check the work is still available
-                if (detail::nthbitset64(work_todo(w)))
+                if (detail::nthbitset64(work_todo(w), idx))
                   {
                     // got lock on a slot with work to do
                     // said work is no longer available to another thread
 
                     assert(!detail::nthbitset64(
-                        work_todo() & ~active.load_word(w), idx));
+                        work_todo(w) & ~active.load_word(w), idx));
                     return slot;
                   }
               }
@@ -60,9 +62,8 @@ struct server
             // this is a potential optimisation - reduces trips through the loop
             // work_available &= inbox->load_word(w);
           }
-
-        return SIZE_MAX;
       }
+    return SIZE_MAX;
   }
 
   void rpc_handle()
@@ -80,19 +81,18 @@ struct server
 
     // wait for G0
     // this will change when supporting async transitions
-    while ((*inbox[slot] != 0))
+    while ((*inbox)[slot] != 0)
       ;
 
     outbox->release_slot(slot);
     active.release_slot(slot);
-    
   }
 
   const mailbox_t<N>* inbox;
   mailbox_t<N>* outbox;
   page_t* buffer;
   std::function<void(page_t*)> operate;
-  
+
   slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active;
 };
 
