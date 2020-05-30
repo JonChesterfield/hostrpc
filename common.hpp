@@ -146,11 +146,14 @@ struct slot_bitmap
       }
   }
 
-  // probably want a specialisation where the slot is required to be empty
-  // initially
-  bool claim_slot(size_t i);
+  // cas, true on success
+  bool try_claim_slot(size_t i);
 
-  void release_slot(size_t i);
+   // assumes slot available
+  void claim_slot(size_t i) { set_slot_given_already_clear(i);}
+
+  // assumes slot taken
+  void release_slot(size_t i) { clear_slot_given_already_set(i); }
 
   size_t find_slot()  // SIZE_MAX if none available
   {
@@ -173,6 +176,40 @@ struct slot_bitmap
   }
 
  private:
+  void clear_slot_given_already_set(size_t i)
+  {
+    assert(i < N);
+    size_t w = index_to_element(i);
+    uint64_t subindex = index_to_subindex(i);
+    assert(detail::nthbitset64(load_relaxed(w), subindex));
+
+    // and with everything other than the slot set
+    uint64_t mask = ~detail::setnthbit64(0, subindex);
+
+    uint64_t before =
+        __opencl_atomic_fetch_and(&data[w], mask, __ATOMIC_SEQ_CST,
+                                  __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+    (void)before;
+    assert(detail::nthbitset64(before, subindex));
+  }
+
+  void set_slot_given_already_clear(size_t i)
+  {
+    assert(i < N);
+    size_t w = index_to_element(i);
+    uint64_t subindex = index_to_subindex(i);
+    assert(!detail::nthbitset64(load_relaxed(w), subindex));
+
+    // or with only the slot set
+    uint64_t mask = detail::setnthbit64(0, subindex);
+
+    uint64_t before =
+        __opencl_atomic_fetch_or(&data[w], mask, __ATOMIC_SEQ_CST,
+                                 __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+    (void)before;
+    assert(!detail::nthbitset64(before, subindex));
+  }
+
   static uint64_t index_to_element(uint64_t x)
   {
     assert(x < size());
@@ -196,7 +233,7 @@ struct slot_bitmap
 };
 
 template <size_t N, size_t scope>
-bool slot_bitmap<N, scope>::claim_slot(size_t i)
+bool slot_bitmap<N, scope>::try_claim_slot(size_t i)
 {
   assert(i < N);
   size_t w = index_to_element(i);
@@ -216,6 +253,8 @@ bool slot_bitmap<N, scope>::claim_slot(size_t i)
         {
           return false;
         }
+
+      // If the bit is known zero, can use fetch_or to set it
 
       uint64_t compare = d;
       bool r = __opencl_atomic_compare_exchange_weak(
@@ -237,44 +276,6 @@ bool slot_bitmap<N, scope>::claim_slot(size_t i)
       d = proposed;  // docs not totally clear, but an updated copy of the
                      // word should be in one of the passed parameters. Might
                      // be in compare
-    }
-}
-
-template <size_t N, size_t scope>
-void slot_bitmap<N, scope>::release_slot(size_t i)
-{
-  // programming error if the slot is not set on entry
-  assert(i < N);
-  size_t w = index_to_element(i);
-  uint64_t subindex = index_to_subindex(i);
-
-  uint64_t d = load_relaxed(w);
-  _Atomic uint64_t* addr = &data[w];
-
-  for (;;)
-    {
-      uint64_t proposed = detail::clearnthbit64(d, subindex);
-      // error if set on entry
-      // cas should not return false if the write succeeded
-      assert(proposed != d);
-
-      uint64_t compare = d;
-
-      bool r = __opencl_atomic_compare_exchange_weak(
-          addr, &compare, proposed, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED,
-          __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-
-      if (r)
-        {
-          // success, it's all ours
-          return;
-        }
-
-      // cas failed. reasons:
-      // another slot in the same word changed
-      // spurious
-
-      d = proposed;
     }
 }
 

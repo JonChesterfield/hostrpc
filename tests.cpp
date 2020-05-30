@@ -12,14 +12,16 @@ TEST_CASE("Bitmap")
       for (size_t i = 0; i < b.size(); i++)
         {
           CHECK(!b[i]);
-          CHECK(b.claim_slot(i));
+          CHECK(b.try_claim_slot(i));
           CHECK(b[i]);
           b.release_slot(i);
           CHECK(!b[i]);
+          b.claim_slot(i);
+          CHECK(b[i]);
         }
   }
 
-  SECTION("find and claim each element")
+  SECTION("find and unconditionally claim each element")
   {
     hostrpc::slot_bitmap<128> b;
     for (size_t i = 0; i < b.size(); i++)
@@ -27,7 +29,22 @@ TEST_CASE("Bitmap")
         size_t e = b.find_slot();
         CHECK(e != SIZE_MAX);
         CHECK(!b[e]);
-        CHECK(b.claim_slot(e));
+        b.claim_slot(e);
+        CHECK(b[e]);
+      }
+
+    CHECK(b.find_slot() == SIZE_MAX);
+  }
+
+  SECTION("find and try claim each element")
+  {
+    hostrpc::slot_bitmap<128> b;
+    for (size_t i = 0; i < b.size(); i++)
+      {
+        size_t e = b.find_slot();
+        CHECK(e != SIZE_MAX);
+        CHECK(!b[e]);
+        CHECK(b.try_claim_slot(e));
         CHECK(b[e]);
       }
 
@@ -39,7 +56,7 @@ TEST_CASE("Bitmap")
     hostrpc::slot_bitmap<128> b;
     for (size_t i = 0; i < b.size(); i++)
       {
-        b.claim_slot(i);
+        b.try_claim_slot(i);
       }
 
     for (unsigned L : {0, 3, 63, 64, 65, 126, 127})
@@ -48,7 +65,11 @@ TEST_CASE("Bitmap")
         b.release_slot(L);
         CHECK(!b[L]);
         CHECK(b.find_slot() == L);
-        CHECK(b.claim_slot(L));
+        b.claim_slot(L);
+        CHECK(b[L]);
+        b.release_slot(L);
+        CHECK(!b[L]);
+        CHECK(b.try_claim_slot(L));
         CHECK(b[L]);
       }
   }
