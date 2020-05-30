@@ -2,14 +2,17 @@
 #define HOSTRPC_SERVER_HPP_INCLUDED
 
 #include "common.hpp"
+#include <functional>
 
 namespace hostrpc
 {
-template <size_t N>
+  void operate_nop(page_t *) {}
+
+  template <size_t N>
 struct server
 {
-  server(const mailbox_t<N>* inbox, mailbox_t<N>* outbox, page_t* buffer)
-      : inbox(inbox), outbox(outbox), buffer(buffer)
+  server(const mailbox_t<N>* inbox, mailbox_t<N>* outbox, page_t* buffer, std::function<void(page_t*)> operate = operate_nop)
+    : inbox(inbox), outbox(outbox), buffer(buffer), operate(operate)
   {
   }
 
@@ -25,8 +28,7 @@ struct server
     static_assert(inbox->words() == active.words(), "");
     for (uint64_t w = 0; w < inbox->words(); w++)
       {
-        uint64_t a = active.load_word(w);
-        uint64_t work_available = work_todo() & ~a;
+        uint64_t work_available = work_todo() & ~active.load_word(w);
 
         while (work_available != 0)
           {
@@ -63,12 +65,34 @@ struct server
       }
   }
 
-  void rpc_handle() {}
+  void rpc_handle()
+  {
+    size_t slot = find_and_claim_slot();
+    if (slot == SIZE_MAX)
+      {
+        return;
+      }
+
+    operate(&buffer[slot]);
+
+    // publish result
+    outbox->claim_slot(slot);
+
+    // wait for G0
+    // this will change when supporting async transitions
+    while ((*inbox[slot] != 0))
+      ;
+
+    outbox->release_slot(slot);
+    active.release_slot(slot);
+    
+  }
 
   const mailbox_t<N>* inbox;
   mailbox_t<N>* outbox;
   page_t* buffer;
-
+  std::function<void(page_t*)> operate;
+  
   slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active;
 };
 

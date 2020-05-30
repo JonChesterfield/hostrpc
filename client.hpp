@@ -9,11 +9,17 @@
 
 namespace hostrpc
 {
+void fill_nop(page_t*) {}
+void use_nop(page_t*) {}
+
 template <size_t N>
 struct client
 {
-  client(const mailbox_t<N>* inbox, mailbox_t<N>* outbox, page_t* buffer)
-      : inbox(inbox), outbox(outbox), buffer(buffer)
+  client(const mailbox_t<N>* inbox, mailbox_t<N>* outbox, page_t* buffer,
+         std::function<void(page_t*)> fill = fill_nop,
+         std::function<void(page_t*)> use = use_nop)
+
+      : inbox(inbox), outbox(outbox), buffer(buffer), fill(fill), use(use)
   {
   }
 
@@ -22,12 +28,12 @@ struct client
     for (;;)
       {
         size_t slot = active.try_claim_any_empty_slot();
-        if (slot != SIZE_MAX) { return slot; }
+        if (slot != SIZE_MAX)
+          {
+            return slot;
+          }
       }
   }
-
-  void fill_buffer(page_t*) {}
-  void use_buffer(page_t*) {}
 
   void rpc_invoke()
   {
@@ -35,7 +41,7 @@ struct client
     size_t slot = spin_until_claimed_slot();
 
     // wave_populate
-    fill_buffer(&buffer[slot]);
+    fill(&buffer[slot]);
 
     // wave_publish work
     outbox->claim_slot(slot);
@@ -45,7 +51,7 @@ struct client
       ;
 
     // recieve
-    use_buffer(&buffer[slot]);
+    use(&buffer[slot]);
 
     // wave publish done
     outbox->release_slot(slot);
@@ -63,6 +69,9 @@ struct client
   page_t* buffer;
 
   slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active;
+
+  std::function<void(page_t*)> fill;
+  std::function<void(page_t*)> use;
 };
 }  // namespace hostrpc
 
