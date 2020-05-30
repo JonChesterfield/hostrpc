@@ -342,9 +342,9 @@ void update_cache(const mailbox_t<N>* mbox, cache_t<N>* cache)
     }
 }
 
-class nop_stepper
+struct nop_stepper
 {
-  void operator()() {}
+  void operator()(int) {}
 };
   
   

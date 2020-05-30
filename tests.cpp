@@ -3,7 +3,13 @@
 #include "client.hpp"
 #include "server.hpp"
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <thread>
+
+#include <unistd.h>
 
 TEST_CASE("Bitmap")
 {
@@ -94,8 +100,30 @@ struct safe_thread
   }
   ~safe_thread() { t.join(); }
 
+  void step()
+  {
+    while (steps_left == 0)
+      {
+        // Don't burn all the cpu waiting
+        {
+          std::unique_lock<std::mutex> lk(m);
+          cv.wait_for(lk, std::chrono::milliseconds(10));
+          lk.unlock();
+        }
+      }
+
+    steps_left--;
+    return;
+  }
+
+  void run(uint64_t x) { steps_left += x; }
+
  private:
+  std::atomic<std::uint64_t> steps_left{0};
   std::thread t;
+
+  std::mutex m;
+  std::condition_variable cv;
 };
 
 TEST_CASE("set up single word system")
@@ -117,9 +145,14 @@ TEST_CASE("set up single word system")
   bool run = true;
 
   {
-    safe_thread cl([&]() {
-      auto cl = client<64, nop_stepper>(&recv, &send, &buffer[0], nop_stepper{},
-                                        fill, use);
+    safe_thread cl_thrd([&]() {
+      auto st = [&](int line) {
+        printf("client.hpp:%d: step\n", line);
+        cl_thrd.step();
+      };
+
+      auto cl =
+          client<64, decltype(st)>(&recv, &send, &buffer[0], st, fill, use);
       printf("Built a client\n");
 
       for (int x = 0; x < 3; x++)
@@ -133,24 +166,38 @@ TEST_CASE("set up single word system")
         }
     });
 
-    safe_thread sv([&]() {
-      auto sv = server<64, nop_stepper>(&send, &recv, &buffer[0], nop_stepper{},
-                                        operate);
+    safe_thread sv_thrd([&]() {
+      auto st = [&](int line) {
+        printf("server.hpp:%d: step\n", line);
+        sv_thrd.step();
+      };
+
+      auto sv = server<64, decltype(st)>(&send, &recv, &buffer[0], st, operate);
 
       printf("Built a server\n");
 
       for (int x = 0; x < 3; x++)
         {
           sv.rpc_handle();
-
+          printf("Server handled req %d\n", x);
           if (!run)
             {
               return;
             }
         }
+
+      printf("Server finished\n");
     });
 
     printf("Threads spawned and running\n");
+
+    for (unsigned i = 0; i < 500; i++)
+      {
+        cl_thrd.run(1);
+        sv_thrd.run(1);
+        usleep(100);
+      }
+
     run = false;
   }
 

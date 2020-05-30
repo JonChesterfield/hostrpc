@@ -12,9 +12,12 @@ template <size_t N, typename S>
 struct server
 {
   server(const mailbox_t<N>* inbox, mailbox_t<N>* outbox, page_t* buffer,
-         S stepper,
-         std::function<void(page_t*)> operate = operate_nop)
-    : inbox(inbox), outbox(outbox), buffer(buffer), stepper(stepper), operate(operate)
+         S step, std::function<void(page_t*)> operate = operate_nop)
+      : inbox(inbox),
+        outbox(outbox),
+        buffer(buffer),
+        step(step),
+        operate(operate)
   {
   }
 
@@ -31,15 +34,19 @@ struct server
     // "");
     for (uint64_t w = 0; w < inbox->words(); w++)
       {
+        step(__LINE__);
         uint64_t work_available = work_todo(w) & ~active.load_word(w);
 
         while (work_available != 0)
           {
+            step(__LINE__);
             uint64_t idx = detail::ctz64(work_available);
             assert(detail::nthbitset64(work_available, idx));
             uint64_t slot = 64 * w + idx;
             // attempt to get that slot
+            step(__LINE__);
             bool r = active.try_claim_empty_slot(slot);
+            step(__LINE__);
             if (r)
               {
                 // got the slot, check the work is still available
@@ -50,6 +57,7 @@ struct server
 
                     assert(!detail::nthbitset64(
                         work_todo(w) & ~active.load_word(w), idx));
+                    step(__LINE__);
                     return slot;
                   }
               }
@@ -69,33 +77,41 @@ struct server
 
   void rpc_handle()
   {
-    size_t slot = find_and_claim_slot();
-    if (slot == SIZE_MAX)
+    size_t slot = SIZE_MAX;
+    while (slot == SIZE_MAX)
       {
-        return;
+        step(__LINE__);
+        slot = find_and_claim_slot();
       }
+    step(__LINE__);
 
     operate(&buffer[slot]);
+    step(__LINE__);
 
     // publish result
     outbox->claim_slot(slot);
 
+    step(__LINE__);
     // wait for G0
     // this will change when supporting async transitions
     while ((*inbox)[slot] != 0)
-      ;
+      {
+        step(__LINE__);
+      };
 
+    step(__LINE__);
     outbox->release_slot(slot);
+    step(__LINE__);
     active.release_slot(slot);
+    step(__LINE__);
   }
 
   const mailbox_t<N>* inbox;
   mailbox_t<N>* outbox;
   page_t* buffer;
-  S stepper;
+  S step;
   std::function<void(page_t*)> operate;
   slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active;
-
 };
 
 }  // namespace hostrpc
