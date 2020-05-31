@@ -11,7 +11,7 @@ void operate_nop(page_t*) {}
 
 enum class server_state : uint8_t
 {
-  // bits inbox outbox active
+  // inbox outbox active
   idle_server = 0b000,
   idle_thread = 0b001,
   garbage_available = 0b010,
