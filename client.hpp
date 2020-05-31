@@ -3,6 +3,7 @@
 
 #include "common.hpp"
 #include <functional>
+#include <unistd.h>
 
 // Intend to have call and service working across gcn and x86
 // The normal terminology is:
@@ -58,9 +59,10 @@ struct client
     outbox->claim_slot(slot);
     step(__LINE__);
 
-    // wait for H1
+    // wait for H1, result available
     while ((*inbox)[slot] != 1)
       {
+        usleep(100);
       }
 
     step(__LINE__);
@@ -72,9 +74,10 @@ struct client
     outbox->release_slot(slot);
     step(__LINE__);
 
-    // wait for H0
+    // wait for H0, result garbage collected
     while ((*inbox)[slot] != 0)
       {
+        usleep(100);
       }
 
     // wave release slot

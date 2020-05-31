@@ -191,7 +191,7 @@ TEST_CASE("set up single word system")
 
     printf("Threads spawned and running\n");
 
-    for (unsigned i = 0; i < 500; i++)
+    for (unsigned i = 0; i < 1000; i++)
       {
         cl_thrd.run(1);
         sv_thrd.run(1);

@@ -3,6 +3,7 @@
 
 #include "common.hpp"
 #include <functional>
+#include <unistd.h>
 
 namespace hostrpc
 {
@@ -65,6 +66,14 @@ struct server
 
   void transition(size_t slot, server_state to) { state[slot] = to; }
 
+  void dump_word(uint64_t word)
+  {
+    uint64_t i = inbox->load_word(word);
+    uint64_t o = outbox->load_word(word);
+    uint64_t a = active.load_word(word);
+    printf("%lu %lu %lu\n", i, o, a);
+  }
+
   uint64_t work_todo(uint64_t word)
   {
     uint64_t i = inbox->load_word(word);
@@ -72,46 +81,43 @@ struct server
     return i & ~o;
   }
 
-  size_t find_and_claim_slot()  // or SIZE_MAX
+  size_t find_and_claim_slot(uint64_t w)  // or SIZE_MAX
   {
-    // static_assert(decltype(*inbox)::words() == decltype(active)::words(),
-    // "");
-    for (uint64_t w = 0; w < inbox->words(); w++)
+    uint64_t work_available = work_todo(w) & ~active.load_word(w);
+
+    while (work_available != 0)
       {
-        uint64_t work_available = work_todo(w) & ~active.load_word(w);
+        uint64_t idx = detail::ctz64(work_available);
+        assert(detail::nthbitset64(work_available, idx));
+        uint64_t slot = 64 * w + idx;
+        // attempt to get that slot
 
-        while (work_available != 0)
+        bool r = active.try_claim_empty_slot(slot);
+
+        if (r)
           {
-            uint64_t idx = detail::ctz64(work_available);
-            assert(detail::nthbitset64(work_available, idx));
-            uint64_t slot = 64 * w + idx;
-            // attempt to get that slot
-
-            bool r = active.try_claim_empty_slot(slot);
-            if (r)
+            // got the slot, check the work is still available
+            if (detail::nthbitset64(work_todo(w), idx))
               {
-                // got the slot, check the work is still available
-                if (detail::nthbitset64(work_todo(w), idx))
-                  {
-                    // got lock on a slot with work to do
-                    // said work is no longer available to another thread
+                // got lock on a slot with work to do
+                // said work is no longer available to another thread
 
-                    assert(!detail::nthbitset64(
-                        work_todo(w) & ~active.load_word(w), idx));
-                    step(__LINE__);
-                    return slot;
-                  }
+                assert(!detail::nthbitset64(work_todo(w) & ~active.load_word(w),
+                                            idx));
+                step(__LINE__);
+
+                return slot;
               }
-
-            // cas failed, or lost race, assume something else claimed it
-            work_available = detail::clearnthbit64(work_available, idx);
-
-            // some things which were availabe in the inbox won't be anymore
-            // only clear those that are no longer present, don't insert ones
-            // that have just arrived, in order to preserve termination
-            // this is a potential optimisation - reduces trips through the loop
-            // work_available &= inbox->load_word(w);
           }
+
+        // cas failed, or lost race, assume something else claimed it
+        work_available = detail::clearnthbit64(work_available, idx);
+
+        // some things which were availabe in the inbox won't be anymore
+        // only clear those that are no longer present, don't insert ones
+        // that have just arrived, in order to preserve termination
+        // this is a potential optimisation - reduces trips through the loop
+        // work_available &= inbox->load_word(w);
       }
     return SIZE_MAX;
   }
@@ -153,7 +159,7 @@ struct server
 
       // clear locked bits in outbox
       uint64_t before = outbox->fetch_and(w, ~garbage_and_locked);
-      assert(before == (~i & o & ~locks_held));  // may be the wrong value
+      // assert(before == (~i & o & ~locks_held));  // may be the wrong value
 
       // drop locks
       active.fetch_and(w, ~locks_held);
@@ -167,38 +173,56 @@ struct server
     // todo: constexpr, static assert matches outbox and active
     return inbox->words();
   }
+
   void rpc_handle()
   {
+    printf("Server rpc_handle\n");
     for (uint64_t w = 0; w < words(); w++)
       {
-        try_garbage_collect_word(w);
+        // printf("attempt to gc word[%lu]\n", w);
+        bool r = try_garbage_collect_word(w);
+        // printf("gc word[%lu]: %u\n", w, r);
       }
-    
+
+    step(__LINE__);
+
+    // spinning here got stuck
+    // failure mode was 0 1 0, so server thought
+    // there was garbage
     size_t slot = SIZE_MAX;
+
     while (slot == SIZE_MAX)
       {
-        slot = find_and_claim_slot();
+        for (uint64_t w = 0; w < inbox->words(); w++)
+          {
+            // if there is no inbound work, it can be because the slots are
+            // all filled with garbage on the server side
+            try_garbage_collect_word(w);
+            slot = find_and_claim_slot(w);
+          }
       }
+    step(__LINE__);
+
+    printf("got slot %lu\n", slot);
+    assert((*inbox)[slot] == 1);
     step(__LINE__);
 
     operate(&buffer[slot]);
     step(__LINE__);
 
     // publish result
+    assert((*inbox)[slot] == 1);
     outbox->claim_slot(slot);
 
     step(__LINE__);
-    // wait for G0
-    // this will change when supporting async transitions
-    while ((*inbox)[slot] != 0)
-      {
-      }
+
+    // can wait for G0 and then drop outbox, active slots
+    // but that suspending a server thread until the client
+    // drops the data. instead we can drop the lock and garbage collect later
+    active.release_slot(slot);
 
     step(__LINE__);
-    outbox->release_slot(slot);
-    step(__LINE__);
-    active.release_slot(slot);
-    step(__LINE__);
+    // leaves outbox live
   }
 
   const mailbox_t<N>* inbox;
@@ -210,5 +234,4 @@ struct server
 };  // namespace hostrpc
 
 }  // namespace hostrpc
-
 #endif
