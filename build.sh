@@ -1,7 +1,7 @@
 #!/bin/bash
 
-CC="clang -std=c99 -Wall"
-CXX="clang++ -std=c++11 -Wall"
+CC="clang -std=c99 -Wall -Wextra"
+CXX="clang++ -std=c++11 -Wall -Wextra"
 FLAGS="-pthread"
 LLC="llc"
 LINK="llvm-link"

@@ -8,6 +8,42 @@ namespace hostrpc
 {
 void operate_nop(page_t*) {}
 
+enum class server_state : uint8_t
+{
+  // bits inbox outbox active
+  idle_server = 0b000,
+  idle_thread = 0b001,
+  garbage_available = 0b010,
+  garbage_with_thread = 0b011,
+  work_available = 0b100,
+  work_with_thread = 0b101,
+  result_available = 0b110,
+  result_with_thread = 0b111,
+};
+
+inline server_state operator|(server_state lhs, server_state rhs)
+{
+  using T = std::underlying_type<server_state>::type;
+  return static_cast<server_state>(static_cast<T>(lhs) | static_cast<T>(rhs));
+}
+
+inline server_state operator&(server_state lhs, server_state rhs)
+{
+  using T = std::underlying_type<server_state>::type;
+  return static_cast<server_state>(static_cast<T>(lhs) & static_cast<T>(rhs));
+}
+
+inline server_state& operator|=(server_state& lhs, server_state rhs)
+{
+  lhs = lhs | rhs;
+  return lhs;
+}
+inline server_state& operator&=(server_state& lhs, server_state rhs)
+{
+  lhs = lhs & rhs;
+  return lhs;
+}
+
 template <size_t N, typename S>
 struct server
 {
@@ -19,7 +55,15 @@ struct server
         step(step),
         operate(operate)
   {
+    for (size_t i = 0; i < N; i++)
+      {
+        assert(state[i] == server_state::idle_server);
+      }
   }
+
+  server_state state[N] = {};
+
+  void transition(size_t slot, server_state to) { state[slot] = to; }
 
   uint64_t work_todo(uint64_t word)
   {
@@ -42,9 +86,21 @@ struct server
             assert(detail::nthbitset64(work_available, idx));
             uint64_t slot = 64 * w + idx;
             // attempt to get that slot
+
+            if (state[slot] == server_state::idle_server)
+              {
+                // Just discovered there is work available
+                transition(slot, server_state::work_available);
+              }
+
+            // assert(state[slot] == server_state::work_available);
             bool r = active.try_claim_empty_slot(slot);
             if (r)
               {
+                state[slot] |= static_cast<server_state>(0b001);
+                assert(state[slot] == server_state::work_with_thread ||
+                       state[slot] == server_state::idle_thread);
+
                 // got the slot, check the work is still available
                 if (detail::nthbitset64(work_todo(w), idx))
                   {
