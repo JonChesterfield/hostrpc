@@ -20,10 +20,11 @@ enum class client_state : uint8_t
   idle_client = 0b000,
   active_thread = 0b001,
   work_available = 0b011,
-  unknownA = 0b010,  // work posted, nothing returned yet, nothing waiting
-  unknownB = 0b100,  // server garbage, no local thread
-  garbage_with_thread = 0b101,  // server garbage, with local thread
-  unknownC = 0b110,             // work posted, result returned, nothing waiting
+  unknownA = 0b010,  // Invalid? Would mean work posted, nothing returned yet,
+                     // nothing waiting
+  unknownB = 0b100,  // waiting for server to garbage collect,, no local thread
+  garbage_with_thread = 0b101,  // transient state, 0b100 with local thread
+  unknownC = 0b110,             // async call, server
   result_available = 0b111,     // thread waiting
 };
 
@@ -82,7 +83,7 @@ struct client
   size_t find_candidate_client_slot(uint64_t w)
   {
     // find a slot which is currently available
-    
+
     // active must be clear (no other thread using it)
     // outbox must be clear (no data in use)
     // server must also be clear (otherwise waiting on GC)
@@ -121,15 +122,13 @@ struct client
         slot = find_candidate_client_slot();
         if (slot != SIZE_MAX)
           {
-            if ( active.try_claim_empty_slot(slot))
+            if (active.try_claim_empty_slot(slot))
               {
                 break;
               }
           }
       }
 
-    
-    
     // 0b001
     step(__LINE__);
 
@@ -144,6 +143,7 @@ struct client
     step(__LINE__);
 
     // wait for H1, result available
+    // is this necessary for async?
     while ((*inbox)[slot] != 1)
       {
         usleep(100);
@@ -151,7 +151,7 @@ struct client
     // 0b111
 
     step(__LINE__);
-    // recieve
+    // recieve, nop if async
     use(&buffer[slot]);
 
     step(__LINE__);
