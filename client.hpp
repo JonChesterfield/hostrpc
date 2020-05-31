@@ -33,7 +33,6 @@ struct client
   {
     for (;;)
       {
-        step(__LINE__);
         size_t slot = active.try_claim_any_empty_slot();
         if (slot != SIZE_MAX)
           {
@@ -62,7 +61,6 @@ struct client
     // wait for H1
     while ((*inbox)[slot] != 1)
       {
-        step(__LINE__);
       }
 
     step(__LINE__);
@@ -77,7 +75,6 @@ struct client
     // wait for H0
     while ((*inbox)[slot] != 0)
       {
-        step(__LINE__);
       }
 
     // wave release slot

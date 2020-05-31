@@ -34,19 +34,15 @@ struct server
     // "");
     for (uint64_t w = 0; w < inbox->words(); w++)
       {
-        step(__LINE__);
         uint64_t work_available = work_todo(w) & ~active.load_word(w);
 
         while (work_available != 0)
           {
-            step(__LINE__);
             uint64_t idx = detail::ctz64(work_available);
             assert(detail::nthbitset64(work_available, idx));
             uint64_t slot = 64 * w + idx;
             // attempt to get that slot
-            step(__LINE__);
             bool r = active.try_claim_empty_slot(slot);
-            step(__LINE__);
             if (r)
               {
                 // got the slot, check the work is still available
@@ -80,7 +76,6 @@ struct server
     size_t slot = SIZE_MAX;
     while (slot == SIZE_MAX)
       {
-        step(__LINE__);
         slot = find_and_claim_slot();
       }
     step(__LINE__);
@@ -96,8 +91,7 @@ struct server
     // this will change when supporting async transitions
     while ((*inbox)[slot] != 0)
       {
-        step(__LINE__);
-      };
+      }
 
     step(__LINE__);
     outbox->release_slot(slot);
