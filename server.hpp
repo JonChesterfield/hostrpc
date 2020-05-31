@@ -111,6 +111,7 @@ struct server
           }
 
         // cas failed, or lost race, assume something else claimed it
+        assert(detail::nthbitset64(work_available, idx));
         work_available = detail::clearnthbit64(work_available, idx);
 
         // some things which were availabe in the inbox won't be anymore
@@ -177,28 +178,32 @@ struct server
   void rpc_handle()
   {
     printf("Server rpc_handle\n");
-    for (uint64_t w = 0; w < words(); w++)
-      {
-        // printf("attempt to gc word[%lu]\n", w);
-        bool r = try_garbage_collect_word(w);
-        // printf("gc word[%lu]: %u\n", w, r);
-      }
 
     step(__LINE__);
 
-    // spinning here got stuck
-    // failure mode was 0 1 0, so server thought
-    // there was garbage
-    size_t slot = SIZE_MAX;
+    // garbage collection should be fairly cheap when there is none,
+    // and the presence of any occupied slots can starve the client
+    for (uint64_t w = 0; w < inbox->words(); w++)
+      {
+        try_garbage_collect_word(w);
+      }
 
+    size_t slot = SIZE_MAX;
     while (slot == SIZE_MAX)
       {
+        // TODO: probably better to give up if there's no work to do instead of
+        // keep waiting for some. That means this call always completes in
+        // bounded time, after handling zero or one call
         for (uint64_t w = 0; w < inbox->words(); w++)
           {
             // if there is no inbound work, it can be because the slots are
             // all filled with garbage on the server side
             try_garbage_collect_word(w);
             slot = find_and_claim_slot(w);
+            if (slot != SIZE_MAX)
+              {
+                break;
+              }
           }
       }
     step(__LINE__);

@@ -74,7 +74,9 @@ struct client
     outbox->release_slot(slot);
     step(__LINE__);
 
-    // wait for H0, result garbage collected
+    // wait for H0, result has been garbage collected by the host
+    // todo: want to get rid of this busy spin in favour of deferred collection
+    // I think that will need an extra client side bitmap
     while ((*inbox)[slot] != 0)
       {
         usleep(100);
