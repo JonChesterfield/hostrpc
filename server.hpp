@@ -116,41 +116,64 @@ struct server
     return SIZE_MAX;
   }
 
-  void rpc_handle_in_word(uint64_t w)
+  // return true if no garbage (briefly) during call
+  bool try_garbage_collect_word(uint64_t w)
   {
     uint64_t i = inbox->load_word(w);
-    uint64_t o = outbox->load(w);
+    uint64_t o = outbox->load_word(w);
     uint64_t a = active.load_word(w);
 
-    uint64_t garbage_available =
-      ~i & o & ~a;
+    uint64_t garbage_available = ~i & o & ~a;
 
+    if (garbage_available == 0)
+      {
+        return true;
+      }
 
     // Try to claim the locks on each garbage slot, if there is any
-
-    if (garbage_available != 0)
-      {
-        uint64_t proposed = garbage_available | a;
-        uint64_t result;
-        bool got = active.cas(w, a, proposed, &result);
-        if (!got) {
-          // then a has probably changed, update and try again
-          a = result;
-          garbage_available=          ~i & o & ~a;
-          continue;
+    {
+      // propsed set of locks is the current set and the ones we're claiming
+      assert((garbage_available & a) == 0);  // disjoint
+      uint64_t proposed = garbage_available | a;
+      uint64_t result;
+      bool got = active.cas(w, a, proposed, &result);
+      if (!got)
+        {
+          // lost the cas
+          return false;
         }
 
-        // Got however many locks were requested
-        // Garbage is cleaned up by ...
-      }
-    
-    uint64_t work_available = i & ~o & ~a;
-    
-    
+      uint64_t locks_held = garbage_available;
+      // Some of the slots may have already been garbage collected
+      // in which case some of the input may be work available again
+      i = inbox->load_word(w);
+      o = outbox->load_word(w);
+
+      uint64_t garbage_and_locked = ~i & o & locks_held;
+
+      // clear locked bits in outbox
+      uint64_t before = outbox->fetch_and(w, ~garbage_and_locked);
+      assert(before == (~i & o & ~locks_held));  // may be the wrong value
+
+      // drop locks
+      active.fetch_and(w, ~locks_held);
+
+      return true;
+    }
   }
-  
+
+  size_t words()
+  {
+    // todo: constexpr, static assert matches outbox and active
+    return inbox->words();
+  }
   void rpc_handle()
   {
+    for (uint64_t w = 0; w < words(); w++)
+      {
+        try_garbage_collect_word(w);
+      }
+    
     size_t slot = SIZE_MAX;
     while (slot == SIZE_MAX)
       {
@@ -184,7 +207,7 @@ struct server
   S step;
   std::function<void(page_t*)> operate;
   slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active;
-};
+};  // namespace hostrpc
 
 }  // namespace hostrpc
 

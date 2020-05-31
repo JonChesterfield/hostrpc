@@ -133,8 +133,8 @@ struct slot_bitmap
   constexpr slot_bitmap() = default;
 
   static constexpr size_t size() { return N; }
-  static constexpr size_t words() { return N/64;}
-  
+  static constexpr size_t words() { return N / 64; }
+
   bool operator[](size_t i) const
   {
     size_t w = index_to_element(i);
@@ -164,9 +164,6 @@ struct slot_bitmap
   // cas, true on success
   bool try_claim_empty_slot(size_t i);
 
-
-
-
   size_t try_claim_any_empty_slot()
   {
     size_t slot = find_empty_slot();
@@ -180,27 +177,18 @@ struct slot_bitmap
     return SIZE_MAX;
   }
 
-
   // not yet implemented, may be able to achieve the same
   // effect by toggling 0/1
 
-  bool try_claim_full_slot(size_t)
-  {
-    return false;
-  }
-  size_t try_claim_any_full_slot()
-  {
-    return SIZE_MAX;
-  }
+  bool try_claim_full_slot(size_t) { return false; }
+  size_t try_claim_any_full_slot() { return SIZE_MAX; }
   size_t find_full_slot() { return SIZE_MAX; }
 
-  
   // assumes slot available
   void claim_slot(size_t i) { set_slot_given_already_clear(i); }
 
   // assumes slot taken
   void release_slot(size_t i) { clear_slot_given_already_set(i); }
-
 
   size_t find_empty_slot()  // SIZE_MAX if none available
   {
@@ -230,21 +218,36 @@ struct slot_bitmap
                                 __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
   }
 
-
-  bool cas(uint64_t element, uint64_t expect, uint64_t replace, uint64_t * loaded)
+  bool cas(uint64_t element, uint64_t expect, uint64_t replace,
+           uint64_t* loaded)
   {
-    _Atomic uint64_t * addr = &data[element];
+    _Atomic uint64_t* addr = &data[element];
     bool r = __opencl_atomic_compare_exchange_weak(
-                                                   addr, &expect, replace, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED,
-                                                   __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+        addr, &expect, replace, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED,
+        __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
 
     // if cas succeeded, the bits in memory matched what was expected
     // if it failed, the above call wrote the bits found in memoru into expect
     *loaded = expect;
-      return r;
+    return r;
   }
-  
-private:
+
+  // returns value from before the and/or
+  uint64_t fetch_and(uint64_t element, uint64_t mask)
+  {
+    _Atomic uint64_t* addr = &data[element];
+    return __opencl_atomic_fetch_and(addr, mask, __ATOMIC_SEQ_CST,
+                                     __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+  }
+
+  uint64_t fetch_or(uint64_t element, uint64_t mask)
+  {
+    _Atomic uint64_t* addr = &data[element];
+    return __opencl_atomic_fetch_or(addr, mask, __ATOMIC_SEQ_CST,
+                                    __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+  }
+
+ private:
   void clear_slot_given_already_set(size_t i)
   {
     assert(i < N);
@@ -255,9 +258,7 @@ private:
     // and with everything other than the slot set
     uint64_t mask = ~detail::setnthbit64(0, subindex);
 
-    uint64_t before =
-        __opencl_atomic_fetch_and(&data[w], mask, __ATOMIC_SEQ_CST,
-                                  __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+    uint64_t before = fetch_and(w, mask);
     (void)before;
     assert(detail::nthbitset64(before, subindex));
   }
@@ -272,9 +273,7 @@ private:
     // or with only the slot set
     uint64_t mask = detail::setnthbit64(0, subindex);
 
-    uint64_t before =
-        __opencl_atomic_fetch_or(&data[w], mask, __ATOMIC_SEQ_CST,
-                                 __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+    uint64_t before = fetch_or(w, mask);
     (void)before;
     assert(!detail::nthbitset64(before, subindex));
   }
@@ -356,8 +355,7 @@ struct nop_stepper
 {
   void operator()(int) {}
 };
-  
-  
+
 }  // namespace hostrpc
 
 #endif
