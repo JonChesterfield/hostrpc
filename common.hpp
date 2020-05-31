@@ -231,6 +231,19 @@ struct slot_bitmap
   }
 
 
+  bool cas(uint64_t element, uint64_t expect, uint64_t replace, uint64_t * loaded)
+  {
+    _Atomic uint64_t * addr = &data[element];
+    bool r = __opencl_atomic_compare_exchange_weak(
+                                                   addr, &expect, replace, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED,
+                                                   __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+
+    // if cas succeeded, the bits in memory matched what was expected
+    // if it failed, the above call wrote the bits found in memoru into expect
+    *loaded = expect;
+      return r;
+  }
+  
 private:
   void clear_slot_given_already_set(size_t i)
   {
@@ -291,7 +304,6 @@ bool slot_bitmap<N, scope>::try_claim_empty_slot(size_t i)
   uint64_t subindex = index_to_subindex(i);
 
   uint64_t d = load_word(w);
-  _Atomic uint64_t* addr = &data[w];
 
   for (;;)
     {
@@ -308,9 +320,7 @@ bool slot_bitmap<N, scope>::try_claim_empty_slot(size_t i)
       // If the bit is known zero, can use fetch_or to set it
 
       uint64_t compare = d;
-      bool r = __opencl_atomic_compare_exchange_weak(
-          addr, &compare, proposed, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED,
-          __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+      bool r = cas(w, compare, proposed, &compare);
 
       if (r)
         {

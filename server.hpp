@@ -87,20 +87,9 @@ struct server
             uint64_t slot = 64 * w + idx;
             // attempt to get that slot
 
-            if (state[slot] == server_state::idle_server)
-              {
-                // Just discovered there is work available
-                transition(slot, server_state::work_available);
-              }
-
-            // assert(state[slot] == server_state::work_available);
             bool r = active.try_claim_empty_slot(slot);
             if (r)
               {
-                state[slot] |= static_cast<server_state>(0b001);
-                assert(state[slot] == server_state::work_with_thread ||
-                       state[slot] == server_state::idle_thread);
-
                 // got the slot, check the work is still available
                 if (detail::nthbitset64(work_todo(w), idx))
                   {
@@ -127,6 +116,39 @@ struct server
     return SIZE_MAX;
   }
 
+  void rpc_handle_in_word(uint64_t w)
+  {
+    uint64_t i = inbox->load_word(w);
+    uint64_t o = outbox->load(w);
+    uint64_t a = active.load_word(w);
+
+    uint64_t garbage_available =
+      ~i & o & ~a;
+
+
+    // Try to claim the locks on each garbage slot, if there is any
+
+    if (garbage_available != 0)
+      {
+        uint64_t proposed = garbage_available | a;
+        uint64_t result;
+        bool got = active.cas(w, a, proposed, &result);
+        if (!got) {
+          // then a has probably changed, update and try again
+          a = result;
+          garbage_available=          ~i & o & ~a;
+          continue;
+        }
+
+        // Got however many locks were requested
+        // Garbage is cleaned up by ...
+      }
+    
+    uint64_t work_available = i & ~o & ~a;
+    
+    
+  }
+  
   void rpc_handle()
   {
     size_t slot = SIZE_MAX;
