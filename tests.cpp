@@ -102,6 +102,11 @@ struct safe_thread
 
   void step()
   {
+    if (steps_left == UINT64_MAX)
+      {
+        // Disable stepping
+        return;
+      }
     while (steps_left == 0)
       {
         // Don't burn all the cpu waiting
@@ -152,8 +157,7 @@ TEST_CASE("set up single word system")
   mailbox_t<64> recv;
   page_t buffer[64];
 
-  bool run = true;
-
+  const uint64_t calls_planned = 1024;
   std::atomic<uint64_t> calls_launched(0);
   std::atomic<uint64_t> calls_handled(0);
 
@@ -170,18 +174,16 @@ TEST_CASE("set up single word system")
 
       auto cl =
           client<64, decltype(st)>(&recv, &send, &buffer[0], st, fill, use);
-      printf("Built a client\n");
 
-      for (int x = 0; x < 16; x++)
+      while (calls_launched < calls_planned)
         {
           if (cl.rpc_invoke(false))
             {
               calls_launched++;
             }
-
-          if (!run)
+          if (cl.rpc_invoke(true))
             {
-              return;
+              calls_launched++;
             }
         }
     });
@@ -196,43 +198,55 @@ TEST_CASE("set up single word system")
       };
 
       auto sv = server<64, decltype(st)>(&send, &recv, &buffer[0], st, operate);
-
-      printf("Built a server\n");
-
       for (;;)
         {
           if (sv.rpc_handle())
             {
               calls_handled++;
             }
-          if (!run)
+          if (calls_handled >= calls_planned)
             {
               return;
             }
         }
-
-      printf("Server finished\n");
     });
 
     printf("Threads spawned and running\n");
 
-    for (unsigned i = 0; i < 200; i++)
+    if (1)
       {
-        cl_thrd.run(1);
-        sv_thrd.run(1);
-        usleep(100);
+        cl_thrd.run(UINT64_MAX);
+        sv_thrd.run(UINT64_MAX);
+      }
+    else
+      {
+        for (unsigned i = 0; i < 20000; i++)
+          {
+            cl_thrd.run(1);
+            sv_thrd.run(1);
+            usleep(100);
+          }
       }
 
-    printf("Setting run to false\n");
-    while (calls_launched == 0)
-      ;
+    {
+      uint64_t l = (uint64_t)calls_launched;
+      uint64_t h = (uint64_t)calls_handled;
+      do
+        {
+          uint64_t nl = (uint64_t)calls_launched;
+          uint64_t nh = (uint64_t)calls_handled;
 
-    do
-      {
-        printf("%lu launched, %lu handled\n", (uint64_t)calls_launched,
-               (uint64_t)calls_handled);
-      }
-    while (calls_launched != calls_handled);
-    run = false;
+          if (nl != l || nh != h)
+            {
+              printf("%lu launched, %lu handled\n", nl, nh);
+              l = nl;
+              h = nh;
+            }
+
+          usleep(100000);
+        }
+      while ((calls_launched != calls_handled) ||
+             (calls_launched != calls_planned));
+    }
   }
 }

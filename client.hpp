@@ -158,11 +158,24 @@ void  dump_state(uint64_t slot)
     return try_garbage_collect_word<N, false>(inbox, outbox, &active, w);
   }
 
+  void dump_word(uint64_t word)
+  {
+    uint64_t i = inbox->load_word(word);
+    uint64_t o = outbox->load_word(word);
+    uint64_t a = active.load_word(word);
+    printf("%lu %lu %lu\n", i, o, a);
+  }
+
+  
   // Returns true if it successfully launched the task
 bool rpc_invoke(bool have_continuation)
   {
     step(__LINE__);
 
+    // 0b111 is posted request, waited for it, got it
+    // 0b110 is posted request, nothing waited, got one
+    // 0b101 is got a result, don't need it, only spun up a thread for cleanup
+    // 0b100 is got a result, don't need it
     for (uint64_t w = 0; w < inbox->words(); w++)
       {
         try_garbage_collect_word_client(w);
@@ -191,6 +204,10 @@ bool rpc_invoke(bool have_continuation)
 
     if (slot == SIZE_MAX) {
       // couldn't get a slot, won't launch
+      step(__LINE__);
+
+      // currently getting stuck here with outbox full and
+      // only some values in the inbox
       return false;
     }
     
@@ -205,18 +222,22 @@ bool rpc_invoke(bool have_continuation)
     // wave_publish work
     outbox->claim_slot(slot);
     // 0b011
+    // have seen this assert trigger (once)
     assert(status(slot) == client_state::work_available);
 
     step(__LINE__);
 
     // current strategy is drop interest in the slot, then wait for the
     // server to confirm, then drop local thread
+
+    // with a continuation, outbox is cleared before this thread returns
+    // otherwise, garbage collection eneds to clear that outbox
     if (have_continuation)
       {
         // wait for H1, result available
         while ((*inbox)[slot] != 1)
           {
-            usleep(100);
+            usleep(1000);
           }
         // 0b111
 

@@ -39,16 +39,9 @@ static_assert(sizeof(page_t) == 4096, "");
 
 namespace
 {
+uint64_t index_to_element(uint64_t x) { return x / 64u; }
 
- uint64_t index_to_element(uint64_t x)
-  {
-   return  x / 64u;
-  }
-
- uint64_t index_to_subindex(uint64_t x)
-  {
-    return x % 64u;
-  }
+uint64_t index_to_subindex(uint64_t x) { return x % 64u; }
 
 namespace detail
 {
@@ -289,7 +282,6 @@ struct slot_bitmap
     assert(!detail::nthbitset64(before, subindex));
   }
 
-
   alignas(64) _Atomic uint64_t data[words()] = {};
 };
 
@@ -302,8 +294,8 @@ bool slot_bitmap<N, scope>::try_claim_empty_slot(size_t i)
 
   uint64_t d = load_word(w);
 
-  printf("Slot %lu, w %lu, subindex %lu, d %lu\n", i, w, subindex, d);
-  
+  // printf("Slot %lu, w %lu, subindex %lu, d %lu\n", i, w, subindex, d);
+
   for (;;)
     {
       // if the bit was already set then we've lost the race
@@ -329,7 +321,7 @@ bool slot_bitmap<N, scope>::try_claim_empty_slot(size_t i)
         }
 
       printf("cas failed, expect %lu, memory contained %lu\n", d, compare);
-      
+
       // cas failed. reasons:
       // we lost the slot
       // another slot in the same word changed
@@ -363,13 +355,14 @@ bool try_garbage_collect_word(
 {
   // artifact of perspective on swapping the queues
   // server garbage is 0b010 or 0b011
-  // client garbage is 0b100 or 0b101
+  // client garbage is 0b100 or 0b101 or 0b110
+  // client success is 0b111, i.e. something is waiting for it
 
   uint64_t i = inbox->load_word(w);
   uint64_t o = outbox->load_word(w);
   uint64_t a = active->load_word(w);
 
-  uint64_t garbage_available = Server ? (~i & o & ~a) : (i & ~o & ~a);
+  uint64_t garbage_available = Server ? (~i & o & ~a) : (i & ~a);
 
   if (garbage_available == 0)
     {
@@ -394,12 +387,12 @@ bool try_garbage_collect_word(
   o = outbox->load_word(w);
 
   uint64_t garbage_and_locked =
-      Server ? (~i & o & locks_held) : (i & ~o & locks_held);
+      Server ? (~i & o & locks_held) : (i & locks_held);
 
   // clear locked bits in outbox
   uint64_t before = outbox->fetch_and(w, ~garbage_and_locked);
   (void)before;
-  
+
   // drop locks
   active->fetch_and(w, ~locks_held);
 

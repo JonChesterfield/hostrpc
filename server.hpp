@@ -136,7 +136,7 @@ struct server
   }
 
   // Returns true if it handled one task. Does not attempt multiple tasks
-bool rpc_handle()
+  bool rpc_handle()
   {
     // printf("Server rpc_handle\n");
 
