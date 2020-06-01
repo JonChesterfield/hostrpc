@@ -15,13 +15,13 @@ TEST_CASE("Bitmap")
 {
   uint64_t tmp;
   SECTION("set and clear each element")
-    {
+  {
     hostrpc::slot_bitmap<128> b;
     if (0)
       for (size_t i = 0; i < b.size(); i++)
         {
           CHECK(!b[i]);
-          CHECK(b.try_claim_empty_slot(i,&tmp));
+          CHECK(b.try_claim_empty_slot(i, &tmp));
           CHECK(b[i]);
           b.release_slot(i);
           CHECK(!b[i]);
@@ -53,7 +53,7 @@ TEST_CASE("Bitmap")
         size_t e = b.find_empty_slot();
         CHECK(e != SIZE_MAX);
         CHECK(!b[e]);
-        CHECK(b.try_claim_empty_slot(e,&tmp));
+        CHECK(b.try_claim_empty_slot(e, &tmp));
         CHECK(b[e]);
       }
 
@@ -65,7 +65,7 @@ TEST_CASE("Bitmap")
     hostrpc::slot_bitmap<128> b;
     for (size_t i = 0; i < b.size(); i++)
       {
-        b.try_claim_empty_slot(i,&tmp);
+        b.try_claim_empty_slot(i, &tmp);
       }
 
     for (unsigned L : {0, 3, 63, 64, 65, 126, 127})
@@ -78,7 +78,7 @@ TEST_CASE("Bitmap")
         CHECK(b[L]);
         b.release_slot(L);
         CHECK(!b[L]);
-        CHECK(b.try_claim_empty_slot(L,&tmp));
+        CHECK(b.try_claim_empty_slot(L, &tmp));
         CHECK(b[L]);
       }
   }
@@ -101,27 +101,7 @@ struct safe_thread
   }
   ~safe_thread() { t.join(); }
 
-  void step()
-  {
-    if (steps_left == UINT64_MAX)
-      {
-        // Disable stepping
-        return;
-      }
-    while (steps_left == 0)
-      {
-        // Don't burn all the cpu waiting
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      }
-
-    steps_left--;
-    return;
-  }
-
-  void run(uint64_t x) { steps_left += x; }
-
  private:
-  std::atomic<std::uint64_t> steps_left{0};
   std::thread t;
 };
 
@@ -155,19 +135,15 @@ TEST_CASE("set up single word system")
   std::atomic<uint64_t> calls_launched(0);
   std::atomic<uint64_t> calls_handled(0);
 
+  std::atomic<uint64_t> client_steps(0);
+  std::atomic<uint64_t> server_steps(0);
+
   const bool show_step = false;
   {
     safe_thread cl_thrd([&]() {
-      auto st = [&](int line) {
-        if (show_step)
-          {
-            printf("client.hpp:%d: step\n", line);
-          }
-        cl_thrd.step();
-      };
-
-      auto cl =
-          client<64, decltype(st)>(&recv, &send, &buffer[0], st, fill, use);
+      auto stepper = hostrpc::default_stepper(&client_steps, show_step);
+      auto cl = client<64, default_stepper>(&recv, &send, &buffer[0], stepper,
+                                            fill, use);
 
       while (calls_launched < calls_planned)
         {
@@ -183,15 +159,9 @@ TEST_CASE("set up single word system")
     });
 
     safe_thread sv_thrd([&]() {
-      auto st = [&](int line) {
-        if (show_step)
-          {
-            printf("server.hpp:%d: step\n", line);
-          }
-        sv_thrd.step();
-      };
-
-      auto sv = server<64, decltype(st)>(&send, &recv, &buffer[0], st, operate);
+      auto stepper = hostrpc::default_stepper(&server_steps, show_step);
+      auto sv = server<64, default_stepper>(&send, &recv, &buffer[0], stepper,
+                                            operate);
       for (;;)
         {
           if (sv.rpc_handle())
@@ -209,15 +179,15 @@ TEST_CASE("set up single word system")
 
     if (1)
       {
-        cl_thrd.run(UINT64_MAX);
-        sv_thrd.run(UINT64_MAX);
+        client_steps = UINT64_MAX;
+        server_steps = UINT64_MAX;
       }
     else
       {
         for (unsigned i = 0; i < 20000; i++)
           {
-            cl_thrd.run(1);
-            sv_thrd.run(1);
+            client_steps++;
+            server_steps++;
             usleep(100);
           }
       }

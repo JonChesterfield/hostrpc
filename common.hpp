@@ -4,6 +4,10 @@
 #include <cassert>
 #include <cstdint>
 
+#include <atomic>
+#include <chrono>
+#include <thread>
+
 namespace hostrpc
 {
 struct cacheline_t
@@ -454,9 +458,46 @@ bool try_garbage_collect_word(
   return true;
 }
 
+void step(std::atomic<std::uint64_t> * steps_left)
+{
+  if (steps_left->load() == UINT64_MAX)
+    {
+      // Disable stepping
+      return;
+    }
+  while (steps_left->load() == 0)
+    {
+      // Don't burn all the cpu waiting for a step
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+  steps_left--;
+}
+
 struct nop_stepper
 {
   void operator()(int) {}
+};
+
+struct default_stepper
+{
+  default_stepper(std::atomic<std::uint64_t>* val, bool show_step = false,
+                  const char* name = "unknown")
+    : val(val),show_step(show_step),name(name)
+  {
+  }
+
+  void operator()(int line)
+  {
+    if (show_step)
+      {
+        printf("%s:%d: step\n", name, line);
+      }
+    step(val);
+  }
+  std::atomic<std::uint64_t>* val;
+  bool show_step;
+  const char * name;
 };
 
 }  // namespace hostrpc
