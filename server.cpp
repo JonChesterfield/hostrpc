@@ -9,8 +9,8 @@ void server_instance(
   hostrpc::nop_stepper step;
   auto operate = hostrpc::operate_nop;
 
-  auto s = hostrpc::server<N, decltype(operate), hostrpc::nop_stepper>{inbox,  outbox, active,
-                                                    buffer, step,   operate};
+  auto s = hostrpc::server<N, decltype(operate), decltype(step)>{
+      inbox, outbox, active, buffer, step, operate};
 
   for (;;)
     {

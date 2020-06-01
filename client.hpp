@@ -3,9 +3,6 @@
 
 #include "common.hpp"
 
-#include <functional>
-#include <unistd.h>
-
 // Intend to have call and service working across gcn and x86
 // The normal terminology is:
 // Client makes a call to the server, which does ome work and sends back a reply
@@ -34,13 +31,12 @@ enum class client_state : uint8_t
 // garbage that is, can't claim the slot for a new thread is that a sufficient
 // criteria for the slot to be awaiting gc?
 
-template <size_t N, typename S>
+template <size_t N, typename Fill, typename Use, typename S>
 struct client
 {
   client(const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
          slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active, page_t* buffer,
-         S step, std::function<void(page_t*)> fill = fill_nop,
-         std::function<void(page_t*)> use = use_nop)
+         S step, Fill fill = fill_nop, Use use = use_nop)
 
       : inbox(inbox),
         outbox(outbox),
@@ -197,7 +193,7 @@ struct client
         uint64_t loaded;
         while ((*inbox)(slot, &loaded) != 1)
           {
-            usleep(1000);
+            platform::sleep();
           }
 
         c.i = loaded;
@@ -257,8 +253,8 @@ struct client
   slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active;
   page_t* buffer;
   S step;
-  std::function<void(page_t*)> fill;
-  std::function<void(page_t*)> use;
+  Fill fill;
+  Use use;
 };
 }  // namespace hostrpc
 

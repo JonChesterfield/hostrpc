@@ -106,17 +106,17 @@ TEST_CASE("set up single word system")
 
   _Atomic(uint64_t) val(UINT64_MAX);
 
-  auto fill = [&](page_t* p) -> void{
+  auto fill = [&](page_t* p) -> void {
     val++;
     printf("Passing %lu\n", static_cast<uint64_t>(val));
     p->cacheline[0].element[0] = val;
   };
-  auto operate = [](page_t* p) -> void{
+  auto operate = [](page_t* p) -> void {
     uint64_t r = p->cacheline[0].element[0];
     printf("Server received %lu, forwarding as %lu\n", r, 2 * r);
     p->cacheline[0].element[0] = 2 * r;
   };
-  auto use = [](page_t* p) -> void{
+  auto use = [](page_t* p) -> void {
     printf("Returned %lu\n", p->cacheline[0].element[0]);
   };
 
@@ -136,8 +136,8 @@ TEST_CASE("set up single word system")
     safe_thread cl_thrd([&]() {
       auto stepper = hostrpc::default_stepper(&client_steps, show_step);
       slot_bitmap<64, __OPENCL_MEMORY_SCOPE_DEVICE> active;
-      auto cl = client<64, default_stepper>(&recv, &send, &active, &buffer[0], stepper,
-                                            fill, use);
+      auto cl = client<64, decltype(fill), decltype(use), default_stepper>(
+          &recv, &send, &active, &buffer[0], stepper, fill, use);
 
       while (calls_launched < calls_planned)
         {
@@ -155,8 +155,8 @@ TEST_CASE("set up single word system")
     safe_thread sv_thrd([&]() {
       auto stepper = hostrpc::default_stepper(&server_steps, show_step);
       slot_bitmap<64, __OPENCL_MEMORY_SCOPE_DEVICE> active;
-      auto sv = server<64, decltype(operate), default_stepper>(&send, &recv, &active, &buffer[0], stepper,
-                                            operate);
+      auto sv = server<64, decltype(operate), default_stepper>(
+          &send, &recv, &active, &buffer[0], stepper, operate);
       for (;;)
         {
           if (sv.rpc_handle())

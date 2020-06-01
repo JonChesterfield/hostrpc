@@ -2,21 +2,27 @@
 set -x
 CC="clang -std=c99 -Wall -Wextra"
 CXX="clang++ -std=c++11 -Wall -Wextra"
-FLAGS="-pthread"
+LDFLAGS="-pthread"
 LLC="llc"
 LINK="llvm-link"
 OPT="opt"
+
+X64FLAGS="-g -O0 -emit-llvm -pthread"
+AMDGCNFLAGS="-O0 -emit-llvm -ffreestanding --target=amdgcn-amd-amdhsa -march=gfx906"
 
 # time $CXX -O3 catch.cpp -c -o catch.o
 
 rm -rf *.ll
 
-$CXX $FLAGS -O0 -g states.cpp -emit-llvm -c -o states.bc
+$CXX $X64FLAGS states.cpp -c -o states.bc
 
-$CXX $FLAGS -O0 -g server.cpp -emit-llvm -c -o server.bc
+$CXX $X64FLAGS client.cpp -c -o client.bc
+$CXX $X64FLAGS server.cpp -c -o server.bc
 
-$CXX $FLAGS -O0 -g tests.cpp -emit-llvm -c -o tests.bc
+$CXX $X64FLAGS tests.cpp -c -o tests.bc
 
-$CXX $FLAGS tests.bc states.bc catch.o -o states.exe && time  ./states.exe
+$CXX $AMDGCNFLAGS client.cpp -c -o client.amdgcn.bc
+$CXX $AMDGCNFLAGS server.cpp -c -o server.amdgcn.bc
 
-$CXX $FLAGS -O0 -g -ffreestanding --target=amdgcn-amd-amdhsa -march=gfx906 server.cpp -emit-llvm -c -o server.amdgcn.bc
+$CXX $LDFLAGS tests.bc states.bc catch.o -o states.exe && time  ./states.exe
+

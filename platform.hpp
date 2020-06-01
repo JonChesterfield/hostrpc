@@ -21,6 +21,8 @@ inline void sleep_briefly(void)
   // std::this_thread::sleep_for(std::chrono::milliseconds(10));
   usleep(10);
 }
+inline void sleep(void) { usleep(1000); }
+
 }  // namespace platform
 #endif
 
@@ -51,11 +53,9 @@ inline int printf(const char *, ...)
 
 namespace platform
 {
-inline void sleep_briefly(void)
-{
-  __builtin_amdgcn_s_sleep(0);
-}
-}
+inline void sleep_briefly(void) { __builtin_amdgcn_s_sleep(0); }
+inline void sleep(void) { __builtin_amdgcn_s_sleep(100); }
+}  // namespace platform
 #endif
 
 #endif
