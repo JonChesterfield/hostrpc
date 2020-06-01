@@ -20,36 +20,14 @@ enum class client_state : uint8_t
   idle_client = 0b000,
   active_thread = 0b001,
   work_available = 0b011,
-  unknownA = 0b010,  // Invalid? Would mean work posted, nothing returned yet,
-                     // nothing waiting
-  unknownB = 0b100,  // waiting for server to garbage collect,, no local thread
+  async_work_available = 0b010,
+  done_pending_server_gc =
+      0b100,  // waiting for server to garbage collect, no local thread
   garbage_with_thread = 0b101,  // transient state, 0b100 with local thread
-  unknownC = 0b110,             // async call, server
-  result_available = 0b111,     // thread waiting
+  done_pending_client_gc =
+      0b110,                 // created work, result available, no continuation
+  result_available = 0b111,  // thread waiting
 };
-
-const char* str(client_state s)
-{
-  switch (s)
-    {
-      case client_state::idle_client:
-        return "idle_client";
-      case client_state::active_thread:
-        return "active_thread";
-      case client_state::work_available:
-        return "work_available";
-      case client_state::unknownA:
-        return "unknownA";
-      case client_state::unknownB:
-        return "unknownB";
-      case client_state::garbage_with_thread:
-        return "garbage_with_thread";
-      case client_state::unknownC:
-        return "unknownC";
-      case client_state::result_available:
-        return "result_available";
-    }
-}
 
 // if inbox is set and outbox not, we are waiting for the server to collect
 // garbage that is, can't claim the slot for a new thread is that a sufficient
@@ -70,51 +48,6 @@ struct client
         use(use)
   {
   }
-
-  // template <size_t N>
-  struct cache
-  {
-    cache() = default;
-
-    void dump()
-    {
-      printf("[%lu] %lu/%lu/%lu: %s\n", slot, i, o, a, str(status()));
-    }
-    client_state status() { return static_cast<client_state>(concat()); }
-
-    bool is(uint8_t s)
-    {
-      assert(s < 8);
-      bool r = s == concat();
-      if (!r) dump();
-      return r;
-    }
-    bool is(client_state s) { return s == status(); }
-
-    void init(uint64_t s)
-    {
-      slot = s;
-      word = index_to_element(s);
-      subindex = index_to_subindex(s);
-    }
-
-    uint64_t i = 0;
-    uint64_t o = 0;
-    uint64_t a = 0;
-
-    uint64_t slot = UINT64_MAX;
-    uint64_t word = UINT64_MAX;
-    uint64_t subindex = UINT64_MAX;
-
-   private:
-    uint8_t concat()
-    {
-      unsigned r = detail::nthbitset64(i, subindex) << 2 |
-                   detail::nthbitset64(o, subindex) << 1 |
-                   detail::nthbitset64(a, subindex) << 0;
-      return static_cast<uint8_t>(r);
-    }
-  };
 
   client_state status(uint64_t slot)
   {
@@ -204,7 +137,8 @@ struct client
   }
 
   // Returns true if it successfully launched the task
-  bool rpc_invoke(bool have_continuation)
+  template <bool have_continuation>
+  bool rpc_invoke()
   {
     step(__LINE__);
 
@@ -223,7 +157,7 @@ struct client
     // can only acquire a slot which is 000
     size_t slot = SIZE_MAX;
 
-    cache c;
+    cache<N> c;
     uint64_t active_word;
     for (uint64_t w = 0; w < words(); w++)
       {
@@ -249,9 +183,6 @@ struct client
       {
         // couldn't get a slot, won't launch
         step(__LINE__);
-
-        // currently getting stuck here with outbox full and
-        // only some values in the inbox
         return false;
       }
 
@@ -337,6 +268,7 @@ struct client
     else
       {
         assert(c.is(0b010));
+        // May transition to 0b110 if inbox was read again here
       }
     return true;
   }

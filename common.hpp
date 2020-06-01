@@ -111,6 +111,46 @@ inline uint64_t clz64(uint64_t value)
 }  // namespace detail
 }  // namespace
 
+template <size_t N>
+struct cache
+{
+  cache() = default;
+
+  void dump() { printf("[%lu] %lu/%lu/%lu\n", slot, i, o, a); }
+
+  bool is(uint8_t s)
+  {
+    assert(s < 8);
+    bool r = s == concat();
+    if (!r) dump();
+    return r;
+  }
+
+  void init(uint64_t s)
+  {
+    slot = s;
+    word = index_to_element(s);
+    subindex = index_to_subindex(s);
+  }
+
+  uint64_t i = 0;
+  uint64_t o = 0;
+  uint64_t a = 0;
+
+  uint64_t slot = UINT64_MAX;
+  uint64_t word = UINT64_MAX;
+  uint64_t subindex = UINT64_MAX;
+
+ private:
+  uint8_t concat()
+  {
+    unsigned r = detail::nthbitset64(i, subindex) << 2 |
+                 detail::nthbitset64(o, subindex) << 1 |
+                 detail::nthbitset64(a, subindex) << 0;
+    return static_cast<uint8_t>(r);
+  }
+};
+
 // probably need scope as a template parameter on this
 // not a general purpose bitmap
 
@@ -146,15 +186,14 @@ struct slot_bitmap
     return detail::nthbitset64(d, index_to_subindex(i));
   }
 
-  bool operator()(size_t i, uint64_t * loaded) const
+  bool operator()(size_t i, uint64_t* loaded) const
   {
     size_t w = index_to_element(i);
     uint64_t d = load_word(w);
-*    loaded = d;
+    *loaded = d;
     return detail::nthbitset64(d, index_to_subindex(i));
   }
 
-  
   void dump() const
   {
     uint64_t w = N / 64;
