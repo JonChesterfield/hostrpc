@@ -74,42 +74,46 @@ struct client
   // template <size_t N>
   struct cache
   {
-    cache(const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
-          slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active, uint64_t slot)
-        : inbox(inbox),
-          outbox(outbox),
-          active(active),
-          word(index_to_element(slot)),
-          subindex(index_to_subindex(slot))
+    cache() = default;
+
+    void dump()
     {
-      read_inbox();
-      read_outbox();
-      read_active();
+      printf("[%lu] %lu/%lu/%lu: %s\n", slot, i, o, a, str(status()));
+    }
+    client_state status() { return static_cast<client_state>(concat()); }
+
+    bool is(uint8_t s)
+    {
+      assert(s < 8);
+      bool r = s == concat();
+      if (!r) dump();
+      return r;
+    }
+    bool is(client_state s) { return s == status(); }
+
+    void init(uint64_t s)
+    {
+      slot = s;
+      word = index_to_element(s);
+      subindex = index_to_subindex(s);
     }
 
-    void read_inbox() { i = inbox->load_word(word); }
-    void read_outbox() { o = outbox->load_word(word); }
-    void read_active() { a = active->load_word(word); }
+    uint64_t i = 0;
+    uint64_t o = 0;
+    uint64_t a = 0;
 
-    client_state status()
+    uint64_t slot = UINT64_MAX;
+    uint64_t word = UINT64_MAX;
+    uint64_t subindex = UINT64_MAX;
+
+   private:
+    uint8_t concat()
     {
       unsigned r = detail::nthbitset64(i, subindex) << 2 |
                    detail::nthbitset64(o, subindex) << 1 |
                    detail::nthbitset64(a, subindex) << 0;
-
-      return static_cast<client_state>(r);
+      return static_cast<uint8_t>(r);
     }
-
-   private:
-    uint64_t i;
-    uint64_t o;
-    uint64_t a;
-
-    const mailbox_t<N>* inbox;
-    mailbox_t<N>* outbox;
-    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active;
-    uint64_t word;
-    uint64_t subindex;
   };
 
   client_state status(uint64_t slot)
@@ -152,20 +156,8 @@ struct client
     return inbox->words();
   }
 
-  size_t find_candidate_client_slot()
-  {
-    for (uint64_t w = 0; w < words(); w++)
-      {
-        size_t f = find_candidate_client_slot(w);
-        if (f != SIZE_MAX)
-          {
-            return f;
-          }
-      }
-    return SIZE_MAX;
-  }
-
-  size_t find_candidate_client_slot(uint64_t w)
+  size_t find_candidate_client_slot(uint64_t w, uint64_t* inbox_word,
+                                    uint64_t* outbox_word)
   {
     // find a slot which is currently available
 
@@ -187,6 +179,8 @@ struct client
     uint64_t available = ~some_use;
     if (available != 0)
       {
+        *inbox_word = i;
+        *outbox_word = o;
         return 64 * w + detail::ctz64(available);
       }
 
@@ -229,16 +223,23 @@ struct client
     // can only acquire a slot which is 000
     size_t slot = SIZE_MAX;
 
+    cache c;
+    uint64_t active_word;
     for (uint64_t w = 0; w < words(); w++)
       {
+        uint64_t inbox_word, outbox_word;
         // may need to gc for there to be a slot
         try_garbage_collect_word_client(w);
-        slot = find_candidate_client_slot(w);
+        slot = find_candidate_client_slot(w, &inbox_word, &outbox_word);
         if (slot != SIZE_MAX)
           {
-            if (active.try_claim_empty_slot(slot))
+            if (active.try_claim_empty_slot(slot, &active_word))
               {
+                printf("try_claim succeeded\n");
                 // found a slot and locked it
+                c.i = inbox_word;
+                c.o = outbox_word;
+                c.a = active_word;
                 break;
               }
           }
@@ -254,8 +255,9 @@ struct client
         return false;
       }
 
-    // 0b001
-    assert(status(slot) == client_state::active_thread);
+    c.init(slot);
+
+    assert(c.is(0b001));
     step(__LINE__);
 
     // wave_populate
@@ -263,8 +265,12 @@ struct client
     step(__LINE__);
 
     // wave_publish work
-    outbox->claim_slot(slot);
-    // 0b011
+    {
+      uint64_t o = outbox->claim_slot_returning_updated_word(slot);
+      c.o = o;
+    }
+
+    assert(c.is(0b011));
     // have seen this assert trigger (once)
     assert(status(slot) == client_state::work_available);
 
@@ -278,11 +284,14 @@ struct client
     if (have_continuation)
       {
         // wait for H1, result available
-        while ((*inbox)[slot] != 1)
+        uint64_t loaded;
+        while ((*inbox)(slot, &loaded) != 1)
           {
             usleep(1000);
           }
-        // 0b111
+
+        c.i = loaded;
+        assert(c.is(0b111));
 
         step(__LINE__);
         // call the continuation
@@ -292,9 +301,12 @@ struct client
 
         // mark the work as no longer in use
         // todo: is it better to leave this for the GC?
+        {
+          uint64_t o = outbox->release_slot_returning_updated_word(slot);
+          c.o = o;
+        }
 
-        outbox->release_slot(slot);
-        // 0b101
+        assert(c.is(0b101));
         step(__LINE__);
       }
 
@@ -313,7 +325,19 @@ struct client
 
     // wave release slot
     step(__LINE__);
-    active.release_slot(slot);
+    {
+      uint64_t a = active.release_slot_returning_updated_word(slot);
+      c.a = a;
+    }
+
+    if (have_continuation)
+      {
+        assert(c.is(0b100));
+      }
+    else
+      {
+        assert(c.is(0b010));
+      }
     return true;
   }
 

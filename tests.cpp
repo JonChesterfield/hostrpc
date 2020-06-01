@@ -13,14 +13,15 @@
 
 TEST_CASE("Bitmap")
 {
+  uint64_t tmp;
   SECTION("set and clear each element")
-  {
+    {
     hostrpc::slot_bitmap<128> b;
     if (0)
       for (size_t i = 0; i < b.size(); i++)
         {
           CHECK(!b[i]);
-          CHECK(b.try_claim_empty_slot(i));
+          CHECK(b.try_claim_empty_slot(i,&tmp));
           CHECK(b[i]);
           b.release_slot(i);
           CHECK(!b[i]);
@@ -52,7 +53,7 @@ TEST_CASE("Bitmap")
         size_t e = b.find_empty_slot();
         CHECK(e != SIZE_MAX);
         CHECK(!b[e]);
-        CHECK(b.try_claim_empty_slot(e));
+        CHECK(b.try_claim_empty_slot(e,&tmp));
         CHECK(b[e]);
       }
 
@@ -64,7 +65,7 @@ TEST_CASE("Bitmap")
     hostrpc::slot_bitmap<128> b;
     for (size_t i = 0; i < b.size(); i++)
       {
-        b.try_claim_empty_slot(i);
+        b.try_claim_empty_slot(i,&tmp);
       }
 
     for (unsigned L : {0, 3, 63, 64, 65, 126, 127})
@@ -77,7 +78,7 @@ TEST_CASE("Bitmap")
         CHECK(b[L]);
         b.release_slot(L);
         CHECK(!b[L]);
-        CHECK(b.try_claim_empty_slot(L));
+        CHECK(b.try_claim_empty_slot(L,&tmp));
         CHECK(b[L]);
       }
   }

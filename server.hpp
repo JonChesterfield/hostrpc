@@ -91,8 +91,8 @@ struct server
         assert(detail::nthbitset64(work_available, idx));
         uint64_t slot = 64 * w + idx;
         // attempt to get that slot
-
-        bool r = active.try_claim_empty_slot(slot);
+        uint64_t active_word;
+        bool r = active.try_claim_empty_slot(slot,&active_word);
 
         if (r)
           {

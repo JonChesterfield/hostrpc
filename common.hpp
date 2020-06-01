@@ -146,6 +146,15 @@ struct slot_bitmap
     return detail::nthbitset64(d, index_to_subindex(i));
   }
 
+  bool operator()(size_t i, uint64_t * loaded) const
+  {
+    size_t w = index_to_element(i);
+    uint64_t d = load_word(w);
+*    loaded = d;
+    return detail::nthbitset64(d, index_to_subindex(i));
+  }
+
+  
   void dump() const
   {
     uint64_t w = N / 64;
@@ -166,14 +175,15 @@ struct slot_bitmap
   }
 
   // cas, true on success
-  bool try_claim_empty_slot(size_t i);
+  bool try_claim_empty_slot(size_t i, uint64_t*);
 
   size_t try_claim_any_empty_slot()
   {
+    uint64_t tmp;
     size_t slot = find_empty_slot();
     if (slot != SIZE_MAX)
       {
-        if (try_claim_empty_slot(slot))
+        if (try_claim_empty_slot(slot, &tmp))
           {
             return slot;
           }
@@ -190,9 +200,17 @@ struct slot_bitmap
 
   // assumes slot available
   void claim_slot(size_t i) { set_slot_given_already_clear(i); }
+  uint64_t claim_slot_returning_updated_word(size_t i)
+  {
+    return set_slot_given_already_clear(i);
+  }
 
   // assumes slot taken
   void release_slot(size_t i) { clear_slot_given_already_set(i); }
+  uint64_t release_slot_returning_updated_word(size_t i)
+  {
+    return clear_slot_given_already_set(i);
+  }
 
   size_t find_empty_slot()  // SIZE_MAX if none available
   {
@@ -222,6 +240,12 @@ struct slot_bitmap
                                 __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
   }
 
+  bool cas(uint64_t element, uint64_t expect, uint64_t replace)
+  {
+    uint64_t loaded;
+    return cas(element, expect, replace, &loaded);
+  }
+
   bool cas(uint64_t element, uint64_t expect, uint64_t replace,
            uint64_t* loaded)
   {
@@ -230,8 +254,11 @@ struct slot_bitmap
         addr, &expect, replace, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED,
         __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
 
-    // if cas succeeded, the bits in memory matched what was expected
-    // if it failed, the above call wrote the bits found in memoru into expect
+    // on success, bits in memory have been set to replace
+    // on failure, value found is now in expect
+    // if cas succeeded, the bits in memory matched what was expected and now
+    // match replace if it failed, the above call wrote the bits found in memory
+    // into expect
     *loaded = expect;
     return r;
   }
@@ -252,7 +279,7 @@ struct slot_bitmap
   }
 
  private:
-  void clear_slot_given_already_set(size_t i)
+  uint64_t clear_slot_given_already_set(size_t i)
   {
     assert(i < N);
     size_t w = index_to_element(i);
@@ -263,11 +290,11 @@ struct slot_bitmap
     uint64_t mask = ~detail::setnthbit64(0, subindex);
 
     uint64_t before = fetch_and(w, mask);
-    (void)before;
     assert(detail::nthbitset64(before, subindex));
+    return before & mask;
   }
 
-  void set_slot_given_already_clear(size_t i)
+  uint64_t set_slot_given_already_clear(size_t i)
   {
     assert(i < N);
     size_t w = index_to_element(i);
@@ -278,15 +305,16 @@ struct slot_bitmap
     uint64_t mask = detail::setnthbit64(0, subindex);
 
     uint64_t before = fetch_or(w, mask);
-    (void)before;
     assert(!detail::nthbitset64(before, subindex));
+    return before | mask;
   }
 
   alignas(64) _Atomic uint64_t data[words()] = {};
 };
 
+// on return true, loaded contains active[w]
 template <size_t N, size_t scope>
-bool slot_bitmap<N, scope>::try_claim_empty_slot(size_t i)
+bool slot_bitmap<N, scope>::try_claim_empty_slot(size_t i, uint64_t* loaded)
 {
   assert(i < N);
   size_t w = index_to_element(i);
@@ -305,32 +333,28 @@ bool slot_bitmap<N, scope>::try_claim_empty_slot(size_t i)
       uint64_t proposed = detail::setnthbit64(d, subindex);
       if (proposed == d)
         {
-          printf("already set, return false\n");
           return false;
         }
 
       // If the bit is known zero, can use fetch_or to set it
 
-      uint64_t compare = d;
-      bool r = cas(w, compare, proposed, &compare);
-
+      uint64_t unexpected_contents;
+      bool r = cas(w, d, proposed, &unexpected_contents);
       if (r)
         {
-          // success, it's all ours
+          // success, got the lock, and active word was set to proposed
+          *loaded = proposed;
           return true;
         }
-
-      printf("cas failed, expect %lu, memory contained %lu\n", d, compare);
 
       // cas failed. reasons:
       // we lost the slot
       // another slot in the same word changed
       // spurious
-      // in any case, go around again
 
-      d = proposed;  // docs not totally clear, but an updated copy of the
-                     // word should be in one of the passed parameters. Might
-                     // be in compare
+      // try again if the slot is still empty
+      // may want a give up count / sleep or similar
+      d = unexpected_contents;
     }
 }
 
@@ -346,19 +370,11 @@ void update_cache(const mailbox_t<N>* mbox, cache_t<N>* cache)
     }
 }
 
-// This is probably not the right way to express this
-// Might be able to do something with swapping queues
-
 template <size_t N, typename G>
 bool try_garbage_collect_word(
     G garbage_bits, const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
     slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active, uint64_t w)
 {
-  // artifact of perspective on swapping the queues
-  // server garbage is 0b010 or 0b011
-  // client garbage is 0b100 or 0b101 or 0b110
-  // client success is 0b111, i.e. something is waiting for it
-
   uint64_t i = inbox->load_word(w);
   uint64_t o = outbox->load_word(w);
   uint64_t a = active->load_word(w);
