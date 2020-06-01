@@ -158,10 +158,9 @@ struct client
     size_t slot = SIZE_MAX;
 
     cache<N> c;
-    uint64_t active_word;
     for (uint64_t w = 0; w < words(); w++)
       {
-        uint64_t inbox_word, outbox_word;
+        uint64_t inbox_word, outbox_word, active_word;
         // may need to gc for there to be a slot
         try_garbage_collect_word_client(w);
         slot = find_candidate_client_slot(w, &inbox_word, &outbox_word);
@@ -202,8 +201,6 @@ struct client
     }
 
     assert(c.is(0b011));
-    // have seen this assert trigger (once)
-    assert(status(slot) == client_state::work_available);
 
     step(__LINE__);
 

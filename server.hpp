@@ -74,16 +74,23 @@ struct server
     printf("%lu %lu %lu\n", i, o, a);
   }
 
-  uint64_t work_todo(uint64_t word)
+  uint64_t work_todo(uint64_t word, uint64_t* inbox_word, uint64_t* outbox_word)
   {
     uint64_t i = inbox->load_word(word);
     uint64_t o = outbox->load_word(word);
+    *inbox_word = i;
+    *outbox_word = o;
     return i & ~o;
   }
 
-  size_t find_and_claim_slot(uint64_t w)  // or SIZE_MAX
+  size_t find_and_claim_slot(uint64_t w, uint64_t* inbox_word,
+                             uint64_t* outbox_word,
+                             uint64_t* active_word)  // or SIZE_MAX
   {
-    uint64_t work_available = work_todo(w) & ~active.load_word(w);
+    uint64_t work_available =
+        work_todo(w, inbox_word, outbox_word) & ~active.load_word(w);
+    // tries each bit in the work available at he call
+    // doesn't load new information for work_available to preserve termination
 
     while (work_available != 0)
       {
@@ -91,19 +98,18 @@ struct server
         assert(detail::nthbitset64(work_available, idx));
         uint64_t slot = 64 * w + idx;
         // attempt to get that slot
-        uint64_t active_word;
-        bool r = active.try_claim_empty_slot(slot,&active_word);
+        bool r = active.try_claim_empty_slot(slot, active_word);
 
         if (r)
           {
             // got the slot, check the work is still available
-            if (detail::nthbitset64(work_todo(w), idx))
+            uint64_t td = work_todo(w, inbox_word, outbox_word);
+            if (detail::nthbitset64(td, idx))
               {
                 // got lock on a slot with work to do
                 // said work is no longer available to another thread
 
-                assert(!detail::nthbitset64(work_todo(w) & ~active.load_word(w),
-                                            idx));
+                assert(!detail::nthbitset64(td & ~active.load_word(w), idx));
                 step(__LINE__);
 
                 return slot;
@@ -153,6 +159,8 @@ struct server
 
     step(__LINE__);
 
+    cache<N> c;
+
     size_t slot = SIZE_MAX;
     {
       // TODO: probably better to give up if there's no work to do instead of
@@ -160,12 +168,17 @@ struct server
       // bounded time, after handling zero or one call
       for (uint64_t w = 0; w < inbox->words(); w++)
         {
+          uint64_t inbox_word, outbox_word, active_word;
           // if there is no inbound work, it can be because the slots are
           // all filled with garbage on the server side
           try_garbage_collect_word_server(w);
-          slot = find_and_claim_slot(w);
+          slot =
+              find_and_claim_slot(w, &inbox_word, &outbox_word, &active_word);
           if (slot != SIZE_MAX)
             {
+              c.i = inbox_word;
+              c.o = outbox_word;
+              c.a = active_word;
               break;
             }
         }
