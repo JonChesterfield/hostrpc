@@ -348,9 +348,10 @@ void update_cache(const mailbox_t<N>* mbox, cache_t<N>* cache)
 
 // This is probably not the right way to express this
 // Might be able to do something with swapping queues
-template <size_t N, bool Server>
+
+template <size_t N, typename G>
 bool try_garbage_collect_word(
-    const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
+    G garbage_bits, const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
     slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active, uint64_t w)
 {
   // artifact of perspective on swapping the queues
@@ -362,7 +363,7 @@ bool try_garbage_collect_word(
   uint64_t o = outbox->load_word(w);
   uint64_t a = active->load_word(w);
 
-  uint64_t garbage_available = Server ? (~i & o & ~a) : (i & ~a);
+  uint64_t garbage_available = garbage_bits(i, o) & ~a;
 
   if (garbage_available == 0)
     {
@@ -386,8 +387,7 @@ bool try_garbage_collect_word(
   i = inbox->load_word(w);
   o = outbox->load_word(w);
 
-  uint64_t garbage_and_locked =
-      Server ? (~i & o & locks_held) : (i & locks_held);
+  uint64_t garbage_and_locked = garbage_bits(i, o) & locks_held;
 
   // clear locked bits in outbox
   uint64_t before = outbox->fetch_and(w, ~garbage_and_locked);

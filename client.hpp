@@ -196,7 +196,9 @@ struct client
   // return true if no garbage (briefly) during call
   bool try_garbage_collect_word_client(uint64_t w)
   {
-    return try_garbage_collect_word<N, false>(inbox, outbox, &active, w);
+    auto c = [](uint64_t i, uint64_t) -> uint64_t { return i; };
+    return try_garbage_collect_word<N, decltype(c)>(c, inbox, outbox, &active,
+                                                    w);
   }
 
   void dump_word(uint64_t word)

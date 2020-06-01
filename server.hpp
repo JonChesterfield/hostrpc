@@ -126,7 +126,9 @@ struct server
   // return true if no garbage (briefly) during call
   bool try_garbage_collect_word_server(uint64_t w)
   {
-    return try_garbage_collect_word<N, true>(inbox, outbox, &active, w);
+    auto c = [](uint64_t i, uint64_t o) -> uint64_t { return ~i & o; };
+    return try_garbage_collect_word<N, decltype(c)>(c, inbox, outbox, &active,
+                                                    w);
   }
 
   size_t words()
@@ -150,29 +152,30 @@ struct server
       }
 
     step(__LINE__);
-        
+
     size_t slot = SIZE_MAX;
+    {
+      // TODO: probably better to give up if there's no work to do instead of
+      // keep waiting for some. That means this call always completes in
+      // bounded time, after handling zero or one call
+      for (uint64_t w = 0; w < inbox->words(); w++)
+        {
+          // if there is no inbound work, it can be because the slots are
+          // all filled with garbage on the server side
+          try_garbage_collect_word_server(w);
+          slot = find_and_claim_slot(w);
+          if (slot != SIZE_MAX)
+            {
+              break;
+            }
+        }
+    }
+
+    if (slot == SIZE_MAX)
       {
-        // TODO: probably better to give up if there's no work to do instead of
-        // keep waiting for some. That means this call always completes in
-        // bounded time, after handling zero or one call
-        for (uint64_t w = 0; w < inbox->words(); w++)
-          {
-            // if there is no inbound work, it can be because the slots are
-            // all filled with garbage on the server side
-            try_garbage_collect_word_server(w);
-            slot = find_and_claim_slot(w);
-            if (slot != SIZE_MAX)
-              {
-                break;
-              }
-          }
+        return false;
       }
 
-    if (slot == SIZE_MAX) {
-      return false;
-    }
-    
     step(__LINE__);
 
     assert((*inbox)[slot] == 1);
