@@ -111,11 +111,7 @@ struct safe_thread
     while (steps_left == 0)
       {
         // Don't burn all the cpu waiting
-        {
-          std::unique_lock<std::mutex> lk(m);
-          cv.wait_for(lk, std::chrono::milliseconds(10));
-          lk.unlock();
-        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
       }
 
     steps_left--;
@@ -127,9 +123,6 @@ struct safe_thread
  private:
   std::atomic<std::uint64_t> steps_left{0};
   std::thread t;
-
-  std::mutex m;
-  std::condition_variable cv;
 };
 
 TEST_CASE("set up single word system")
