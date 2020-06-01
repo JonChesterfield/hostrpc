@@ -154,6 +154,9 @@ TEST_CASE("set up single word system")
 
   bool run = true;
 
+  std::atomic<uint64_t> calls_launched(0);
+  std::atomic<uint64_t> calls_handled(0);
+
   const bool show_step = false;
   {
     safe_thread cl_thrd([&]() {
@@ -169,9 +172,12 @@ TEST_CASE("set up single word system")
           client<64, decltype(st)>(&recv, &send, &buffer[0], st, fill, use);
       printf("Built a client\n");
 
-      for (int x = 0; x < 8; x++)
+      for (int x = 0; x < 16; x++)
         {
-          cl.rpc_invoke();
+          if (cl.rpc_invoke(false))
+            {
+              calls_launched++;
+            }
 
           if (!run)
             {
@@ -195,7 +201,10 @@ TEST_CASE("set up single word system")
 
       for (;;)
         {
-          sv.rpc_handle();
+          if (sv.rpc_handle())
+            {
+              calls_handled++;
+            }
           if (!run)
             {
               return;
@@ -215,8 +224,15 @@ TEST_CASE("set up single word system")
       }
 
     printf("Setting run to false\n");
+    while (calls_launched == 0)
+      ;
+
+    do
+      {
+        printf("%lu launched, %lu handled\n", (uint64_t)calls_launched,
+               (uint64_t)calls_handled);
+      }
+    while (calls_launched != calls_handled);
     run = false;
   }
-
-  printf("But didn't wait\n");
 }

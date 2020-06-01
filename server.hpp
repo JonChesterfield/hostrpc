@@ -135,7 +135,8 @@ struct server
     return inbox->words();
   }
 
-  void rpc_handle()
+  // Returns true if it handled one task. Does not attempt multiple tasks
+bool rpc_handle()
   {
     // printf("Server rpc_handle\n");
 
@@ -169,7 +170,7 @@ struct server
       }
 
     if (slot == SIZE_MAX) {
-      return;
+      return false;
     }
     
     step(__LINE__);
@@ -193,6 +194,8 @@ struct server
 
     step(__LINE__);
     // leaves outbox live
+
+    return true;
   }
 
   const mailbox_t<N>* inbox;

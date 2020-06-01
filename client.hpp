@@ -158,7 +158,8 @@ void  dump_state(uint64_t slot)
     return try_garbage_collect_word<N, false>(inbox, outbox, &active, w);
   }
 
-  void rpc_invoke()
+  // Returns true if it successfully launched the task
+bool rpc_invoke(bool have_continuation)
   {
     step(__LINE__);
 
@@ -170,40 +171,29 @@ void  dump_state(uint64_t slot)
     step(__LINE__);
 
     // wave_acquire_slot
-    // can currently acquire any slot, considering only acquiring a slot
-    // where inbox is clear
+    // can only acquire a slot which is 000    
     size_t slot = SIZE_MAX;
-    while (slot == SIZE_MAX)
-      {
-        printf("seeking slot\n");
-        // spin until a 000 slot is found
-        for (uint64_t w = 0; w < words(); w++)
-          {
-            printf("A\n");
-            // may need to gc for there to be a slot
-            try_garbage_collect_word_client(w);
-            printf("B\n");
-            slot = find_candidate_client_slot(w);
-            printf("C\n");
-            if (slot != SIZE_MAX)
-              {
-                break;
-              }
-          }
-        printf("D %lu\n", slot);
-        if (slot != SIZE_MAX)
-          {
-            printf("Try to claim %lu\n", slot);
-            if (active.try_claim_empty_slot(slot))
-              {
-                break;
-              }
-            printf("E\n");
-          }
-        printf("F\n");
-      }
 
+      for (uint64_t w = 0; w < words(); w++)
+        {
+          // may need to gc for there to be a slot
+          try_garbage_collect_word_client(w);
+          slot = find_candidate_client_slot(w);
+          if (slot != SIZE_MAX)
+            {
+              if (active.try_claim_empty_slot(slot))
+                {
+                  // found a slot and locked it
+                  break;
+                }
+            }
+        }
 
+    if (slot == SIZE_MAX) {
+      // couldn't get a slot, won't launch
+      return false;
+    }
+    
     // 0b001
     assert(status(slot) == client_state::active_thread);
     step(__LINE__);
@@ -221,8 +211,6 @@ void  dump_state(uint64_t slot)
 
     // current strategy is drop interest in the slot, then wait for the
     // server to confirm, then drop local thread
-    bool have_continuation = false;
-
     if (have_continuation)
       {
         // wait for H1, result available
@@ -262,6 +250,7 @@ void  dump_state(uint64_t slot)
     // wave release slot
     step(__LINE__);
     active.release_slot(slot);
+    return true;
   }
 
   const mailbox_t<N>* inbox;
