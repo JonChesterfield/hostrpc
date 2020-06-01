@@ -8,7 +8,7 @@ void sleep_briefly(void);
 
 #if defined(__x86_64__)
 #include <chrono>
-// #include <thread>
+#include <unistd.h>
 
 #include <cassert>
 #include <cstdio>
@@ -17,7 +17,9 @@ namespace platform
 {
 inline void sleep_briefly(void)
 {
+  // <thread> conflicts with <stdatomic.h>
   // std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  usleep(10);
 }
 }  // namespace platform
 #endif
@@ -47,6 +49,13 @@ inline int printf(const char *, ...)
   return 0;
 }
 
+namespace platform
+{
+inline void sleep_briefly(void)
+{
+  __builtin_amdgcn_s_sleep(0);
+}
+}
 #endif
 
 #endif
