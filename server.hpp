@@ -124,49 +124,9 @@ struct server
   }
 
   // return true if no garbage (briefly) during call
-  bool try_garbage_collect_word(uint64_t w)
+  bool try_garbage_collect_word_server(uint64_t w)
   {
-    uint64_t i = inbox->load_word(w);
-    uint64_t o = outbox->load_word(w);
-    uint64_t a = active.load_word(w);
-
-    uint64_t garbage_available = ~i & o & ~a;
-
-    if (garbage_available == 0)
-      {
-        return true;
-      }
-
-    // Try to claim the locks on each garbage slot, if there is any
-    {
-      // propsed set of locks is the current set and the ones we're claiming
-      assert((garbage_available & a) == 0);  // disjoint
-      uint64_t proposed = garbage_available | a;
-      uint64_t result;
-      bool got = active.cas(w, a, proposed, &result);
-      if (!got)
-        {
-          // lost the cas
-          return false;
-        }
-
-      uint64_t locks_held = garbage_available;
-      // Some of the slots may have already been garbage collected
-      // in which case some of the input may be work available again
-      i = inbox->load_word(w);
-      o = outbox->load_word(w);
-
-      uint64_t garbage_and_locked = ~i & o & locks_held;
-
-      // clear locked bits in outbox
-      uint64_t before = outbox->fetch_and(w, ~garbage_and_locked);
-      // assert(before == (~i & o & ~locks_held));  // may be the wrong value
-
-      // drop locks
-      active.fetch_and(w, ~locks_held);
-
-      return true;
-    }
+    return try_garbage_collect_word<N, true>(inbox, outbox, &active, w);
   }
 
   size_t words()
@@ -177,7 +137,7 @@ struct server
 
   void rpc_handle()
   {
-    printf("Server rpc_handle\n");
+    // printf("Server rpc_handle\n");
 
     step(__LINE__);
 
@@ -185,11 +145,12 @@ struct server
     // and the presence of any occupied slots can starve the client
     for (uint64_t w = 0; w < inbox->words(); w++)
       {
-        try_garbage_collect_word(w);
+        try_garbage_collect_word_server(w);
       }
 
+    step(__LINE__);
+        
     size_t slot = SIZE_MAX;
-    while (slot == SIZE_MAX)
       {
         // TODO: probably better to give up if there's no work to do instead of
         // keep waiting for some. That means this call always completes in
@@ -198,7 +159,7 @@ struct server
           {
             // if there is no inbound work, it can be because the slots are
             // all filled with garbage on the server side
-            try_garbage_collect_word(w);
+            try_garbage_collect_word_server(w);
             slot = find_and_claim_slot(w);
             if (slot != SIZE_MAX)
               {
@@ -206,9 +167,13 @@ struct server
               }
           }
       }
+
+    if (slot == SIZE_MAX) {
+      return;
+    }
+    
     step(__LINE__);
 
-    printf("got slot %lu\n", slot);
     assert((*inbox)[slot] == 1);
     step(__LINE__);
 

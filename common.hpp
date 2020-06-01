@@ -39,6 +39,17 @@ static_assert(sizeof(page_t) == 4096, "");
 
 namespace
 {
+
+ uint64_t index_to_element(uint64_t x)
+  {
+   return  x / 64u;
+  }
+
+ uint64_t index_to_subindex(uint64_t x)
+  {
+    return x % 64u;
+  }
+
 namespace detail
 {
 inline bool multiple_of_64(uint64_t x) { return (x % 64) == 0; }
@@ -278,19 +289,6 @@ struct slot_bitmap
     assert(!detail::nthbitset64(before, subindex));
   }
 
-  static uint64_t index_to_element(uint64_t x)
-  {
-    assert(x < size());
-    uint64_t r = x / 64u;
-    assert(r < words());
-    return r;
-  }
-
-  static uint64_t index_to_subindex(uint64_t x)
-  {
-    assert(x < size());
-    return x % 64u;
-  }
 
   alignas(64) _Atomic uint64_t data[words()] = {};
 };
@@ -304,6 +302,8 @@ bool slot_bitmap<N, scope>::try_claim_empty_slot(size_t i)
 
   uint64_t d = load_word(w);
 
+  printf("Slot %lu, w %lu, subindex %lu, d %lu\n", i, w, subindex, d);
+  
   for (;;)
     {
       // if the bit was already set then we've lost the race
@@ -313,6 +313,7 @@ bool slot_bitmap<N, scope>::try_claim_empty_slot(size_t i)
       uint64_t proposed = detail::setnthbit64(d, subindex);
       if (proposed == d)
         {
+          printf("already set, return false\n");
           return false;
         }
 
@@ -327,6 +328,8 @@ bool slot_bitmap<N, scope>::try_claim_empty_slot(size_t i)
           return true;
         }
 
+      printf("cas failed, expect %lu, memory contained %lu\n", d, compare);
+      
       // cas failed. reasons:
       // we lost the slot
       // another slot in the same word changed
@@ -349,6 +352,58 @@ void update_cache(const mailbox_t<N>* mbox, cache_t<N>* cache)
       __opencl_atomic_store(&cache->data[i], l, __ATOMIC_RELEASE,
                             __OPENCL_MEMORY_SCOPE_DEVICE);
     }
+}
+
+// This is probably not the right way to express this
+// Might be able to do something with swapping queues
+template <size_t N, bool Server>
+bool try_garbage_collect_word(
+    const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
+    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active, uint64_t w)
+{
+  // artifact of perspective on swapping the queues
+  // server garbage is 0b010 or 0b011
+  // client garbage is 0b100 or 0b101
+
+  uint64_t i = inbox->load_word(w);
+  uint64_t o = outbox->load_word(w);
+  uint64_t a = active->load_word(w);
+
+  uint64_t garbage_available = Server ? (~i & o & ~a) : (i & ~o & ~a);
+
+  if (garbage_available == 0)
+    {
+      return true;
+    }
+
+  // proposed set of locks is the current set and the ones we're claiming
+  assert((garbage_available & a) == 0);  // disjoint
+  uint64_t proposed = garbage_available | a;
+  uint64_t result;
+  bool got = active->cas(w, a, proposed, &result);
+  if (!got)
+    {
+      // lost the cas
+      return false;
+    }
+
+  uint64_t locks_held = garbage_available;
+  // Some of the slots may have already been garbage collected
+  // in which case some of the input may be work-available again
+  i = inbox->load_word(w);
+  o = outbox->load_word(w);
+
+  uint64_t garbage_and_locked =
+      Server ? (~i & o & locks_held) : (i & ~o & locks_held);
+
+  // clear locked bits in outbox
+  uint64_t before = outbox->fetch_and(w, ~garbage_and_locked);
+  (void)before;
+  
+  // drop locks
+  active->fetch_and(w, ~locks_held);
+
+  return true;
 }
 
 struct nop_stepper

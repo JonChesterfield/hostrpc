@@ -28,6 +28,29 @@ enum class client_state : uint8_t
   result_available = 0b111,     // thread waiting
 };
 
+const char* str(client_state s)
+{
+  switch (s)
+    {
+      case client_state::idle_client:
+        return "idle_client";
+      case client_state::active_thread:
+        return "active_thread";
+      case client_state::work_available:
+        return "work_available";
+      case client_state::unknownA:
+        return "unknownA";
+      case client_state::unknownB:
+        return "unknownB";
+      case client_state::garbage_with_thread:
+        return "garbage_with_thread";
+      case client_state::unknownC:
+        return "unknownC";
+      case client_state::result_available:
+        return "result_available";
+    }
+}
+
 // if inbox is set and outbox not, we are waiting for the server to collect
 // garbage that is, can't claim the slot for a new thread is that a sufficient
 // criteria for the slot to be awaiting gc?
@@ -48,6 +71,27 @@ struct client
   {
   }
 
+  client_state status(uint64_t slot)
+  {
+    size_t w = index_to_element(slot);
+    uint64_t subindex = index_to_subindex(slot);
+
+    uint64_t i = inbox->load_word(w);
+    uint64_t o = outbox->load_word(w);
+    uint64_t a = active.load_word(w);
+
+    unsigned r = detail::nthbitset64(i, subindex) << 2 |
+                 detail::nthbitset64(o, subindex) << 1 |
+                 detail::nthbitset64(a, subindex) << 0;
+
+    return static_cast<client_state>(r);
+  }
+
+void  dump_state(uint64_t slot)
+  {
+    printf("slot %lu: %s\n", slot, str(status(slot)));
+  }
+  
   size_t spin_until_claimed_slot()
   {
     for (;;)
@@ -108,8 +152,21 @@ struct client
     return SIZE_MAX;
   }
 
+  // return true if no garbage (briefly) during call
+  bool try_garbage_collect_word_client(uint64_t w)
+  {
+    return try_garbage_collect_word<N, false>(inbox, outbox, &active, w);
+  }
+
   void rpc_invoke()
   {
+    step(__LINE__);
+
+    for (uint64_t w = 0; w < inbox->words(); w++)
+      {
+        try_garbage_collect_word_client(w);
+      }
+
     step(__LINE__);
 
     // wave_acquire_slot
@@ -118,18 +175,37 @@ struct client
     size_t slot = SIZE_MAX;
     while (slot == SIZE_MAX)
       {
+        printf("seeking slot\n");
         // spin until a 000 slot is found
-        slot = find_candidate_client_slot();
-        if (slot != SIZE_MAX)
+        for (uint64_t w = 0; w < words(); w++)
           {
-            if (active.try_claim_empty_slot(slot))
+            printf("A\n");
+            // may need to gc for there to be a slot
+            try_garbage_collect_word_client(w);
+            printf("B\n");
+            slot = find_candidate_client_slot(w);
+            printf("C\n");
+            if (slot != SIZE_MAX)
               {
                 break;
               }
           }
+        printf("D %lu\n", slot);
+        if (slot != SIZE_MAX)
+          {
+            printf("Try to claim %lu\n", slot);
+            if (active.try_claim_empty_slot(slot))
+              {
+                break;
+              }
+            printf("E\n");
+          }
+        printf("F\n");
       }
 
+
     // 0b001
+    assert(status(slot) == client_state::active_thread);
     step(__LINE__);
 
     // wave_populate
@@ -139,42 +215,49 @@ struct client
     // wave_publish work
     outbox->claim_slot(slot);
     // 0b011
-
-    step(__LINE__);
-
-    // wait for H1, result available
-    // is this necessary for async?
-    while ((*inbox)[slot] != 1)
-      {
-        usleep(100);
-      }
-    // 0b111
-
-    step(__LINE__);
-    // recieve, nop if async
-    use(&buffer[slot]);
+    assert(status(slot) == client_state::work_available);
 
     step(__LINE__);
 
     // current strategy is drop interest in the slot, then wait for the
     // server to confirm, then drop local thread
+    bool have_continuation = false;
 
-    // wave publish done
-    outbox->release_slot(slot);
-    // 0b101
-    step(__LINE__);
+    if (have_continuation)
+      {
+        // wait for H1, result available
+        while ((*inbox)[slot] != 1)
+          {
+            usleep(100);
+          }
+        // 0b111
+
+        step(__LINE__);
+        // call the continuation
+        use(&buffer[slot]);
+
+        step(__LINE__);
+
+        // mark the work as no longer in use
+        // todo: is it better to leave this for the GC?
+
+        outbox->release_slot(slot);
+        // 0b101
+        step(__LINE__);
+      }
+
+    // if we don't have a continuation, would return on 0b010
+    // this wouldn't be considered garbage by client as inbox is clear
+    // the server gets 0b100, does the work, sets the result to 0b110
+    // that is then picked up by the client as 0b110
 
     // wait for H0, result has been garbage collected by the host
     // todo: want to get rid of this busy spin in favour of deferred collection
     // I think that will need an extra client side bitmap
 
-    // if we don't wait, would transition to 0b100
-    // that is, no thread running, client not interested in the slot
-    //
-    while ((*inbox)[slot] != 0)
-      {
-        usleep(100);
-      }
+    // We could wait for inbox[slot] != 0 which indicates the result
+    // has been garbage collected, but that stalls the wave waiting for the hose
+    // Instead, drop the warp and let the allocator skip occupied inbox slots
 
     // wave release slot
     step(__LINE__);

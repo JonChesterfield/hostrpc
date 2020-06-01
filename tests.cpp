@@ -132,10 +132,20 @@ TEST_CASE("set up single word system")
 
   using cb_type = std::function<void(hostrpc::page_t*)>;
 
-  cb_type fill = [](page_t* p) { p->cacheline[0].element[0] = 4; };
-  cb_type operate = [](page_t* p) { p->cacheline[0].element[0] *= 2; };
+  std::atomic<uint64_t> val(UINT64_MAX);
+
+  cb_type fill = [&](page_t* p) {
+    val++;
+    printf("Passing %lu\n", static_cast<uint64_t>(val));
+    p->cacheline[0].element[0] = val;
+  };
+  cb_type operate = [](page_t* p) {
+    uint64_t r = p->cacheline[0].element[0];
+    printf("Server received %lu, forwarding as %lu\n", r, 2 * r);
+    p->cacheline[0].element[0] = 2 * r;
+  };
   cb_type use = [](page_t* p) {
-    printf("Got %lu\n", p->cacheline[0].element[0]);
+    printf("Returned %lu\n", p->cacheline[0].element[0]);
   };
 
   mailbox_t<64> send;
@@ -144,10 +154,14 @@ TEST_CASE("set up single word system")
 
   bool run = true;
 
+  const bool show_step = false;
   {
     safe_thread cl_thrd([&]() {
       auto st = [&](int line) {
-        printf("client.hpp:%d: step\n", line);
+        if (show_step)
+          {
+            printf("client.hpp:%d: step\n", line);
+          }
         cl_thrd.step();
       };
 
@@ -155,7 +169,7 @@ TEST_CASE("set up single word system")
           client<64, decltype(st)>(&recv, &send, &buffer[0], st, fill, use);
       printf("Built a client\n");
 
-      for (int x = 0; x < 3; x++)
+      for (int x = 0; x < 8; x++)
         {
           cl.rpc_invoke();
 
@@ -168,7 +182,10 @@ TEST_CASE("set up single word system")
 
     safe_thread sv_thrd([&]() {
       auto st = [&](int line) {
-        printf("server.hpp:%d: step\n", line);
+        if (show_step)
+          {
+            printf("server.hpp:%d: step\n", line);
+          }
         sv_thrd.step();
       };
 
@@ -176,10 +193,9 @@ TEST_CASE("set up single word system")
 
       printf("Built a server\n");
 
-      for (int x = 0; x < 3; x++)
+      for (;;)
         {
           sv.rpc_handle();
-          printf("Server handled req %d\n", x);
           if (!run)
             {
               return;
@@ -191,13 +207,14 @@ TEST_CASE("set up single word system")
 
     printf("Threads spawned and running\n");
 
-    for (unsigned i = 0; i < 1000; i++)
+    for (unsigned i = 0; i < 200; i++)
       {
         cl_thrd.run(1);
         sv_thrd.run(1);
         usleep(100);
       }
 
+    printf("Setting run to false\n");
     run = false;
   }
 
