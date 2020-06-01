@@ -36,12 +36,14 @@ enum class client_state : uint8_t
 template <size_t N, typename S>
 struct client
 {
-  client(const mailbox_t<N>* inbox, mailbox_t<N>* outbox, page_t* buffer,
+  client(const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
+         slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active, page_t* buffer,
          S step, std::function<void(page_t*)> fill = fill_nop,
          std::function<void(page_t*)> use = use_nop)
 
       : inbox(inbox),
         outbox(outbox),
+        active(active),
         buffer(buffer),
         step(step),
         fill(fill),
@@ -49,32 +51,11 @@ struct client
   {
   }
 
-  client_state status(uint64_t slot)
-  {
-    size_t w = index_to_element(slot);
-    uint64_t subindex = index_to_subindex(slot);
-
-    uint64_t i = inbox->load_word(w);
-    uint64_t o = outbox->load_word(w);
-    uint64_t a = active.load_word(w);
-
-    unsigned r = detail::nthbitset64(i, subindex) << 2 |
-                 detail::nthbitset64(o, subindex) << 1 |
-                 detail::nthbitset64(a, subindex) << 0;
-
-    return static_cast<client_state>(r);
-  }
-
-  void dump_state(uint64_t slot)
-  {
-    printf("slot %lu: %s\n", slot, str(status(slot)));
-  }
-
   size_t spin_until_claimed_slot()
   {
     for (;;)
       {
-        size_t slot = active.try_claim_any_empty_slot();
+        size_t slot = active->try_claim_any_empty_slot();
         if (slot != SIZE_MAX)
           {
             step(__LINE__);
@@ -105,7 +86,7 @@ struct client
 
     uint64_t i = inbox->load_word(w);
     uint64_t o = outbox->load_word(w);
-    uint64_t a = active.load_word(w);
+    uint64_t a = active->load_word(w);
 
     uint64_t some_use = i | o | a;
 
@@ -124,7 +105,7 @@ struct client
   bool try_garbage_collect_word_client(uint64_t w)
   {
     auto c = [](uint64_t i, uint64_t) -> uint64_t { return i; };
-    return try_garbage_collect_word<N, decltype(c)>(c, inbox, outbox, &active,
+    return try_garbage_collect_word<N, decltype(c)>(c, inbox, outbox, active,
                                                     w);
   }
 
@@ -132,7 +113,7 @@ struct client
   {
     uint64_t i = inbox->load_word(word);
     uint64_t o = outbox->load_word(word);
-    uint64_t a = active.load_word(word);
+    uint64_t a = active->load_word(word);
     printf("%lu %lu %lu\n", i, o, a);
   }
 
@@ -166,7 +147,7 @@ struct client
         slot = find_candidate_client_slot(w, &inbox_word, &outbox_word);
         if (slot != SIZE_MAX)
           {
-            if (active.try_claim_empty_slot(slot, &active_word))
+            if (active->try_claim_empty_slot(slot, &active_word))
               {
                 printf("try_claim succeeded\n");
                 // found a slot and locked it
@@ -254,7 +235,7 @@ struct client
     // wave release slot
     step(__LINE__);
     {
-      uint64_t a = active.release_slot_returning_updated_word(slot);
+      uint64_t a = active->release_slot_returning_updated_word(slot);
       c.a = a;
     }
 
@@ -272,11 +253,11 @@ struct client
 
   const mailbox_t<N>* inbox;
   mailbox_t<N>* outbox;
+  slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active;
   page_t* buffer;
   S step;
   std::function<void(page_t*)> fill;
   std::function<void(page_t*)> use;
-  slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active;
 };
 }  // namespace hostrpc
 

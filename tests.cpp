@@ -142,7 +142,8 @@ TEST_CASE("set up single word system")
   {
     safe_thread cl_thrd([&]() {
       auto stepper = hostrpc::default_stepper(&client_steps, show_step);
-      auto cl = client<64, default_stepper>(&recv, &send, &buffer[0], stepper,
+      slot_bitmap<64, __OPENCL_MEMORY_SCOPE_DEVICE> active;
+      auto cl = client<64, default_stepper>(&recv, &send, &active, &buffer[0], stepper,
                                             fill, use);
 
       while (calls_launched < calls_planned)
@@ -160,7 +161,8 @@ TEST_CASE("set up single word system")
 
     safe_thread sv_thrd([&]() {
       auto stepper = hostrpc::default_stepper(&server_steps, show_step);
-      auto sv = server<64, default_stepper>(&send, &recv, &buffer[0], stepper,
+      slot_bitmap<64, __OPENCL_MEMORY_SCOPE_DEVICE> active;
+      auto sv = server<64, default_stepper>(&send, &recv, &active, &buffer[0], stepper,
                                             operate);
       for (;;)
         {

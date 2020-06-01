@@ -48,10 +48,12 @@ inline server_state& operator&=(server_state& lhs, server_state rhs)
 template <size_t N, typename S>
 struct server
 {
-  server(const mailbox_t<N>* inbox, mailbox_t<N>* outbox, page_t* buffer,
+  server(const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
+         slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active, page_t* buffer,
          S step, std::function<void(page_t*)> operate = operate_nop)
       : inbox(inbox),
         outbox(outbox),
+        active(active),
         buffer(buffer),
         step(step),
         operate(operate)
@@ -70,7 +72,7 @@ struct server
   {
     uint64_t i = inbox->load_word(word);
     uint64_t o = outbox->load_word(word);
-    uint64_t a = active.load_word(word);
+    uint64_t a = active->load_word(word);
     printf("%lu %lu %lu\n", i, o, a);
   }
 
@@ -88,7 +90,7 @@ struct server
                              uint64_t* active_word)  // or SIZE_MAX
   {
     uint64_t work_available =
-        work_todo(w, inbox_word, outbox_word) & ~active.load_word(w);
+        work_todo(w, inbox_word, outbox_word) & ~active->load_word(w);
     // tries each bit in the work available at he call
     // doesn't load new information for work_available to preserve termination
 
@@ -98,7 +100,7 @@ struct server
         assert(detail::nthbitset64(work_available, idx));
         uint64_t slot = 64 * w + idx;
         // attempt to get that slot
-        bool r = active.try_claim_empty_slot(slot, active_word);
+        bool r = active->try_claim_empty_slot(slot, active_word);
 
         if (r)
           {
@@ -109,7 +111,7 @@ struct server
                 // got lock on a slot with work to do
                 // said work is no longer available to another thread
 
-                assert(!detail::nthbitset64(td & ~active.load_word(w), idx));
+                assert(!detail::nthbitset64(td & ~active->load_word(w), idx));
                 step(__LINE__);
 
                 return slot;
@@ -133,7 +135,7 @@ struct server
   bool try_garbage_collect_word_server(uint64_t w)
   {
     auto c = [](uint64_t i, uint64_t o) -> uint64_t { return ~i & o; };
-    return try_garbage_collect_word<N, decltype(c)>(c, inbox, outbox, &active,
+    return try_garbage_collect_word<N, decltype(c)>(c, inbox, outbox, active,
                                                     w);
   }
 
@@ -212,7 +214,7 @@ struct server
     // but that suspending a server thread until the client
     // drops the data. instead we can drop the lock and garbage collect later
     {
-      uint64_t a = active.release_slot_returning_updated_word(slot);
+      uint64_t a = active->release_slot_returning_updated_word(slot);
       c.a = a;
     }
 
@@ -226,10 +228,10 @@ struct server
 
   const mailbox_t<N>* inbox;
   mailbox_t<N>* outbox;
+  slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active;
   page_t* buffer;
   S step;
   std::function<void(page_t*)> operate;
-  slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active;
 };  // namespace hostrpc
 
 }  // namespace hostrpc
