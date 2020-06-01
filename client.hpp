@@ -2,6 +2,7 @@
 #define HOSTRPC_CLIENT_HPP_INCLUDED
 
 #include "common.hpp"
+
 #include <functional>
 #include <unistd.h>
 

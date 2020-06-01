@@ -2,8 +2,6 @@
 #define HOSTRPC_SERVER_HPP_INCLUDED
 
 #include "common.hpp"
-#include <functional>
-#include <unistd.h>
 
 namespace hostrpc
 {
@@ -24,13 +22,14 @@ enum class server_state : uint8_t
 
 inline server_state operator|(server_state lhs, server_state rhs)
 {
-  using T = std::underlying_type<server_state>::type;
+  // no type_traits, thus no std::underlying_type
+  using T = uint8_t;
   return static_cast<server_state>(static_cast<T>(lhs) | static_cast<T>(rhs));
 }
 
 inline server_state operator&(server_state lhs, server_state rhs)
 {
-  using T = std::underlying_type<server_state>::type;
+  using T = uint8_t;
   return static_cast<server_state>(static_cast<T>(lhs) & static_cast<T>(rhs));
 }
 
@@ -45,12 +44,12 @@ inline server_state& operator&=(server_state& lhs, server_state rhs)
   return lhs;
 }
 
-template <size_t N, typename S>
+template <size_t N, typename Op, typename S>
 struct server
 {
   server(const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
          slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active, page_t* buffer,
-         S step, std::function<void(page_t*)> operate = operate_nop)
+         S step, Op operate = operate_nop)
       : inbox(inbox),
         outbox(outbox),
         active(active),
@@ -231,7 +230,7 @@ struct server
   slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active;
   page_t* buffer;
   S step;
-  std::function<void(page_t*)> operate;
+  Op operate;
 };  // namespace hostrpc
 
 }  // namespace hostrpc

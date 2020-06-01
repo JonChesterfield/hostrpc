@@ -1,12 +1,10 @@
 #ifndef HOSTRPC_COMMON_H_INCLUDED
 #define HOSTRPC_COMMON_H_INCLUDED
 
-#include <cassert>
-#include <cstdint>
+#include <stdint.h>
+#include <stdatomic.h>
 
-#include <atomic>
-#include <chrono>
-#include <thread>
+#include "platform.hpp"
 
 namespace hostrpc
 {
@@ -458,17 +456,17 @@ bool try_garbage_collect_word(
   return true;
 }
 
-void step(std::atomic<std::uint64_t> * steps_left)
+void step(_Atomic(uint64_t) * steps_left)
 {
-  if (steps_left->load() == UINT64_MAX)
+  if (atomic_load(steps_left) == UINT64_MAX)
     {
       // Disable stepping
       return;
     }
-  while (steps_left->load() == 0)
+  while (atomic_load(steps_left) == 0)
     {
       // Don't burn all the cpu waiting for a step
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      platform::sleep_briefly();
     }
 
   steps_left--;
@@ -481,7 +479,7 @@ struct nop_stepper
 
 struct default_stepper
 {
-  default_stepper(std::atomic<std::uint64_t>* val, bool show_step = false,
+  default_stepper(_Atomic(uint64_t)* val, bool show_step = false,
                   const char* name = "unknown")
     : val(val),show_step(show_step),name(name)
   {
@@ -495,7 +493,7 @@ struct default_stepper
       }
     step(val);
   }
-  std::atomic<std::uint64_t>* val;
+  _Atomic(uint64_t)* val;
   bool show_step;
   const char * name;
 };

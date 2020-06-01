@@ -3,12 +3,7 @@
 #include "client.hpp"
 #include "server.hpp"
 
-#include <atomic>
-#include <chrono>
-#include <condition_variable>
-#include <mutex>
 #include <thread>
-
 #include <unistd.h>
 
 TEST_CASE("Bitmap")
@@ -109,21 +104,19 @@ TEST_CASE("set up single word system")
 {
   using namespace hostrpc;
 
-  using cb_type = std::function<void(hostrpc::page_t*)>;
+  _Atomic(uint64_t) val(UINT64_MAX);
 
-  std::atomic<uint64_t> val(UINT64_MAX);
-
-  cb_type fill = [&](page_t* p) {
+  auto fill = [&](page_t* p) -> void{
     val++;
     printf("Passing %lu\n", static_cast<uint64_t>(val));
     p->cacheline[0].element[0] = val;
   };
-  cb_type operate = [](page_t* p) {
+  auto operate = [](page_t* p) -> void{
     uint64_t r = p->cacheline[0].element[0];
     printf("Server received %lu, forwarding as %lu\n", r, 2 * r);
     p->cacheline[0].element[0] = 2 * r;
   };
-  cb_type use = [](page_t* p) {
+  auto use = [](page_t* p) -> void{
     printf("Returned %lu\n", p->cacheline[0].element[0]);
   };
 
@@ -132,11 +125,11 @@ TEST_CASE("set up single word system")
   page_t buffer[64];
 
   const uint64_t calls_planned = 1024;
-  std::atomic<uint64_t> calls_launched(0);
-  std::atomic<uint64_t> calls_handled(0);
+  _Atomic(uint64_t) calls_launched(0);
+  _Atomic(uint64_t) calls_handled(0);
 
-  std::atomic<uint64_t> client_steps(0);
-  std::atomic<uint64_t> server_steps(0);
+  _Atomic(uint64_t) client_steps(0);
+  _Atomic(uint64_t) server_steps(0);
 
   const bool show_step = false;
   {
@@ -162,7 +155,7 @@ TEST_CASE("set up single word system")
     safe_thread sv_thrd([&]() {
       auto stepper = hostrpc::default_stepper(&server_steps, show_step);
       slot_bitmap<64, __OPENCL_MEMORY_SCOPE_DEVICE> active;
-      auto sv = server<64, default_stepper>(&send, &recv, &active, &buffer[0], stepper,
+      auto sv = server<64, decltype(operate), default_stepper>(&send, &recv, &active, &buffer[0], stepper,
                                             operate);
       for (;;)
         {

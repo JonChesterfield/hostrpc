@@ -7,9 +7,9 @@ void server_instance(
 
 {
   hostrpc::nop_stepper step;
-  std::function<void(hostrpc::page_t*)> operate = hostrpc::operate_nop;
+  auto operate = hostrpc::operate_nop;
 
-  auto s = hostrpc::server<N, hostrpc::nop_stepper>{inbox,  outbox, active,
+  auto s = hostrpc::server<N, decltype(operate), hostrpc::nop_stepper>{inbox,  outbox, active,
                                                     buffer, step,   operate};
 
   for (;;)
