@@ -71,6 +71,47 @@ struct client
   {
   }
 
+  // template <size_t N>
+  struct cache
+  {
+    cache(const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
+          slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active, uint64_t slot)
+        : inbox(inbox),
+          outbox(outbox),
+          active(active),
+          word(index_to_element(slot)),
+          subindex(index_to_subindex(slot))
+    {
+      read_inbox();
+      read_outbox();
+      read_active();
+    }
+
+    void read_inbox() { i = inbox->load_word(word); }
+    void read_outbox() { o = outbox->load_word(word); }
+    void read_active() { a = active->load_word(word); }
+
+    client_state status()
+    {
+      unsigned r = detail::nthbitset64(i, subindex) << 2 |
+                   detail::nthbitset64(o, subindex) << 1 |
+                   detail::nthbitset64(a, subindex) << 0;
+
+      return static_cast<client_state>(r);
+    }
+
+   private:
+    uint64_t i;
+    uint64_t o;
+    uint64_t a;
+
+    const mailbox_t<N>* inbox;
+    mailbox_t<N>* outbox;
+    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active;
+    uint64_t word;
+    uint64_t subindex;
+  };
+
   client_state status(uint64_t slot)
   {
     size_t w = index_to_element(slot);
@@ -87,11 +128,11 @@ struct client
     return static_cast<client_state>(r);
   }
 
-void  dump_state(uint64_t slot)
+  void dump_state(uint64_t slot)
   {
     printf("slot %lu: %s\n", slot, str(status(slot)));
   }
-  
+
   size_t spin_until_claimed_slot()
   {
     for (;;)
@@ -166,9 +207,8 @@ void  dump_state(uint64_t slot)
     printf("%lu %lu %lu\n", i, o, a);
   }
 
-  
   // Returns true if it successfully launched the task
-bool rpc_invoke(bool have_continuation)
+  bool rpc_invoke(bool have_continuation)
   {
     step(__LINE__);
 
@@ -184,33 +224,34 @@ bool rpc_invoke(bool have_continuation)
     step(__LINE__);
 
     // wave_acquire_slot
-    // can only acquire a slot which is 000    
+    // can only acquire a slot which is 000
     size_t slot = SIZE_MAX;
 
-      for (uint64_t w = 0; w < words(); w++)
-        {
-          // may need to gc for there to be a slot
-          try_garbage_collect_word_client(w);
-          slot = find_candidate_client_slot(w);
-          if (slot != SIZE_MAX)
-            {
-              if (active.try_claim_empty_slot(slot))
-                {
-                  // found a slot and locked it
-                  break;
-                }
-            }
-        }
+    for (uint64_t w = 0; w < words(); w++)
+      {
+        // may need to gc for there to be a slot
+        try_garbage_collect_word_client(w);
+        slot = find_candidate_client_slot(w);
+        if (slot != SIZE_MAX)
+          {
+            if (active.try_claim_empty_slot(slot))
+              {
+                // found a slot and locked it
+                break;
+              }
+          }
+      }
 
-    if (slot == SIZE_MAX) {
-      // couldn't get a slot, won't launch
-      step(__LINE__);
+    if (slot == SIZE_MAX)
+      {
+        // couldn't get a slot, won't launch
+        step(__LINE__);
 
-      // currently getting stuck here with outbox full and
-      // only some values in the inbox
-      return false;
-    }
-    
+        // currently getting stuck here with outbox full and
+        // only some values in the inbox
+        return false;
+      }
+
     // 0b001
     assert(status(slot) == client_state::active_thread);
     step(__LINE__);
