@@ -189,24 +189,34 @@ struct server
         return false;
       }
 
-    step(__LINE__);
+    c.init(slot);
+    assert(c.is(0b101));
 
-    assert((*inbox)[slot] == 1);
     step(__LINE__);
 
     operate(&buffer[slot]);
     step(__LINE__);
 
+    assert(c.is(0b101));
+
     // publish result
-    assert((*inbox)[slot] == 1);
-    outbox->claim_slot(slot);
+    {
+      uint64_t o = outbox->claim_slot_returning_updated_word(slot);
+      c.o = o;
+    }
+    assert(c.is(0b111));
 
     step(__LINE__);
 
     // can wait for G0 and then drop outbox, active slots
     // but that suspending a server thread until the client
     // drops the data. instead we can drop the lock and garbage collect later
-    active.release_slot(slot);
+    {
+      uint64_t a = active.release_slot_returning_updated_word(slot);
+      c.a = a;
+    }
+
+    assert(c.is(0b110));
 
     step(__LINE__);
     // leaves outbox live
