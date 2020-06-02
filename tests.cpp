@@ -122,7 +122,8 @@ TEST_CASE("set up single word system")
 
   mailbox_t<64> send;
   mailbox_t<64> recv;
-  page_t buffer[64];
+  page_t client_buffer[64];
+  page_t server_buffer[64];
 
   const uint64_t calls_planned = 1024;
   _Atomic(uint64_t) calls_launched(0);
@@ -137,7 +138,8 @@ TEST_CASE("set up single word system")
       auto stepper = hostrpc::default_stepper(&client_steps, show_step);
       slot_bitmap<64, __OPENCL_MEMORY_SCOPE_DEVICE> active;
       auto cl = client<64, decltype(fill), decltype(use), default_stepper>(
-          &recv, &send, &active, &buffer[0], stepper, fill, use);
+          &recv, &send, &active, &server_buffer[0], &client_buffer[0], stepper,
+          fill, use);
 
       while (calls_launched < calls_planned)
         {
@@ -156,7 +158,8 @@ TEST_CASE("set up single word system")
       auto stepper = hostrpc::default_stepper(&server_steps, show_step);
       slot_bitmap<64, __OPENCL_MEMORY_SCOPE_DEVICE> active;
       auto sv = server<64, decltype(operate), default_stepper>(
-          &send, &recv, &active, &buffer[0], stepper, operate);
+          &send, &recv, &active, &client_buffer[0], &server_buffer[0], stepper,
+          operate);
       for (;;)
         {
           if (sv.rpc_handle())

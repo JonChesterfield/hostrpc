@@ -48,12 +48,15 @@ template <size_t N, typename Op, typename S>
 struct server
 {
   server(const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
-         slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active, page_t* buffer,
-         S step, Op operate = operate_nop)
+         slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active,
+         const page_t* remote_buffer, page_t* local_buffer, S step,
+         Op operate = operate_nop)
       : inbox(inbox),
         outbox(outbox),
         active(active),
-        buffer(buffer),
+        remote_buffer(remote_buffer),
+        local_buffer(local_buffer),
+
         step(step),
         operate(operate)
   {
@@ -134,8 +137,7 @@ struct server
   void try_garbage_collect_word_server(uint64_t w)
   {
     auto c = [](uint64_t i, uint64_t o) -> uint64_t { return ~i & o; };
-    try_garbage_collect_word<N, decltype(c)>(c, inbox, outbox, active,
-                                                    w);
+    try_garbage_collect_word<N, decltype(c)>(c, inbox, outbox, active, w);
   }
 
   size_t words()
@@ -195,7 +197,9 @@ struct server
 
     step(__LINE__);
 
-    operate(&buffer[slot]);
+    __builtin_memcpy((void*)&remote_buffer[slot], (void*)&local_buffer[slot], sizeof(page_t));
+
+    operate(&local_buffer[slot]);
     step(__LINE__);
 
     assert(c.is(0b101));
@@ -228,7 +232,8 @@ struct server
   const mailbox_t<N>* inbox;
   mailbox_t<N>* outbox;
   slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active;
-  page_t* buffer;
+  const page_t* remote_buffer;
+  page_t* local_buffer;
   S step;
   Op operate;
 };  // namespace hostrpc

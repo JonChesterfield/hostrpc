@@ -24,6 +24,7 @@ inline void sleep_briefly(void)
 inline void sleep(void) { usleep(1000); }
 
 bool is_master_lane(void) { return true; }
+uint32_t broadcast_master(uint32_t x) { return x; }
 uint64_t broadcast_master(uint64_t x) { return x; }
 }  // namespace platform
 #endif
@@ -71,16 +72,21 @@ __attribute__((always_inline)) inline bool is_master_lane(void)
   uint32_t lane_id =
       __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
 
-  // TODO: readfirstlane(lane_id) == lowest_active? 
+  // TODO: readfirstlane(lane_id) == lowest_active?
   return lane_id == lowest_active;
+}
+
+__attribute__((always_inline)) inline uint32_t broadcast_master(uint32_t x)
+{
+  return __builtin_amdgcn_readfirstlane(x);
 }
 
 __attribute__((always_inline)) inline uint64_t broadcast_master(uint64_t x)
 {
   uint32_t lo = x;
   uint32_t hi = x >> 32u;
-  lo = __builtin_amdgcn_readfirstlane(lo);
-  hi = __builtin_amdgcn_readfirstlane(hi);
+  lo = broadcast_master(lo);
+  hi = broadcast_master(hi);
   return ((uint64_t)hi << 32u) | lo;
 }
 

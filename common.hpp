@@ -291,6 +291,7 @@ struct slot_bitmap
            uint64_t* loaded)
   {
     _Atomic uint64_t* addr = &data[element];
+
     bool r = __opencl_atomic_compare_exchange_weak(
         addr, &expect, replace, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED,
         __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);

@@ -3,14 +3,13 @@
 void server_instance(
     const hostrpc::mailbox_t<N>* inbox, hostrpc::mailbox_t<N>* outbox,
     hostrpc::slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active,
-    hostrpc::page_t* buffer)
-
+    const hostrpc::page_t* remote_buffer, hostrpc::page_t* local_buffer)
 {
   hostrpc::nop_stepper step;
   auto operate = hostrpc::operate_nop;
 
   auto s = hostrpc::server<N, decltype(operate), decltype(step)>{
-      inbox, outbox, active, buffer, step, operate};
+      inbox, outbox, active, remote_buffer, local_buffer, step, operate};
 
   for (;;)
     {

@@ -35,13 +35,15 @@ template <size_t N, typename Fill, typename Use, typename S>
 struct client
 {
   client(const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
-         slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active, page_t* buffer,
-         S step, Fill fill = fill_nop, Use use = use_nop)
+         slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active,
+         const page_t* remote_buffer, page_t* local_buffer, S step,
+         Fill fill = fill_nop, Use use = use_nop)
 
       : inbox(inbox),
         outbox(outbox),
         active(active),
-        buffer(buffer),
+        remote_buffer(remote_buffer),
+        local_buffer(local_buffer),
         step(step),
         fill(fill),
         use(use)
@@ -168,7 +170,7 @@ struct client
     step(__LINE__);
 
     // wave_populate
-    fill(&buffer[slot]);
+    fill(&local_buffer[slot]);
     step(__LINE__);
 
     // wave_publish work
@@ -200,7 +202,10 @@ struct client
 
         step(__LINE__);
         // call the continuation
-        use(&buffer[slot]);
+        __builtin_memcpy((void*)&remote_buffer[slot], (void*)&local_buffer[slot],
+                         sizeof(page_t));
+
+        use(&local_buffer[slot]);
 
         step(__LINE__);
 
@@ -250,7 +255,8 @@ struct client
   const mailbox_t<N>* inbox;
   mailbox_t<N>* outbox;
   slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active;
-  page_t* buffer;
+  const page_t* remote_buffer;
+  page_t* local_buffer;
   S step;
   Fill fill;
   Use use;
