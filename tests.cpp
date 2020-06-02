@@ -132,14 +132,15 @@ TEST_CASE("set up single word system")
   _Atomic(uint64_t) client_steps(0);
   _Atomic(uint64_t) server_steps(0);
 
+  hostrpc::copy_functor_x64_x64 cp;
+
   const bool show_step = false;
   {
     safe_thread cl_thrd([&]() {
       auto stepper = hostrpc::default_stepper(&client_steps, show_step);
       slot_bitmap<64, __OPENCL_MEMORY_SCOPE_DEVICE> active;
-      auto cl = client<64, decltype(fill), decltype(use), default_stepper>(
-          &recv, &send, &active, &server_buffer[0], &client_buffer[0], stepper,
-          fill, use);
+      auto cl = make_client(cp, &recv, &send, &active, &server_buffer[0],
+                            &client_buffer[0], stepper, fill, use);
 
       while (calls_launched < calls_planned)
         {
@@ -157,9 +158,8 @@ TEST_CASE("set up single word system")
     safe_thread sv_thrd([&]() {
       auto stepper = hostrpc::default_stepper(&server_steps, show_step);
       slot_bitmap<64, __OPENCL_MEMORY_SCOPE_DEVICE> active;
-      auto sv = server<64, decltype(operate), default_stepper>(
-          &send, &recv, &active, &client_buffer[0], &server_buffer[0], stepper,
-          operate);
+      auto sv = make_server(&send, &recv, &active, &client_buffer[0],
+                            &server_buffer[0], stepper, operate);
       for (;;)
         {
           if (sv.rpc_handle())

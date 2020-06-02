@@ -8,8 +8,8 @@ void server_instance(
   hostrpc::nop_stepper step;
   auto operate = hostrpc::operate_nop;
 
-  auto s = hostrpc::server<N, decltype(operate), decltype(step)>{
-      inbox, outbox, active, remote_buffer, local_buffer, step, operate};
+  auto s = hostrpc::make_server(inbox, outbox, active, remote_buffer,
+                                local_buffer, step, operate);
 
   for (;;)
     {

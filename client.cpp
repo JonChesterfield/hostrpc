@@ -9,9 +9,9 @@ void client_instance(
   hostrpc::nop_stepper step;
   auto fill = hostrpc::fill_nop;
   auto use = hostrpc::use_nop;
-
-  auto s = hostrpc::client<N, decltype(fill), decltype(use), decltype(step)>{
-      inbox, outbox, active, remote_buffer, local_buffer, step, fill, use};
+  hostrpc::copy_functor_x64_x64 cp;
+  auto s = hostrpc::make_client(cp, inbox, outbox, active, remote_buffer,
+                                local_buffer, step, fill, use);
 
   for (;;)
     {

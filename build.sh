@@ -33,3 +33,5 @@ done
 
 $CXX $LDFLAGS tests.bc states.bc catch.o -o states.exe && time  ./states.exe
 
+$CXX -O2 -ffreestanding --target=amdgcn-amd-amdhsa -march=gfx906 -c shader.cpp -o shader.o
+

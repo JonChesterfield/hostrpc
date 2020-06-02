@@ -236,7 +236,16 @@ struct server
   page_t* local_buffer;
   S step;
   Op operate;
-};  // namespace hostrpc
+};
+
+template <size_t N, typename Op, typename S>
+server<N,Op,S> make_server(const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
+         slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active,
+         const page_t* remote_buffer, page_t* local_buffer, S step,
+         Op operate = operate_nop)
+{
+  return {inbox,outbox,active,remote_buffer,local_buffer,step,operate};
+}
 
 }  // namespace hostrpc
 #endif

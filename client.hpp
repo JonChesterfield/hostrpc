@@ -2,7 +2,7 @@
 #define HOSTRPC_CLIENT_HPP_INCLUDED
 
 #include "common.hpp"
-
+#include "memory.hpp"
 // Intend to have call and service working across gcn and x86
 // The normal terminology is:
 // Client makes a call to the server, which does ome work and sends back a reply
@@ -31,15 +31,17 @@ enum class client_state : uint8_t
 // garbage that is, can't claim the slot for a new thread is that a sufficient
 // criteria for the slot to be awaiting gc?
 
-template <size_t N, typename Fill, typename Use, typename S>
+  
+template <size_t N, typename C, typename Fill, typename Use, typename S>
 struct client
 {
-  client(const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
+  client(C copy, const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
          slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active,
          const page_t* remote_buffer, page_t* local_buffer, S step,
          Fill fill = fill_nop, Use use = use_nop)
 
-      : inbox(inbox),
+    :   copy(copy),
+        inbox(inbox),
         outbox(outbox),
         active(active),
         remote_buffer(remote_buffer),
@@ -252,6 +254,7 @@ struct client
     return true;
   }
 
+  C copy;
   const mailbox_t<N>* inbox;
   mailbox_t<N>* outbox;
   slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active;
@@ -261,6 +264,16 @@ struct client
   Fill fill;
   Use use;
 };
+
+template <size_t N, typename C, typename Fill, typename Use, typename S>
+  client<N,C,Fill,Use,S> make_client(C copy, const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
+         slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active,
+         const page_t* remote_buffer, page_t* local_buffer, S step,
+         Fill fill = fill_nop, Use use = use_nop)
+{
+  return {copy, inbox, outbox, active, remote_buffer, local_buffer, step, fill, use};
+}
+  
 }  // namespace hostrpc
 
 #endif
