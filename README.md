@@ -4,10 +4,109 @@ RPC within a shared address space
 Primary intended use is for asking an x86 process to run code on behalf of an amdgpu attached over pcie.
 
 Assumptions:
-- gpu scheduler is not fair under contention
+- client scheduler is not fair under contention
 - host scheduler is fair under contention
 - cas/faa over pci-e is expensive
 - zero acceptable probability of deadlock
+
+# State machines
+All assume one server, one client. Muliple devices or queues can use multiple RPC structures.
+'Inbox' and 'outbox' refer to single element queues.
+
+## Single thread, single task per device
+
+Each device has write access to an outbox and read access to an inbox.
+A client/server pair uses two mailboxes in total. Writes to the outbox become visible as reads from the inbox after some delay.
+
+| Mailbox | Client | Server |
+|:-:      |:-:     |:-:     |
+| A       | Inbox  | Outbox |
+| B       | Outbox | Inbox  |
+
+### Server
+|Inbox  | Outbox | State               |
+|:-:    |:-:     |:-                   |
+| 0     | 0      | Idle / waiting      |
+| 0     | 1      | Garbage to clean up |
+| 1     | 0      | Work to do          |
+| 1     | 1      | Waiting for client  |
+
+1. Waits for work
+2. Gets request to do work
+3. Allocates only block
+4. Does said work
+5. Posts that the work is done
+6. Waits for client to acknowledge
+7. Deallocates only block
+8. Goto 1
+
+### Client
+|Inbox  | Outbox | State                  |
+|:-:    |:-:     |:-                      |
+| 0     | 0      | Idle                   |
+| 0     | 1      | Work posted for server |
+| 1     | 0      | Finished with result   |
+| 1     | 1      | Result available       |
+
+#### Synchronous
+1. Called by application
+2. Runs garbage collection
+3. Allocates only block
+4. Writes arguments into only block
+5. Posts that work is available
+6. Waits for result from server
+7. Calls result handler on said result
+8. Posts that result is no longer needed
+9. Deallocates only block
+10. Return to application
+
+#### Asynchronous
+1. Called by application
+2. Runs garbage collection
+2. Allocates only block
+3. Writes arguments into only block
+4. Posts that work is available
+5. Return to application
+
+### Client / server, synchronous call
+
+Each mailbox transitions from 0 to 1 and then from 1 to 0 exactly once per call.
+At most one value changes on each event.
+Inbox reads lag the corresponding outbox write.
+Buffer is accessible by at most one of client and server at a time.
+
+|Client Inbox | Client Outbox | Server Inbox | Server Outbox | Buffer accessible | Event                   |
+|:-:          |:-:            |:-:           |:-:            |:-                 |:-                       |
+|0            | 0             | 0            | 0             |                   | Idle                    | 
+|0            | 0             | 0            | 0             | Client            | Application call        | 
+|0            | **1**         | 0            | 0             |                   | Client post             | 
+|0            | 1             | **1**        | 0             | Server            | Server updated inbox    | 
+|0            | 1             | 1            | 0             | Server            | Server does work        | 
+|0            | 1             | 1            | **1**         |                   | Server post             | 
+|**1**        | 1             | 1            | 1             | Client            | Client updated inbox    | 
+|1            | 1             | 1            | 1             | Client            | Client processes result |
+|1            | **0**         | 1            | 1             |                   | Client post             |
+|1            | 0             | **0**        | 1             |                   | Server updated inbox    |
+|1            | 0             | 0            | 1             |                   | Server garbage collect  |
+|1            | 0             | 0            | **0**         |                   | Server post             |
+|**0**        | 0             | 0            | 0             |                   | Client updated inbox    |
+
+
+## Multiple thread, multiple task per device
+Replace the single bit mailbox with a bitmap representing N mailboxes for up to N simultaneous tasks.
+The inbox remains read-only. Introduce an array of locks on each device to coordinate access to outbox. The invariant is that outbox may only be written to (set or cleared) while the corresponding lock is held.
+
+|Inbox  | Outbox | Lock   | State                |
+|:-:    |:-:     |:-:     |:-                    |
+| 0     | 0      | 0      | Idle / waiting       |
+| 0     | 0      | 1      | Idle thread          |
+| 0     | 1      | 0      | Garbage to clean up  |
+| 0     | 1      | 1      | Garbage with owner   |
+| 1     | 0      | 0      | Work to do           |
+| 1     | 0      | 1      | Work with owner      |
+| 1     | 1      | 0      | Waiting for client   |
+| 1     | 1      | 1      | Work done with owner |
+
 
 Instantiation is per host-gpu pair, and per hsa queue on the gpu. May use one or more host threads per instantiation.
 
