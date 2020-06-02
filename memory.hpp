@@ -14,22 +14,22 @@ namespace hostrpc
 template <typename T>
 struct copy_functor_interface
 {
-  void push_from_client_to_server(void *dst, void *src, size_t N)
+  void push_from_client_to_server(void *dst, const void *src, size_t N)
   {
     impl().push_from_client_to_server_impl(dst, src, N);
   }
-  void pull_to_client_from_server(void *dst, void *src, size_t N)
+  void pull_to_client_from_server(void *dst, const void *src, size_t N)
   {
-    impl().pull_to_client_from_server(dst, src, N);
+    impl().pull_to_client_from_server_impl(dst, src, N);
   }
 
-  void push_from_server_to_client(void *dst, void *src, size_t N)
+  void push_from_server_to_client(void *dst, const void *src, size_t N)
   {
-    impl().push_from_server_to_client(dst, src, N);
+    impl().push_from_server_to_client_impl(dst, src, N);
   }
-  void pull_to_server_from_client(void *dst, void *src, size_t N)
+  void pull_to_server_from_client(void *dst, const void *src, size_t N)
   {
-    impl().pull_to_server_from_client(dst, src, N);
+    impl().pull_to_server_from_client_impl(dst, src, N);
   }
 
  private:
@@ -38,19 +38,22 @@ struct copy_functor_interface
   T &impl() { return *static_cast<T *>(this); }
 
   // Default implementations are no-ops
-  void push_from_client_to_server_impl(void *, void *, size_t) {}
-  void pull_to_client_from_server_impl(void *, void *, size_t) {}
-  void push_from_server_to_client_impl(void *, void *, size_t) {}
-  void pull_to_server_from_client_impl(void *, void *, size_t) {}
+  void push_from_client_to_server_impl(void *, const void *, size_t) {}
+  void pull_to_client_from_server_impl(void *, const void *, size_t) {}
+  void push_from_server_to_client_impl(void *, const void *, size_t) {}
+  void pull_to_server_from_client_impl(void *, const void *, size_t) {}
 };
 
 struct copy_functor_x64_x64 : public copy_functor_interface<copy_functor_x64_x64>
 {
-  void pull_to_client_from_server_impl(void *dst, void *src, size_t N)
+  friend struct copy_functor_interface<copy_functor_x64_x64>;
+private:
+  void pull_to_client_from_server_impl(void *dst, const void *src, size_t N)
   {
+    printf("called pull\n");
     __builtin_memcpy(dst, src, N);
   }
-  void pull_to_server_from_client_impl(void *dst, void *src, size_t N)
+  void pull_to_server_from_client_impl(void *dst, const void *src, size_t N)
   {
     __builtin_memcpy(dst, src, N);
   }

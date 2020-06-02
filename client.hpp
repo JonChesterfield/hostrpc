@@ -31,16 +31,15 @@ enum class client_state : uint8_t
 // garbage that is, can't claim the slot for a new thread is that a sufficient
 // criteria for the slot to be awaiting gc?
 
-  
 template <size_t N, typename C, typename Fill, typename Use, typename S>
 struct client
 {
   client(C copy, const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
          slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active,
-         const page_t* remote_buffer, page_t* local_buffer, S step,
+         page_t* remote_buffer, page_t* local_buffer, S step,
          Fill fill = fill_nop, Use use = use_nop)
 
-    :   copy(copy),
+      : copy(copy),
         inbox(inbox),
         outbox(outbox),
         active(active),
@@ -173,6 +172,8 @@ struct client
 
     // wave_populate
     fill(&local_buffer[slot]);
+    copy.push_from_client_to_server((void*)&remote_buffer[slot],
+                                    (void*)&local_buffer[slot], sizeof(page_t));
     step(__LINE__);
 
     // wave_publish work
@@ -204,9 +205,9 @@ struct client
 
         step(__LINE__);
         // call the continuation
-        __builtin_memcpy((void*)&remote_buffer[slot], (void*)&local_buffer[slot],
-                         sizeof(page_t));
-
+        copy.pull_to_client_from_server((void*)&local_buffer[slot],
+                                        (void*)&remote_buffer[slot],
+                                        sizeof(page_t));
         use(&local_buffer[slot]);
 
         step(__LINE__);
@@ -258,7 +259,7 @@ struct client
   const mailbox_t<N>* inbox;
   mailbox_t<N>* outbox;
   slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active;
-  const page_t* remote_buffer;
+  page_t* remote_buffer;
   page_t* local_buffer;
   S step;
   Fill fill;
@@ -266,14 +267,15 @@ struct client
 };
 
 template <size_t N, typename C, typename Fill, typename Use, typename S>
-  client<N,C,Fill,Use,S> make_client(C copy, const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
-         slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active,
-         const page_t* remote_buffer, page_t* local_buffer, S step,
-         Fill fill = fill_nop, Use use = use_nop)
+client<N, C, Fill, Use, S> make_client(
+    C copy, const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
+    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active, page_t* remote_buffer,
+    page_t* local_buffer, S step, Fill fill = fill_nop, Use use = use_nop)
 {
-  return {copy, inbox, outbox, active, remote_buffer, local_buffer, step, fill, use};
+  return {copy,         inbox, outbox, active, remote_buffer,
+          local_buffer, step,  fill,   use};
 }
-  
+
 }  // namespace hostrpc
 
 #endif

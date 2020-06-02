@@ -49,7 +49,7 @@ struct server
 {
   server(const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
          slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active,
-         const page_t* remote_buffer, page_t* local_buffer, S step,
+         page_t* remote_buffer, page_t* local_buffer, S step,
          Op operate = operate_nop)
       : inbox(inbox),
         outbox(outbox),
@@ -197,8 +197,8 @@ struct server
 
     step(__LINE__);
 
-    __builtin_memcpy((void*)&remote_buffer[slot], (void*)&local_buffer[slot], sizeof(page_t));
-
+    __builtin_memcpy((void*)&local_buffer[slot], (void*)&remote_buffer[slot], sizeof(page_t));
+   
     operate(&local_buffer[slot]);
     step(__LINE__);
 
@@ -232,7 +232,7 @@ struct server
   const mailbox_t<N>* inbox;
   mailbox_t<N>* outbox;
   slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active;
-  const page_t* remote_buffer;
+  page_t* remote_buffer;
   page_t* local_buffer;
   S step;
   Op operate;
@@ -241,7 +241,7 @@ struct server
 template <size_t N, typename Op, typename S>
 server<N,Op,S> make_server(const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
          slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active,
-         const page_t* remote_buffer, page_t* local_buffer, S step,
+         page_t* remote_buffer, page_t* local_buffer, S step,
          Op operate = operate_nop)
 {
   return {inbox,outbox,active,remote_buffer,local_buffer,step,operate};
