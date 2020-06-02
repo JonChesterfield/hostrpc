@@ -24,6 +24,7 @@ inline void sleep_briefly(void)
 inline void sleep(void) { usleep(1000); }
 
 bool is_master_lane(void) { return true; }
+uint64_t broadcast_master(uint64_t x) { return x; }
 }  // namespace platform
 #endif
 
@@ -59,17 +60,30 @@ namespace platform
 inline void sleep_briefly(void) { __builtin_amdgcn_s_sleep(0); }
 inline void sleep(void) { __builtin_amdgcn_s_sleep(100); }
 
-
-bool is_master_lane(void) {
+__attribute__((always_inline)) inline bool is_master_lane(void)
+{
   // TODO: 32 wide wavefront, consider not using raw intrinsics here
   uint64_t activemask = __builtin_amdgcn_read_exec();
 
   // TODO: check codegen for trunc lowest_active vs expanding lane_id
-  uint64_t lowest_active = __builtin_ffsl(activemask) - 1; // should this be clz?
-  uint32_t lane_id =  __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
+  // TODO: ffs is lifted from openmp runtime, looks like it should be ctz
+  uint32_t lowest_active = __builtin_ffsl(activemask) - 1;
+  uint32_t lane_id =
+      __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
+
+  // TODO: readfirstlane(lane_id) == lowest_active? 
   return lane_id == lowest_active;
 }
-  
+
+__attribute__((always_inline)) inline uint64_t broadcast_master(uint64_t x)
+{
+  uint32_t lo = x;
+  uint32_t hi = x >> 32u;
+  lo = __builtin_amdgcn_readfirstlane(lo);
+  hi = __builtin_amdgcn_readfirstlane(hi);
+  return ((uint64_t)hi << 32u) | lo;
+}
+
 }  // namespace platform
 #endif
 
