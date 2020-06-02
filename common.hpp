@@ -41,9 +41,9 @@ static_assert(sizeof(page_t) == 4096, "");
 
 namespace
 {
-uint64_t index_to_element(uint64_t x) { return x / 64u; }
+inline uint64_t index_to_element(uint64_t x) { return x / 64u; }
 
-uint64_t index_to_subindex(uint64_t x) { return x % 64u; }
+inline uint64_t index_to_subindex(uint64_t x) { return x % 64u; }
 
 namespace detail
 {

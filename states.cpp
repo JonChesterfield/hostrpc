@@ -228,6 +228,7 @@ void wave_publish(slot &s)
 
 void wave_receive(slot &s)
 {
+  (void)s;
   assert(s.gpu.H);
   assert(s.gpu.W);
   assert(*s.state == 84);

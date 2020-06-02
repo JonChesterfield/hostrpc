@@ -39,12 +39,14 @@ inline void sleep(void) { usleep(1000); }
 #undef static_assert
 #define static_assert _Static_assert
 
+__attribute__((always_inline))
 inline void __assert_fail(const char *, const char *, unsigned int,
                           const char *)
 {
   __builtin_trap();
 }
 
+__attribute__((always_inline))
 inline int printf(const char *, ...)
 {
   // printf is implement with hostcall, so going to have to do without
