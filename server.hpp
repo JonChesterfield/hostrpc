@@ -131,10 +131,10 @@ struct server
   }
 
   // return true if no garbage (briefly) during call
-  bool try_garbage_collect_word_server(uint64_t w)
+  void try_garbage_collect_word_server(uint64_t w)
   {
     auto c = [](uint64_t i, uint64_t o) -> uint64_t { return ~i & o; };
-    return try_garbage_collect_word<N, decltype(c)>(c, inbox, outbox, active,
+    try_garbage_collect_word<N, decltype(c)>(c, inbox, outbox, active,
                                                     w);
   }
 

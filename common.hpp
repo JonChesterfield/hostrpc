@@ -1,8 +1,8 @@
 #ifndef HOSTRPC_COMMON_H_INCLUDED
 #define HOSTRPC_COMMON_H_INCLUDED
 
-#include <stdint.h>
 #include <stdatomic.h>
+#include <stdint.h>
 
 #include "platform.hpp"
 
@@ -412,48 +412,66 @@ void update_cache(const mailbox_t<N>* mbox, cache_t<N>* cache)
 }
 
 template <size_t N, typename G>
-bool try_garbage_collect_word(
+void try_garbage_collect_word(
     G garbage_bits, const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
     slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active, uint64_t w)
 {
-  uint64_t i = inbox->load_word(w);
-  uint64_t o = outbox->load_word(w);
-  uint64_t a = active->load_word(w);
+  if (platform::is_master_lane())
+    {
+      uint64_t i = inbox->load_word(w);
+      uint64_t o = outbox->load_word(w);
+      uint64_t a = active->load_word(w);
 
-  uint64_t garbage_available = garbage_bits(i, o) & ~a;
+      uint64_t garbage_available = garbage_bits(i, o) & ~a;
 
+#if 0
+#if defined(__AMDGCN__)
+  // Need to enable the other lanes, broadcast the result,
+  // possibly return to the caller, then disable the other lanes
+  // Leaving this until there are benchmarks for x86 to help choose
+  // between early exit and cache line thrashing
+#endif
+
+  // if there's no garbage, this function will cas a with a, fetch-add ~0 twice
+  // early exit means loading three cache lines then branch
+  // continuing takes an exclusive lock on active[slot], outbox[slot]
   if (garbage_available == 0)
     {
-      return true;
+      return;
     }
+#endif
 
-  // proposed set of locks is the current set and the ones we're claiming
-  assert((garbage_available & a) == 0);  // disjoint
-  uint64_t proposed = garbage_available | a;
-  uint64_t result;
-  bool got = active->cas(w, a, proposed, &result);
-  if (!got)
+      // proposed set of locks is the current set and the ones we're claiming
+      assert((garbage_available & a) == 0);  // disjoint
+      uint64_t proposed = garbage_available | a;
+      uint64_t result;
+      bool won_cas = active->cas(w, a, proposed, &result);
+
+#if 0
+  // if (!won_cas) can return false immediately, or set locks_held to zero
+  // if chosing to continue, fetch_and with ~0 is a potentially expensive no-op
+  if (!won_cas)
     {
-      // lost the cas
-      return false;
+      return;
     }
+#endif
 
-  uint64_t locks_held = garbage_available;
-  // Some of the slots may have already been garbage collected
-  // in which case some of the input may be work-available again
-  i = inbox->load_word(w);
-  o = outbox->load_word(w);
+      uint64_t locks_held = won_cas ? garbage_available : 0;
 
-  uint64_t garbage_and_locked = garbage_bits(i, o) & locks_held;
+      // Some of the slots may have already been garbage collected
+      // in which case some of the input may be work-available again
+      i = inbox->load_word(w);
+      o = outbox->load_word(w);
 
-  // clear locked bits in outbox
-  uint64_t before = outbox->fetch_and(w, ~garbage_and_locked);
-  (void)before;
+      uint64_t garbage_and_locked = garbage_bits(i, o) & locks_held;
 
-  // drop locks
-  active->fetch_and(w, ~locks_held);
+      // clear locked bits in outbox
+      uint64_t before = outbox->fetch_and(w, ~garbage_and_locked);
+      (void)before;
 
-  return true;
+      // drop locks
+      active->fetch_and(w, ~locks_held);
+    }
 }
 
 void step(_Atomic(uint64_t) * steps_left)
@@ -479,9 +497,9 @@ struct nop_stepper
 
 struct default_stepper
 {
-  default_stepper(_Atomic(uint64_t)* val, bool show_step = false,
+  default_stepper(_Atomic(uint64_t) * val, bool show_step = false,
                   const char* name = "unknown")
-    : val(val),show_step(show_step),name(name)
+      : val(val), show_step(show_step), name(name)
   {
   }
 
@@ -493,9 +511,9 @@ struct default_stepper
       }
     step(val);
   }
-  _Atomic(uint64_t)* val;
+  _Atomic(uint64_t) * val;
   bool show_step;
-  const char * name;
+  const char* name;
 };
 
 }  // namespace hostrpc

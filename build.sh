@@ -27,7 +27,7 @@ $CXX $AMDGCNFLAGS server.cpp -c -o server.amdgcn.bc
 
 for bc in *.x64.bc *.amdgcn.bc ; do
     ll=`echo $bc | sed 's_.bc_.ll_g'`
-    opt -strip-debug $bc -S -o $ll
+    opt -strip-debug $bc | llvm-extract -func instantiate_try_garbage_collect_word_client | opt -S -o $ll
     llc $ll
 done
 
