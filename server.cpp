@@ -1,4 +1,6 @@
 #include "server.hpp"
+#include "memory.hpp"
+
 #define N 128
 void server_instance(
     const hostrpc::mailbox_t<N>* inbox, hostrpc::mailbox_t<N>* outbox,
@@ -7,8 +9,9 @@ void server_instance(
 {
   hostrpc::nop_stepper step;
   auto operate = hostrpc::operate_nop;
-
-  auto s = hostrpc::make_server(inbox, outbox, active, remote_buffer,
+  struct copy_functor_nop : public hostrpc::copy_functor_interface<copy_functor_nop> {};
+  copy_functor_nop cp;
+  auto s = hostrpc::make_server(cp, inbox, outbox, active, remote_buffer,
                                 local_buffer, step, operate);
 
   for (;;)

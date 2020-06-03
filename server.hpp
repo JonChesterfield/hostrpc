@@ -44,14 +44,15 @@ inline server_state& operator&=(server_state& lhs, server_state rhs)
   return lhs;
 }
 
-template <size_t N, typename Op, typename S>
+template <size_t N, typename C, typename Op, typename S>
 struct server
 {
-  server(const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
+  server(C copy, const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
          slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active,
          page_t* remote_buffer, page_t* local_buffer, S step,
          Op operate = operate_nop)
-      : inbox(inbox),
+      : copy(copy),
+        inbox(inbox),
         outbox(outbox),
         active(active),
         remote_buffer(remote_buffer),
@@ -197,9 +198,16 @@ struct server
 
     step(__LINE__);
 
-    __builtin_memcpy((void*)&local_buffer[slot], (void*)&remote_buffer[slot], sizeof(page_t));
-   
+    copy.pull_to_server_from_client((void*)&local_buffer[slot],
+                                    (void*)&remote_buffer[slot],
+                                    sizeof(page_t));
+    step(__LINE__);
+
     operate(&local_buffer[slot]);
+    step(__LINE__);
+
+    copy.push_from_server_to_client((void*)&remote_buffer[slot],
+                                    (void*)&local_buffer[slot], sizeof(page_t));
     step(__LINE__);
 
     assert(c.is(0b101));
@@ -229,6 +237,7 @@ struct server
     return true;
   }
 
+  C copy;
   const mailbox_t<N>* inbox;
   mailbox_t<N>* outbox;
   slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active;
@@ -238,13 +247,14 @@ struct server
   Op operate;
 };
 
-template <size_t N, typename Op, typename S>
-server<N,Op,S> make_server(const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
-         slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active,
-         page_t* remote_buffer, page_t* local_buffer, S step,
-         Op operate = operate_nop)
+template <size_t N, typename C, typename Op, typename S>
+server<N, C, Op, S> make_server(
+    C copy, const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
+    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active, page_t* remote_buffer,
+    page_t* local_buffer, S step, Op operate = operate_nop)
 {
-  return {inbox,outbox,active,remote_buffer,local_buffer,step,operate};
+  return {copy,          inbox,        outbox, active,
+          remote_buffer, local_buffer, step,   operate};
 }
 
 }  // namespace hostrpc

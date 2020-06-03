@@ -158,7 +158,7 @@ TEST_CASE("set up single word system")
     safe_thread sv_thrd([&]() {
       auto stepper = hostrpc::default_stepper(&server_steps, show_step);
       slot_bitmap<64, __OPENCL_MEMORY_SCOPE_DEVICE> active;
-      auto sv = make_server(&send, &recv, &active, &client_buffer[0],
+      auto sv = make_server(cp, &send, &recv, &active, &client_buffer[0],
                             &server_buffer[0], stepper, operate);
       for (;;)
         {

@@ -172,6 +172,7 @@ struct client
 
     // wave_populate
     fill(&local_buffer[slot]);
+    step(__LINE__);
     copy.push_from_client_to_server((void*)&remote_buffer[slot],
                                     (void*)&local_buffer[slot], sizeof(page_t));
     step(__LINE__);
@@ -204,10 +205,11 @@ struct client
         assert(c.is(0b111));
 
         step(__LINE__);
-        // call the continuation
         copy.pull_to_client_from_server((void*)&local_buffer[slot],
                                         (void*)&remote_buffer[slot],
                                         sizeof(page_t));
+        step(__LINE__);
+        // call the continuation
         use(&local_buffer[slot]);
 
         step(__LINE__);
