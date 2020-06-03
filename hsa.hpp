@@ -156,7 +156,12 @@ inline uint16_t agent_get_info_version_minor(hsa_agent_t agent)
 
 struct executable
 {
-  executable()
+  // hsa expects executable management to be quite dynamic
+  // one can load multiple shared libraries, which can probably reference
+  // symbols from each other. It supports 'executable_global_variable_define'
+  // which names some previously allocated memory. Or readonly equivalent. This
+  // wrapper is
+  executable(hsa_agent_t agent) : agent(agent), valid(false)
   {
     hsa_profile_t profile =
         HSA_PROFILE_BASE;  // HIP uses full, vega claims 'base', unsure
@@ -167,15 +172,51 @@ struct executable
     hsa_status_t rc =
         hsa_executable_create_alt(profile, default_rounding_mode, options, &e);
 
-    if (rc == HSA_STATUS_ERROR_OUT_OF_RESOURCES)
+    if (rc == HSA_STATUS_SUCCESS)
       {
-        // Need to decide how to handle constructor failure
+        state = e;
+        valid = true;
       }
-    state = e;
+  }
+
+  void load_from_file(hsa_file_t file)
+  {
+    hsa_code_object_reader_t reader;
+    hsa_status_t rc0 = hsa_code_object_reader_create_from_file(file, &reader);
+
+    // TODO: per agent or per system? Leaning towards per agent, may want
+    // different code on different gpus.
+    hsa_loaded_code_object_t code;
+    hsa_status_t rc1 =
+        hsa_executable_load_program_code_object(state, reader, NULL, &code);
+
+    hsa_status_t rc2 = hsa_executable_freeze(state, NULL);
+
+    uint32_t vres;
+    hsa_status_t rc3 = hsa_executable_validate(state, &vres);
+
+    // At this point, if the above all succeeded, can query the executable for
+    // symbol info etc
+  }
+
+  ~executable()
+  {
+    if (valid)
+      {
+        // This fails if the executable is invalid
+        hsa_executable_destroy(state);
+      }
   }
 
  private:
-  hsa_executable_t state;
+  hsa_agent_t agent;
+  bool valid;
+
+  // Need a sentinel to indicate that the executable was not constructed
+  // successfully Looking under the covers, hsa_executable_t is a pointer to
+  // heap allocated memory A reinterpret_cast of nullptr to uint64_t may be the
+  // right value here
+  hsa_executable_t state{0};
 };
 
 }  // namespace hsa
