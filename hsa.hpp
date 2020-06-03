@@ -3,6 +3,7 @@
 
 // A C++ wrapper around a subset of the hsa api
 #include "hsa.h"
+#include <array>
 #include <cstdio>
 
 #include <type_traits>
@@ -60,6 +61,75 @@ void iterate_agents(C cb)
   // res documented to fail if &cb == NULL or runtime not initialised
   hsa_status_t res = hsa_iterate_agents(L, static_cast<void*>(&cb));
   hsa_success_or_exit(res);
+}
+
+template <typename T, hsa_agent_info_t req>
+struct agent_get_info
+{
+  static T call(hsa_agent_t agent)
+  {
+    T res;
+    hsa_status_t r = hsa_agent_get_info(agent, req, static_cast<void*>(&res));
+    (void)r;
+    return res;
+  }
+};
+
+template <hsa_agent_info_t req>
+struct agent_get_info<std::array<char, 64>, req>
+{
+  using T = std::array<char, 64>;
+  static T call(hsa_agent_t agent)
+  {
+    T res;
+    hsa_status_t r =
+        hsa_agent_get_info(agent, req, static_cast<void*>(res.data()));
+    (void)r;
+    return res;
+  }
+};
+
+inline std::array<char, 64> agent_get_info_name(hsa_agent_t agent)
+{
+  return agent_get_info<std::array<char, 64>, HSA_AGENT_INFO_NAME>::call(agent);
+}
+
+inline std::array<char, 64> agent_get_info_vendor_name(hsa_agent_t agent)
+{
+  return agent_get_info<std::array<char, 64>, HSA_AGENT_INFO_VENDOR_NAME>::call(
+      agent);
+}
+
+inline hsa_agent_feature_t agent_get_info_feature(hsa_agent_t agent)
+{
+  return agent_get_info<hsa_agent_feature_t, HSA_AGENT_INFO_FEATURE>::call(
+      agent);
+}
+
+inline uint32_t agent_get_info_queues_max(hsa_agent_t agent)
+{
+  return agent_get_info<uint32_t, HSA_AGENT_INFO_QUEUES_MAX>::call(agent);
+}
+
+inline uint32_t agent_get_info_queue_min_size(hsa_agent_t agent)
+{
+  return agent_get_info<uint32_t, HSA_AGENT_INFO_QUEUE_MIN_SIZE>::call(agent);
+}
+
+inline uint32_t agent_get_info_queue_max_size(hsa_agent_t agent)
+{
+  return agent_get_info<uint32_t, HSA_AGENT_INFO_QUEUE_MAX_SIZE>::call(agent);
+}
+
+inline hsa_queue_type32_t agent_get_info_queue_type(hsa_agent_t agent)
+{
+  return agent_get_info<hsa_queue_type32_t, HSA_AGENT_INFO_QUEUE_TYPE>::call(
+      agent);
+}
+
+inline hsa_device_type_t agent_get_info_device(hsa_agent_t agent)
+{
+  return agent_get_info<hsa_device_type_t, HSA_AGENT_INFO_DEVICE>::call(agent);
 }
 
 }  // namespace hsa
