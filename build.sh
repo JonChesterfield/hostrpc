@@ -1,8 +1,13 @@
 #!/bin/bash
 set -x
+
+HSAINC="$(readlink -f ~/aomp/rocr-runtime/src/inc/)"
+HSALIBDIR="$(readlink -f ~/rocm/aomp/hsa/lib/)"
+HSALIB="$HSALIBDIR/libhsa-runtime64.so"
+
 CC="clang -std=c99 -Wall -Wextra"
-CXX="clang++ -std=c++11 -Wall -Wextra -DNDEBUG"
-LDFLAGS="-pthread"
+CXX="clang++ -std=c++11 -Wall -Wextra " #-DNDEBUG"
+LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR"
 LLC="llc"
 LINK="llvm-link"
 OPT="opt"
@@ -20,6 +25,7 @@ $CXX $X64FLAGS client.cpp -c -o client.x64.bc
 $CXX $X64FLAGS server.cpp -c -o server.x64.bc
 
 $CXX $X64FLAGS tests.cpp -c -o tests.bc
+$CXX $X64FLAGS -I$HSAINC x64_host_amdgcn_client.cpp -c -o x64_host_amdgcn_client.bc
 
 $CXX $AMDGCNFLAGS client.cpp -c -o client.amdgcn.bc
 $CXX $AMDGCNFLAGS server.cpp -c -o server.amdgcn.bc
@@ -31,7 +37,8 @@ for bc in *.x64.bc *.amdgcn.bc ; do
     llc $ll
 done
 
-$CXX $LDFLAGS tests.bc states.bc catch.o -o states.exe && time  ./states.exe
+$CXX catch.o x64_host_amdgcn_client.bc $LDFLAGS -o hsa.exe && time  ./hsa.exe
 
-$CXX -O2 -ffreestanding --target=amdgcn-amd-amdhsa -march=gfx906 -c shader.cpp -o shader.o
+# $CXX tests.bc states.bc catch.o x64_host_amdgcn_client.bc $LDFLAGS -o states.exe && time  ./states.exe
+
 
