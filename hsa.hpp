@@ -154,6 +154,30 @@ inline uint16_t agent_get_info_version_minor(hsa_agent_t agent)
   return agent_get_info<uint16_t, HSA_AGENT_INFO_VERSION_MINOR>::call(agent);
 }
 
+struct executable
+{
+  executable()
+  {
+    hsa_profile_t profile =
+        HSA_PROFILE_BASE;  // HIP uses full, vega claims 'base', unsure
+    hsa_default_float_rounding_mode_t default_rounding_mode =
+        HSA_DEFAULT_FLOAT_ROUNDING_MODE_DEFAULT;
+    const char* options = 0;
+    hsa_executable_t e;
+    hsa_status_t rc =
+        hsa_executable_create_alt(profile, default_rounding_mode, options, &e);
+
+    if (rc == HSA_STATUS_ERROR_OUT_OF_RESOURCES)
+      {
+        // Need to decide how to handle constructor failure
+      }
+    state = e;
+  }
+
+ private:
+  hsa_executable_t state;
+};
+
 }  // namespace hsa
 
 #endif
