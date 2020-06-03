@@ -17,7 +17,7 @@ AMDGCNFLAGS="-O2 -emit-llvm -ffreestanding --target=amdgcn-amd-amdhsa -march=gfx
 
 # time $CXX -O3 catch.cpp -c -o catch.o
 
-rm -rf *.ll
+rm -rf *.s *.ll
 
 $CXX $X64FLAGS states.cpp -c -o states.bc
 
@@ -25,7 +25,7 @@ $CXX $X64FLAGS client.cpp -c -o client.x64.bc
 $CXX $X64FLAGS server.cpp -c -o server.x64.bc
 
 $CXX $X64FLAGS tests.cpp -c -o tests.bc
-$CXX $X64FLAGS -I$HSAINC x64_host_amdgcn_client.cpp -c -o x64_host_amdgcn_client.bc
+clang++ -std=c++17 -Wall -Wextra $X64FLAGS -I$HSAINC x64_host_amdgcn_client.cpp -c -o x64_host_amdgcn_client.bc
 
 $CXX $AMDGCNFLAGS client.cpp -c -o client.amdgcn.bc
 $CXX $AMDGCNFLAGS server.cpp -c -o server.amdgcn.bc

@@ -9,8 +9,6 @@
 
 #include <stddef.h>
 
-#include <stdlib.h>
-
 // Placement new is declared in #include <new>, which is not available
 // Strictly it takes std::size_t, but cstddef isn't available either
 // void* operator new (size_t size, void* ptr) noexcept;
@@ -107,9 +105,9 @@ struct copy_functor_x64_x64
   }
 };
 
-#ifdef __AMDGCN__
+// stdlib.h not necessarily available
+void free(void*);
 void *aligned_alloc(size_t alignment, size_t size);
-#endif
 
 // TODO: Move to memory_x64 or similar, stdlib.h is probably using glibc
 // x64 can use the same allocator as client or server
