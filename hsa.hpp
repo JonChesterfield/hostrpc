@@ -59,7 +59,13 @@ void iterate_agents(C cb)
   };
 
   // res documented to fail if &cb == NULL or runtime not initialised
+  // it also returns HSA_STATUS_INFO_BREAK if a traversal was stopped early
   hsa_status_t res = hsa_iterate_agents(L, static_cast<void*>(&cb));
+  if (res == HSA_STATUS_INFO_BREAK)
+    {
+      return;
+    }
+
   hsa_success_or_exit(res);
 }
 
@@ -75,10 +81,10 @@ struct agent_get_info
   }
 };
 
-template <hsa_agent_info_t req>
-struct agent_get_info<std::array<char, 64>, req>
+template <hsa_agent_info_t req, typename e, size_t w>
+struct agent_get_info<std::array<e, w>, req>
 {
-  using T = std::array<char, 64>;
+  using T = std::array<e, w>;
   static T call(hsa_agent_t agent)
   {
     T res;
@@ -130,6 +136,22 @@ inline hsa_queue_type32_t agent_get_info_queue_type(hsa_agent_t agent)
 inline hsa_device_type_t agent_get_info_device(hsa_agent_t agent)
 {
   return agent_get_info<hsa_device_type_t, HSA_AGENT_INFO_DEVICE>::call(agent);
+}
+
+inline std::array<uint8_t, 128> agent_get_info_extensions(hsa_agent_t agent)
+{
+  return agent_get_info<std::array<uint8_t, 128>,
+                        HSA_AGENT_INFO_EXTENSIONS>::call(agent);
+}
+
+inline uint16_t agent_get_info_version_major(hsa_agent_t agent)
+{
+  return agent_get_info<uint16_t, HSA_AGENT_INFO_VERSION_MAJOR>::call(agent);
+}
+
+inline uint16_t agent_get_info_version_minor(hsa_agent_t agent)
+{
+  return agent_get_info<uint16_t, HSA_AGENT_INFO_VERSION_MINOR>::call(agent);
 }
 
 }  // namespace hsa
