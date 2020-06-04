@@ -106,7 +106,7 @@ struct copy_functor_x64_x64
 };
 
 // stdlib.h not necessarily available
-void free(void*);
+void free(void *);
 void *aligned_alloc(size_t alignment, size_t size);
 
 // TODO: Move to memory_x64 or similar, stdlib.h is probably using glibc

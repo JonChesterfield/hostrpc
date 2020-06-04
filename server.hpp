@@ -5,7 +5,7 @@
 
 namespace hostrpc
 {
-  void operate_nop(page_t*,void*) {}
+void operate_nop(page_t*, void*) {}
 
 enum class server_state : uint8_t
 {
@@ -203,7 +203,7 @@ struct server
                                     sizeof(page_t));
     step(__LINE__);
 
-    operate(&local_buffer[slot],application_state);
+    operate(&local_buffer[slot], application_state);
     step(__LINE__);
 
     copy.push_from_server_to_client((void*)&remote_buffer[slot],

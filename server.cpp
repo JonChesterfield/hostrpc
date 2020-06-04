@@ -9,7 +9,10 @@ void server_instance(
 {
   hostrpc::nop_stepper step;
   auto operate = hostrpc::operate_nop;
-  struct copy_functor_nop : public hostrpc::copy_functor_interface<copy_functor_nop> {};
+  struct copy_functor_nop
+      : public hostrpc::copy_functor_interface<copy_functor_nop>
+  {
+  };
   copy_functor_nop cp;
   auto s = hostrpc::make_server(cp, inbox, outbox, active, remote_buffer,
                                 local_buffer, step, operate);
