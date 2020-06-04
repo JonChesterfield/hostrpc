@@ -161,7 +161,55 @@ struct executable
   // symbols from each other. It supports 'executable_global_variable_define'
   // which names some previously allocated memory. Or readonly equivalent. This
   // wrapper is
-  executable(hsa_agent_t agent) : agent(agent), valid(false)
+
+  operator hsa_executable_t() { return state; }
+
+  static hsa_executable_t sentinel()
+  {
+    // Chosen to be free to construct and handled correctly by
+    // executable_destroy
+    return {.handle = reinterpret_cast<uint64_t>(nullptr)};
+  }
+
+  bool valid() { return reinterpret_cast<void*>(state.handle) != nullptr; }
+
+  ~executable() { hsa_executable_destroy(state); }
+
+  executable(hsa_agent_t agent, hsa_file_t file) : state(sentinel())
+  {
+    if (HSA_STATUS_SUCCESS == init_state())
+      {
+        if (HSA_STATUS_SUCCESS == load_from_file(agent, file))
+          {
+            if (HSA_STATUS_SUCCESS == freeze_and_validate())
+              {
+                return;
+              }
+          }
+      }
+    hsa_executable_destroy(state);
+    state = sentinel();
+  }
+
+  executable(hsa_agent_t agent, const void* bytes, size_t size)
+      : state(sentinel())
+  {
+    if (HSA_STATUS_SUCCESS == init_state())
+      {
+        if (HSA_STATUS_SUCCESS == load_from_memory(agent, bytes, size))
+          {
+            if (HSA_STATUS_SUCCESS == freeze_and_validate())
+              {
+                return;
+              }
+          }
+      }
+    hsa_executable_destroy(state);
+    state = sentinel();
+  }
+
+ private:
+  hsa_status_t init_state()
   {
     hsa_profile_t profile =
         HSA_PROFILE_BASE;  // HIP uses full, vega claims 'base', unsure
@@ -171,53 +219,71 @@ struct executable
     hsa_executable_t e;
     hsa_status_t rc =
         hsa_executable_create_alt(profile, default_rounding_mode, options, &e);
-
     if (rc == HSA_STATUS_SUCCESS)
       {
         state = e;
-        valid = true;
       }
+    return rc;
   }
 
-  void load_from_file(hsa_file_t file)
+  hsa_status_t load_from_file(hsa_agent_t agent, hsa_file_t file)
   {
     hsa_code_object_reader_t reader;
-    hsa_status_t rc0 = hsa_code_object_reader_create_from_file(file, &reader);
-
-    // TODO: per agent or per system? Leaning towards per agent, may want
-    // different code on different gpus.
-    hsa_loaded_code_object_t code;
-    hsa_status_t rc1 =
-        hsa_executable_load_program_code_object(state, reader, NULL, &code);
-
-    hsa_status_t rc2 = hsa_executable_freeze(state, NULL);
-
-    uint32_t vres;
-    hsa_status_t rc3 = hsa_executable_validate(state, &vres);
-
-    // At this point, if the above all succeeded, can query the executable for
-    // symbol info etc
-  }
-
-  ~executable()
-  {
-    if (valid)
+    hsa_status_t rc = hsa_code_object_reader_create_from_file(file, &reader);
+    if (rc != HSA_STATUS_SUCCESS)
       {
-        // This fails if the executable is invalid
-        hsa_executable_destroy(state);
+        return rc;
       }
+
+    hsa_loaded_code_object_t code;
+    return hsa_executable_load_agent_code_object(state, agent, reader, NULL,
+                                                 &code);
   }
 
- private:
-  hsa_agent_t agent;
-  bool valid;
+  hsa_status_t load_from_memory(hsa_agent_t agent, const void* bytes,
+                                size_t size)
+  {
+    hsa_code_object_reader_t reader;
+    hsa_status_t rc =
+        hsa_code_object_reader_create_from_memory(bytes, size, &reader);
+    if (rc != HSA_STATUS_SUCCESS)
+      {
+        return rc;
+      }
 
-  // Need a sentinel to indicate that the executable was not constructed
-  // successfully Looking under the covers, hsa_executable_t is a pointer to
-  // heap allocated memory A reinterpret_cast of nullptr to uint64_t may be the
-  // right value here
-  hsa_executable_t state{0};
-};
+    hsa_loaded_code_object_t code;
+    return hsa_executable_load_agent_code_object(state, agent, reader, NULL,
+                                                 &code);
+  }
+
+  hsa_status_t freeze_and_validate()
+  {
+    {
+      hsa_status_t rc = hsa_executable_freeze(state, NULL);
+      if (rc != HSA_STATUS_SUCCESS)
+        {
+          return rc;
+        }
+    }
+
+    {
+      uint32_t vres;
+      hsa_status_t rc = hsa_executable_validate(state, &vres);
+      if (rc != HSA_STATUS_SUCCESS)
+        {
+          return rc;
+        }
+
+      if (vres != 0)
+        {
+          return HSA_STATUS_ERROR;
+        }
+    }
+    return HSA_STATUS_SUCCESS;
+  }
+
+  hsa_executable_t state;
+};  // namespace hsa
 
 }  // namespace hsa
 
