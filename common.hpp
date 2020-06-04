@@ -6,6 +6,8 @@
 
 #include "platform.hpp"
 
+#include <stdlib.h>
+
 namespace hostrpc
 {
 struct cacheline_t
@@ -164,17 +166,12 @@ using mailbox_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>;
 template <size_t N>
 using cache_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>;
 
-template <size_t N>
-void update_cache(const mailbox_t<N>* mbox, cache_t<N>* cache);
-
 template <size_t N, size_t scope>
 struct slot_bitmap
 {
   static_assert(N != 0, "");
   static_assert(N != SIZE_MAX, "Used as a sentinel");
   static_assert(N % 64 == 0, "Size must be multiple of 64");
-
-  friend void update_cache(const mailbox_t<N>* mbox, cache_t<N>* cache);
 
   constexpr slot_bitmap() = default;
 
@@ -188,7 +185,7 @@ struct slot_bitmap
     return detail::nthbitset64(d, index_to_subindex(i));
   }
 
-  bool operator()(size_t i, uint64_t* loaded) const
+  bool operator()(size_t i, uint64_t *loaded) const
   {
     size_t w = index_to_element(i);
     uint64_t d = load_word(w);
@@ -216,7 +213,7 @@ struct slot_bitmap
   }
 
   // cas, true on success
-  bool try_claim_empty_slot(size_t i, uint64_t*);
+  bool try_claim_empty_slot(size_t i, uint64_t *);
 
   size_t try_claim_any_empty_slot()
   {
@@ -288,9 +285,9 @@ struct slot_bitmap
   }
 
   bool cas(uint64_t element, uint64_t expect, uint64_t replace,
-           uint64_t* loaded)
+           uint64_t *loaded)
   {
-    _Atomic uint64_t* addr = &data[element];
+    _Atomic uint64_t *addr = &data[element];
 
     bool r = __opencl_atomic_compare_exchange_weak(
         addr, &expect, replace, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED,
@@ -308,14 +305,14 @@ struct slot_bitmap
   // returns value from before the and/or
   uint64_t fetch_and(uint64_t element, uint64_t mask)
   {
-    _Atomic uint64_t* addr = &data[element];
+    _Atomic uint64_t *addr = &data[element];
     return __opencl_atomic_fetch_and(addr, mask, __ATOMIC_SEQ_CST,
                                      __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
   }
 
   uint64_t fetch_or(uint64_t element, uint64_t mask)
   {
-    _Atomic uint64_t* addr = &data[element];
+    _Atomic uint64_t *addr = &data[element];
     return __opencl_atomic_fetch_or(addr, mask, __ATOMIC_SEQ_CST,
                                     __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
   }
@@ -356,7 +353,7 @@ struct slot_bitmap
 
 // on return true, loaded contains active[w]
 template <size_t N, size_t scope>
-bool slot_bitmap<N, scope>::try_claim_empty_slot(size_t i, uint64_t* loaded)
+bool slot_bitmap<N, scope>::try_claim_empty_slot(size_t i, uint64_t *loaded)
 {
   assert(i < N);
   size_t w = index_to_element(i);
@@ -400,30 +397,140 @@ bool slot_bitmap<N, scope>::try_claim_empty_slot(size_t i, uint64_t* loaded)
     }
 }
 
-template <size_t N>
-void update_cache(const mailbox_t<N>* mbox, cache_t<N>* cache)
+struct slot_owner;
+extern thread_local unsigned my_id;
+extern slot_owner tracker;
+struct slot_owner
 {
-  for (size_t i = 0; i < N / 64; i++)
-    {
-      uint64_t l = __opencl_atomic_load(&mbox->data[i], __ATOMIC_ACQUIRE,
-                                        __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-      __opencl_atomic_store(&cache->data[i], l, __ATOMIC_RELEASE,
-                            __OPENCL_MEMORY_SCOPE_DEVICE);
-    }
-}
+  void dump()
+  {
+    for (unsigned i = 0; i < sizeof(slots) / sizeof(slots[0]); i++)
+      {
+        uint32_t v = __c11_atomic_load(&slots[i], __ATOMIC_SEQ_CST);
+        printf("slot[%u] owned by %u\n", i, v);
+      }
+  }
+  static const bool verbose = false;
+  slot_owner()
+  {
+    for (unsigned i = 0; i < sizeof(slots) / sizeof(slots[0]); i++)
+      {
+        slots[i] = UINT32_MAX;
+      }
+  }
+  _Atomic uint32_t slots[128];
+
+  void claim(uint64_t slot) { claim(my_id, slot); }
+
+  void release(uint64_t slot) { release(my_id, slot); }
+
+  void claim(uint32_t id, uint64_t slot)
+  {
+    assert(slot < 128);
+    uint32_t v = __c11_atomic_load(&slots[slot], __ATOMIC_SEQ_CST);
+    if (v != UINT32_MAX)
+      {
+        printf("slot[%lu] <- %u failed, owned by %u\n", slot, id, slots[slot]);
+      }
+    assert(v == UINT32_MAX);
+    if (verbose)
+      {
+        printf("slot[%lu] <- %u\n", slot, id);
+      }
+    __c11_atomic_store(&slots[slot], id, __ATOMIC_SEQ_CST);
+  }
+
+  void release(uint32_t id, uint64_t slot)
+  {
+    assert(slot < 128);
+    uint32_t v = __c11_atomic_load(&slots[slot], __ATOMIC_SEQ_CST);
+    if (v != id)
+      {
+        printf("slot[%lu] owned by %u, can't be freed by %u\n", slot,
+               slots[slot], id);
+      }
+    assert(v == id);
+    __c11_atomic_store(&slots[slot], UINT32_MAX, __ATOMIC_SEQ_CST);
+    if (verbose)
+      {
+        printf("slot[%lu] -> free\n", slot);
+      }
+  }
+};
+
+template <bool enable>
+struct malloc_lock
+{
+  malloc_lock() { init(); }
+
+  void init()
+  {
+    if (!enable)
+      {
+        return;
+      }
+    held = 0;
+    for (unsigned i = 0; i < 64; i++)
+      {
+        data[i] = nullptr;
+      }
+  }
+
+  void lock(uint64_t x)
+  {
+    if (!enable)
+      {
+        return;
+      }
+    assert(held == 0);
+    init();
+    for (uint64_t i = 0; i < 64; i++)
+      {
+        data[i] = detail::nthbitset64(x, i) ? malloc(1) : nullptr;
+      }
+    held = x;
+  }
+
+  void unlock(uint64_t x)
+  {
+    if (!enable)
+      {
+        return;
+      }
+    if (x != held)
+      {
+        printf("locked %lx but unlocking %lx\n", held, x);
+      }
+    assert(x == held);
+    for (uint64_t i = 0; i < 64; i++)
+      {
+        if (detail::nthbitset64(x, i))
+          {
+            free(data[i]);
+          }
+      }
+    init();
+    assert(held == 0);
+  }
+
+  uint64_t held;
+  void *data[64];
+};
 
 template <size_t N, typename G>
 void try_garbage_collect_word(
-    G garbage_bits, const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
-    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active, uint64_t w)
+    G garbage_bits, const mailbox_t<N> *inbox, mailbox_t<N> *outbox,
+    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> *active, uint64_t w)
 {
+  malloc_lock<true> lk;
   if (platform::is_master_lane())
     {
       uint64_t i = inbox->load_word(w);
       uint64_t o = outbox->load_word(w);
       uint64_t a = active->load_word(w);
 
-      uint64_t garbage_available = garbage_bits(i, o) & ~a;
+      uint64_t garbage_visible = garbage_bits(i, o);
+      uint64_t garbage_available = garbage_visible & ~a;
 
 #if 0
 #if defined(__AMDGCN__)
@@ -475,7 +582,7 @@ void try_garbage_collect_word(
     }
 }
 
-void step(_Atomic(uint64_t) * steps_left)
+inline void step(_Atomic(uint64_t) * steps_left)
 {
   if (atomic_load(steps_left) == UINT64_MAX)
     {
@@ -499,7 +606,7 @@ struct nop_stepper
 struct default_stepper
 {
   default_stepper(_Atomic(uint64_t) * val, bool show_step = false,
-                  const char* name = "unknown")
+                  const char *name = "unknown")
       : val(val), show_step(show_step), name(name)
   {
   }
@@ -514,7 +621,62 @@ struct default_stepper
   }
   _Atomic(uint64_t) * val;
   bool show_step;
-  const char* name;
+  const char *name;
+};
+
+// Depending on the host / client device and how they're connected together,
+// copying data can be a no-op (shared memory, single buffer in use),
+// pull and push from one of the two, routed through a third buffer
+
+template <typename T>
+struct copy_functor_interface
+{
+  // Function type is that of memcpy, i.e. dst first, N in bytes
+
+  void push_from_client_to_server(void *dst, const void *src, size_t N)
+  {
+    impl().push_from_client_to_server_impl(dst, src, N);
+  }
+  void pull_to_client_from_server(void *dst, const void *src, size_t N)
+  {
+    impl().pull_to_client_from_server_impl(dst, src, N);
+  }
+
+  void push_from_server_to_client(void *dst, const void *src, size_t N)
+  {
+    impl().push_from_server_to_client_impl(dst, src, N);
+  }
+  void pull_to_server_from_client(void *dst, const void *src, size_t N)
+  {
+    impl().pull_to_server_from_client_impl(dst, src, N);
+  }
+
+ private:
+  friend T;
+  copy_functor_interface() = default;
+  T &impl() { return *static_cast<T *>(this); }
+
+  // Default implementations are no-ops
+  void push_from_client_to_server_impl(void *, const void *, size_t) {}
+  void pull_to_client_from_server_impl(void *, const void *, size_t) {}
+  void push_from_server_to_client_impl(void *, const void *, size_t) {}
+  void pull_to_server_from_client_impl(void *, const void *, size_t) {}
+};
+
+struct copy_functor_memcpy_pull
+    : public copy_functor_interface<copy_functor_memcpy_pull>
+{
+  friend struct copy_functor_interface<copy_functor_memcpy_pull>;
+
+ private:
+  void pull_to_client_from_server_impl(void *dst, const void *src, size_t N)
+  {
+    __builtin_memcpy(dst, src, N);
+  }
+  void pull_to_server_from_client_impl(void *dst, const void *src, size_t N)
+  {
+    __builtin_memcpy(dst, src, N);
+  }
 };
 
 }  // namespace hostrpc

@@ -9,8 +9,8 @@
 
 namespace hostrpc
 {
-void fill_nop(page_t*, void*) {}
-void use_nop(page_t*, void*) {}
+inline void fill_nop(page_t*, void*) {}
+inline void use_nop(page_t*, void*) {}
 
 enum class client_state : uint8_t
 {
@@ -148,12 +148,17 @@ struct client
           {
             if (active->try_claim_empty_slot(slot, &active_word))
               {
-                printf("try_claim succeeded\n");
+                assert(active_word != 0);
+                // printf("try_claim succeeded\n");
                 // found a slot and locked it
                 c.i = inbox_word;
                 c.o = outbox_word;
                 c.a = active_word;
                 break;
+              }
+            else
+              {
+                slot = SIZE_MAX;
               }
           }
       }
@@ -164,6 +169,8 @@ struct client
         step(__LINE__);
         return false;
       }
+
+    tracker.claim(slot);
 
     c.init(slot);
 
@@ -176,6 +183,8 @@ struct client
     copy.push_from_client_to_server((void*)&remote_buffer[slot],
                                     (void*)&local_buffer[slot], sizeof(page_t));
     step(__LINE__);
+
+    tracker.release(slot);
 
     // wave_publish work
     {
@@ -196,13 +205,34 @@ struct client
       {
         // wait for H1, result available
         uint64_t loaded;
+        unsigned rep = 0;
+        unsigned max_rep = 10000;
         while ((*inbox)(slot, &loaded) != 1)
           {
+            c.i = loaded;
+            assert(c.is(0b011));
             platform::sleep();
+            rep++;
+            if (rep == max_rep)
+              {
+                rep = 0;
+                if (tracker.slots[slot] != UINT32_MAX)
+                  {
+                    printf("probably stalled here: waiting on slot %zu\n",
+                           slot);
+                    printf("slot %lu owned by %u\n", slot, tracker.slots[slot]);
+                    // e.g. inbox 0, outbox 1, active 1,
+                    inbox->dump();
+                    outbox->dump();
+                    active->dump();
+                  }
+              }
           }
 
         c.i = loaded;
         assert(c.is(0b111));
+
+        tracker.claim(slot);
 
         step(__LINE__);
         copy.pull_to_client_from_server((void*)&local_buffer[slot],
@@ -213,6 +243,8 @@ struct client
         use(&local_buffer[slot], application_state);
 
         step(__LINE__);
+
+        tracker.release(slot);
 
         // mark the work as no longer in use
         // todo: is it better to leave this for the GC?

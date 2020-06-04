@@ -23,9 +23,9 @@ inline void sleep_briefly(void)
 }
 inline void sleep(void) { usleep(1000); }
 
-bool is_master_lane(void) { return true; }
-uint32_t broadcast_master(uint32_t x) { return x; }
-uint64_t broadcast_master(uint64_t x) { return x; }
+inline bool is_master_lane(void) { return true; }
+inline uint32_t broadcast_master(uint32_t x) { return x; }
+inline uint64_t broadcast_master(uint64_t x) { return x; }
 }  // namespace platform
 #endif
 

@@ -5,7 +5,7 @@
 
 namespace hostrpc
 {
-void operate_nop(page_t*, void*) {}
+inline void operate_nop(page_t*, void*) {}
 
 enum class server_state : uint8_t
 {
@@ -92,8 +92,8 @@ struct server
                              uint64_t* outbox_word,
                              uint64_t* active_word)  // or SIZE_MAX
   {
-    uint64_t work_available =
-        work_todo(w, inbox_word, outbox_word) & ~active->load_word(w);
+    uint64_t work_visible = work_todo(w, inbox_word, outbox_word);
+    uint64_t work_available = work_visible & ~active->load_word(w);
     // tries each bit in the work available at he call
     // doesn't load new information for work_available to preserve termination
 
@@ -170,6 +170,11 @@ struct server
       // TODO: probably better to give up if there's no work to do instead of
       // keep waiting for some. That means this call always completes in
       // bounded time, after handling zero or one call
+
+      // always trying words in order is a potential problem in that later words
+      // may never be collected. probably need the api to take a indicator of
+      // where to start scanning from
+
       for (uint64_t w = 0; w < inbox->words(); w++)
         {
           uint64_t inbox_word, outbox_word, active_word;
@@ -193,6 +198,8 @@ struct server
         return false;
       }
 
+    tracker.claim(slot);
+
     c.init(slot);
     assert(c.is(0b101));
 
@@ -211,6 +218,8 @@ struct server
     step(__LINE__);
 
     assert(c.is(0b101));
+
+    tracker.release(slot);
 
     // publish result
     {

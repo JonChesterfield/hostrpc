@@ -12,33 +12,42 @@ LLC="llc"
 LINK="llvm-link"
 OPT="opt"
 
-X64FLAGS="-g -O2 -emit-llvm -pthread"
-AMDGCNFLAGS="-O2 -emit-llvm -ffreestanding --target=amdgcn-amd-amdhsa -march=gfx906"
+X64FLAGS="-g -O0 -emit-llvm -pthread"
+AMDGCNFLAGS="-O0 -emit-llvm -ffreestanding --target=amdgcn-amd-amdhsa -march=gfx906"
 
 # time $CXX -O3 catch.cpp -c -o catch.o
 
-rm -rf *.s *.ll
+rm -rf *.s *.ll *.exe
 
 $CXX $X64FLAGS states.cpp -c -o states.bc
 
 $CXX $X64FLAGS client.cpp -c -o client.x64.bc
 $CXX $X64FLAGS server.cpp -c -o server.x64.bc
 
-$CXX $X64FLAGS tests.cpp -c -o tests.bc
-clang++ -std=c++17 -Wall -Wextra $X64FLAGS -I$HSAINC x64_host_amdgcn_client.cpp -c -o x64_host_amdgcn_client.bc
+$CXX $X64FLAGS x64_host_x64_client.cpp -c -o x64_host_x64_client.bc
 
-$CXX $AMDGCNFLAGS client.cpp -c -o client.amdgcn.bc
-$CXX $AMDGCNFLAGS server.cpp -c -o server.amdgcn.bc
+$CXX $X64FLAGS hostrpc.cpp -c -o hostrpc.x64.bc
+
+$CXX $X64FLAGS tests.cpp -c -o tests.bc
+
+# clang++ -std=c++17 -Wall -Wextra $X64FLAGS -I$HSAINC x64_host_amdgcn_client.cpp -c -o x64_host_amdgcn_client.bc
+
+# $CXX $AMDGCNFLAGS client.cpp -c -o client.amdgcn.bc
+# $CXX $AMDGCNFLAGS server.cpp -c -o server.amdgcn.bc
 
 
 for bc in *.x64.bc *.amdgcn.bc ; do
     ll=`echo $bc | sed 's_.bc_.ll_g'`
-    opt -strip-debug $bc | llvm-extract -func instantiate_try_garbage_collect_word_client | opt -S -o $ll
+#    opt -strip-debug $bc | llvm-extract -func instantiate_try_garbage_collect_word_client | opt -S -o $ll
     llc $ll
 done
 
-$CXX catch.o x64_host_amdgcn_client.bc $LDFLAGS -o hsa.exe && time  ./hsa.exe
+# $CXX catch.o x64_host_amdgcn_client.bc $LDFLAGS -o hsa.exe && time ./hsa.exe
 
-# $CXX tests.bc states.bc catch.o x64_host_amdgcn_client.bc $LDFLAGS -o states.exe && time  ./states.exe
+rm -f states.exe
+$CXX tests.bc states.bc catch.o x64_host_x64_client.bc $LDFLAGS -o states.exe
 
+time ./states.exe
+
+time valgrind --leak-check=full --fair-sched=yes ./states.exe
 

@@ -3,6 +3,13 @@
 
 #include <stdint.h>
 
+#if 0
+// Note to self:
+// Can build queue-local state on the address of the doorbell
+// See amd_gpu_agent.cpp, especially bindtraphandler
+// Can use thread-local state on x64
+#endif
+
 // Reads from and writes to data
 void hostrpc_sync(uint64_t data[8]);
 

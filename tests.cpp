@@ -2,6 +2,7 @@
 
 #include "client.hpp"
 #include "server.hpp"
+#include "tests.hpp"
 
 #include <thread>
 #include <unistd.h>
@@ -87,19 +88,6 @@ TEST_CASE("Instantiate bitmap")
   (void)bm128;
 }
 
-struct safe_thread
-{
-  template <typename Function, typename... Args>
-  explicit safe_thread(Function f, Args... args)
-      : t(std::forward<Function>(f), std::forward<Args>(args)...)
-  {
-  }
-  ~safe_thread() { t.join(); }
-
- private:
-  std::thread t;
-};
-
 TEST_CASE("set up single word system")
 {
   using namespace hostrpc;
@@ -108,16 +96,17 @@ TEST_CASE("set up single word system")
 
   auto fill = [&](page_t* p, void*) -> void {
     val++;
-    printf("Passing %lu\n", static_cast<uint64_t>(val));
+    // printf("Passing %lu\n", static_cast<uint64_t>(val));
     p->cacheline[0].element[0] = val;
   };
   auto operate = [](page_t* p, void*) -> void {
     uint64_t r = p->cacheline[0].element[0];
-    printf("Server received %lu, forwarding as %lu\n", r, 2 * r);
+    // printf("Server received %lu, forwarding as %lu\n", r, 2 * r);
     p->cacheline[0].element[0] = 2 * r;
   };
   auto use = [](page_t* p, void*) -> void {
-    printf("Returned %lu\n", p->cacheline[0].element[0]);
+    (void)p;
+    // printf("Returned %lu\n", p->cacheline[0].element[0]);
   };
 
   mailbox_t<64> send;
@@ -132,7 +121,7 @@ TEST_CASE("set up single word system")
   _Atomic(uint64_t) client_steps(0);
   _Atomic(uint64_t) server_steps(0);
 
-  hostrpc::copy_functor_x64_x64 cp;
+  hostrpc::copy_functor_memcpy_pull cp;
 
   const bool show_step = false;
   {
@@ -173,7 +162,7 @@ TEST_CASE("set up single word system")
         }
     });
 
-    printf("Threads spawned and running\n");
+    // printf("Threads spawned and running\n");
 
     if (1)
       {
@@ -200,7 +189,7 @@ TEST_CASE("set up single word system")
 
           if (nl != l || nh != h)
             {
-              printf("%lu launched, %lu handled\n", nl, nh);
+              // printf("%lu launched, %lu handled\n", nl, nh);
               l = nl;
               h = nh;
             }
