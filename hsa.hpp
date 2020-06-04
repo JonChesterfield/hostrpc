@@ -6,6 +6,7 @@
 #include <array>
 #include <cstdio>
 
+#include <string>
 #include <type_traits>
 
 namespace hsa
@@ -88,9 +89,9 @@ struct agent_get_info<std::array<e, w>, req>
   static T call(hsa_agent_t agent)
   {
     T res;
-    hsa_status_t r =
+    hsa_status_t rc =
         hsa_agent_get_info(agent, req, static_cast<void*>(res.data()));
-    (void)r;
+    (void)rc;
     return res;
   }
 };
@@ -154,6 +155,56 @@ inline uint16_t agent_get_info_version_minor(hsa_agent_t agent)
   return agent_get_info<uint16_t, HSA_AGENT_INFO_VERSION_MINOR>::call(agent);
 }
 
+template <typename T, hsa_executable_symbol_info_t req>
+struct symbol_get_info
+{
+  static T call(hsa_executable_symbol_t sym)
+  {
+    T res;
+    hsa_status_t rc = hsa_executable_symbol_get_info(sym, req, &res);
+    (void)rc;
+    return res;
+  }
+};
+
+hsa_symbol_kind_t symbol_get_info_type(hsa_executable_symbol_t sym)
+{
+  return symbol_get_info<hsa_symbol_kind_t,
+                         HSA_EXECUTABLE_SYMBOL_INFO_TYPE>::call(sym);
+}
+
+uint32_t symbol_get_info_name_length(hsa_executable_symbol_t sym)
+{
+  return symbol_get_info<uint32_t,
+                         HSA_EXECUTABLE_SYMBOL_INFO_NAME_LENGTH>::call(sym);
+}
+
+std::string symbol_get_info_name(hsa_executable_symbol_t sym)
+{
+  uint32_t size = symbol_get_info_name_length(sym);
+  std::string res;
+  res.resize(size + 1);
+
+  hsa_status_t rc = hsa_executable_symbol_get_info(
+      sym, HSA_EXECUTABLE_SYMBOL_INFO_NAME, res.data());
+  (void)rc;
+  return res;
+}
+
+uint64_t symbol_get_info_variable_address(hsa_executable_symbol_t sym)
+{
+  // could assert that symbol kind is variable
+  return symbol_get_info<
+      uint64_t, HSA_EXECUTABLE_SYMBOL_INFO_VARIABLE_ADDRESS>::call(sym);
+}
+
+// The handle written to the kernel dispatch packet
+uint64_t symbol_get_info_kernel_object(hsa_executable_symbol_t sym)
+{
+  return symbol_get_info<uint64_t,
+                         HSA_EXECUTABLE_SYMBOL_INFO_KERNEL_OBJECT>::call(sym);
+}
+
 struct executable
 {
   // hsa expects executable management to be quite dynamic
@@ -175,11 +226,12 @@ struct executable
 
   ~executable() { hsa_executable_destroy(state); }
 
-  executable(hsa_agent_t agent, hsa_file_t file) : state(sentinel())
+  executable(hsa_agent_t agent, hsa_file_t file)
+      : agent(agent), state(sentinel())
   {
     if (HSA_STATUS_SUCCESS == init_state())
       {
-        if (HSA_STATUS_SUCCESS == load_from_file(agent, file))
+        if (HSA_STATUS_SUCCESS == load_from_file(file))
           {
             if (HSA_STATUS_SUCCESS == freeze_and_validate())
               {
@@ -192,11 +244,11 @@ struct executable
   }
 
   executable(hsa_agent_t agent, const void* bytes, size_t size)
-      : state(sentinel())
+      : agent(agent), state(sentinel())
   {
     if (HSA_STATUS_SUCCESS == init_state())
       {
-        if (HSA_STATUS_SUCCESS == load_from_memory(agent, bytes, size))
+        if (HSA_STATUS_SUCCESS == load_from_memory(bytes, size))
           {
             if (HSA_STATUS_SUCCESS == freeze_and_validate())
               {
@@ -206,6 +258,18 @@ struct executable
       }
     hsa_executable_destroy(state);
     state = sentinel();
+  }
+
+  hsa_executable_symbol_t get_symbol_by_name(const char* symbol_name)
+  {
+    hsa_executable_symbol_t res;
+    hsa_status_t rc =
+        hsa_executable_get_symbol_by_name(state, symbol_name, &agent, &res);
+    if (rc != HSA_STATUS_SUCCESS)
+      {
+        res = {reinterpret_cast<uint64_t>(nullptr)};
+      }
+    return res;
   }
 
  private:
@@ -226,7 +290,7 @@ struct executable
     return rc;
   }
 
-  hsa_status_t load_from_file(hsa_agent_t agent, hsa_file_t file)
+  hsa_status_t load_from_file(hsa_file_t file)
   {
     hsa_code_object_reader_t reader;
     hsa_status_t rc = hsa_code_object_reader_create_from_file(file, &reader);
@@ -240,8 +304,7 @@ struct executable
                                                  &code);
   }
 
-  hsa_status_t load_from_memory(hsa_agent_t agent, const void* bytes,
-                                size_t size)
+  hsa_status_t load_from_memory(const void* bytes, size_t size)
   {
     hsa_code_object_reader_t reader;
     hsa_status_t rc =
@@ -282,8 +345,9 @@ struct executable
     return HSA_STATUS_SUCCESS;
   }
 
+  hsa_agent_t agent;
   hsa_executable_t state;
-};  // namespace hsa
+};
 
 }  // namespace hsa
 
