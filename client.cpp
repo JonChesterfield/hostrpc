@@ -15,8 +15,8 @@ void client_instance(
 
   for (;;)
     {
-      s.rpc_invoke<true>();
-      s.rpc_invoke<false>();
+      s.rpc_invoke<true>(nullptr);
+      s.rpc_invoke<false>(nullptr);
     }
 }
 

@@ -106,17 +106,17 @@ TEST_CASE("set up single word system")
 
   _Atomic(uint64_t) val(UINT64_MAX);
 
-  auto fill = [&](page_t* p) -> void {
+  auto fill = [&](page_t* p, void*) -> void {
     val++;
     printf("Passing %lu\n", static_cast<uint64_t>(val));
     p->cacheline[0].element[0] = val;
   };
-  auto operate = [](page_t* p) -> void {
+  auto operate = [](page_t* p, void*) -> void {
     uint64_t r = p->cacheline[0].element[0];
     printf("Server received %lu, forwarding as %lu\n", r, 2 * r);
     p->cacheline[0].element[0] = 2 * r;
   };
-  auto use = [](page_t* p) -> void {
+  auto use = [](page_t* p, void*) -> void {
     printf("Returned %lu\n", p->cacheline[0].element[0]);
   };
 
@@ -144,11 +144,11 @@ TEST_CASE("set up single word system")
 
       while (calls_launched < calls_planned)
         {
-          if (cl.rpc_invoke<false>())
+          if (cl.rpc_invoke<false>(nullptr))
             {
               calls_launched++;
             }
-          if (cl.rpc_invoke<true>())
+          if (cl.rpc_invoke<true>(nullptr))
             {
               calls_launched++;
             }
@@ -162,7 +162,7 @@ TEST_CASE("set up single word system")
                             &server_buffer[0], stepper, operate);
       for (;;)
         {
-          if (sv.rpc_handle())
+          if (sv.rpc_handle(nullptr))
             {
               calls_handled++;
             }

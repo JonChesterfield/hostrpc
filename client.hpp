@@ -9,8 +9,8 @@
 
 namespace hostrpc
 {
-void fill_nop(page_t*) {}
-void use_nop(page_t*) {}
+  void fill_nop(page_t*,void*) {}
+  void use_nop(page_t*,void*) {}
 
 enum class client_state : uint8_t
 {
@@ -118,7 +118,7 @@ struct client
 
   // Returns true if it successfully launched the task
   template <bool have_continuation>
-  bool rpc_invoke()
+  bool rpc_invoke(void* application_state)
   {
     step(__LINE__);
 
@@ -171,7 +171,7 @@ struct client
     step(__LINE__);
 
     // wave_populate
-    fill(&local_buffer[slot]);
+    fill(&local_buffer[slot],application_state);
     step(__LINE__);
     copy.push_from_client_to_server((void*)&remote_buffer[slot],
                                     (void*)&local_buffer[slot], sizeof(page_t));
@@ -210,7 +210,7 @@ struct client
                                         sizeof(page_t));
         step(__LINE__);
         // call the continuation
-        use(&local_buffer[slot]);
+        use(&local_buffer[slot],application_state);
 
         step(__LINE__);
 

@@ -5,7 +5,7 @@
 
 namespace hostrpc
 {
-void operate_nop(page_t*) {}
+  void operate_nop(page_t*,void*) {}
 
 enum class server_state : uint8_t
 {
@@ -148,7 +148,7 @@ struct server
   }
 
   // Returns true if it handled one task. Does not attempt multiple tasks
-  bool rpc_handle()
+  bool rpc_handle(void* application_state)
   {
     // printf("Server rpc_handle\n");
 
@@ -203,7 +203,7 @@ struct server
                                     sizeof(page_t));
     step(__LINE__);
 
-    operate(&local_buffer[slot]);
+    operate(&local_buffer[slot],application_state);
     step(__LINE__);
 
     copy.push_from_server_to_client((void*)&remote_buffer[slot],

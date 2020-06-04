@@ -16,6 +16,6 @@ void server_instance(
 
   for (;;)
     {
-      s.rpc_handle();
+      s.rpc_handle(nullptr);
     }
 }
