@@ -284,9 +284,7 @@ struct slot_bitmap
   uint64_t load_word(size_t i) const
   {
     assert(i < words());
-    // TODO: Can probably do this with very narrow scope
-    return __opencl_atomic_load(&data[i], __ATOMIC_SEQ_CST,
-                                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+    return __opencl_atomic_load(&data[i], __ATOMIC_RELAXED, scope);
   }
 
   bool cas(uint64_t element, uint64_t expect, uint64_t replace)
@@ -300,9 +298,10 @@ struct slot_bitmap
   {
     _Atomic uint64_t *addr = &data[element];
 
+    // cas is not used across devices by this library
     bool r = __opencl_atomic_compare_exchange_weak(
-        addr, &expect, replace, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED,
-        __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+        addr, &expect, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED,
+        __OPENCL_MEMORY_SCOPE_DEVICE);
 
     // on success, bits in memory have been set to replace
     // on failure, value found is now in expect
@@ -314,17 +313,18 @@ struct slot_bitmap
   }
 
   // returns value from before the and/or
+  // these are used on memory visible fromi all svm devices
   uint64_t fetch_and(uint64_t element, uint64_t mask)
   {
     _Atomic uint64_t *addr = &data[element];
-    return __opencl_atomic_fetch_and(addr, mask, __ATOMIC_SEQ_CST,
+    return __opencl_atomic_fetch_and(addr, mask, __ATOMIC_ACQ_REL,
                                      __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
   }
 
   uint64_t fetch_or(uint64_t element, uint64_t mask)
   {
     _Atomic uint64_t *addr = &data[element];
-    return __opencl_atomic_fetch_or(addr, mask, __ATOMIC_SEQ_CST,
+    return __opencl_atomic_fetch_or(addr, mask, __ATOMIC_ACQ_REL,
                                     __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
   }
 
