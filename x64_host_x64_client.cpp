@@ -86,7 +86,7 @@ TEST_CASE("hazard")
   x64_x64_client client(cp, recv, send, client_active, &server_buffer[0],
                         &client_buffer[0], st, fill{}, use{});
 
-  x64_x64_server server(cp, &send, &recv, &server_active, &client_buffer[0],
+  x64_x64_server server(cp, send, recv, server_active, &client_buffer[0],
                         &server_buffer[0], st, operate{});
 
   _Atomic bool server_live(true);
@@ -132,8 +132,8 @@ TEST_CASE("hazard")
       }
   };
 
-  unsigned nservers = 128;
-  unsigned nclients = 128;
+  unsigned nservers = 64;
+  unsigned nclients = 64;
 
   auto client_worker = [&](unsigned id, unsigned reps) {
     my_id = id;

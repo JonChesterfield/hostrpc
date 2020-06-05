@@ -570,15 +570,15 @@ struct malloc_lock
 
 template <size_t N, typename G>
 void try_garbage_collect_word(
-    G garbage_bits, const mailbox_t<N> *inbox, mailbox_t<N> *outbox,
-    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> *active, uint64_t w)
+    G garbage_bits, const mailbox_t<N> inbox, mailbox_t<N> outbox,
+    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active, uint64_t w)
 {
   malloc_lock<true> lk;
   if (platform::is_master_lane())
     {
-      uint64_t i = inbox->load_word(w);
-      uint64_t o = outbox->load_word(w);
-      uint64_t a = active->load_word(w);
+      uint64_t i = inbox.load_word(w);
+      uint64_t o = outbox.load_word(w);
+      uint64_t a = active.load_word(w);
       __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
       uint64_t garbage_visible = garbage_bits(i, o);
@@ -605,7 +605,7 @@ void try_garbage_collect_word(
       assert((garbage_available & a) == 0);  // disjoint
       uint64_t proposed = garbage_available | a;
       uint64_t result;
-      bool won_cas = active->cas(w, a, proposed, &result);
+      bool won_cas = active.cas(w, a, proposed, &result);
 
 #if 0
   // if (!won_cas) can return false immediately, or set locks_held to zero
@@ -620,19 +620,19 @@ void try_garbage_collect_word(
 
       // Some of the slots may have already been garbage collected
       // in which case some of the input may be work-available again
-      i = inbox->load_word(w);
-      o = outbox->load_word(w);
+      i = inbox.load_word(w);
+      o = outbox.load_word(w);
       __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
       uint64_t garbage_and_locked = garbage_bits(i, o) & locks_held;
 
       // clear locked bits in outbox
       __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-      uint64_t before = outbox->fetch_and(w, ~garbage_and_locked);
+      uint64_t before = outbox.fetch_and(w, ~garbage_and_locked);
       (void)before;
 
       // drop locks
-      active->fetch_and(w, ~locks_held);
+      active.fetch_and(w, ~locks_held);
     }
 }
 

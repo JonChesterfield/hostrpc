@@ -21,8 +21,8 @@ void client_instance(
 }
 
 extern "C" void instantiate_try_garbage_collect_word_client(
-    const hostrpc::mailbox_t<N>* inbox, hostrpc::mailbox_t<N>* outbox,
-    hostrpc::slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active, uint64_t w)
+    const hostrpc::mailbox_t<N> inbox, hostrpc::mailbox_t<N> outbox,
+    hostrpc::slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active, uint64_t w)
 {
   auto c = [](uint64_t i, uint64_t) -> uint64_t { return i; };
   hostrpc::try_garbage_collect_word<N, decltype(c)>(c, inbox, outbox, active,

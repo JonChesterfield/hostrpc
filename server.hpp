@@ -23,8 +23,8 @@ enum class server_state : uint8_t
 template <size_t N, typename C, typename Op, typename S>
 struct server
 {
-  server(C copy, const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
-         slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active,
+  server(C copy, const mailbox_t<N> inbox, mailbox_t<N> outbox,
+         slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active,
          page_t* remote_buffer, page_t* local_buffer, S step,
          Op operate = operate_nop)
       : copy(copy),
@@ -40,23 +40,23 @@ struct server
 
   void dump_word(uint64_t word)
   {
-    uint64_t i = inbox->load_word(word);
-    uint64_t o = outbox->load_word(word);
-    uint64_t a = active->load_word(word);
+    uint64_t i = inbox.load_word(word);
+    uint64_t o = outbox.load_word(word);
+    uint64_t a = active.load_word(word);
     printf("%lu %lu %lu\n", i, o, a);
   }
 
   uint64_t work_todo(uint64_t word)
   {
-    uint64_t i = inbox->load_word(word);
-    uint64_t o = outbox->load_word(word);
+    uint64_t i = inbox.load_word(word);
+    uint64_t o = outbox.load_word(word);
     return i & ~o;
   }
 
   size_t find_and_claim_slot(uint64_t w)  // or SIZE_MAX
   {
     uint64_t work_visible = work_todo(w);
-    uint64_t work_available = work_visible & ~active->load_word(w);
+    uint64_t work_available = work_visible & ~active.load_word(w);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
     // tries each bit in the work available at the time of the call
@@ -70,7 +70,7 @@ struct server
         uint64_t slot = 64 * w + idx;
         // attempt to get that slot
         uint64_t active_word;
-        bool r = active->try_claim_empty_slot(slot, &active_word);
+        bool r = active.try_claim_empty_slot(slot, &active_word);
         if (r)
           {
             step(__LINE__);
@@ -85,7 +85,7 @@ struct server
         // only clear those that are no longer present, don't insert ones
         // that have just arrived, in order to preserve termination
         // this is a potential optimisation - reduces trips through the loop
-        // work_available &= inbox->load_word(w);
+        // work_available &= inbox.load_word(w);
       }
     return SIZE_MAX;
   }
@@ -100,7 +100,7 @@ struct server
   size_t words()
   {
     // todo: constexpr, static assert matches outbox and active
-    return inbox->words();
+    return inbox.words();
   }
 
   void rpc_handle_given_slot(void* application_state, size_t slot)
@@ -111,16 +111,16 @@ struct server
     const uint64_t subindex = index_to_subindex(slot);
 
     auto lock_held = [&]() -> bool {
-      return detail::nthbitset64(active->load_word(element), subindex);
+      return detail::nthbitset64(active.load_word(element), subindex);
     };
     (void)lock_held;
 
     cache<N> c;
     c.init(slot);
 
-    uint64_t i = inbox->load_word(element);
-    uint64_t o = outbox->load_word(element);
-    uint64_t a = active->load_word(element);
+    uint64_t i = inbox.load_word(element);
+    uint64_t o = outbox.load_word(element);
+    uint64_t a = active.load_word(element);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
     c.i = i;
     c.o = o;
@@ -144,8 +144,7 @@ struct server
       {
         assert((o & this_slot) != 0);
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-        uint64_t updated_out =
-            outbox->release_slot_returning_updated_word(slot);
+        uint64_t updated_out = outbox.release_slot_returning_updated_word(slot);
         assert((updated_out & this_slot) == 0);
 
         return;
@@ -179,7 +178,7 @@ struct server
         // publish result
         {
           __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-          uint64_t o = outbox->claim_slot_returning_updated_word(slot);
+          uint64_t o = outbox.claim_slot_returning_updated_word(slot);
           c.o = o;
         }
         assert(c.is(0b111));
@@ -202,7 +201,7 @@ struct server
 
     // garbage collection should be fairly cheap when there is none,
     // and the presence of any occupied slots can starve the client
-    for (uint64_t w = 0; w < inbox->words(); w++)
+    for (uint64_t w = 0; w < inbox.words(); w++)
       {
         try_garbage_collect_word_server(w);
       }
@@ -219,7 +218,7 @@ struct server
       // may never be collected. probably need the api to take a indicator of
       // where to start scanning from
 
-      for (uint64_t w = 0; w < inbox->words(); w++)
+      for (uint64_t w = 0; w < inbox.words(); w++)
         {
           // if there is no inbound work, it can be because the slots are
           // all filled with garbage on the server side
@@ -239,7 +238,7 @@ struct server
 
     rpc_handle_given_slot(application_state, slot);
 
-    uint64_t a = active->release_slot_returning_updated_word(slot);
+    uint64_t a = active.release_slot_returning_updated_word(slot);
     assert(!detail::nthbitset64(a, index_to_subindex(slot)));
     (void)a;
 
@@ -247,9 +246,9 @@ struct server
   }
 
   C copy;
-  const mailbox_t<N>* inbox;
-  mailbox_t<N>* outbox;
-  slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active;
+  const mailbox_t<N> inbox;
+  mailbox_t<N> outbox;
+  slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active;
   page_t* remote_buffer;
   page_t* local_buffer;
   S step;
@@ -258,8 +257,8 @@ struct server
 
 template <size_t N, typename C, typename Op, typename S>
 server<N, C, Op, S> make_server(
-    C copy, const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
-    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active, page_t* remote_buffer,
+    C copy, const mailbox_t<N> inbox, mailbox_t<N> outbox,
+    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active, page_t* remote_buffer,
     page_t* local_buffer, S step, Op operate = operate_nop)
 {
   return {copy,          inbox,        outbox, active,
