@@ -12,8 +12,8 @@ LLC="llc"
 LINK="llvm-link"
 OPT="opt"
 
-X64FLAGS="-g -O0 -emit-llvm -pthread"
-AMDGCNFLAGS="-O0 -emit-llvm -ffreestanding --target=amdgcn-amd-amdhsa -march=gfx906"
+X64FLAGS="-g -O2 -emit-llvm -pthread"
+AMDGCNFLAGS="-O2 -emit-llvm -ffreestanding --target=amdgcn-amd-amdhsa -march=gfx906"
 
 # time $CXX -O3 catch.cpp -c -o catch.o
 
@@ -47,7 +47,7 @@ done
 rm -f states.exe
 $CXX tests.bc states.bc catch.o x64_host_x64_client.bc $LDFLAGS -o states.exe
 
-time ./states.exe
+time ./states.exe hazard
 
-time valgrind --leak-check=full --fair-sched=yes ./states.exe
+time valgrind --leak-check=full --fair-sched=yes ./states.exe hazard
 

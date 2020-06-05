@@ -130,8 +130,8 @@ TEST_CASE("hazard")
       }
   };
 
-  unsigned nservers = 1;
-  unsigned nclients = 1;
+  unsigned nservers = 128;
+  unsigned nclients = 128;
 
   auto client_worker = [&](unsigned id, unsigned reps) {
     my_id = id;
@@ -180,7 +180,8 @@ TEST_CASE("hazard")
   std::vector<std::thread> client_store;
   for (unsigned i = 0; i < nclients; i++)
     {
-      client_store.emplace_back(std::thread(client_worker, i + nservers, 1000));
+      client_store.emplace_back(
+          std::thread(client_worker, i + nservers, 10000));
     }
 
   for (auto &i : client_store)

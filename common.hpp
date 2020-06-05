@@ -539,6 +539,7 @@ void try_garbage_collect_word(
       uint64_t i = inbox->load_word(w);
       uint64_t o = outbox->load_word(w);
       uint64_t a = active->load_word(w);
+      __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
       uint64_t garbage_visible = garbage_bits(i, o);
       uint64_t garbage_available = garbage_visible & ~a;
@@ -581,10 +582,12 @@ void try_garbage_collect_word(
       // in which case some of the input may be work-available again
       i = inbox->load_word(w);
       o = outbox->load_word(w);
+      __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
       uint64_t garbage_and_locked = garbage_bits(i, o) & locks_held;
 
       // clear locked bits in outbox
+      __c11_atomic_thread_fence(__ATOMIC_RELEASE);
       uint64_t before = outbox->fetch_and(w, ~garbage_and_locked);
       (void)before;
 

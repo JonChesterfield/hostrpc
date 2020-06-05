@@ -83,12 +83,13 @@ struct client
     // synchronous task
     // Checking outbox opens the door to async launch
 
-    uint64_t i = inbox->load_word(w);
+    // choosing to ignore inbox here - if inbox is set there's garbage to
+    // collect
     uint64_t o = outbox->load_word(w);
     uint64_t a = active->load_word(w);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
-    
-    uint64_t some_use = i | o | a;
+
+    uint64_t some_use = o | a;
 
     uint64_t available = ~some_use;
     if (available != 0)
@@ -114,8 +115,9 @@ struct client
     printf("%lu %lu %lu\n", i, o, a);
   }
 
+  // true if did work
   template <bool have_continuation>
-  void rpc_invoke_given_slot(void* application_state, size_t slot)
+  bool rpc_invoke_given_slot(void* application_state, size_t slot)
   {
     assert(slot != SIZE_MAX);
     const uint64_t element = index_to_element(slot);
@@ -135,19 +137,32 @@ struct client
     //  inbox outbox    state  action
     //      0      0     work    work
     //      0      1     done    none
-    //      1      0  blocked    none
-    //      1      1  blocked    none
+    //      1      0  garbage    none (waiting on server)
+    //      1      1  garbage   clean
+    // Inbox true means the result has come back
+    // That this lock has been taken means no other thread is
+    // waiting for that result
     uint64_t this_slot = detail::setnthbit64(0, subindex);
 
-    uint64_t available = ~(i | o) & this_slot;
+    uint64_t garbage = i & o & this_slot;
+    uint64_t available = ~i & ~o & this_slot;
+
+    assert((garbage & available) == 0);  // disjoint
+    if (garbage)
+      {
+        __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+        outbox->release_slot_returning_updated_word(slot);
+        return false;
+      }
 
     if (!available)
       {
-        return;
+        return false;
       }
 
     assert(c.is(0b001));
     step(__LINE__);
+    tracker.claim(slot);
 
     // wave_populate
     fill(&local_buffer[slot], application_state);
@@ -244,6 +259,7 @@ struct client
     // We could wait for inbox[slot] != 0 which indicates the result
     // has been garbage collected, but that stalls the wave waiting for the hose
     // Instead, drop the warp and let the allocator skip occupied inbox slots
+    return true;
   }
 
   // Returns true if it successfully launched the task
@@ -271,7 +287,7 @@ struct client
       {
         uint64_t active_word;
         // may need to gc for there to be a slot
-        try_garbage_collect_word_client(w);
+        // try_garbage_collect_word_client(w);
         slot = find_candidate_client_slot(w);
         if (slot != SIZE_MAX)
           {
@@ -296,9 +312,7 @@ struct client
         return false;
       }
 
-    tracker.claim(slot);
-
-    rpc_invoke_given_slot<have_continuation>(application_state, slot);
+    bool r = rpc_invoke_given_slot<have_continuation>(application_state, slot);
 
     // wave release slot
     step(__LINE__);
@@ -307,7 +321,7 @@ struct client
       (void)a;
     }
 
-    return true;
+    return r;
   }
 
   C copy;

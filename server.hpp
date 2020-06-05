@@ -58,13 +58,13 @@ struct server
     uint64_t work_visible = work_todo(w);
     uint64_t work_available = work_visible & ~active->load_word(w);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
-        
+
     // tries each bit in the work available at the time of the call
     // doesn't load new information for work_available to preserve termination
 
     while (work_available != 0)
       {
-        // this tries each slot in the 
+        // this tries each slot in the
         uint64_t idx = detail::ctz64(work_available);
         assert(detail::nthbitset64(work_available, idx));
         uint64_t slot = 64 * w + idx;
