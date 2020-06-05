@@ -20,30 +20,6 @@ enum class server_state : uint8_t
   result_with_thread = 0b111,
 };
 
-inline server_state operator|(server_state lhs, server_state rhs)
-{
-  // no type_traits, thus no std::underlying_type
-  using T = uint8_t;
-  return static_cast<server_state>(static_cast<T>(lhs) | static_cast<T>(rhs));
-}
-
-inline server_state operator&(server_state lhs, server_state rhs)
-{
-  using T = uint8_t;
-  return static_cast<server_state>(static_cast<T>(lhs) & static_cast<T>(rhs));
-}
-
-inline server_state& operator|=(server_state& lhs, server_state rhs)
-{
-  lhs = lhs | rhs;
-  return lhs;
-}
-inline server_state& operator&=(server_state& lhs, server_state rhs)
-{
-  lhs = lhs & rhs;
-  return lhs;
-}
-
 template <size_t N, typename C, typename Op, typename S>
 struct server
 {
@@ -57,19 +33,10 @@ struct server
         active(active),
         remote_buffer(remote_buffer),
         local_buffer(local_buffer),
-
         step(step),
         operate(operate)
   {
-    for (size_t i = 0; i < N; i++)
-      {
-        assert(state[i] == server_state::idle_server);
-      }
   }
-
-  server_state state[N] = {};
-
-  void transition(size_t slot, server_state to) { state[slot] = to; }
 
   void dump_word(uint64_t word)
   {
