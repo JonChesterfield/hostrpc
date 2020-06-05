@@ -57,32 +57,24 @@ struct server
   {
     uint64_t work_visible = work_todo(w);
     uint64_t work_available = work_visible & ~active->load_word(w);
-    // tries each bit in the work available at he call
+    __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
+        
+    // tries each bit in the work available at the time of the call
     // doesn't load new information for work_available to preserve termination
 
     while (work_available != 0)
       {
+        // this tries each slot in the 
         uint64_t idx = detail::ctz64(work_available);
         assert(detail::nthbitset64(work_available, idx));
         uint64_t slot = 64 * w + idx;
         // attempt to get that slot
         uint64_t active_word;
         bool r = active->try_claim_empty_slot(slot, &active_word);
-
         if (r)
           {
-            // got the slot, check the work is still available
-            uint64_t td = work_todo(w);
-            if (detail::nthbitset64(td, idx))
-              {
-                // got lock on a slot with work to do
-                // said work is no longer available to another thread
-
-                assert(!detail::nthbitset64(td & ~active->load_word(w), idx));
-                step(__LINE__);
-
-                return slot;
-              }
+            step(__LINE__);
+            return slot;
           }
 
         // cas failed, or lost race, assume something else claimed it

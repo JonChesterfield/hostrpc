@@ -70,8 +70,7 @@ struct client
     return inbox->words();
   }
 
-  size_t find_candidate_client_slot(uint64_t w, uint64_t* inbox_word,
-                                    uint64_t* outbox_word)
+  size_t find_candidate_client_slot(uint64_t w)
   {
     // find a slot which is currently available
 
@@ -87,14 +86,13 @@ struct client
     uint64_t i = inbox->load_word(w);
     uint64_t o = outbox->load_word(w);
     uint64_t a = active->load_word(w);
-
+    __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
+    
     uint64_t some_use = i | o | a;
 
     uint64_t available = ~some_use;
     if (available != 0)
       {
-        *inbox_word = i;
-        *outbox_word = o;
         return 64 * w + detail::ctz64(available);
       }
 
@@ -260,7 +258,7 @@ struct client
     // 0b100 is got a result, don't need it
     for (uint64_t w = 0; w < inbox->words(); w++)
       {
-        try_garbage_collect_word_client(w);
+        // try_garbage_collect_word_client(w);
       }
 
     step(__LINE__);
@@ -271,10 +269,10 @@ struct client
 
     for (uint64_t w = 0; w < words(); w++)
       {
-        uint64_t inbox_word, outbox_word, active_word;
+        uint64_t active_word;
         // may need to gc for there to be a slot
         try_garbage_collect_word_client(w);
-        slot = find_candidate_client_slot(w, &inbox_word, &outbox_word);
+        slot = find_candidate_client_slot(w);
         if (slot != SIZE_MAX)
           {
             if (active->try_claim_empty_slot(slot, &active_word))
