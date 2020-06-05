@@ -2,8 +2,8 @@
 #define N 128
 
 void client_instance(
-    const hostrpc::mailbox_t<N>* inbox, hostrpc::mailbox_t<N>* outbox,
-    hostrpc::slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active,
+    const hostrpc::mailbox_t<N> inbox, hostrpc::mailbox_t<N> outbox,
+    hostrpc::slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active,
     hostrpc::page_t* remote_buffer, hostrpc::page_t* local_buffer)
 {
   hostrpc::nop_stepper step;

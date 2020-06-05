@@ -81,7 +81,9 @@ TEST_CASE("hazard")
   slot_bitmap<128, __OPENCL_MEMORY_SCOPE_DEVICE> client_active;
   slot_bitmap<128, __OPENCL_MEMORY_SCOPE_DEVICE> server_active;
 
-  x64_x64_client client(cp, &recv, &send, &client_active, &server_buffer[0],
+  // auto send_data = mailbox_t<128>::slot_bitmap_data::alloc();
+
+  x64_x64_client client(cp, recv, send, client_active, &server_buffer[0],
                         &client_buffer[0], st, fill{}, use{});
 
   x64_x64_server server(cp, &send, &recv, &server_active, &client_buffer[0],

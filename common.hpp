@@ -204,6 +204,7 @@ struct slot_bitmap
     }
     alignas(64) _Atomic uint64_t data[words()];
   };
+  static_assert(sizeof(slot_bitmap_data *) == 8, "");
 
   void init()
   {
@@ -214,29 +215,21 @@ struct slot_bitmap
   }
 
   slot_bitmap_data *a;
-  bool must_free;
   slot_bitmap(_Atomic __attribute__((aligned(64))) uint64_t *memory)
   {
     assert(memory);
     a = memory;
-    must_free = false;
     init();
   }
 
   slot_bitmap()
   {
+    // leaks
     a = slot_bitmap_data::alloc();
-    must_free = true;
     init();
   }
 
-  ~slot_bitmap()
-  {
-    if (must_free)
-      {
-        slot_bitmap_data::free(a);
-      }
-  }
+  ~slot_bitmap() {}
 
   bool operator[](size_t i) const
   {

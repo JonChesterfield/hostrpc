@@ -34,8 +34,8 @@ enum class client_state : uint8_t
 template <size_t N, typename C, typename Fill, typename Use, typename S>
 struct client
 {
-  client(C copy, const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
-         slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active,
+  client(C copy, const mailbox_t<N> inbox, mailbox_t<N> outbox,
+         slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active,
          page_t* remote_buffer, page_t* local_buffer, S step,
          Fill fill = fill_nop, Use use = use_nop)
 
@@ -55,7 +55,7 @@ struct client
   {
     for (;;)
       {
-        size_t slot = active->try_claim_any_empty_slot();
+        size_t slot = active.try_claim_any_empty_slot();
         if (slot != SIZE_MAX)
           {
             step(__LINE__);
@@ -67,7 +67,7 @@ struct client
   size_t words()
   {
     // todo: constexpr, static assert matches outbox and active
-    return inbox->words();
+    return inbox.words();
   }
 
   size_t find_candidate_client_slot(uint64_t w)
@@ -85,8 +85,8 @@ struct client
 
     // choosing to ignore inbox here - if inbox is set there's garbage to
     // collect
-    uint64_t o = outbox->load_word(w);
-    uint64_t a = active->load_word(w);
+    uint64_t o = outbox.load_word(w);
+    uint64_t a = active.load_word(w);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
     uint64_t some_use = o | a;
@@ -109,9 +109,9 @@ struct client
 
   void dump_word(uint64_t word)
   {
-    uint64_t i = inbox->load_word(word);
-    uint64_t o = outbox->load_word(word);
-    uint64_t a = active->load_word(word);
+    uint64_t i = inbox.load_word(word);
+    uint64_t o = outbox.load_word(word);
+    uint64_t a = active.load_word(word);
     printf("%lu %lu %lu\n", i, o, a);
   }
 
@@ -125,9 +125,9 @@ struct client
 
     cache<N> c;
     c.init(slot);
-    uint64_t i = inbox->load_word(element);
-    uint64_t o = outbox->load_word(element);
-    uint64_t a = active->load_word(element);
+    uint64_t i = inbox.load_word(element);
+    uint64_t o = outbox.load_word(element);
+    uint64_t a = active.load_word(element);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
     c.i = i;
     c.o = o;
@@ -151,7 +151,7 @@ struct client
     if (garbage)
       {
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-        outbox->release_slot_returning_updated_word(slot);
+        outbox.release_slot_returning_updated_word(slot);
         return false;
       }
 
@@ -176,7 +176,7 @@ struct client
     // wave_publish work
     {
       __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-      uint64_t o = outbox->claim_slot_returning_updated_word(slot);
+      uint64_t o = outbox.claim_slot_returning_updated_word(slot);
       c.o = o;
     }
 
@@ -195,7 +195,7 @@ struct client
         uint64_t loaded;
         unsigned rep = 0;
         unsigned max_rep = 10000;
-        while ((*inbox)(slot, &loaded) != 1)
+        while (inbox(slot, &loaded) != 1)
           {
             c.i = loaded;
             assert(c.is(0b011));
@@ -210,9 +210,9 @@ struct client
                            slot);
                     printf("slot %lu owned by %u\n", slot, tracker.slots[slot]);
                     // e.g. inbox 0, outbox 1, active 1,
-                    inbox->dump();
-                    outbox->dump();
-                    active->dump();
+                    inbox.dump();
+                    outbox.dump();
+                    active.dump();
                   }
               }
           }
@@ -239,7 +239,7 @@ struct client
         // todo: is it better to leave this for the GC?
         {
           __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-          uint64_t o = outbox->release_slot_returning_updated_word(slot);
+          uint64_t o = outbox.release_slot_returning_updated_word(slot);
           c.o = o;
         }
 
@@ -272,7 +272,7 @@ struct client
     // 0b110 is posted request, nothing waited, got one
     // 0b101 is got a result, don't need it, only spun up a thread for cleanup
     // 0b100 is got a result, don't need it
-    for (uint64_t w = 0; w < inbox->words(); w++)
+    for (uint64_t w = 0; w < inbox.words(); w++)
       {
         // try_garbage_collect_word_client(w);
       }
@@ -291,7 +291,7 @@ struct client
         slot = find_candidate_client_slot(w);
         if (slot != SIZE_MAX)
           {
-            if (active->try_claim_empty_slot(slot, &active_word))
+            if (active.try_claim_empty_slot(slot, &active_word))
               {
                 assert(active_word != 0);
                 // printf("try_claim succeeded\n");
@@ -317,7 +317,7 @@ struct client
     // wave release slot
     step(__LINE__);
     {
-      uint64_t a = active->release_slot_returning_updated_word(slot);
+      uint64_t a = active.release_slot_returning_updated_word(slot);
       (void)a;
     }
 
@@ -325,20 +325,23 @@ struct client
   }
 
   C copy;
-  const mailbox_t<N>* inbox;
-  mailbox_t<N>* outbox;
-  slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active;
+  const mailbox_t<N> inbox;
+  mailbox_t<N> outbox;
+  slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active;
   page_t* remote_buffer;
   page_t* local_buffer;
   S step;
   Fill fill;
   Use use;
+
+  static_assert(sizeof(inbox) == 8, "");
+  static_assert(sizeof(active) == 8, "");
 };
 
 template <size_t N, typename C, typename Fill, typename Use, typename S>
 client<N, C, Fill, Use, S> make_client(
-    C copy, const mailbox_t<N>* inbox, mailbox_t<N>* outbox,
-    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>* active, page_t* remote_buffer,
+    C copy, const mailbox_t<N> inbox, mailbox_t<N> outbox,
+    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active, page_t* remote_buffer,
     page_t* local_buffer, S step, Fill fill = fill_nop, Use use = use_nop)
 {
   return {copy,         inbox, outbox, active, remote_buffer,

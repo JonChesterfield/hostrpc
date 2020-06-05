@@ -128,7 +128,7 @@ TEST_CASE("set up single word system")
     safe_thread cl_thrd([&]() {
       auto stepper = hostrpc::default_stepper(&client_steps, show_step);
       slot_bitmap<64, __OPENCL_MEMORY_SCOPE_DEVICE> active;
-      auto cl = make_client(cp, &recv, &send, &active, &server_buffer[0],
+      auto cl = make_client(cp, recv, send, active, &server_buffer[0],
                             &client_buffer[0], stepper, fill, use);
 
       while (calls_launched < calls_planned)
