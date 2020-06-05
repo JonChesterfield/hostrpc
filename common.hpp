@@ -4,9 +4,8 @@
 #include <stdatomic.h>
 #include <stdint.h>
 
+#include "memory.hpp"  // free, aligned alloc
 #include "platform.hpp"
-
-#include <stdlib.h>
 
 namespace hostrpc
 {
@@ -183,11 +182,61 @@ struct slot_bitmap
   static_assert(N != 0, "");
   static_assert(N != SIZE_MAX, "Used as a sentinel");
   static_assert(N % 64 == 0, "Size must be multiple of 64");
-
-  constexpr slot_bitmap() = default;
-
   static constexpr size_t size() { return N; }
   static constexpr size_t words() { return N / 64; }
+
+  static_assert(sizeof(uint64_t) == sizeof(_Atomic uint64_t), "");
+  static constexpr size_t buffer_align() { return alignof(slot_bitmap_data); }
+  static constexpr size_t buffer_length() { return words() * sizeof(uint64_t); }
+
+  struct slot_bitmap_data
+  {
+    static slot_bitmap_data *alloc()
+    {
+      void *memory = ::aligned_alloc(buffer_align(), buffer_length());
+      assert(memory);
+      return new (memory) slot_bitmap_data;
+    }
+    static void free(slot_bitmap_data *d)
+    {
+      d->~slot_bitmap_data();
+      ::free(d);
+    }
+    alignas(64) _Atomic uint64_t data[words()];
+  };
+
+  void init()
+  {
+    for (size_t i = 0; i < words(); i++)
+      {
+        a->data[i] = 0;
+      }
+  }
+
+  slot_bitmap_data *a;
+  bool must_free;
+  slot_bitmap(_Atomic __attribute__((aligned(64))) uint64_t *memory)
+  {
+    assert(memory);
+    a = memory;
+    must_free = false;
+    init();
+  }
+
+  slot_bitmap()
+  {
+    a = slot_bitmap_data::alloc();
+    must_free = true;
+    init();
+  }
+
+  ~slot_bitmap()
+  {
+    if (must_free)
+      {
+        slot_bitmap_data::free(a);
+      }
+  }
 
   bool operator[](size_t i) const
   {
@@ -284,7 +333,7 @@ struct slot_bitmap
   uint64_t load_word(size_t i) const
   {
     assert(i < words());
-    return __opencl_atomic_load(&data[i], __ATOMIC_RELAXED, scope);
+    return __opencl_atomic_load(&a->data[i], __ATOMIC_RELAXED, scope);
   }
 
   bool cas(uint64_t element, uint64_t expect, uint64_t replace)
@@ -296,7 +345,7 @@ struct slot_bitmap
   bool cas(uint64_t element, uint64_t expect, uint64_t replace,
            uint64_t *loaded)
   {
-    _Atomic uint64_t *addr = &data[element];
+    _Atomic uint64_t *addr = &a->data[element];
 
     // cas is not used across devices by this library
     bool r = __opencl_atomic_compare_exchange_weak(
@@ -316,14 +365,14 @@ struct slot_bitmap
   // these are used on memory visible fromi all svm devices
   uint64_t fetch_and(uint64_t element, uint64_t mask)
   {
-    _Atomic uint64_t *addr = &data[element];
+    _Atomic uint64_t *addr = &a->data[element];
     return __opencl_atomic_fetch_and(addr, mask, __ATOMIC_ACQ_REL,
                                      __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
   }
 
   uint64_t fetch_or(uint64_t element, uint64_t mask)
   {
-    _Atomic uint64_t *addr = &data[element];
+    _Atomic uint64_t *addr = &a->data[element];
     return __opencl_atomic_fetch_or(addr, mask, __ATOMIC_ACQ_REL,
                                     __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
   }
@@ -358,8 +407,6 @@ struct slot_bitmap
     assert(!detail::nthbitset64(before, subindex));
     return before | mask;
   }
-
-  alignas(64) _Atomic uint64_t data[words()] = {};
 };
 
 // on return true, loaded contains active[w]
@@ -497,7 +544,7 @@ struct malloc_lock
     init();
     for (uint64_t i = 0; i < 64; i++)
       {
-        data[i] = detail::nthbitset64(x, i) ? malloc(1) : nullptr;
+        data[i] = detail::nthbitset64(x, i) ? aligned_alloc(1, 1) : nullptr;
       }
     held = x;
   }

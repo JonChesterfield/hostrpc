@@ -12,8 +12,8 @@ LLC="llc"
 LINK="llvm-link"
 OPT="opt"
 
-X64FLAGS="-g -O2 -emit-llvm -pthread"
-AMDGCNFLAGS="-O2 -emit-llvm -ffreestanding --target=amdgcn-amd-amdhsa -march=gfx906"
+X64FLAGS="-g -O0 -emit-llvm -pthread"
+AMDGCNFLAGS="-O0 -emit-llvm -ffreestanding --target=amdgcn-amd-amdhsa -march=gfx906"
 
 # time $CXX -O3 catch.cpp -c -o catch.o
 

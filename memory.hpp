@@ -11,7 +11,12 @@
 
 // Placement new is declared in #include <new>, which is not available
 // Strictly it takes std::size_t, but cstddef isn't available either
-// void* operator new (size_t size, void* ptr) noexcept;
+void *operator new(size_t size, void *ptr) noexcept;
+
+// stdlib.h not necessarily available either
+// todo: wrap these in an indirection, targeting libc or hsa
+void free(void *);
+void *aligned_alloc(size_t alignment, size_t size);
 
 namespace hostrpc
 {
@@ -49,10 +54,6 @@ struct allocator_functor_interface
   void free_outbox_impl(void *, size_t) = delete;
   void free_locks_impl(void *, size_t) = delete;
 };
-
-// stdlib.h not necessarily available
-void free(void *);
-void *aligned_alloc(size_t alignment, size_t size);
 
 // TODO: Move to memory_x64 or similar, stdlib.h is probably using glibc
 // x64 can use the same allocator as client or server
