@@ -74,6 +74,17 @@ inline uint64_t clearnthbit64(uint64_t x, uint64_t n)
   return x & ~(1ull << n);
 }
 
+inline uint64_t setbitsrange64(uint64_t l, uint64_t h)
+{
+  uint64_t base = UINT64_MAX;
+  uint64_t width = (h - l) + 1;
+  // The &63 is eliminated by the backend for x86-64 as that's the
+  // behaviour of the shift instruction.
+  base >>= (UINT64_C(63) & (UINT64_C(64) - width));
+  base <<= (UINT64_C(63) & l);
+  return base;
+}
+
 inline uint64_t ctz64(uint64_t value)
 {
   if (value == 0)
