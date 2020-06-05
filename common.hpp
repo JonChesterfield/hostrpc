@@ -173,8 +173,9 @@ struct slot_bitmap;
 
 template <size_t N>
 using mailbox_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>;
+
 template <size_t N>
-using cache_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>;
+using lockarray_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>;
 
 template <size_t N, size_t scope>
 struct slot_bitmap
@@ -205,28 +206,20 @@ struct slot_bitmap
     alignas(64) _Atomic uint64_t data[words()];
   };
   static_assert(sizeof(slot_bitmap_data *) == 8, "");
-
-  void init()
+  struct slot_bitmap_data_deleter
   {
+    void operator()(slot_bitmap_data *d) { slot_bitmap_data::free(d); }
+  };
+
+  slot_bitmap_data *a;
+  slot_bitmap(slot_bitmap_data *memory)
+  {
+    assert(memory);
+    a = memory;
     for (size_t i = 0; i < words(); i++)
       {
         a->data[i] = 0;
       }
-  }
-
-  slot_bitmap_data *a;
-  slot_bitmap(_Atomic __attribute__((aligned(64))) uint64_t *memory)
-  {
-    assert(memory);
-    a = memory;
-    init();
-  }
-
-  slot_bitmap()
-  {
-    // leaks
-    a = slot_bitmap_data::alloc();
-    init();
   }
 
   ~slot_bitmap() {}

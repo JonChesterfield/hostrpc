@@ -70,18 +70,29 @@ slot_owner tracker;
 TEST_CASE("hazard")
 {
   using namespace hostrpc;
-  mailbox_t<128> send;
-  mailbox_t<128> recv;
-  page_t client_buffer[128];
-  page_t server_buffer[128];
+  constexpr size_t N = 128;
+  page_t client_buffer[N];
+  page_t server_buffer[N];
 
   hostrpc::copy_functor_memcpy_pull cp;
   hostrpc::nop_stepper st;
 
-  slot_bitmap<128, __OPENCL_MEMORY_SCOPE_DEVICE> client_active;
-  slot_bitmap<128, __OPENCL_MEMORY_SCOPE_DEVICE> server_active;
+  using mailbox_ptr_t = std::unique_ptr<mailbox_t<N>::slot_bitmap_data,
+                                        mailbox_t<N>::slot_bitmap_data_deleter>;
 
-  // auto send_data = mailbox_t<128>::slot_bitmap_data::alloc();
+  using lockarray_ptr_t =
+      std::unique_ptr<lockarray_t<N>::slot_bitmap_data,
+                      lockarray_t<N>::slot_bitmap_data_deleter>;
+
+  mailbox_ptr_t send_data(mailbox_t<N>::slot_bitmap_data::alloc());
+  mailbox_ptr_t recv_data(mailbox_t<N>::slot_bitmap_data::alloc());
+  lockarray_ptr_t client_active_data(lockarray_t<N>::slot_bitmap_data::alloc());
+  lockarray_ptr_t server_active_data(lockarray_t<N>::slot_bitmap_data::alloc());
+
+  mailbox_t<N> send(send_data.get());
+  mailbox_t<N> recv(recv_data.get());
+  lockarray_t<N> client_active(client_active_data.get());
+  lockarray_t<N> server_active(server_active_data.get());
 
   x64_x64_client client(cp, recv, send, client_active, &server_buffer[0],
                         &client_buffer[0], st, fill{}, use{});

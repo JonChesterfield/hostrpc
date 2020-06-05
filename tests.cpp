@@ -9,10 +9,16 @@
 
 TEST_CASE("Bitmap")
 {
+  using bitmap_ptr_t =
+      std::unique_ptr<hostrpc::slot_bitmap<128>::slot_bitmap_data,
+                      hostrpc::slot_bitmap<128>::slot_bitmap_data_deleter>;
+
+  bitmap_ptr_t ptr(hostrpc::slot_bitmap<128>::slot_bitmap_data::alloc());
+
   uint64_t tmp;
   SECTION("set and clear each element")
   {
-    hostrpc::slot_bitmap<128> b;
+    hostrpc::slot_bitmap<128> b(ptr.get());
     if (0)
       for (size_t i = 0; i < b.size(); i++)
         {
@@ -28,7 +34,7 @@ TEST_CASE("Bitmap")
 
   SECTION("find and unconditionally claim each element")
   {
-    hostrpc::slot_bitmap<128> b;
+    hostrpc::slot_bitmap<128> b(ptr.get());
     for (size_t i = 0; i < b.size(); i++)
       {
         size_t e = b.find_empty_slot();
@@ -43,7 +49,7 @@ TEST_CASE("Bitmap")
 
   SECTION("find and try claim each element")
   {
-    hostrpc::slot_bitmap<128> b;
+    hostrpc::slot_bitmap<128> b(ptr.get());
     for (size_t i = 0; i < b.size(); i++)
       {
         size_t e = b.find_empty_slot();
@@ -58,7 +64,7 @@ TEST_CASE("Bitmap")
 
   SECTION("find elements in the middle of the bitmap")
   {
-    hostrpc::slot_bitmap<128> b;
+    hostrpc::slot_bitmap<128> b(ptr.get());
     for (size_t i = 0; i < b.size(); i++)
       {
         b.try_claim_empty_slot(i, &tmp);
@@ -80,17 +86,12 @@ TEST_CASE("Bitmap")
   }
 }
 
-TEST_CASE("Instantiate bitmap")
-{
-  hostrpc::slot_bitmap<64> bm64;
-  hostrpc::slot_bitmap<128> bm128;
-  (void)bm64;
-  (void)bm128;
-}
-
 TEST_CASE("set up single word system")
 {
   using namespace hostrpc;
+  constexpr size_t N = 64;
+  page_t client_buffer[N];
+  page_t server_buffer[N];
 
   _Atomic(uint64_t) val(UINT64_MAX);
 
@@ -109,10 +110,22 @@ TEST_CASE("set up single word system")
     // printf("Returned %lu\n", p->cacheline[0].element[0]);
   };
 
-  mailbox_t<64> send;
-  mailbox_t<64> recv;
-  page_t client_buffer[64];
-  page_t server_buffer[64];
+  using mailbox_ptr_t = std::unique_ptr<mailbox_t<N>::slot_bitmap_data,
+                                        mailbox_t<N>::slot_bitmap_data_deleter>;
+
+  using lockarray_ptr_t =
+      std::unique_ptr<lockarray_t<N>::slot_bitmap_data,
+                      lockarray_t<N>::slot_bitmap_data_deleter>;
+
+  mailbox_ptr_t send_data(mailbox_t<N>::slot_bitmap_data::alloc());
+  mailbox_ptr_t recv_data(mailbox_t<N>::slot_bitmap_data::alloc());
+  lockarray_ptr_t client_active_data(lockarray_t<N>::slot_bitmap_data::alloc());
+  lockarray_ptr_t server_active_data(lockarray_t<N>::slot_bitmap_data::alloc());
+
+  mailbox_t<N> send(send_data.get());
+  mailbox_t<N> recv(recv_data.get());
+  lockarray_t<N> client_active(client_active_data.get());
+  lockarray_t<N> server_active(server_active_data.get());
 
   const uint64_t calls_planned = 1024;
   _Atomic(uint64_t) calls_launched(0);
@@ -127,8 +140,7 @@ TEST_CASE("set up single word system")
   {
     safe_thread cl_thrd([&]() {
       auto stepper = hostrpc::default_stepper(&client_steps, show_step);
-      slot_bitmap<64, __OPENCL_MEMORY_SCOPE_DEVICE> active;
-      auto cl = make_client(cp, recv, send, active, &server_buffer[0],
+      auto cl = make_client(cp, recv, send, client_active, &server_buffer[0],
                             &client_buffer[0], stepper, fill, use);
 
       while (calls_launched < calls_planned)
@@ -146,8 +158,7 @@ TEST_CASE("set up single word system")
 
     safe_thread sv_thrd([&]() {
       auto stepper = hostrpc::default_stepper(&server_steps, show_step);
-      slot_bitmap<64, __OPENCL_MEMORY_SCOPE_DEVICE> active;
-      auto sv = make_server(cp, send, recv, active, &client_buffer[0],
+      auto sv = make_server(cp, send, recv, server_active, &client_buffer[0],
                             &server_buffer[0], stepper, operate);
       for (;;)
         {
