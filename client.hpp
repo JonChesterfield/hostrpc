@@ -116,63 +116,37 @@ struct client
     printf("%lu %lu %lu\n", i, o, a);
   }
 
-  // Returns true if it successfully launched the task
   template <bool have_continuation>
-  bool rpc_invoke(void* application_state)
+  void rpc_invoke_given_slot(void* application_state, size_t slot)
   {
-    step(__LINE__);
-
-    // 0b111 is posted request, waited for it, got it
-    // 0b110 is posted request, nothing waited, got one
-    // 0b101 is got a result, don't need it, only spun up a thread for cleanup
-    // 0b100 is got a result, don't need it
-    for (uint64_t w = 0; w < inbox->words(); w++)
-      {
-        try_garbage_collect_word_client(w);
-      }
-
-    step(__LINE__);
-
-    // wave_acquire_slot
-    // can only acquire a slot which is 000
-    size_t slot = SIZE_MAX;
+    assert(slot != SIZE_MAX);
+    const uint64_t element = index_to_element(slot);
+    const uint64_t subindex = index_to_subindex(slot);
 
     cache<N> c;
-    for (uint64_t w = 0; w < words(); w++)
-      {
-        uint64_t inbox_word, outbox_word, active_word;
-        // may need to gc for there to be a slot
-        try_garbage_collect_word_client(w);
-        slot = find_candidate_client_slot(w, &inbox_word, &outbox_word);
-        if (slot != SIZE_MAX)
-          {
-            if (active->try_claim_empty_slot(slot, &active_word))
-              {
-                assert(active_word != 0);
-                // printf("try_claim succeeded\n");
-                // found a slot and locked it
-                c.i = inbox_word;
-                c.o = outbox_word;
-                c.a = active_word;
-                break;
-              }
-            else
-              {
-                slot = SIZE_MAX;
-              }
-          }
-      }
-
-    if (slot == SIZE_MAX)
-      {
-        // couldn't get a slot, won't launch
-        step(__LINE__);
-        return false;
-      }
-
-    tracker.claim(slot);
-
     c.init(slot);
+    uint64_t i = inbox->load_word(element);
+    uint64_t o = outbox->load_word(element);
+    uint64_t a = active->load_word(element);
+    __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
+    c.i = i;
+    c.o = o;
+    c.a = a;
+
+    // Called with a lock. The corresponding slot can be:
+    //  inbox outbox    state  action
+    //      0      0     work    work
+    //      0      1     done    none
+    //      1      0  blocked    none
+    //      1      1  blocked    none
+    uint64_t this_slot = detail::setnthbit64(0, subindex);
+
+    uint64_t available = ~(i | o) & this_slot;
+
+    if (!available)
+      {
+        return;
+      }
 
     assert(c.is(0b001));
     step(__LINE__);
@@ -188,6 +162,7 @@ struct client
 
     // wave_publish work
     {
+      __c11_atomic_thread_fence(__ATOMIC_RELEASE);
       uint64_t o = outbox->claim_slot_returning_updated_word(slot);
       c.o = o;
     }
@@ -229,6 +204,7 @@ struct client
               }
           }
 
+        __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
         c.i = loaded;
         assert(c.is(0b111));
 
@@ -249,6 +225,7 @@ struct client
         // mark the work as no longer in use
         // todo: is it better to leave this for the GC?
         {
+          __c11_atomic_thread_fence(__ATOMIC_RELEASE);
           uint64_t o = outbox->release_slot_returning_updated_word(slot);
           c.o = o;
         }
@@ -269,23 +246,69 @@ struct client
     // We could wait for inbox[slot] != 0 which indicates the result
     // has been garbage collected, but that stalls the wave waiting for the hose
     // Instead, drop the warp and let the allocator skip occupied inbox slots
+  }
+
+  // Returns true if it successfully launched the task
+  template <bool have_continuation>
+  bool rpc_invoke(void* application_state)
+  {
+    step(__LINE__);
+
+    // 0b111 is posted request, waited for it, got it
+    // 0b110 is posted request, nothing waited, got one
+    // 0b101 is got a result, don't need it, only spun up a thread for cleanup
+    // 0b100 is got a result, don't need it
+    for (uint64_t w = 0; w < inbox->words(); w++)
+      {
+        try_garbage_collect_word_client(w);
+      }
+
+    step(__LINE__);
+
+    // wave_acquire_slot
+    // can only acquire a slot which is 000
+    size_t slot = SIZE_MAX;
+
+    for (uint64_t w = 0; w < words(); w++)
+      {
+        uint64_t inbox_word, outbox_word, active_word;
+        // may need to gc for there to be a slot
+        try_garbage_collect_word_client(w);
+        slot = find_candidate_client_slot(w, &inbox_word, &outbox_word);
+        if (slot != SIZE_MAX)
+          {
+            if (active->try_claim_empty_slot(slot, &active_word))
+              {
+                assert(active_word != 0);
+                // printf("try_claim succeeded\n");
+                // found a slot and locked it
+                break;
+              }
+            else
+              {
+                slot = SIZE_MAX;
+              }
+          }
+      }
+
+    if (slot == SIZE_MAX)
+      {
+        // couldn't get a slot, won't launch
+        step(__LINE__);
+        return false;
+      }
+
+    tracker.claim(slot);
+
+    rpc_invoke_given_slot<have_continuation>(application_state, slot);
 
     // wave release slot
     step(__LINE__);
     {
       uint64_t a = active->release_slot_returning_updated_word(slot);
-      c.a = a;
+      (void)a;
     }
 
-    if (have_continuation)
-      {
-        assert(c.is(0b100));
-      }
-    else
-      {
-        assert(c.is(0b010));
-        // May transition to 0b110 if inbox was read again here
-      }
     return true;
   }
 

@@ -137,8 +137,8 @@ struct server
     // Called with a lock. The corresponding slot can be:
     //  inbox outbox    state  action
     //      0      0     idle    none
-    //      1      0     work    work
     //      0      1  garbage collect
+    //      1      0     work    work
     //      1      1  waiting    none
 
     uint64_t this_slot = detail::setnthbit64(0, subindex);
