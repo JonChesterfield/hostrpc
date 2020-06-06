@@ -1,6 +1,18 @@
 #include "hsa.hpp"
 #include <cstring>
 
+char *repack_argv(int argc, char **argv)
+{
+  size_t count = 0;
+  for (int i = 0; i < argc; i++)
+    {
+      char *arg = argv[i];
+      count += strlen(arg) + 1;
+    }
+
+  printf("argv wants %zu bytes\n", count);
+  return 0;
+}
 uint64_t find_entry_address(hsa::executable &ex)
 {
   const char *kernel_entry = "device_entry.kd";
@@ -66,6 +78,8 @@ int main(int argc, char **argv)
     {
       fprintf(stderr, "Require at least one argument\n");
     }
+
+  repack_argv(argc, argv);
 
   hsa_agent_t kernel_agent;
   if (HSA_STATUS_INFO_BREAK !=
@@ -150,10 +164,40 @@ int main(int argc, char **argv)
           }))
     {
       fprintf(stderr, "Failed to find kernarg_region on kernel agent\n");
+      exit(1);
     }
 
   initialize_packet_defaults(packet);
   packet->kernel_object = kernel_address;
+
+  // probably need to populate some of the implicit args, need to check what the
+  // abi says about int followed by char**
+  // also need to actually allocate space for those char** and copy them across
+  struct args_t
+  {
+    int argc;
+    int padding;
+    void *argv;
+  };
+
+  {
+    size_t bytes = sizeof(args_t);
+    if (HSA_STATUS_SUCCESS !=
+        hsa_memory_allocate(kernarg_region, bytes,
+                            (void **)&packet->kernarg_address))
+      {
+        fprintf(stderr, "Failed to allocate %zu bytes for kernel arguments\n",
+                bytes);
+        exit(1);
+      }
+  }
+
+  args_t args;
+  args.argc = argc;
+  args.padding = 0;
+  args.argv = 0;
+
+  memcpy((void *)packet->kernarg_address, &args, sizeof(args));
 
   hsa_signal_create(1, 0, NULL, &packet->completion_signal);
 
@@ -168,7 +212,12 @@ int main(int argc, char **argv)
   while (hsa_signal_wait_acquire(packet->completion_signal,
                                  HSA_SIGNAL_CONDITION_EQ, 0, UINT64_MAX,
                                  HSA_WAIT_STATE_ACTIVE) != 0)
-    ;
+    {
+      // TODO: Run a hostcall server in here
+    }
+
+  hsa_signal_destroy(packet->completion_signal);
+  hsa_queue_destroy(queue);
 
   return 0;
 }
