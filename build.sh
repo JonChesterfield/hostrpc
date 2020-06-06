@@ -19,7 +19,15 @@ AMDGCNFLAGS="-O0 -emit-llvm -ffreestanding --target=amdgcn-amd-amdhsa -march=gfx
 
 rm -rf *.s *.ll *.exe
 
+
+$CXX $X64FLAGS -I$HSAINC amdgcn_loader.cpp -c -o amdgcn_loader.bc
+$CXX $LDFLAGS amdgcn_loader.bc -o amdgcn_loader.exe
+./amdgcn_loader.exe device.o
+
+exit 0
+
 $CXX $X64FLAGS states.cpp -c -o states.bc
+
 
 $CXX $X64FLAGS client.cpp -c -o client.x64.bc
 $CXX $X64FLAGS server.cpp -c -o server.x64.bc

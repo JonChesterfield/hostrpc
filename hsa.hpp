@@ -30,8 +30,8 @@ inline void success_or_exit_impl(int line, const char* file,
     {
       return;
     }
-  printf("HSA Failure at %s:%d (%u,%s)\n", file, line, (unsigned)status,
-         status_string(status));
+  fprintf(stderr, "HSA Failure at %s:%d (%u,%s)\n", file, line,
+          (unsigned)status, status_string(status));
   exit(1);
 }
 
@@ -50,7 +50,7 @@ struct init
 #endif
 
 template <typename C>
-void iterate_agents(C cb)
+hsa_status_t iterate_agents(C cb)
 {
   requires_invocable_r(hsa_status_t, C, hsa_agent_t);
 
@@ -61,13 +61,7 @@ void iterate_agents(C cb)
 
   // res documented to fail if &cb == NULL or runtime not initialised
   // it also returns HSA_STATUS_INFO_BREAK if a traversal was stopped early
-  hsa_status_t res = hsa_iterate_agents(L, static_cast<void*>(&cb));
-  if (res == HSA_STATUS_INFO_BREAK)
-    {
-      return;
-    }
-
-  hsa_success_or_exit(res);
+  return hsa_iterate_agents(L, static_cast<void*>(&cb));
 }
 
 template <typename T, hsa_agent_info_t req>
@@ -186,7 +180,7 @@ std::string symbol_get_info_name(hsa_executable_symbol_t sym)
   res.resize(size + 1);
 
   hsa_status_t rc = hsa_executable_symbol_get_info(
-      sym, HSA_EXECUTABLE_SYMBOL_INFO_NAME, res.data());
+                                                   sym, HSA_EXECUTABLE_SYMBOL_INFO_NAME, static_cast<void*>(&res.front()));
   (void)rc;
   return res;
 }
