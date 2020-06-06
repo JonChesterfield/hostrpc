@@ -241,6 +241,59 @@ REGION_GEN_INFO(runtime_alloc_granule, size_t,
 REGION_GEN_INFO(runtime_alloc_alignment, size_t,
                 HSA_REGION_INFO_RUNTIME_ALLOC_ALIGNMENT);
 
+// {nullptr} on failure
+inline hsa_region_t kernarg_region(has_agent_t agent)
+{
+  hsa_region_t kernarg;
+  hsa_status_t res = hsa::iterate_regions(
+      kernel_agent, [&](hsa_region_t region) -> hsa_status_t {
+        hsa_region_segment_t segment = hsa::region_get_info_segment(region);
+        if (segment != HSA_REGION_SEGMENT_GLOBAL)
+          {
+            return HSA_STATUS_SUCCESS;
+          }
+
+        hsa_region_global_flag_t flags =
+            hsa::region_get_info_global_flags(region);
+        if (flags & HSA_REGION_GLOBAL_FLAG_KERNARG)
+          {
+            kernarg = region;
+            return HSA_STATUS_INFO_BREAK;
+          }
+        return HSA_STATUS_SUCCESS;
+      });
+  if (res == HSA_STATUS_INFO_BREAK)
+    {
+      return kernarg;
+    }
+  else
+    {
+      return {nullptr};
+    }
+}
+
+namespace detail
+{
+struct memory_deleter
+{
+  void operator()(void* data) { hsa_memory_free(data); }
+};
+}  // namespace detail
+inline std::unique_ptr<void, memory_deleter> allocate(hsa_region_t region,
+                                                      size_t size)
+{
+  void* res;
+  hsa_result_t r = hsa_memory_allocate(region, size, &res);
+  if (r == HSA_STATUS_SUCCESS)
+    {
+      return {res};
+    }
+  else
+    {
+      return {nullptr};
+    }
+}
+
 struct executable
 {
   // hsa expects executable management to be quite dynamic
