@@ -129,25 +129,28 @@ int main(int argc, char **argv)
 
   // need iterate regions to find where to allocate kernel arguments
 
-  auto get_kernarg = [](hsa_region_t region, void *data) -> hsa_status_t {
-    hsa_region_segment_t segment;
-    hsa_region_get_info(region, HSA_REGION_INFO_SEGMENT, &segment);
-    if (segment != HSA_REGION_SEGMENT_GLOBAL)
-      {
-        return HSA_STATUS_SUCCESS;
-      }
+  hsa_region_t kernarg_region;
+  if (HSA_STATUS_INFO_BREAK !=
+      hsa::iterate_regions(
+          kernel_agent, [&](hsa_region_t region) -> hsa_status_t {
+            hsa_region_segment_t segment = hsa::region_get_info_segment(region);
+            if (segment != HSA_REGION_SEGMENT_GLOBAL)
+              {
+                return HSA_STATUS_SUCCESS;
+              }
 
-    hsa_region_global_flag_t flags = hsa_region_get_info_flags(region);
-    if (flags & HSA_REGION_GLOBAL_FLAG_KERNARG)
-      {
-        hsa_region_t *ret = (hsa_region_t *)data;
-        *ret = region;
-        return HSA_STATUS_INFO_BREAK;
-      }
-    return HSA_STATUS_SUCCESS;
-  };
-
-  (void)get_kernarg;
+            hsa_region_global_flag_t flags =
+                hsa::region_get_info_global_flags(region);
+            if (flags & HSA_REGION_GLOBAL_FLAG_KERNARG)
+              {
+                kernarg_region = region;
+                return HSA_STATUS_INFO_BREAK;
+              }
+            return HSA_STATUS_SUCCESS;
+          }))
+    {
+      fprintf(stderr, "Failed to find kernarg_region on kernel agent\n");
+    }
 
   initialize_packet_defaults(packet);
   packet->kernel_object = kernel_address;

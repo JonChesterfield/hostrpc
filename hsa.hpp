@@ -58,9 +58,6 @@ hsa_status_t iterate_agents(C cb)
     C* unwrapped = static_cast<C*>(data);
     return (*unwrapped)(agent);
   };
-
-  // res documented to fail if &cb == NULL or runtime not initialised
-  // it also returns HSA_STATUS_INFO_BREAK if a traversal was stopped early
   return hsa_iterate_agents(L, static_cast<void*>(&cb));
 }
 
@@ -198,6 +195,51 @@ uint64_t symbol_get_info_kernel_object(hsa_executable_symbol_t sym)
   return symbol_get_info<uint64_t,
                          HSA_EXECUTABLE_SYMBOL_INFO_KERNEL_OBJECT>::call(sym);
 }
+
+template <typename C>
+hsa_status_t iterate_regions(hsa_agent_t agent, C cb)
+{
+  requires_invocable_r(hsa_status_t, C, hsa_region_t);
+
+  auto L = [](hsa_region_t region, void* data) -> hsa_status_t {
+    C* unwrapped = static_cast<C*>(data);
+    return (*unwrapped)(region);
+  };
+
+  return hsa_agent_iterate_regions(agent, L, static_cast<void*>(&cb));
+}
+
+template <typename T, hsa_region_info_t req>
+struct region_get_info
+{
+  static T call(hsa_region_t region)
+  {
+    T res;
+    hsa_status_t r = hsa_region_get_info(region, req, static_cast<void*>(&res));
+    (void)r;
+    return res;
+  }
+};
+
+#define REGION_GEN_INFO(suffix, type, req)           \
+  type region_get_info_##suffix(hsa_region_t region) \
+  {                                                  \
+    return region_get_info<type, req>::call(region); \
+  }
+
+REGION_GEN_INFO(segment, hsa_region_segment_t, HSA_REGION_INFO_SEGMENT);
+REGION_GEN_INFO(global_flags, hsa_region_global_flag_t,
+                HSA_REGION_INFO_GLOBAL_FLAGS);
+REGION_GEN_INFO(size, size_t, HSA_REGION_INFO_SIZE);
+REGION_GEN_INFO(alloc_max_size, size_t, HSA_REGION_INFO_ALLOC_MAX_SIZE);
+REGION_GEN_INFO(alloc_max_private_workgroup_size, uint32_t,
+                HSA_REGION_INFO_ALLOC_MAX_PRIVATE_WORKGROUP_SIZE);
+REGION_GEN_INFO(runtime_alloc_allowed, bool,
+                HSA_REGION_INFO_RUNTIME_ALLOC_ALLOWED);
+REGION_GEN_INFO(runtime_alloc_granule, size_t,
+                HSA_REGION_INFO_RUNTIME_ALLOC_GRANULE);
+REGION_GEN_INFO(runtime_alloc_alignment, size_t,
+                HSA_REGION_INFO_RUNTIME_ALLOC_ALIGNMENT);
 
 struct executable
 {
