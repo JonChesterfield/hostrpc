@@ -180,7 +180,7 @@ std::string symbol_get_info_name(hsa_executable_symbol_t sym)
   res.resize(size + 1);
 
   hsa_status_t rc = hsa_executable_symbol_get_info(
-                                                   sym, HSA_EXECUTABLE_SYMBOL_INFO_NAME, static_cast<void*>(&res.front()));
+      sym, HSA_EXECUTABLE_SYMBOL_INFO_NAME, static_cast<void*>(&res.front()));
   (void)rc;
   return res;
 }
@@ -209,19 +209,14 @@ struct executable
 
   operator hsa_executable_t() { return state; }
 
-  static hsa_executable_t sentinel()
-  {
-    // Chosen to be free to construct and handled correctly by
-    // executable_destroy
-    return {.handle = reinterpret_cast<uint64_t>(nullptr)};
-  }
+  static uint64_t sentinel() { return reinterpret_cast<uint64_t>(nullptr); }
 
   bool valid() { return reinterpret_cast<void*>(state.handle) != nullptr; }
 
   ~executable() { hsa_executable_destroy(state); }
 
   executable(hsa_agent_t agent, hsa_file_t file)
-      : agent(agent), state(sentinel())
+      : agent(agent), state({sentinel()})
   {
     if (HSA_STATUS_SUCCESS == init_state())
       {
@@ -234,11 +229,11 @@ struct executable
           }
       }
     hsa_executable_destroy(state);
-    state = sentinel();
+    state = {sentinel()};
   }
 
   executable(hsa_agent_t agent, const void* bytes, size_t size)
-      : agent(agent), state(sentinel())
+      : agent(agent), state({sentinel()})
   {
     if (HSA_STATUS_SUCCESS == init_state())
       {
@@ -251,7 +246,7 @@ struct executable
           }
       }
     hsa_executable_destroy(state);
-    state = sentinel();
+    state = {sentinel()};
   }
 
   hsa_executable_symbol_t get_symbol_by_name(const char* symbol_name)
@@ -261,7 +256,7 @@ struct executable
         hsa_executable_get_symbol_by_name(state, symbol_name, &agent, &res);
     if (rc != HSA_STATUS_SUCCESS)
       {
-        res = {reinterpret_cast<uint64_t>(nullptr)};
+        res = {sentinel()};
       }
     return res;
   }
