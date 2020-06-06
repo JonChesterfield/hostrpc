@@ -1,6 +1,8 @@
 #!/bin/bash
 set -x
 
+RDIR=$HOME/rocm/aomp
+
 HSAINC="$(readlink -f ~/aomp/rocr-runtime/src/inc/)"
 HSALIBDIR="$(readlink -f ~/rocm/aomp/hsa/lib/)"
 HSALIB="$HSALIBDIR/libhsa-runtime64.so"
@@ -20,8 +22,20 @@ AMDGCNFLAGS="-O0 -emit-llvm -ffreestanding --target=amdgcn-amd-amdhsa -march=gfx
 rm -rf *.s *.ll *.exe
 
 
+GPU="--target=amdgcn-amd-amdhsa -march=gfx906 -mcpu=gfx906"
+CXXCL="clang++ -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 $GPU"
+
 $CXX $X64FLAGS -I$HSAINC amdgcn_loader.cpp -c -o amdgcn_loader.bc
 $CXX $LDFLAGS amdgcn_loader.bc -o amdgcn_loader.exe
+
+$CXXCL amdgcn_loader_entry.cl -emit-llvm -c -o amdgcn_loader_entry.bc
+llvm-dis amdgcn_loader_entry.bc
+llvm-link amdgcn_loader_entry.bc -o device.bc
+
+llc device.bc
+
+$CXX $GPU device.bc -o device.o
+
 ./amdgcn_loader.exe device.o other arguments woo
 
 exit 0
