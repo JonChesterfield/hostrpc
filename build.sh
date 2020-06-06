@@ -22,7 +22,7 @@ rm -rf *.s *.ll *.exe
 
 $CXX $X64FLAGS -I$HSAINC amdgcn_loader.cpp -c -o amdgcn_loader.bc
 $CXX $LDFLAGS amdgcn_loader.bc -o amdgcn_loader.exe
-./amdgcn_loader.exe device.o
+./amdgcn_loader.exe device.o other arguments woo
 
 exit 0
 
