@@ -1,4 +1,8 @@
 // clang errors if this is called main
+
+const char interp_section[] __attribute__((section(".interp"))) = "/home/amd/hostrpc/amdgcn_loader.exe";
+
+
 __attribute__((noinline)) int vmain(int argc, char* __constant* argv)
 {
   (void)argc;

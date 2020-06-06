@@ -34,7 +34,7 @@ llvm-link amdgcn_loader_entry.bc -o device.bc
 
 llc device.bc
 
-$CXX $GPU device.bc -o device.o
+$CXX $GPU device.bc -o device.o -Wl,--dynamic-linker=$HOME/hostrpc/amdgcn_loader.exe
 
 ./amdgcn_loader.exe device.o other arguments woo
 
