@@ -336,6 +336,33 @@ struct executable
     hsa_code_object_reader_destroy(reader);
   }
 
+  void extra()
+  {
+    const char* fname = "amdgcn_loader_device.o";
+    printf("Loading %s\n", fname);
+    FILE* fh = fopen(fname, "rb");
+    int fn = fh ? fileno(fh) : -1;
+    if (fn < 0)
+      {
+        fprintf(stderr, "Failed to open file %s\n", fname);
+        exit(1);
+      }
+
+    fprintf(stderr, "Found file %s\n", fname);
+
+    hsa_status_t rc = load_from_file(fn);
+
+    fprintf(stderr, "Load from file returned %u %x %s\n", rc, rc,
+            hsa::status_string(rc));
+
+    if (rc != HSA_STATUS_SUCCESS)
+      {
+        exit(1);
+      }
+
+    printf("Loaded %s\n", fname);
+  }
+
   executable(hsa_agent_t agent, hsa_file_t file)
       : agent(agent), state({sentinel()})
   {
@@ -343,6 +370,9 @@ struct executable
       {
         if (HSA_STATUS_SUCCESS == load_from_file(file))
           {
+            printf("Loaded $0\n");
+            extra();
+
             if (HSA_STATUS_SUCCESS == freeze_and_validate())
               {
                 return;
@@ -405,12 +435,23 @@ struct executable
     hsa_status_t rc = hsa_code_object_reader_create_from_file(file, &reader);
     if (rc != HSA_STATUS_SUCCESS)
       {
+        printf("load from file create failed: %s\n", hsa::status_string(rc));
         return rc;
       }
 
     hsa_loaded_code_object_t code;
-    return hsa_executable_load_agent_code_object(state, agent, reader, NULL,
-                                                 &code);
+    rc = hsa_executable_load_agent_code_object(state, agent, reader, NULL,
+                                               &code);
+
+    if (rc != HSA_STATUS_SUCCESS)
+      {
+        // This is returning variable_undefined, even though that isn't supposed
+        // to happen until freeze
+        printf("load agent code object failed: %s\n", hsa::status_string(rc));
+        return rc;
+      }
+
+    return rc;
   }
 
   hsa_status_t load_from_memory(const void* bytes, size_t size)

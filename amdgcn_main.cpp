@@ -8,7 +8,8 @@ static int strcmp(const char *l, const char *r)
 }
 
 // Example.
-extern "C" int main(int argc, char **argv)
+extern "C" __attribute__((visibility("default"))) int main(int argc,
+                                                           char **argv)
 {
   for (int i = 0; i < argc; i++)
     {

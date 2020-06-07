@@ -1,4 +1,5 @@
-extern "C" int main(int argc, char** argv);
+extern "C" __attribute__((visibility("default"))) int main(int argc,
+                                                           char** argv);
 
 extern "C" int ocl_cast(int argc, __attribute__((address_space(1))) void* vargv)
 {

@@ -30,18 +30,28 @@ $CXX $LDFLAGS amdgcn_loader.bc -o amdgcn_loader.exe
 
 $CXXCL amdgcn_loader_entry.cl -emit-llvm -c -o amdgcn_loader_entry.bc
 $CXX $AMDGCNFLAGS amdgcn_loader_cast.cpp -emit-llvm -c -o amdgcn_loader_cast.bc
+
+$LINK amdgcn_loader_entry.bc amdgcn_loader_cast.bc -o amdgcn_loader_device.bc
+
+
 $CXX $AMDGCNFLAGS amdgcn_main.cpp -emit-llvm -c -o amdgcn_main.bc
 
 llvm-dis amdgcn_loader_entry.bc
 llvm-dis amdgcn_loader_cast.bc
 llvm-dis amdgcn_main.bc
-llvm-link amdgcn_loader_entry.bc amdgcn_loader_cast.bc amdgcn_main.bc -o device.bc
 
-llvm-dis device.bc
-llc --mcpu=gfx906 device.bc
+llvm-link amdgcn_main.bc -o executable_device.bc
+
+llvm-dis amdgcn_loader_device.bc
+llc --mcpu=gfx906 amdgcn_loader_device.bc
+
+llvm-dis executable_device.bc
+llc --mcpu=gfx906 executable_device.bc
 
 
-$CXX $GPU -mcpu=gfx906 device.bc -o device.o -Wl,--dynamic-linker=$HOME/hostrpc/amdgcn_loader.exe
+$CXX $GPU -mcpu=gfx906 amdgcn_loader_device.bc -o amdgcn_loader_device.o
+
+$CXX $GPU -mcpu=gfx906 executable_device.bc -o executable_device.o -Wl,--dynamic-linker=$HOME/hostrpc/amdgcn_loader.exe
 
 # One off
 # cd /proc/sys/fs/binfmt_misc/ && echo ':amdgcn:M:0:\x7f\x45\x4c\x46\x02\x01\x01\x40\x01\x00\x00\x00\x00\x00\x00\x00::/home/amd/hostrpc/amdgcn_loader.exe:' > register
@@ -49,7 +59,7 @@ $CXX $GPU -mcpu=gfx906 device.bc -o device.o -Wl,--dynamic-linker=$HOME/hostrpc/
 # Persistent
 # echo ':amdgcn:M:0:\x7f\x45\x4c\x46\x02\x01\x01\x40\x01\x00\x00\x00\x00\x00\x00\x00::/home/amd/hostrpc/amdgcn_loader.exe:' >> /etc/binfmt.d/amdgcn.conf
 
-./amdgcn_loader.exe device.o other arguments woo
+./amdgcn_loader.exe executable_device.o other arguments woo
 
 exit $?
 
