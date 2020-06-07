@@ -7,6 +7,7 @@ static int strcmp(const char *l, const char *r)
   return *(unsigned char *)l - *(unsigned char *)r;
 }
 
+// Example.
 extern "C" int main(int argc, char **argv)
 {
   for (int i = 0; i < argc; i++)

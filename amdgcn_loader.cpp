@@ -109,7 +109,8 @@ uint16_t kernel_dispatch_setup()
 
 int main(int argc, char **argv)
 {
-  hsa::init hsa_state;
+  // valgrind thinks this is leaking slightly
+  hsa::init hsa_state;  // probably need to destroy this last
 
   if (argc < 2)
     {
@@ -148,8 +149,7 @@ int main(int argc, char **argv)
       return 1;
     }
 
-  // probably need to populate some of the implicit args, need to check what the
-  // abi says about int followed by char**
+  // probably need to populate some of the implicit args for intrinsics to work
 
   hsa_region_t kernarg_region = hsa::region_kernarg(kernel_agent);
   hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
@@ -173,7 +173,7 @@ int main(int argc, char **argv)
   // int padding
   // void * to_argv
   // int * to_result
-  size_t bytes_for_kernarg = 24;  // probably plus some implicit args
+  size_t bytes_for_kernarg = 24;  // no implicit args yet
 
   auto offsets = offsets_into_strtab(app_argc, app_argv);
   size_t bytes_for_argv = 8 * app_argc;
@@ -197,8 +197,6 @@ int main(int argc, char **argv)
               bytes_for_argv + bytes_for_strtab + bytes_for_kernarg);
       exit(1);
     }
-
-  static_assert(sizeof(int) == 4, "");
 
   // Populate argv array, immediately followed by string table
   char *argv_array = static_cast<char *>(mutable_alloc.get());
@@ -240,11 +238,9 @@ int main(int argc, char **argv)
     kernarg += 4;
     memcpy(kernarg, &z, 4);
     kernarg += 4;
-
     void *raw_mutable_alloc = mutable_alloc.get();
     memcpy(kernarg, &raw_mutable_alloc, 8);
     kernarg += 8;
-
     memcpy(kernarg, &result_location, 8);
     kernarg += 8;
   }

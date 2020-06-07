@@ -329,7 +329,12 @@ struct executable
 
   bool valid() { return reinterpret_cast<void*>(state.handle) != nullptr; }
 
-  ~executable() { hsa_executable_destroy(state); }
+  ~executable()
+  {
+    hsa_executable_destroy(state);
+    // reader needs to be destroyed after the executable
+    hsa_code_object_reader_destroy(reader);
+  }
 
   executable(hsa_agent_t agent, hsa_file_t file)
       : agent(agent), state({sentinel()})
@@ -397,7 +402,6 @@ struct executable
 
   hsa_status_t load_from_file(hsa_file_t file)
   {
-    hsa_code_object_reader_t reader;
     hsa_status_t rc = hsa_code_object_reader_create_from_file(file, &reader);
     if (rc != HSA_STATUS_SUCCESS)
       {
@@ -411,7 +415,6 @@ struct executable
 
   hsa_status_t load_from_memory(const void* bytes, size_t size)
   {
-    hsa_code_object_reader_t reader;
     hsa_status_t rc =
         hsa_code_object_reader_create_from_memory(bytes, size, &reader);
     if (rc != HSA_STATUS_SUCCESS)
@@ -452,6 +455,7 @@ struct executable
 
   hsa_agent_t agent;
   hsa_executable_t state;
+  hsa_code_object_reader_t reader;
 };
 
 }  // namespace hsa
