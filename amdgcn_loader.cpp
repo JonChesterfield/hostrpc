@@ -1,4 +1,5 @@
 #include "hsa.hpp"
+#include <cassert>
 #include <cstring>
 #include <vector>
 
@@ -30,108 +31,6 @@ std::vector<size_t> offsets_into_strtab(int argc, char **argv)
   return res;
 }
 
-void *allocate_and_populate_argc_argv(hsa_agent_t kernel_agent, int app_argc,
-                                      char **app_argv)
-{
-  const bool verbose = false;
-  hsa_region_t kernarg_region;
-  if (HSA_STATUS_INFO_BREAK !=
-      hsa::iterate_regions(
-          kernel_agent, [&](hsa_region_t region) -> hsa_status_t {
-            hsa_region_segment_t segment = hsa::region_get_info_segment(region);
-            if (segment != HSA_REGION_SEGMENT_GLOBAL)
-              {
-                return HSA_STATUS_SUCCESS;
-              }
-
-            hsa_region_global_flag_t flags =
-                hsa::region_get_info_global_flags(region);
-            if (flags & HSA_REGION_GLOBAL_FLAG_KERNARG)
-              {
-                kernarg_region = region;
-                return HSA_STATUS_INFO_BREAK;
-              }
-            return HSA_STATUS_SUCCESS;
-          }))
-    {
-      fprintf(stderr, "Failed to find kernarg_region on kernel agent\n");
-      exit(1);
-    }
-
-  auto offsets = offsets_into_strtab(app_argc, app_argv);
-
-  size_t bytes_for_argc = 8;
-  size_t bytes_for_argv = 8 /* the char** */ + 8 * app_argc;
-  size_t bytes_for_strtab = offsets.back();
-  size_t kernarg_size = bytes_for_argc + bytes_for_argv + bytes_for_strtab;
-
-  void *kernarg_address;
-  {
-    if (HSA_STATUS_SUCCESS != hsa_memory_allocate(kernarg_region, kernarg_size,
-                                                  (void **)&kernarg_address))
-      {
-        fprintf(stderr, "Failed to allocate %zu bytes for kernel arguments\n",
-                kernarg_size);
-        exit(1);
-      }
-  }
-
-  static_assert(sizeof(int) == 4, "");
-
-  char *kernarg = (char *)kernarg_address;
-  {
-    int z = 0;
-    memcpy(kernarg, &app_argc, 4);
-    kernarg += 4;
-    memcpy(kernarg, &z, 4);
-    kernarg += 4;
-  }
-  const char *argv_start = (char *)kernarg_address + bytes_for_argc;
-
-  const char *strtab_start = argv_start + bytes_for_argv;
-
-  if (verbose)
-    {
-      printf("kernarg %lu\n", (uint64_t)kernarg_address);
-      printf("argv_start at %lu (%lu)\n", (uint64_t)argv_start,
-             (uint64_t)argv_start - (uint64_t)kernarg_address);
-      printf("strtab_start at %lu (%lu)\n", (uint64_t)strtab_start,
-             (uint64_t)strtab_start - (uint64_t)kernarg_address);
-    }
-
-  {
-    const char *argv_payload = argv_start + 8;
-    memcpy(kernarg, &argv_payload, 8);
-    kernarg += 8;
-  }
-  for (int i = 0; i < app_argc; i++)
-    {
-      const char *loc = strtab_start + offsets[i];
-      if (verbose)
-        {
-          printf("Expecting %s at %lu (%lu)\n", app_argv[i], (uint64_t)loc,
-                 (uint64_t)loc - (uint64_t)kernarg_address);
-        }
-      memcpy(kernarg, &loc, 8);
-      kernarg += 8;
-    }
-  for (int i = 0; i < app_argc; i++)
-    {
-      char *arg = app_argv[i];
-      size_t sz = strlen(arg) + 1;
-      if (verbose)
-        {
-          printf("copying app_argv[%d] = %s to %lu (%lu)\n", i, arg,
-                 (uint64_t)kernarg,
-                 (uint64_t)kernarg - (uint64_t)kernarg_address);
-        }
-      memcpy(kernarg, arg, sz);
-      kernarg += sz;
-    }
-
-  return kernarg_address;
-}
-
 uint64_t find_entry_address(hsa::executable &ex)
 {
   const char *kernel_entry = "device_entry.kd";
@@ -150,6 +49,25 @@ uint64_t find_entry_address(hsa::executable &ex)
     }
 
   return hsa::symbol_get_info_kernel_object(symbol);
+}
+
+uint64_t find_symbol_address(hsa::executable &ex, const char *sym)
+{
+  hsa_executable_symbol_t symbol = ex.get_symbol_by_name(sym);
+  if (symbol.handle == hsa::executable::sentinel())
+    {
+      fprintf(stderr, "HSA failed to find symbol %s\n", sym);
+      exit(1);
+    }
+
+  hsa_symbol_kind_t kind = hsa::symbol_get_info_type(symbol);
+  if (kind != HSA_SYMBOL_KIND_VARIABLE)
+    {
+      fprintf(stderr, "Symbol %s is not a variable\n", sym);
+      exit(1);
+    }
+
+  return hsa::symbol_get_info_variable_address(symbol);
 }
 
 void initialize_packet_defaults(hsa_kernel_dispatch_packet_t *packet)
@@ -196,6 +114,7 @@ int main(int argc, char **argv)
   if (argc < 2)
     {
       fprintf(stderr, "Require at least one argument\n");
+      return 1;
     }
 
   hsa_agent_t kernel_agent;
@@ -229,8 +148,106 @@ int main(int argc, char **argv)
       return 1;
     }
 
-  uint64_t kernel_address = find_entry_address(ex);
-  printf("Kernel is at %lx\n", kernel_address);
+  // probably need to populate some of the implicit args, need to check what the
+  // abi says about int followed by char**
+
+  hsa_region_t kernarg_region = hsa::region_kernarg(kernel_agent);
+  hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
+  {
+    uint64_t fail = reinterpret_cast<uint64_t>(nullptr);
+    if (kernarg_region.handle == fail || fine_grained_region.handle == fail)
+      {
+        fprintf(stderr, "Failed to find allocation region on kernel agent\n");
+        exit(1);
+      }
+  }
+
+  // Drop the loader name from the forwarded argc/argv
+  int app_argc = argc - 1;
+  char **app_argv = &argv[1];
+
+  // arguments must be in kernarg memory, which is constant
+  // opencl doesn't accept char** as a type and returns void
+  // combined, choosing to pass arguments as:
+  // int argc
+  // int padding
+  // void * to_argv
+  // int * to_result
+  size_t bytes_for_kernarg = 24;  // probably plus some implicit args
+
+  auto offsets = offsets_into_strtab(app_argc, app_argv);
+  size_t bytes_for_argv = 8 * app_argc;
+  size_t bytes_for_strtab = (offsets.back() + 3) & ~size_t{3};
+  size_t bytes_for_return = 4;
+
+  // Always allocates > 0 because of the return slot
+  auto mutable_alloc =
+      hsa::allocate(fine_grained_region,
+                    bytes_for_argv + bytes_for_strtab + bytes_for_return);
+
+  const char *strtab_start =
+      static_cast<char *>(mutable_alloc.get()) + bytes_for_argv;
+  const char *result_location = static_cast<char *>(mutable_alloc.get()) +
+                                bytes_for_argv + bytes_for_strtab;
+
+  auto kernarg_alloc = hsa::allocate(kernarg_region, bytes_for_kernarg);
+  if (!mutable_alloc || !kernarg_alloc)
+    {
+      fprintf(stderr, "Failed to allocate %zu bytes for kernel arguments\n",
+              bytes_for_argv + bytes_for_strtab + bytes_for_kernarg);
+      exit(1);
+    }
+
+  static_assert(sizeof(int) == 4, "");
+
+  // Populate argv array, immediately followed by string table
+  char *argv_array = static_cast<char *>(mutable_alloc.get());
+  for (int i = 0; i < app_argc; i++)
+    {
+      const char *loc = strtab_start + offsets[i];
+      memcpy(argv_array, &loc, 8);
+      argv_array += 8;
+    }
+  for (int i = 0; i < app_argc; i++)
+    {
+      char *arg = app_argv[i];
+      size_t sz = strlen(arg) + 1;
+      memcpy(argv_array, arg, sz);
+      argv_array += sz;
+    }
+
+  for (unsigned i = 0; i < bytes_for_strtab - offsets.back(); i++)
+    {
+      // alignment padding for the return value
+      char z = 0;
+      memcpy(argv_array, &z, 1);
+      argv_array += 1;
+    }
+
+  // init the return value. not strictly necessary
+  {
+    assert(argv_array == result_location);
+    unsigned z = 0xdead;
+    memcpy(argv_array, &z, 4);
+    argv_array += 4;
+  }
+
+  // Set up kernel arguments
+  {
+    char *kernarg = (char *)kernarg_alloc.get();
+    unsigned z = 0;
+    memcpy(kernarg, &app_argc, 4);
+    kernarg += 4;
+    memcpy(kernarg, &z, 4);
+    kernarg += 4;
+
+    void *raw_mutable_alloc = mutable_alloc.get();
+    memcpy(kernarg, &raw_mutable_alloc, 8);
+    kernarg += 8;
+
+    memcpy(kernarg, &result_location, 8);
+    kernarg += 8;
+  }
 
   hsa_queue_t *queue;
   {
@@ -249,79 +266,22 @@ int main(int argc, char **argv)
       }
   }
 
+  // Claim a packet
   uint64_t packet_id = hsa_queue_add_write_index_relaxed(queue, 1);
-
-  // Calculate the virtual address where to place the packet
   hsa_kernel_dispatch_packet_t *packet =
       (hsa_kernel_dispatch_packet_t *)queue->base_address + packet_id;
 
-  // Populate fields in kernel dispatch packet, except for the header, the
-  // setup, and the completion signal fields
-
-  // need iterate regions to find where to allocate kernel arguments
-
-  hsa_region_t kernarg_region;
-  if (HSA_STATUS_INFO_BREAK !=
-      hsa::iterate_regions(
-          kernel_agent, [&](hsa_region_t region) -> hsa_status_t {
-            hsa_region_segment_t segment = hsa::region_get_info_segment(region);
-            if (segment != HSA_REGION_SEGMENT_GLOBAL)
-              {
-                return HSA_STATUS_SUCCESS;
-              }
-
-            hsa_region_global_flag_t flags =
-                hsa::region_get_info_global_flags(region);
-            if (flags & HSA_REGION_GLOBAL_FLAG_KERNARG)
-              {
-                kernarg_region = region;
-                return HSA_STATUS_INFO_BREAK;
-              }
-            return HSA_STATUS_SUCCESS;
-          }))
-    {
-      fprintf(stderr, "Failed to find kernarg_region on kernel agent\n");
-      exit(1);
-    }
-
   initialize_packet_defaults(packet);
+
+  uint64_t kernel_address = find_entry_address(ex);
   packet->kernel_object = kernel_address;
 
-  // probably need to populate some of the implicit args, need to check what the
-  // abi says about int followed by char**
-
-  // Drop the loader name from the forwarded argc/argv
   {
-    int app_argc = argc - 1;
-    char **app_argv = &argv[1];
-    void *kernarg_address =
-        allocate_and_populate_argc_argv(kernel_agent, app_argc, app_argv);
-    memcpy(&packet->kernarg_address, &kernarg_address, 8);
-
-    if (false)
-      {
-        printf("Rendered argc/argv:\n");
-        char *from = (char *)packet->kernarg_address;
-        int c;
-        memcpy(&c, from, 4);
-        from += 4;
-        // zero
-        from += 4;
-        char **v;
-        memcpy(&v, from, 8);
-        from += 8;
-        printf("argc %d\n", c);
-        for (int i = 0; i < c; i++)
-          {
-            printf("argv[%d] = %s at %lu (%lu)\n", i, v[i], (uint64_t)v[i],
-                   (uint64_t)v[i] - (uint64_t)packet->kernarg_address);
-          }
-      }
+    void *raw_kernarg_alloc = kernarg_alloc.get();
+    memcpy(&packet->kernarg_address, &raw_kernarg_alloc, 8);
   }
 
   hsa_signal_create(1, 0, NULL, &packet->completion_signal);
-
-  printf("Launching kernel\n");
 
   packet_store_release((uint32_t *)packet,
                        header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
@@ -336,8 +296,11 @@ int main(int argc, char **argv)
       // TODO: Run a hostcall server in here
     }
 
+  int result;
+  memcpy(&result, result_location, 4);
+
   hsa_signal_destroy(packet->completion_signal);
   hsa_queue_destroy(queue);
 
-  return 0;
+  return result;
 }

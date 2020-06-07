@@ -14,8 +14,8 @@ LLC="llc"
 LINK="llvm-link"
 OPT="opt"
 
-X64FLAGS="-g -O0 -emit-llvm -pthread"
-AMDGCNFLAGS="-O0 -emit-llvm -ffreestanding --target=amdgcn-amd-amdhsa -march=gfx906"
+X64FLAGS="-g -O1 -emit-llvm -pthread"
+AMDGCNFLAGS="-O1 -emit-llvm -ffreestanding --target=amdgcn-amd-amdhsa -march=gfx906 -mcpu=gfx906"
 
 # time $CXX -O3 catch.cpp -c -o catch.o
 
@@ -29,12 +29,19 @@ $CXX $X64FLAGS -I$HSAINC amdgcn_loader.cpp -c -o amdgcn_loader.bc
 $CXX $LDFLAGS amdgcn_loader.bc -o amdgcn_loader.exe
 
 $CXXCL amdgcn_loader_entry.cl -emit-llvm -c -o amdgcn_loader_entry.bc
+$CXX $AMDGCNFLAGS amdgcn_loader_cast.cpp -emit-llvm -c -o amdgcn_loader_cast.bc
+$CXX $AMDGCNFLAGS amdgcn_main.cpp -emit-llvm -c -o amdgcn_main.bc
+
 llvm-dis amdgcn_loader_entry.bc
-llvm-link amdgcn_loader_entry.bc -o device.bc
+llvm-dis amdgcn_loader_cast.bc
+llvm-dis amdgcn_main.bc
+llvm-link amdgcn_loader_entry.bc amdgcn_loader_cast.bc amdgcn_main.bc -o device.bc
 
-llc device.bc
+llvm-dis device.bc
+llc --mcpu=gfx906 device.bc
 
-$CXX $GPU device.bc -o device.o -Wl,--dynamic-linker=$HOME/hostrpc/amdgcn_loader.exe
+
+$CXX $GPU -mcpu=gfx906 device.bc -o device.o -Wl,--dynamic-linker=$HOME/hostrpc/amdgcn_loader.exe
 
 # One off
 # cd /proc/sys/fs/binfmt_misc/ && echo ':amdgcn:M:0:\x7f\x45\x4c\x46\x02\x01\x01\x40\x01\x00\x00\x00\x00\x00\x00\x00::/home/amd/hostrpc/amdgcn_loader.exe:' > register
@@ -44,7 +51,7 @@ $CXX $GPU device.bc -o device.o -Wl,--dynamic-linker=$HOME/hostrpc/amdgcn_loader
 
 ./amdgcn_loader.exe device.o other arguments woo
 
-exit 0
+exit $?
 
 $CXX $X64FLAGS states.cpp -c -o states.bc
 

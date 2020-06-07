@@ -6,6 +6,7 @@
 #include <array>
 #include <cstdio>
 
+#include <memory>
 #include <string>
 #include <type_traits>
 
@@ -242,34 +243,54 @@ REGION_GEN_INFO(runtime_alloc_alignment, size_t,
                 HSA_REGION_INFO_RUNTIME_ALLOC_ALIGNMENT);
 
 // {nullptr} on failure
-inline hsa_region_t kernarg_region(has_agent_t agent)
+
+namespace detail
 {
-  hsa_region_t kernarg;
-  hsa_status_t res = hsa::iterate_regions(
-      kernel_agent, [&](hsa_region_t region) -> hsa_status_t {
+template <hsa_region_global_flag_t Flag>
+inline hsa_region_t global_region_with_flag(hsa_agent_t agent)
+{
+  hsa_region_t result;
+  hsa_status_t r =
+      hsa::iterate_regions(agent, [&](hsa_region_t region) -> hsa_status_t {
         hsa_region_segment_t segment = hsa::region_get_info_segment(region);
         if (segment != HSA_REGION_SEGMENT_GLOBAL)
           {
             return HSA_STATUS_SUCCESS;
           }
 
-        hsa_region_global_flag_t flags =
-            hsa::region_get_info_global_flags(region);
-        if (flags & HSA_REGION_GLOBAL_FLAG_KERNARG)
+        if (!hsa::region_get_info_runtime_alloc_allowed(region))
           {
-            kernarg = region;
+            return HSA_STATUS_SUCCESS;
+          }
+
+        if (hsa::region_get_info_global_flags(region) & Flag)
+          {
+            result = region;
             return HSA_STATUS_INFO_BREAK;
           }
+
         return HSA_STATUS_SUCCESS;
       });
-  if (res == HSA_STATUS_INFO_BREAK)
+  if (r == HSA_STATUS_INFO_BREAK)
     {
-      return kernarg;
+      return result;
     }
   else
     {
-      return {nullptr};
+      return {reinterpret_cast<uint64_t>(nullptr)};
     }
+}
+}  // namespace detail
+
+inline hsa_region_t region_kernarg(hsa_agent_t agent)
+{
+  return detail::global_region_with_flag<HSA_REGION_GLOBAL_FLAG_KERNARG>(agent);
+}
+
+inline hsa_region_t region_fine_grained(hsa_agent_t agent)
+{
+  return detail::global_region_with_flag<HSA_REGION_GLOBAL_FLAG_FINE_GRAINED>(
+      agent);
 }
 
 namespace detail
@@ -279,14 +300,14 @@ struct memory_deleter
   void operator()(void* data) { hsa_memory_free(data); }
 };
 }  // namespace detail
-inline std::unique_ptr<void, memory_deleter> allocate(hsa_region_t region,
-                                                      size_t size)
+inline std::unique_ptr<void, detail::memory_deleter> allocate(
+    hsa_region_t region, size_t size)
 {
   void* res;
-  hsa_result_t r = hsa_memory_allocate(region, size, &res);
+  hsa_status_t r = hsa_memory_allocate(region, size, &res);
   if (r == HSA_STATUS_SUCCESS)
     {
-      return {res};
+      return std::unique_ptr<void, detail::memory_deleter>(res);
     }
   else
     {
