@@ -338,6 +338,7 @@ struct executable
 
   void extra()
   {
+#if 0    
     const char* fname = "amdgcn_loader_device.o";
     printf("Loading %s\n", fname);
     FILE* fh = fopen(fname, "rb");
@@ -361,6 +362,7 @@ struct executable
       }
 
     printf("Loaded %s\n", fname);
+#endif
   }
 
   executable(hsa_agent_t agent, hsa_file_t file)
@@ -370,7 +372,6 @@ struct executable
       {
         if (HSA_STATUS_SUCCESS == load_from_file(file))
           {
-            printf("Loaded $0\n");
             extra();
 
             if (HSA_STATUS_SUCCESS == freeze_and_validate())

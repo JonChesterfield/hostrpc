@@ -134,20 +134,45 @@ int main(int argc, char **argv)
       return 1;
     }
 
+  // Load argv[1]
   FILE *fh = fopen(argv[1], "rb");
   int fn = fh ? fileno(fh) : -1;
   if (fn < 0)
     {
       fprintf(stderr, "Failed to open file %s\n", argv[1]);
       return 1;
-    }
-
+    }    
   hsa::executable ex(kernel_agent, fn);
   if (!ex.valid())
     {
       fprintf(stderr, "HSA failed to load contents of %s\n", argv[1]);
       return 1;
     }
+
+  // uint64_t main_address = find_symbol_address(ex, "main");
+  // printf("Symbol main at %lx\n", main_address);
+  
+
+  int baseline;
+  {
+    const char* fname = "amdgcn_loader_device.o";
+    FILE* fh = fopen(fname, "rb");
+    int fn = fh ? fileno(fh) : -1;
+    if (fn < 0)
+      {
+        fprintf(stderr, "Failed to open file %s\n", fname);
+        exit(1);
+      }
+    baseline = fn;
+  }
+  
+  hsa::executable base(kernel_agent, baseline);
+  if (!base.valid())
+    {
+      fprintf(stderr, "HSA failed to load contents of %s\n", "amdgcn_loader_device.o");
+      return 1;      
+    }
+
 
   // probably need to populate some of the implicit args for intrinsics to work
 
