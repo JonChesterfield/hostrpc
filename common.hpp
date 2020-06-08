@@ -583,10 +583,13 @@ struct malloc_lock
   void *data[64];
 };
 
-template <size_t N, typename G>
-void try_garbage_collect_word(
-    G garbage_bits, const mailbox_t<N> inbox, mailbox_t<N> outbox,
-    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active, uint64_t w)
+template <size_t N, template <size_t> class bitmap_types, typename G>
+void try_garbage_collect_word(G garbage_bits,
+                              const typename bitmap_types<N>::inbox_t inbox,
+                              typename bitmap_types<N>::outbox_t outbox,
+                              typename bitmap_types<N>::locks_t active,
+
+                              uint64_t w)
 {
   malloc_lock<true> lk;
   if (platform::is_master_lane())
@@ -707,34 +710,33 @@ struct copy_functor_interface
 {
   // Function type is that of memcpy, i.e. dst first, N in bytes
 
-  void push_from_client_to_server(void *dst, const void *src, size_t N)
+  static void push_from_client_to_server(void *dst, const void *src, size_t N)
   {
-    impl().push_from_client_to_server_impl(dst, src, N);
+    T::push_from_client_to_server_impl(dst, src, N);
   }
-  void pull_to_client_from_server(void *dst, const void *src, size_t N)
+  static void pull_to_client_from_server(void *dst, const void *src, size_t N)
   {
-    impl().pull_to_client_from_server_impl(dst, src, N);
+    T::pull_to_client_from_server_impl(dst, src, N);
   }
 
-  void push_from_server_to_client(void *dst, const void *src, size_t N)
+  static void push_from_server_to_client(void *dst, const void *src, size_t N)
   {
-    impl().push_from_server_to_client_impl(dst, src, N);
+    T::push_from_server_to_client_impl(dst, src, N);
   }
-  void pull_to_server_from_client(void *dst, const void *src, size_t N)
+  static void pull_to_server_from_client(void *dst, const void *src, size_t N)
   {
-    impl().pull_to_server_from_client_impl(dst, src, N);
+    T::pull_to_server_from_client_impl(dst, src, N);
   }
 
  private:
   friend T;
   copy_functor_interface() = default;
-  T &impl() { return *static_cast<T *>(this); }
 
   // Default implementations are no-ops
-  void push_from_client_to_server_impl(void *, const void *, size_t) {}
-  void pull_to_client_from_server_impl(void *, const void *, size_t) {}
-  void push_from_server_to_client_impl(void *, const void *, size_t) {}
-  void pull_to_server_from_client_impl(void *, const void *, size_t) {}
+  static void push_from_client_to_server_impl(void *, const void *, size_t) {}
+  static void pull_to_client_from_server_impl(void *, const void *, size_t) {}
+  static void push_from_server_to_client_impl(void *, const void *, size_t) {}
+  static void pull_to_server_from_client_impl(void *, const void *, size_t) {}
 };
 
 struct copy_functor_memcpy_pull
@@ -743,11 +745,13 @@ struct copy_functor_memcpy_pull
   friend struct copy_functor_interface<copy_functor_memcpy_pull>;
 
  private:
-  void pull_to_client_from_server_impl(void *dst, const void *src, size_t N)
+  static void pull_to_client_from_server_impl(void *dst, const void *src,
+                                              size_t N)
   {
     __builtin_memcpy(dst, src, N);
   }
-  void pull_to_server_from_client_impl(void *dst, const void *src, size_t N)
+  static void pull_to_server_from_client_impl(void *dst, const void *src,
+                                              size_t N)
   {
     __builtin_memcpy(dst, src, N);
   }

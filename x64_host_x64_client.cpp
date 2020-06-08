@@ -78,8 +78,6 @@ TEST_CASE("hazard")
   page_t client_buffer[N];
   page_t server_buffer[N];
 
-  hostrpc::copy_functor_memcpy_pull cp;
-
   using mailbox_ptr_t =
       std::unique_ptr<mailbox_t<N>::slot_bitmap_data_t,
                       mailbox_t<N>::slot_bitmap_data_t::deleter>;
@@ -100,10 +98,10 @@ TEST_CASE("hazard")
   lockarray_t<N> client_active(client_active_data.get());
   lockarray_t<N> server_active(server_active_data.get());
 
-  x64_x64_client client(cp, recv, send, client_active, &server_buffer[0],
+  x64_x64_client client(recv, send, client_active, &server_buffer[0],
                         &client_buffer[0]);
 
-  x64_x64_server server(cp, send, recv, server_active, &client_buffer[0],
+  x64_x64_server server(send, recv, server_active, &client_buffer[0],
                         &server_buffer[0]);
 
   _Atomic bool server_live(true);

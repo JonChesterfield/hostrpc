@@ -183,10 +183,11 @@ TEST_CASE("set up single word system")
     safe_thread cl_thrd([&]() {
       auto app_state = application_state_t(&val, &client_steps, show_step);
 
-      using client_type = client<N, hostrpc::x64_x64_bitmap_types, decltype(cp),
-                                 fill, use, stepper>;
-      client_type cl = {
-          cp, recv, send, client_active, &server_buffer[0], &client_buffer[0]};
+      using client_type =
+          client<N, hostrpc::x64_x64_bitmap_types,
+                 hostrpc::copy_functor_memcpy_pull, fill, use, stepper>;
+      client_type cl = {recv, send, client_active, &server_buffer[0],
+                        &client_buffer[0]};
 
       void* application_state_ptr = static_cast<void*>(&app_state);
 
@@ -210,8 +211,8 @@ TEST_CASE("set up single word system")
       using server_type = server<N, hostrpc::x64_x64_bitmap_types, decltype(cp),
                                  operate, hostrpc::default_stepper>;
 
-      server_type sv = {
-          cp, send, recv, server_active, &client_buffer[0], &server_buffer[0]};
+      server_type sv = {send, recv, server_active, &client_buffer[0],
+                        &server_buffer[0]};
 
       void* application_state = static_cast<void*>(&stepper_state);
 

@@ -23,17 +23,16 @@ enum class server_state : uint8_t
   result_with_thread = 0b111,
 };
 
-template <size_t N, template <size_t> class bitmap_types, typename C,
+template <size_t N, template <size_t> class bitmap_types, typename Copy,
           typename Op, typename Step>
 struct server
 {
   using bt = bitmap_types<N>;
 
-  server(C copy, typename bt::inbox_t inbox, typename bt::outbox_t outbox,
+  server(typename bt::inbox_t inbox, typename bt::outbox_t outbox,
          typename bt::locks_t active, page_t* remote_buffer,
          page_t* local_buffer)
-      : copy(copy),
-        inbox(inbox),
+      : inbox(inbox),
         outbox(outbox),
         active(active),
         remote_buffer(remote_buffer),
@@ -100,7 +99,8 @@ struct server
   void try_garbage_collect_word_server(uint64_t w)
   {
     auto c = [](uint64_t i, uint64_t o) -> uint64_t { return ~i & o; };
-    try_garbage_collect_word<N, decltype(c)>(c, inbox, outbox, active, w);
+    try_garbage_collect_word<N, bitmap_types, decltype(c)>(c, inbox, outbox,
+                                                           active, w);
   }
 
   size_t words()
@@ -164,17 +164,17 @@ struct server
 
         step(__LINE__, application_state);
 
-        copy.pull_to_server_from_client((void*)&local_buffer[slot],
-                                        (void*)&remote_buffer[slot],
-                                        sizeof(page_t));
+        Copy::pull_to_server_from_client((void*)&local_buffer[slot],
+                                         (void*)&remote_buffer[slot],
+                                         sizeof(page_t));
         step(__LINE__, application_state);
 
         Op::call(&local_buffer[slot], application_state);
         step(__LINE__, application_state);
 
-        copy.push_from_server_to_client((void*)&remote_buffer[slot],
-                                        (void*)&local_buffer[slot],
-                                        sizeof(page_t));
+        Copy::push_from_server_to_client((void*)&remote_buffer[slot],
+                                         (void*)&local_buffer[slot],
+                                         sizeof(page_t));
         step(__LINE__, application_state);
 
         assert(c.is(0b101));
@@ -251,7 +251,6 @@ struct server
     return true;
   }
 
-  C copy;
   typename bt::inbox_t inbox;
   typename bt::outbox_t outbox;
   typename bt::locks_t active;

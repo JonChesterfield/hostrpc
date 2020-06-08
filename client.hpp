@@ -38,18 +38,17 @@ enum class client_state : uint8_t
 // garbage that is, can't claim the slot for a new thread is that a sufficient
 // criteria for the slot to be awaiting gc?
 
-template <size_t N, template <size_t> class bitmap_types, typename C,
+template <size_t N, template <size_t> class bitmap_types, typename Copy,
           typename Fill, typename Use, typename Step>
 struct client
 {
   using bt = bitmap_types<N>;
 
-  client(C copy, typename bt::inbox_t inbox, typename bt::outbox_t outbox,
+  client(typename bt::inbox_t inbox, typename bt::outbox_t outbox,
          typename bt::locks_t active, page_t* remote_buffer,
          page_t* local_buffer)
 
-      : copy(copy),
-        inbox(inbox),
+      : inbox(inbox),
         outbox(outbox),
         active(active),
         remote_buffer(remote_buffer),
@@ -99,7 +98,8 @@ struct client
   void try_garbage_collect_word_client(uint64_t w)
   {
     auto c = [](uint64_t i, uint64_t) -> uint64_t { return i; };
-    try_garbage_collect_word<N, decltype(c)>(c, inbox, outbox, active, w);
+    try_garbage_collect_word<N, bitmap_types, decltype(c)>(c, inbox, outbox,
+                                                           active, w);
   }
 
   void dump_word(uint64_t word)
@@ -162,8 +162,9 @@ struct client
     // wave_populate
     Fill::call(&local_buffer[slot], application_state);
     step(__LINE__, application_state);
-    copy.push_from_client_to_server((void*)&remote_buffer[slot],
-                                    (void*)&local_buffer[slot], sizeof(page_t));
+    Copy::push_from_client_to_server((void*)&remote_buffer[slot],
+                                     (void*)&local_buffer[slot],
+                                     sizeof(page_t));
     step(__LINE__, application_state);
 
     tracker.release(slot);
@@ -219,9 +220,9 @@ struct client
         tracker.claim(slot);
 
         step(__LINE__, application_state);
-        copy.pull_to_client_from_server((void*)&local_buffer[slot],
-                                        (void*)&remote_buffer[slot],
-                                        sizeof(page_t));
+        Copy::pull_to_client_from_server((void*)&local_buffer[slot],
+                                         (void*)&remote_buffer[slot],
+                                         sizeof(page_t));
         step(__LINE__, application_state);
         // call the continuation
         Use::call(&local_buffer[slot], application_state);
@@ -319,7 +320,6 @@ struct client
     return r;
   }
 
-  C copy;
   typename bt::inbox_t inbox;
   typename bt::outbox_t outbox;
   typename bt::locks_t active;

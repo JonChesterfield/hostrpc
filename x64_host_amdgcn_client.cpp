@@ -30,8 +30,6 @@ void wip(hsa_region_t fine)
   hostrpc::page_t* server_buffer =
       reinterpret_cast<page_t*>(alloc_from_region(fine, N * sizeof(page_t)));
 
-  hostrpc::copy_functor_memcpy_pull cp;
-
   using mt = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
                          hsa_allocate_slot_bitmap_data>;
 
@@ -52,14 +50,15 @@ void wip(hsa_region_t fine)
   lt client_active(client_active_data);
   lt server_active(server_active_data);
 
-  hostrpc::config::x64_amdgcn_client client(cp, recv, send, client_active,
+  hostrpc::config::x64_amdgcn_client client(recv, send, client_active,
                                             server_buffer, client_buffer);
 
-  hostrpc::config::x64_amdgcn_server server(cp, send, recv, server_active,
+  hostrpc::config::x64_amdgcn_server server(send, recv, server_active,
                                             client_buffer, server_buffer);
 
   page_t scratch;
   client.rpc_invoke<true>(&scratch);
+  server.rpc_handle(&scratch);
 
   (void)client;
   (void)server;
