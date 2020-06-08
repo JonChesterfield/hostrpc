@@ -67,8 +67,6 @@ $CXX $X64FLAGS server.cpp -c -o server.x64.bc
 
 $CXX $X64FLAGS x64_host_x64_client.cpp -c -o x64_host_x64_client.bc
 
-$CXX $X64FLAGS hostrpc.cpp -c -o hostrpc.x64.bc
-
 $CXX $X64FLAGS tests.cpp -c -o tests.bc
 
 # clang++ -std=c++17 -Wall -Wextra $X64FLAGS -I$HSAINC x64_host_amdgcn_client.cpp -c -o x64_host_amdgcn_client.bc

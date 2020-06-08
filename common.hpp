@@ -405,7 +405,7 @@ struct slot_bitmap
 };
 
 template <size_t N>
-class bitmap_types
+class x64_x64_bitmap_types
 {
  public:
   using inbox_t = const slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,

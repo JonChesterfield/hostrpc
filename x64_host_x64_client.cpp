@@ -44,11 +44,11 @@ struct operate
 
 }  // namespace
 
-using x64_x64_client = hostrpc::client<128, hostrpc::bitmap_types,
+using x64_x64_client = hostrpc::client<128, hostrpc::x64_x64_bitmap_types,
                                        hostrpc::copy_functor_memcpy_pull, fill,
                                        use, hostrpc::nop_stepper>;
 
-using x64_x64_server = hostrpc::server<128, hostrpc::bitmap_types,
+using x64_x64_server = hostrpc::server<128, hostrpc::x64_x64_bitmap_types,
                                        hostrpc::copy_functor_memcpy_pull,
                                        operate, hostrpc::nop_stepper>;
 

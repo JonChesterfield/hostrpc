@@ -12,8 +12,8 @@ void client_instance(
   hostrpc::copy_functor_memcpy_pull cp;
 
   using client_type =
-      hostrpc::client<N, hostrpc::bitmap_types, decltype(cp), decltype(fill),
-                      decltype(use), decltype(step)>;
+      hostrpc::client<N, hostrpc::x64_x64_bitmap_types, decltype(cp),
+                      decltype(fill), decltype(use), decltype(step)>;
 
   client_type c = {cp,           inbox, outbox, active, remote_buffer,
                    local_buffer, step,  fill,   use};

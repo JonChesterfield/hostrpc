@@ -2,9 +2,44 @@
 #define HOSTRPC_X64_HOST_AMDGCN_CLIENT_HPP_INCLUDED
 
 #include "common.h"
+#include "hsa.hpp"
+
+#include <new>
 
 namespace hostrpc
 {
+template <size_t size>
+struct hsa_allocate_slot_bitmap_data
+{
+  constexpr const static size_t align = 64;
+  static_assert(size % 64 == 0, "Size must be multiple of 64");
+
+  static hsa_allocate_slot_bitmap_data *alloc(hsa_region_t region)
+  {
+    void *memory;
+    hsa_status_t r = hsa_memory_allocate(region, size, &memory);
+    if (r != HSA_STATUS_SUCCESS)
+      {
+        return nullptr;
+      }
+
+    return new (memory) hsa_allocate_slot_bitmap_data;
+  }
+  static void free(hsa_allocate_slot_bitmap_data *d) { (void)d; }
+  alignas(align) _Atomic uint64_t data[size / 64];
+
+  struct deleter
+  {
+    void operator()(hsa_allocate_slot_bitmap_data *d)
+    {
+      hsa_allocate_slot_bitmap_data::free(d);
+    }
+  };
+
+ private:
+  hsa_region_t region;
+};
+
 namespace config
 {
 struct fill
@@ -44,11 +79,13 @@ struct operate
 
 // 128 won't suffice, probably need the whole structure to be templated
 using x64_amdgcn_client =
-    hostrpc::client<128, hostrpc::copy_functor_memcpy_pull, fill, use,
+    hostrpc::client<128, hostrpc::hsa_allocate_slot_bitmap_data,
+                    hostrpc::copy_functor_memcpy_pull, fill, use,
                     hostrpc::nop_stepper>;
 
 using x64_amdgcn_server =
-    hostrpc::server<128, hostrpc::copy_functor_memcpy_pull, operate,
+    hostrpc::server<128, hostrpc::hsa_allocate_slot_bitmap_data,
+                    hostrpc::copy_functor_memcpy_pull, operate,
                     hostrpc::nop_stepper>;
 
 }  // namespace config

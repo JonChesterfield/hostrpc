@@ -15,8 +15,9 @@ void server_instance(
   };
   copy_functor_nop cp;
 
-  using server_type = hostrpc::server<N, hostrpc::bitmap_types, decltype(cp),
-                                      decltype(operate), decltype(step)>;
+  using server_type =
+      hostrpc::server<N, hostrpc::x64_x64_bitmap_types, decltype(cp),
+                      decltype(operate), decltype(step)>;
 
   server_type s = {cp,           inbox, outbox, active, remote_buffer,
                    local_buffer, step,  operate};

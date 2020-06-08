@@ -148,7 +148,7 @@ TEST_CASE("set up single word system")
       auto stepper = hostrpc::default_stepper(&client_steps, show_step);
 
       using client_type =
-          client<N, hostrpc::bitmap_types, decltype(cp), decltype(fill),
+          client<N, hostrpc::x64_x64_bitmap_types, decltype(cp), decltype(fill),
                  decltype(use), decltype(stepper)>;
       client_type cl = {cp,
                         recv,
@@ -176,7 +176,7 @@ TEST_CASE("set up single word system")
     safe_thread sv_thrd([&]() {
       auto stepper = hostrpc::default_stepper(&server_steps, show_step);
 
-      using server_type = server<N, hostrpc::bitmap_types, decltype(cp),
+      using server_type = server<N, hostrpc::x64_x64_bitmap_types, decltype(cp),
                                  decltype(operate), decltype(stepper)>;
 
       server_type sv = {cp,
