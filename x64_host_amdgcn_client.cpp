@@ -53,12 +53,14 @@ void wip(hsa_region_t fine)
   lt server_active(server_active_data);
 
   hostrpc::config::x64_amdgcn_client client(cp, recv, send, client_active,
-                                            server_buffer, client_buffer,
-                                            config::fill{}, config::use{});
+                                            server_buffer, client_buffer);
 
   hostrpc::config::x64_amdgcn_server server(cp, send, recv, server_active,
                                             client_buffer, server_buffer,
                                             config::operate{});
+
+  page_t scratch;
+  client.rpc_invoke<true>(&scratch);
 
   (void)client;
   (void)server;

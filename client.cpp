@@ -6,17 +6,13 @@ void client_instance(
     hostrpc::slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active,
     hostrpc::page_t* remote_buffer, hostrpc::page_t* local_buffer)
 {
-  hostrpc::nop_stepper step;
-  auto fill = hostrpc::fill_nop;
-  auto use = hostrpc::use_nop;
   hostrpc::copy_functor_memcpy_pull cp;
 
-  using client_type =
-      hostrpc::client<N, hostrpc::x64_x64_bitmap_types, decltype(cp),
-                      decltype(fill), decltype(use), decltype(step)>;
+  using client_type = hostrpc::client<N, hostrpc::x64_x64_bitmap_types,
+                                      decltype(cp), hostrpc::fill_nop,
+                                      hostrpc::use_nop, hostrpc::nop_stepper>;
 
-  client_type c = {cp,           inbox, outbox, active, remote_buffer,
-                   local_buffer, fill,  use};
+  client_type c = {cp, inbox, outbox, active, remote_buffer, local_buffer};
 
   for (;;)
     {

@@ -45,7 +45,7 @@ namespace config
 {
 struct fill
 {
-  void operator()(hostrpc::page_t *page, void *dv)
+  static void call(hostrpc::page_t *page, void *dv)
   {
     __builtin_memcpy(page, dv, sizeof(hostrpc::page_t));
   };
@@ -53,7 +53,7 @@ struct fill
 
 struct use
 {
-  void operator()(hostrpc::page_t *page, void *dv)
+  static void call(hostrpc::page_t *page, void *dv)
   {
     __builtin_memcpy(dv, page, sizeof(hostrpc::page_t));
   };
@@ -61,7 +61,7 @@ struct use
 
 struct operate
 {
-  void operator()(hostrpc::page_t *page, void *)
+  static void call(hostrpc::page_t *page, void *)
   {
     for (unsigned c = 0; c < 64; c++)
       {

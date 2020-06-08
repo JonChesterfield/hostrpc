@@ -96,21 +96,56 @@ TEST_CASE("set up single word system")
   page_t client_buffer[N];
   page_t server_buffer[N];
 
+  const bool show_step = false;
+
+  _Atomic(uint64_t) client_steps(0);
+  _Atomic(uint64_t) server_steps(0);
+
   _Atomic(uint64_t) val(UINT64_MAX);
 
-  auto fill = [&](page_t* p, void*) -> void {
-    val++;
-    // printf("Passing %lu\n", static_cast<uint64_t>(val));
-    p->cacheline[0].element[0] = val;
+  struct application_state_t
+  {
+    application_state_t(_Atomic(uint64_t) * val,
+                        _Atomic(uint64_t) * client_steps, bool show_step)
+        : val(val), stepper(client_steps, show_step)
+    {
+    }
+    _Atomic(uint64_t) * val;
+    default_stepper_state stepper;
   };
+
+  struct stepper
+  {
+    static void call(int line, void* v)
+    {
+      application_state_t* state = static_cast<application_state_t*>(v);
+      if (state->stepper.show_step)
+        {
+          printf("%s:%d: step\n", state->stepper.name, line);
+        }
+      step(state->stepper.val);
+    }
+  };
+
+  struct fill
+  {
+    static void call(page_t* p, void* v)
+    {
+      application_state_t* state = static_cast<application_state_t*>(v);
+      state->val++;
+      // printf("Passing %lu\n", static_cast<uint64_t>(val));
+      p->cacheline[0].element[0] = *(state->val);
+    }
+  };
+
   auto operate = [](page_t* p, void*) -> void {
     uint64_t r = p->cacheline[0].element[0];
     // printf("Server received %lu, forwarding as %lu\n", r, 2 * r);
     p->cacheline[0].element[0] = 2 * r;
   };
-  auto use = [](page_t* p, void*) -> void {
-    (void)p;
-    // printf("Returned %lu\n", p->cacheline[0].element[0]);
+  struct use
+  {
+    static void call(page_t* p, void*) { (void)p; }
   };
 
   using mailbox_ptr_t =
@@ -137,33 +172,26 @@ TEST_CASE("set up single word system")
   _Atomic(uint64_t) calls_launched(0);
   _Atomic(uint64_t) calls_handled(0);
 
-  _Atomic(uint64_t) client_steps(0);
-  _Atomic(uint64_t) server_steps(0);
-
   hostrpc::copy_functor_memcpy_pull cp;
 
-  const bool show_step = false;
   {
     safe_thread cl_thrd([&]() {
-      auto stepper_state =
-          hostrpc::default_stepper_state(&client_steps, show_step);
+      auto app_state = application_state_t(&val, &client_steps, show_step);
 
-      using client_type =
-          client<N, hostrpc::x64_x64_bitmap_types, decltype(cp), decltype(fill),
-                 decltype(use), hostrpc::default_stepper>;
+      using client_type = client<N, hostrpc::x64_x64_bitmap_types, decltype(cp),
+                                 fill, use, stepper>;
       client_type cl = {
-          cp,   recv, send, client_active, &server_buffer[0], &client_buffer[0],
-          fill, use};
+          cp, recv, send, client_active, &server_buffer[0], &client_buffer[0]};
 
-      void* application_state = static_cast<void*>(&stepper_state);
+      void* application_state_ptr = static_cast<void*>(&app_state);
 
       while (calls_launched < calls_planned)
         {
-          if (cl.rpc_invoke<false>(application_state))
+          if (cl.rpc_invoke<false>(application_state_ptr))
             {
               calls_launched++;
             }
-          if (cl.rpc_invoke<true>(application_state))
+          if (cl.rpc_invoke<true>(application_state_ptr))
             {
               calls_launched++;
             }

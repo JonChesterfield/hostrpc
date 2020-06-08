@@ -44,9 +44,10 @@ struct operate
 
 }  // namespace
 
-using x64_x64_client = hostrpc::client<128, hostrpc::x64_x64_bitmap_types,
-                                       hostrpc::copy_functor_memcpy_pull, fill,
-                                       use, hostrpc::nop_stepper>;
+using x64_x64_client =
+    hostrpc::client<128, hostrpc::x64_x64_bitmap_types,
+                    hostrpc::copy_functor_memcpy_pull, hostrpc::fill_nop,
+                    hostrpc::use_nop, hostrpc::nop_stepper>;
 
 using x64_x64_server = hostrpc::server<128, hostrpc::x64_x64_bitmap_types,
                                        hostrpc::copy_functor_memcpy_pull,
@@ -99,7 +100,7 @@ TEST_CASE("hazard")
   lockarray_t<N> server_active(server_active_data.get());
 
   x64_x64_client client(cp, recv, send, client_active, &server_buffer[0],
-                        &client_buffer[0], fill{}, use{});
+                        &client_buffer[0]);
 
   x64_x64_server server(cp, send, recv, server_active, &client_buffer[0],
                         &server_buffer[0], operate{});

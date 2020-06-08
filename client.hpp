@@ -9,8 +9,15 @@
 
 namespace hostrpc
 {
-inline void fill_nop(page_t*, void*) {}
-inline void use_nop(page_t*, void*) {}
+struct fill_nop
+{
+  static void call(page_t*, void*) {}
+};
+
+struct use_nop
+{
+  static void call(page_t*, void*) {}
+};
 
 enum class client_state : uint8_t
 {
@@ -39,16 +46,14 @@ struct client
 
   client(C copy, typename bt::inbox_t inbox, typename bt::outbox_t outbox,
          typename bt::locks_t active, page_t* remote_buffer,
-         page_t* local_buffer, Fill fill = fill_nop, Use use = use_nop)
+         page_t* local_buffer)
 
       : copy(copy),
         inbox(inbox),
         outbox(outbox),
         active(active),
         remote_buffer(remote_buffer),
-        local_buffer(local_buffer),
-        fill(fill),
-        use(use)
+        local_buffer(local_buffer)
   {
   }
 
@@ -155,7 +160,7 @@ struct client
     tracker.claim(slot);
 
     // wave_populate
-    fill(&local_buffer[slot], application_state);
+    Fill::call(&local_buffer[slot], application_state);
     step(__LINE__, application_state);
     copy.push_from_client_to_server((void*)&remote_buffer[slot],
                                     (void*)&local_buffer[slot], sizeof(page_t));
@@ -219,7 +224,7 @@ struct client
                                         sizeof(page_t));
         step(__LINE__, application_state);
         // call the continuation
-        use(&local_buffer[slot], application_state);
+        Use::call(&local_buffer[slot], application_state);
 
         step(__LINE__, application_state);
 
@@ -320,8 +325,6 @@ struct client
   typename bt::locks_t active;
   page_t* remote_buffer;
   page_t* local_buffer;
-  Fill fill;
-  Use use;
 
   static_assert(sizeof(inbox) == 8, "");
   static_assert(sizeof(active) == 8, "");
