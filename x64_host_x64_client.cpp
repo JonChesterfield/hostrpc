@@ -77,17 +77,20 @@ TEST_CASE("hazard")
   hostrpc::copy_functor_memcpy_pull cp;
   hostrpc::nop_stepper st;
 
-  using mailbox_ptr_t = std::unique_ptr<mailbox_t<N>::slot_bitmap_data,
-                                        mailbox_t<N>::slot_bitmap_data_deleter>;
+  using mailbox_ptr_t =
+      std::unique_ptr<mailbox_t<N>::slot_bitmap_data_t,
+                      mailbox_t<N>::slot_bitmap_data_t::deleter>;
 
   using lockarray_ptr_t =
-      std::unique_ptr<lockarray_t<N>::slot_bitmap_data,
-                      lockarray_t<N>::slot_bitmap_data_deleter>;
+      std::unique_ptr<lockarray_t<N>::slot_bitmap_data_t,
+                      lockarray_t<N>::slot_bitmap_data_t::deleter>;
 
-  mailbox_ptr_t send_data(mailbox_t<N>::slot_bitmap_data::alloc());
-  mailbox_ptr_t recv_data(mailbox_t<N>::slot_bitmap_data::alloc());
-  lockarray_ptr_t client_active_data(lockarray_t<N>::slot_bitmap_data::alloc());
-  lockarray_ptr_t server_active_data(lockarray_t<N>::slot_bitmap_data::alloc());
+  mailbox_ptr_t send_data(mailbox_t<N>::slot_bitmap_data_t::alloc());
+  mailbox_ptr_t recv_data(mailbox_t<N>::slot_bitmap_data_t::alloc());
+  lockarray_ptr_t client_active_data(
+      lockarray_t<N>::slot_bitmap_data_t::alloc());
+  lockarray_ptr_t server_active_data(
+      lockarray_t<N>::slot_bitmap_data_t::alloc());
 
   mailbox_t<N> send(send_data.get());
   mailbox_t<N> recv(recv_data.get());

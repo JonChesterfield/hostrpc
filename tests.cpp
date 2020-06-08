@@ -10,10 +10,10 @@
 TEST_CASE("Bitmap")
 {
   using bitmap_ptr_t =
-      std::unique_ptr<hostrpc::slot_bitmap<128>::slot_bitmap_data,
-                      hostrpc::slot_bitmap<128>::slot_bitmap_data_deleter>;
+      std::unique_ptr<hostrpc::slot_bitmap<128>::slot_bitmap_data_t,
+                      hostrpc::slot_bitmap<128>::slot_bitmap_data_t::deleter>;
 
-  bitmap_ptr_t ptr(hostrpc::slot_bitmap<128>::slot_bitmap_data::alloc());
+  bitmap_ptr_t ptr(hostrpc::slot_bitmap<128>::slot_bitmap_data_t::alloc());
 
   uint64_t tmp;
   SECTION("set and clear each element")
@@ -110,17 +110,20 @@ TEST_CASE("set up single word system")
     // printf("Returned %lu\n", p->cacheline[0].element[0]);
   };
 
-  using mailbox_ptr_t = std::unique_ptr<mailbox_t<N>::slot_bitmap_data,
-                                        mailbox_t<N>::slot_bitmap_data_deleter>;
+  using mailbox_ptr_t =
+      std::unique_ptr<mailbox_t<N>::slot_bitmap_data_t,
+                      mailbox_t<N>::slot_bitmap_data_t::deleter>;
 
   using lockarray_ptr_t =
-      std::unique_ptr<lockarray_t<N>::slot_bitmap_data,
-                      lockarray_t<N>::slot_bitmap_data_deleter>;
+      std::unique_ptr<lockarray_t<N>::slot_bitmap_data_t,
+                      lockarray_t<N>::slot_bitmap_data_t::deleter>;
 
-  mailbox_ptr_t send_data(mailbox_t<N>::slot_bitmap_data::alloc());
-  mailbox_ptr_t recv_data(mailbox_t<N>::slot_bitmap_data::alloc());
-  lockarray_ptr_t client_active_data(lockarray_t<N>::slot_bitmap_data::alloc());
-  lockarray_ptr_t server_active_data(lockarray_t<N>::slot_bitmap_data::alloc());
+  mailbox_ptr_t send_data(mailbox_t<N>::slot_bitmap_data_t::alloc());
+  mailbox_ptr_t recv_data(mailbox_t<N>::slot_bitmap_data_t::alloc());
+  lockarray_ptr_t client_active_data(
+      lockarray_t<N>::slot_bitmap_data_t::alloc());
+  lockarray_ptr_t server_active_data(
+      lockarray_t<N>::slot_bitmap_data_t::alloc());
 
   mailbox_t<N> send(send_data.get());
   mailbox_t<N> recv(recv_data.get());

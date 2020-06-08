@@ -177,6 +177,31 @@ using mailbox_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>;
 template <size_t N>
 using lockarray_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>;
 
+template <size_t align, size_t size>
+struct slot_bitmap_data
+{
+  static_assert(align >= 8, "");
+  static_assert(size % 64 == 0, "Size must be multiple of 64");
+
+  static slot_bitmap_data *alloc()
+  {
+    void *memory = ::aligned_alloc(align, size);
+    assert(memory);
+    return new (memory) slot_bitmap_data;
+  }
+  static void free(slot_bitmap_data *d)
+  {
+    d->~slot_bitmap_data();
+    ::free(d);
+  }
+  alignas(align) _Atomic uint64_t data[size / 64];
+
+  struct deleter
+  {
+    void operator()(slot_bitmap_data *d) { slot_bitmap_data::free(d); }
+  };
+};
+
 template <size_t N, size_t scope>
 struct slot_bitmap
 {
@@ -187,32 +212,15 @@ struct slot_bitmap
   static constexpr size_t words() { return N / 64; }
 
   static_assert(sizeof(uint64_t) == sizeof(_Atomic uint64_t), "");
-  static constexpr size_t buffer_align() { return alignof(slot_bitmap_data); }
+  static constexpr size_t buffer_align() { return 64; }
   static constexpr size_t buffer_length() { return words() * sizeof(uint64_t); }
 
-  struct slot_bitmap_data
-  {
-    static slot_bitmap_data *alloc()
-    {
-      void *memory = ::aligned_alloc(buffer_align(), buffer_length());
-      assert(memory);
-      return new (memory) slot_bitmap_data;
-    }
-    static void free(slot_bitmap_data *d)
-    {
-      d->~slot_bitmap_data();
-      ::free(d);
-    }
-    alignas(64) _Atomic uint64_t data[words()];
-  };
-  static_assert(sizeof(slot_bitmap_data *) == 8, "");
-  struct slot_bitmap_data_deleter
-  {
-    void operator()(slot_bitmap_data *d) { slot_bitmap_data::free(d); }
-  };
+  using slot_bitmap_data_t = slot_bitmap_data<buffer_align(), size()>;
 
-  slot_bitmap_data *a;
-  slot_bitmap(slot_bitmap_data *memory)
+  static_assert(sizeof(slot_bitmap_data_t *) == 8, "");
+
+  slot_bitmap_data_t *a;
+  slot_bitmap(slot_bitmap_data_t *memory)
   {
     assert(memory);
     a = memory;
