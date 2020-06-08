@@ -7,7 +7,6 @@ void server_instance(
     hostrpc::slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active,
     hostrpc::page_t* remote_buffer, hostrpc::page_t* local_buffer)
 {
-  auto operate = hostrpc::operate_nop;
   struct copy_functor_nop
       : public hostrpc::copy_functor_interface<copy_functor_nop>
   {
@@ -16,10 +15,9 @@ void server_instance(
 
   using server_type =
       hostrpc::server<N, hostrpc::x64_x64_bitmap_types, decltype(cp),
-                      decltype(operate), hostrpc::nop_stepper>;
+                      hostrpc::operate_nop, hostrpc::nop_stepper>;
 
-  server_type s = {cp,           inbox,  outbox, active, remote_buffer,
-                   local_buffer, operate};
+  server_type s = {cp, inbox, outbox, active, remote_buffer, local_buffer};
 
   for (;;)
     {

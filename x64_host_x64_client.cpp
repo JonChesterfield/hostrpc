@@ -49,9 +49,10 @@ using x64_x64_client =
                     hostrpc::copy_functor_memcpy_pull, hostrpc::fill_nop,
                     hostrpc::use_nop, hostrpc::nop_stepper>;
 
-using x64_x64_server = hostrpc::server<128, hostrpc::x64_x64_bitmap_types,
-                                       hostrpc::copy_functor_memcpy_pull,
-                                       operate, hostrpc::nop_stepper>;
+using x64_x64_server =
+    hostrpc::server<128, hostrpc::x64_x64_bitmap_types,
+                    hostrpc::copy_functor_memcpy_pull, hostrpc::operate_nop,
+                    hostrpc::nop_stepper>;
 
 static void init_page(hostrpc::page_t *page, uint64_t v)
 {
@@ -103,7 +104,7 @@ TEST_CASE("hazard")
                         &client_buffer[0]);
 
   x64_x64_server server(cp, send, recv, server_active, &client_buffer[0],
-                        &server_buffer[0], operate{});
+                        &server_buffer[0]);
 
   _Atomic bool server_live(true);
 

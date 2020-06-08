@@ -138,11 +138,16 @@ TEST_CASE("set up single word system")
     }
   };
 
-  auto operate = [](page_t* p, void*) -> void {
-    uint64_t r = p->cacheline[0].element[0];
-    // printf("Server received %lu, forwarding as %lu\n", r, 2 * r);
-    p->cacheline[0].element[0] = 2 * r;
+  struct operate
+  {
+    static void call(page_t* p, void*)
+    {
+      uint64_t r = p->cacheline[0].element[0];
+      // printf("Server received %lu, forwarding as %lu\n", r, 2 * r);
+      p->cacheline[0].element[0] = 2 * r;
+    }
   };
+
   struct use
   {
     static void call(page_t* p, void*) { (void)p; }
@@ -203,15 +208,10 @@ TEST_CASE("set up single word system")
           hostrpc::default_stepper_state(&server_steps, show_step);
 
       using server_type = server<N, hostrpc::x64_x64_bitmap_types, decltype(cp),
-                                 decltype(operate), hostrpc::default_stepper>;
+                                 operate, hostrpc::default_stepper>;
 
-      server_type sv = {cp,
-                        send,
-                        recv,
-                        server_active,
-                        &client_buffer[0],
-                        &server_buffer[0],
-                        operate};
+      server_type sv = {
+          cp, send, recv, server_active, &client_buffer[0], &server_buffer[0]};
 
       void* application_state = static_cast<void*>(&stepper_state);
 

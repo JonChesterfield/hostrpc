@@ -5,7 +5,10 @@
 
 namespace hostrpc
 {
-inline void operate_nop(page_t*, void*) {}
+struct operate_nop
+{
+  static void call(page_t*, void*) {}
+};
 
 enum class server_state : uint8_t
 {
@@ -28,14 +31,13 @@ struct server
 
   server(C copy, typename bt::inbox_t inbox, typename bt::outbox_t outbox,
          typename bt::locks_t active, page_t* remote_buffer,
-         page_t* local_buffer, Op operate = operate_nop)
+         page_t* local_buffer)
       : copy(copy),
         inbox(inbox),
         outbox(outbox),
         active(active),
         remote_buffer(remote_buffer),
-        local_buffer(local_buffer),
-        operate(operate)
+        local_buffer(local_buffer)
   {
   }
 
@@ -167,7 +169,7 @@ struct server
                                         sizeof(page_t));
         step(__LINE__, application_state);
 
-        operate(&local_buffer[slot], application_state);
+        Op::call(&local_buffer[slot], application_state);
         step(__LINE__, application_state);
 
         copy.push_from_server_to_client((void*)&remote_buffer[slot],
@@ -255,7 +257,6 @@ struct server
   typename bt::locks_t active;
   page_t* remote_buffer;
   page_t* local_buffer;
-  Op operate;
 };
 
 }  // namespace hostrpc
