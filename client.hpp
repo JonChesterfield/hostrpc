@@ -327,9 +327,9 @@ struct client
   }
 
   C copy;
-  const mailbox_t<N> inbox;
-  mailbox_t<N> outbox;
-  slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active;
+  typename bt::inbox_t inbox;
+  typename bt::outbox_t outbox;
+  typename bt::locks_t active;
   page_t* remote_buffer;
   page_t* local_buffer;
   S step;
