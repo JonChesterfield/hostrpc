@@ -1,7 +1,14 @@
+#include "x64_host_amdgcn_client.hpp"
 #include "catch.hpp"
 #include "hsa.hpp"
 
 #include <string>
+
+namespace hostrpc
+{
+x64_amdgcn_pair::x64_amdgcn_pair() {}
+~x64_amdgcn_pair::x64_amdgcn_pair() {}
+}  // namespace hostrpc
 
 namespace
 {
