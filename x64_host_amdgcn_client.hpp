@@ -1,8 +1,11 @@
 #ifndef HOSTRPC_X64_HOST_AMDGCN_CLIENT_HPP_INCLUDED
 #define HOSTRPC_X64_HOST_AMDGCN_CLIENT_HPP_INCLUDED
 
-#include "common.hpp"
-#include "hsa.hpp"
+#include "client.hpp"
+#include "server.hpp"
+
+// hsa uses freestanding C headers, unlike hsa.hpp
+#include "hsa.h"
 
 namespace hostrpc
 {
