@@ -78,16 +78,26 @@ struct operate
   }
 };
 
-// 128 won't suffice, probably need the whole structure to be templated
-using x64_amdgcn_client =
-    hostrpc::client<128, hostrpc::hsa_allocate_slot_bitmap_data,
-                    hostrpc::copy_functor_memcpy_pull, fill, use,
-                    hostrpc::nop_stepper>;
+template <size_t N>
+class x64_amdgcn_bitmap_types
+{
+ public:
+  using inbox_t = const slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
+                                    hsa_allocate_slot_bitmap_data>;
+  using outbox_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
+                               hsa_allocate_slot_bitmap_data>;
+  using locks_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE,
+                              hsa_allocate_slot_bitmap_data>;
+};
 
-using x64_amdgcn_server =
-    hostrpc::server<128, hostrpc::hsa_allocate_slot_bitmap_data,
-                    hostrpc::copy_functor_memcpy_pull, operate,
-                    hostrpc::nop_stepper>;
+// 128 won't suffice, probably need the whole structure to be templated
+using x64_amdgcn_client = hostrpc::client<128, x64_amdgcn_bitmap_types,
+                                          hostrpc::copy_functor_memcpy_pull,
+                                          fill, use, hostrpc::nop_stepper>;
+
+using x64_amdgcn_server = hostrpc::server<128, x64_amdgcn_bitmap_types,
+                                          hostrpc::copy_functor_memcpy_pull,
+                                          operate, hostrpc::nop_stepper>;
 
 }  // namespace config
 

@@ -35,28 +35,38 @@ void wip(hsa_region_t fine)
 
   using mt = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
                          hsa_allocate_slot_bitmap_data>;
-  using mailbox_ptr_t =
-      std::unique_ptr<mt::slot_bitmap_data_t, mt::slot_bitmap_data_t::deleter>;
 
   using lt = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE,
                          hsa_allocate_slot_bitmap_data>;
-  using lockarray_ptr_t =
-      std::unique_ptr<lt::slot_bitmap_data_t, lt::slot_bitmap_data_t::deleter>;
 
-  mailbox_ptr_t send_data(mailbox_t<N>::slot_bitmap_data_t::alloc(fine));
-  mailbox_ptr_t recv_data(mailbox_t<N>::slot_bitmap_data_t::alloc(fine));
-  lockarray_ptr_t client_active_data(
-      lockarray_t<N>::slot_bitmap_data_t::alloc(fine));
-  lockarray_ptr_t server_active_data(
-      lockarray_t<N>::slot_bitmap_data_t::alloc(fine));
+  mt::slot_bitmap_data_t* send_data = mt::slot_bitmap_data_t::alloc(fine);
+  mt::slot_bitmap_data_t* recv_data = mt::slot_bitmap_data_t::alloc(fine);
 
-  mailbox_t<N> send(send_data.get());
-  mailbox_t<N> recv(recv_data.get());
-  lockarray_t<N> client_active(client_active_data.get());
-  lockarray_t<N> server_active(server_active_data.get());
+  lt::slot_bitmap_data_t* client_active_data =
+      lt::slot_bitmap_data_t::alloc(fine);
 
-  x64_amdgcn_client client(cp, recv, send, client_active, server_buffer,
-                           client_buffer, st, config::fill{}, config::use{});
+  lt::slot_bitmap_data_t* server_active_data =
+      lt::slot_bitmap_data_t::alloc(fine);
+
+  mt send(send_data);
+  mt recv(recv_data);
+  lt client_active(client_active_data);
+  lt server_active(server_active_data);
+
+  hostrpc::config::x64_amdgcn_client client(cp, recv, send, client_active,
+                                            server_buffer, client_buffer, st,
+                                            config::fill{}, config::use{});
+
+  hostrpc::config::x64_amdgcn_server server(cp, send, recv, server_active,
+                                            client_buffer, server_buffer, st,
+                                            config::operate{});
 
   (void)client;
+  (void)server;
+
+  mt::slot_bitmap_data_t::free(send_data);
+  mt::slot_bitmap_data_t::free(recv_data);
+
+  lt::slot_bitmap_data_t::free(client_active_data);
+  lt::slot_bitmap_data_t::free(server_active_data);
 }

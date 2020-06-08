@@ -11,15 +11,14 @@
 
 // Placement new is declared in #include <new>, which is not available
 // Strictly it takes std::size_t, but cstddef isn't available either
-// void *operator new(size_t size, void *ptr) noexcept;
+void *operator new(size_t size, void *ptr) noexcept;
 
 // hsa (and possibly catch) include cstdlib
-#include <stdlib.h>
 
 // stdlib.h not necessarily available either
 // todo: wrap these in an indirection, targeting libc or hsa
-// void free(void *);
-// void *aligned_alloc(size_t alignment, size_t size);
+void free(void *);
+void *aligned_alloc(size_t alignment, size_t size);
 
 namespace hostrpc
 {
