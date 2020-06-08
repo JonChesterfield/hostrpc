@@ -404,6 +404,18 @@ struct slot_bitmap
   }
 };
 
+template <size_t N>
+class bitmap_types
+{
+ public:
+  using inbox_t = const slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
+                                    x64_x64_slot_bitmap_data>;
+  using outbox_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
+                               x64_x64_slot_bitmap_data>;
+  using locks_t =
+      slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE, x64_x64_slot_bitmap_data>;
+};
+
 // on return true, loaded contains active[w]
 template <size_t N, size_t scope, template <size_t> class data_t>
 bool slot_bitmap<N, scope, data_t>::try_claim_empty_slot(size_t i,

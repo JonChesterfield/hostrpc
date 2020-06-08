@@ -31,12 +31,15 @@ enum class client_state : uint8_t
 // garbage that is, can't claim the slot for a new thread is that a sufficient
 // criteria for the slot to be awaiting gc?
 
-template <size_t N, typename C, typename Fill, typename Use, typename S>
+template <size_t N, template <size_t> class bitmap_types, typename C,
+          typename Fill, typename Use, typename S>
 struct client
 {
-  client(C copy, const mailbox_t<N> inbox, mailbox_t<N> outbox,
-         lockarray_t<N> active, page_t* remote_buffer, page_t* local_buffer,
-         S step, Fill fill = fill_nop, Use use = use_nop)
+  using bt = bitmap_types<N>;
+
+  client(C copy, typename bt::inbox_t inbox, typename bt::outbox_t outbox,
+         typename bt::locks_t active, page_t* remote_buffer,
+         page_t* local_buffer, S step, Fill fill = fill_nop, Use use = use_nop)
 
       : copy(copy),
         inbox(inbox),
@@ -336,16 +339,6 @@ struct client
   static_assert(sizeof(inbox) == 8, "");
   static_assert(sizeof(active) == 8, "");
 };
-
-template <size_t N, typename C, typename Fill, typename Use, typename S>
-client<N, C, Fill, Use, S> make_client(
-    C copy, const mailbox_t<N> inbox, mailbox_t<N> outbox,
-    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active, page_t* remote_buffer,
-    page_t* local_buffer, S step, Fill fill = fill_nop, Use use = use_nop)
-{
-  return {copy,         inbox, outbox, active, remote_buffer,
-          local_buffer, step,  fill,   use};
-}
 
 }  // namespace hostrpc
 

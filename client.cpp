@@ -10,13 +10,18 @@ void client_instance(
   auto fill = hostrpc::fill_nop;
   auto use = hostrpc::use_nop;
   hostrpc::copy_functor_memcpy_pull cp;
-  auto s = hostrpc::make_client(cp, inbox, outbox, active, remote_buffer,
-                                local_buffer, step, fill, use);
+
+  using client_type =
+      hostrpc::client<N, hostrpc::bitmap_types, decltype(cp), decltype(fill),
+                      decltype(use), decltype(step)>;
+
+  client_type c = {cp,           inbox, outbox, active, remote_buffer,
+                   local_buffer, step,  fill,   use};
 
   for (;;)
     {
-      s.rpc_invoke<true>(nullptr);
-      s.rpc_invoke<false>(nullptr);
+      c.rpc_invoke<true>(nullptr);
+      c.rpc_invoke<false>(nullptr);
     }
 }
 

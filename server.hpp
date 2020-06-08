@@ -20,7 +20,8 @@ enum class server_state : uint8_t
   result_with_thread = 0b111,
 };
 
-template <size_t N, typename C, typename Op, typename S>
+template <size_t N, template <size_t> class bitmap_types, typename C,
+          typename Op, typename S>
 struct server
 {
   server(C copy, const mailbox_t<N> inbox, mailbox_t<N> outbox,
@@ -253,16 +254,6 @@ struct server
   S step;
   Op operate;
 };
-
-template <size_t N, typename C, typename Op, typename S>
-server<N, C, Op, S> make_server(
-    C copy, const mailbox_t<N> inbox, mailbox_t<N> outbox,
-    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active, page_t* remote_buffer,
-    page_t* local_buffer, S step, Op operate = operate_nop)
-{
-  return {copy,          inbox,        outbox, active,
-          remote_buffer, local_buffer, step,   operate};
-}
 
 }  // namespace hostrpc
 #endif

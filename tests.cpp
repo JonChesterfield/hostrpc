@@ -146,8 +146,19 @@ TEST_CASE("set up single word system")
   {
     safe_thread cl_thrd([&]() {
       auto stepper = hostrpc::default_stepper(&client_steps, show_step);
-      auto cl = make_client(cp, recv, send, client_active, &server_buffer[0],
-                            &client_buffer[0], stepper, fill, use);
+
+      using client_type =
+          client<N, hostrpc::bitmap_types, decltype(cp), decltype(fill),
+                 decltype(use), decltype(stepper)>;
+      client_type cl = {cp,
+                        recv,
+                        send,
+                        client_active,
+                        &server_buffer[0],
+                        &client_buffer[0],
+                        stepper,
+                        fill,
+                        use};
 
       while (calls_launched < calls_planned)
         {
@@ -164,8 +175,19 @@ TEST_CASE("set up single word system")
 
     safe_thread sv_thrd([&]() {
       auto stepper = hostrpc::default_stepper(&server_steps, show_step);
-      auto sv = make_server(cp, send, recv, server_active, &client_buffer[0],
-                            &server_buffer[0], stepper, operate);
+
+      using server_type = server<N, hostrpc::bitmap_types, decltype(cp),
+                                 decltype(operate), decltype(stepper)>;
+
+      server_type sv = {cp,
+                        send,
+                        recv,
+                        server_active,
+                        &client_buffer[0],
+                        &server_buffer[0],
+                        stepper,
+                        operate};
+
       for (;;)
         {
           if (sv.rpc_handle(nullptr))
