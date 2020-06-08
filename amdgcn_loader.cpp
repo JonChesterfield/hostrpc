@@ -153,6 +153,7 @@ int main(int argc, char **argv)
   // printf("Symbol main at %lx\n", main_address);
   
 
+#if 0
   int baseline;
   {
     const char* fname = "amdgcn_loader_device.o";
@@ -172,7 +173,7 @@ int main(int argc, char **argv)
       fprintf(stderr, "HSA failed to load contents of %s\n", "amdgcn_loader_device.o");
       return 1;      
     }
-
+#endif
 
   // probably need to populate some of the implicit args for intrinsics to work
 

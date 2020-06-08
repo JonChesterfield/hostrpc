@@ -436,7 +436,7 @@ struct executable
     hsa_status_t rc = hsa_code_object_reader_create_from_file(file, &reader);
     if (rc != HSA_STATUS_SUCCESS)
       {
-        printf("load from file create failed: %s\n", hsa::status_string(rc));
+        // printf("load from file create failed: %s\n", hsa::status_string(rc));
         return rc;
       }
 
@@ -448,7 +448,7 @@ struct executable
       {
         // This is returning variable_undefined, even though that isn't supposed
         // to happen until freeze
-        printf("load agent code object failed: %s\n", hsa::status_string(rc));
+        // printf("load agent code object failed: %s\n", hsa::status_string(rc));
         return rc;
       }
 

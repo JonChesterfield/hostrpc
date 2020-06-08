@@ -1,3 +1,4 @@
+__attribute__((visibility("default")))
 const char interp_section[] __attribute__((section(".interp"))) =
     "/home/amd/hostrpc/amdgcn_loader.exe";
 
