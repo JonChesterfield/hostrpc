@@ -669,28 +669,33 @@ inline void step(_Atomic(uint64_t) * steps_left)
 
 struct nop_stepper
 {
-  void operator()(int) {}
+  void operator()(int, void *) {}
 };
 
-struct default_stepper
+struct default_stepper_state
 {
-  default_stepper(_Atomic(uint64_t) * val, bool show_step = false,
-                  const char *name = "unknown")
+  default_stepper_state(_Atomic(uint64_t) * val, bool show_step = false,
+                        const char *name = "unknown")
       : val(val), show_step(show_step), name(name)
   {
   }
 
-  void operator()(int line)
-  {
-    if (show_step)
-      {
-        printf("%s:%d: step\n", name, line);
-      }
-    step(val);
-  }
   _Atomic(uint64_t) * val;
   bool show_step;
   const char *name;
+};
+
+struct default_stepper
+{
+  void operator()(int line, void *v)
+  {
+    default_stepper_state *state = static_cast<default_stepper_state *>(v);
+    if (state->show_step)
+      {
+        printf("%s:%d: step\n", state->name, line);
+      }
+    step(state->val);
+  }
 };
 
 // Depending on the host / client device and how they're connected together,

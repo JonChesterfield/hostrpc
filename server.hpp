@@ -55,7 +55,8 @@ struct server
     return i & ~o;
   }
 
-  size_t find_and_claim_slot(uint64_t w)  // or SIZE_MAX
+  size_t find_and_claim_slot(uint64_t w,
+                             void* application_state)  // or SIZE_MAX
   {
     uint64_t work_visible = work_todo(w);
     uint64_t work_available = work_visible & ~active.load_word(w);
@@ -75,7 +76,7 @@ struct server
         bool r = active.try_claim_empty_slot(slot, &active_word);
         if (r)
           {
-            step(__LINE__);
+            step(__LINE__, application_state);
             return slot;
           }
 
@@ -158,20 +159,20 @@ struct server
 
         assert(c.is(0b101));
 
-        step(__LINE__);
+        step(__LINE__, application_state);
 
         copy.pull_to_server_from_client((void*)&local_buffer[slot],
                                         (void*)&remote_buffer[slot],
                                         sizeof(page_t));
-        step(__LINE__);
+        step(__LINE__, application_state);
 
         operate(&local_buffer[slot], application_state);
-        step(__LINE__);
+        step(__LINE__, application_state);
 
         copy.push_from_server_to_client((void*)&remote_buffer[slot],
                                         (void*)&local_buffer[slot],
                                         sizeof(page_t));
-        step(__LINE__);
+        step(__LINE__, application_state);
 
         assert(c.is(0b101));
 
@@ -188,7 +189,7 @@ struct server
         return;
       }
 
-    step(__LINE__);
+    step(__LINE__, application_state);
 
     assert(lock_held());
     return;
@@ -199,7 +200,7 @@ struct server
   {
     // printf("Server rpc_handle\n");
 
-    step(__LINE__);
+    step(__LINE__, application_state);
 
     // garbage collection should be fairly cheap when there is none,
     // and the presence of any occupied slots can starve the client
@@ -208,7 +209,7 @@ struct server
         try_garbage_collect_word_server(w);
       }
 
-    step(__LINE__);
+    step(__LINE__, application_state);
 
     size_t slot = SIZE_MAX;
     {
@@ -225,7 +226,7 @@ struct server
           // if there is no inbound work, it can be because the slots are
           // all filled with garbage on the server side
           try_garbage_collect_word_server(w);
-          slot = find_and_claim_slot(w);
+          slot = find_and_claim_slot(w, application_state);
           if (slot != SIZE_MAX)
             {
               break;

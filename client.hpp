@@ -163,15 +163,15 @@ struct client
       }
 
     assert(c.is(0b001));
-    step(__LINE__);
+    step(__LINE__, application_state);
     tracker.claim(slot);
 
     // wave_populate
     fill(&local_buffer[slot], application_state);
-    step(__LINE__);
+    step(__LINE__, application_state);
     copy.push_from_client_to_server((void*)&remote_buffer[slot],
                                     (void*)&local_buffer[slot], sizeof(page_t));
-    step(__LINE__);
+    step(__LINE__, application_state);
 
     tracker.release(slot);
 
@@ -184,7 +184,7 @@ struct client
 
     assert(c.is(0b011));
 
-    step(__LINE__);
+    step(__LINE__, application_state);
 
     // current strategy is drop interest in the slot, then wait for the
     // server to confirm, then drop local thread
@@ -225,15 +225,15 @@ struct client
 
         tracker.claim(slot);
 
-        step(__LINE__);
+        step(__LINE__, application_state);
         copy.pull_to_client_from_server((void*)&local_buffer[slot],
                                         (void*)&remote_buffer[slot],
                                         sizeof(page_t));
-        step(__LINE__);
+        step(__LINE__, application_state);
         // call the continuation
         use(&local_buffer[slot], application_state);
 
-        step(__LINE__);
+        step(__LINE__, application_state);
 
         tracker.release(slot);
 
@@ -246,7 +246,7 @@ struct client
         }
 
         assert(c.is(0b101));
-        step(__LINE__);
+        step(__LINE__, application_state);
       }
 
     // if we don't have a continuation, would return on 0b010
@@ -268,7 +268,7 @@ struct client
   template <bool have_continuation>
   bool rpc_invoke(void* application_state)
   {
-    step(__LINE__);
+    step(__LINE__, application_state);
 
     // 0b111 is posted request, waited for it, got it
     // 0b110 is posted request, nothing waited, got one
@@ -279,7 +279,7 @@ struct client
         // try_garbage_collect_word_client(w);
       }
 
-    step(__LINE__);
+    step(__LINE__, application_state);
 
     // wave_acquire_slot
     // can only acquire a slot which is 000
@@ -310,14 +310,14 @@ struct client
     if (slot == SIZE_MAX)
       {
         // couldn't get a slot, won't launch
-        step(__LINE__);
+        step(__LINE__, application_state);
         return false;
       }
 
     bool r = rpc_invoke_given_slot<have_continuation>(application_state, slot);
 
     // wave release slot
-    step(__LINE__);
+    step(__LINE__, application_state);
     {
       uint64_t a = active.release_slot_returning_updated_word(slot);
       (void)a;

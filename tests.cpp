@@ -145,28 +145,31 @@ TEST_CASE("set up single word system")
   const bool show_step = false;
   {
     safe_thread cl_thrd([&]() {
-      auto stepper = hostrpc::default_stepper(&client_steps, show_step);
+      auto stepper_state =
+          hostrpc::default_stepper_state(&client_steps, show_step);
 
       using client_type =
           client<N, hostrpc::x64_x64_bitmap_types, decltype(cp), decltype(fill),
-                 decltype(use), decltype(stepper)>;
+                 decltype(use), hostrpc::default_stepper>;
       client_type cl = {cp,
                         recv,
                         send,
                         client_active,
                         &server_buffer[0],
                         &client_buffer[0],
-                        stepper,
+                        hostrpc::default_stepper{},
                         fill,
                         use};
 
+      void* application_state = static_cast<void*>(&stepper_state);
+
       while (calls_launched < calls_planned)
         {
-          if (cl.rpc_invoke<false>(nullptr))
+          if (cl.rpc_invoke<false>(application_state))
             {
               calls_launched++;
             }
-          if (cl.rpc_invoke<true>(nullptr))
+          if (cl.rpc_invoke<true>(application_state))
             {
               calls_launched++;
             }
@@ -174,23 +177,21 @@ TEST_CASE("set up single word system")
     });
 
     safe_thread sv_thrd([&]() {
-      auto stepper = hostrpc::default_stepper(&server_steps, show_step);
+      auto stepper_state =
+          hostrpc::default_stepper_state(&server_steps, show_step);
 
       using server_type = server<N, hostrpc::x64_x64_bitmap_types, decltype(cp),
-                                 decltype(operate), decltype(stepper)>;
+                                 decltype(operate), hostrpc::default_stepper>;
 
-      server_type sv = {cp,
-                        send,
-                        recv,
-                        server_active,
-                        &client_buffer[0],
-                        &server_buffer[0],
-                        stepper,
-                        operate};
+      server_type sv = {
+          cp, send,   recv, server_active, &client_buffer[0], &server_buffer[0],
+          {}, operate};
+
+      void* application_state = static_cast<void*>(&stepper_state);
 
       for (;;)
         {
-          if (sv.rpc_handle(nullptr))
+          if (sv.rpc_handle(application_state))
             {
               calls_handled++;
             }
