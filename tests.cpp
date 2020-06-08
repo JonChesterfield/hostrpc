@@ -9,16 +9,18 @@
 
 TEST_CASE("Bitmap")
 {
+  using test_bitmap_t =
+      hostrpc::slot_bitmap<128, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>;
   using bitmap_ptr_t =
-      std::unique_ptr<hostrpc::slot_bitmap<128>::slot_bitmap_data_t,
-                      hostrpc::slot_bitmap<128>::slot_bitmap_data_t::deleter>;
+      std::unique_ptr<test_bitmap_t::slot_bitmap_data_t,
+                      test_bitmap_t::slot_bitmap_data_t::deleter>;
 
-  bitmap_ptr_t ptr(hostrpc::slot_bitmap<128>::slot_bitmap_data_t::alloc());
+  bitmap_ptr_t ptr(test_bitmap_t::slot_bitmap_data_t::alloc());
 
   uint64_t tmp;
   SECTION("set and clear each element")
   {
-    hostrpc::slot_bitmap<128> b(ptr.get());
+    test_bitmap_t b(ptr.get());
     if (0)
       for (size_t i = 0; i < b.size(); i++)
         {
@@ -34,7 +36,7 @@ TEST_CASE("Bitmap")
 
   SECTION("find and unconditionally claim each element")
   {
-    hostrpc::slot_bitmap<128> b(ptr.get());
+    test_bitmap_t b(ptr.get());
     for (size_t i = 0; i < b.size(); i++)
       {
         size_t e = b.find_empty_slot();
@@ -49,7 +51,7 @@ TEST_CASE("Bitmap")
 
   SECTION("find and try claim each element")
   {
-    hostrpc::slot_bitmap<128> b(ptr.get());
+    test_bitmap_t b(ptr.get());
     for (size_t i = 0; i < b.size(); i++)
       {
         size_t e = b.find_empty_slot();
@@ -64,7 +66,7 @@ TEST_CASE("Bitmap")
 
   SECTION("find elements in the middle of the bitmap")
   {
-    hostrpc::slot_bitmap<128> b(ptr.get());
+    test_bitmap_t b(ptr.get());
     for (size_t i = 0; i < b.size(); i++)
       {
         b.try_claim_empty_slot(i, &tmp);

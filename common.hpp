@@ -168,7 +168,7 @@ struct cache
 // probably need scope as a template parameter on this
 // not a general purpose bitmap
 
-template <size_t N, size_t scope = __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>
+template <size_t N, size_t scope>
 struct slot_bitmap;
 
 template <size_t N>
@@ -177,10 +177,10 @@ using mailbox_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>;
 template <size_t N>
 using lockarray_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>;
 
-template <size_t align, size_t size>
+template <size_t size>
 struct slot_bitmap_data
 {
-  static_assert(align >= 8, "");
+  constexpr const static size_t align = 64;
   static_assert(size % 64 == 0, "Size must be multiple of 64");
 
   static slot_bitmap_data *alloc()
@@ -212,10 +212,8 @@ struct slot_bitmap
   static constexpr size_t words() { return N / 64; }
 
   static_assert(sizeof(uint64_t) == sizeof(_Atomic uint64_t), "");
-  static constexpr size_t buffer_align() { return 64; }
-  static constexpr size_t buffer_length() { return words() * sizeof(uint64_t); }
 
-  using slot_bitmap_data_t = slot_bitmap_data<buffer_align(), size()>;
+  using slot_bitmap_data_t = slot_bitmap_data<size()>;
 
   static_assert(sizeof(slot_bitmap_data_t *) == 8, "");
 
