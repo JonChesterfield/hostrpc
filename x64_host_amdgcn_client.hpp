@@ -1,10 +1,8 @@
 #ifndef HOSTRPC_X64_HOST_AMDGCN_CLIENT_HPP_INCLUDED
 #define HOSTRPC_X64_HOST_AMDGCN_CLIENT_HPP_INCLUDED
 
-#include "common.h"
+#include "common.hpp"
 #include "hsa.hpp"
-
-#include <new>
 
 namespace hostrpc
 {
