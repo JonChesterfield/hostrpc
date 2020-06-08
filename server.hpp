@@ -21,24 +21,25 @@ enum class server_state : uint8_t
 };
 
 template <size_t N, template <size_t> class bitmap_types, typename C,
-          typename Op, typename S>
+          typename Op, typename Step>
 struct server
 {
   using bt = bitmap_types<N>;
 
   server(C copy, typename bt::inbox_t inbox, typename bt::outbox_t outbox,
          typename bt::locks_t active, page_t* remote_buffer,
-         page_t* local_buffer, S step, Op operate = operate_nop)
+         page_t* local_buffer, Op operate = operate_nop)
       : copy(copy),
         inbox(inbox),
         outbox(outbox),
         active(active),
         remote_buffer(remote_buffer),
         local_buffer(local_buffer),
-        step(step),
         operate(operate)
   {
   }
+
+  void step(int x, void* y) { Step::call(x, y); }
 
   void dump_word(uint64_t word)
   {
@@ -254,7 +255,6 @@ struct server
   typename bt::locks_t active;
   page_t* remote_buffer;
   page_t* local_buffer;
-  S step;
   Op operate;
 };
 

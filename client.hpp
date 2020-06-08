@@ -32,14 +32,14 @@ enum class client_state : uint8_t
 // criteria for the slot to be awaiting gc?
 
 template <size_t N, template <size_t> class bitmap_types, typename C,
-          typename Fill, typename Use, typename S>
+          typename Fill, typename Use, typename Step>
 struct client
 {
   using bt = bitmap_types<N>;
 
   client(C copy, typename bt::inbox_t inbox, typename bt::outbox_t outbox,
          typename bt::locks_t active, page_t* remote_buffer,
-         page_t* local_buffer, S step, Fill fill = fill_nop, Use use = use_nop)
+         page_t* local_buffer, Fill fill = fill_nop, Use use = use_nop)
 
       : copy(copy),
         inbox(inbox),
@@ -47,24 +47,12 @@ struct client
         active(active),
         remote_buffer(remote_buffer),
         local_buffer(local_buffer),
-        step(step),
         fill(fill),
         use(use)
   {
   }
 
-  size_t spin_until_claimed_slot()
-  {
-    for (;;)
-      {
-        size_t slot = active.try_claim_any_empty_slot();
-        if (slot != SIZE_MAX)
-          {
-            step(__LINE__);
-            return slot;
-          }
-      }
-  }
+  void step(int x, void* y) { Step::call(x, y); }
 
   size_t words()
   {
@@ -332,7 +320,6 @@ struct client
   typename bt::locks_t active;
   page_t* remote_buffer;
   page_t* local_buffer;
-  S step;
   Fill fill;
   Use use;
 

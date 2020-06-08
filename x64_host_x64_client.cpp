@@ -77,7 +77,6 @@ TEST_CASE("hazard")
   page_t server_buffer[N];
 
   hostrpc::copy_functor_memcpy_pull cp;
-  hostrpc::nop_stepper st;
 
   using mailbox_ptr_t =
       std::unique_ptr<mailbox_t<N>::slot_bitmap_data_t,
@@ -100,10 +99,10 @@ TEST_CASE("hazard")
   lockarray_t<N> server_active(server_active_data.get());
 
   x64_x64_client client(cp, recv, send, client_active, &server_buffer[0],
-                        &client_buffer[0], st, fill{}, use{});
+                        &client_buffer[0], fill{}, use{});
 
   x64_x64_server server(cp, send, recv, server_active, &client_buffer[0],
-                        &server_buffer[0], st, operate{});
+                        &server_buffer[0], operate{});
 
   _Atomic bool server_live(true);
 

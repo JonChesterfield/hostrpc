@@ -16,7 +16,7 @@ void client_instance(
                       decltype(fill), decltype(use), decltype(step)>;
 
   client_type c = {cp,           inbox, outbox, active, remote_buffer,
-                   local_buffer, step,  fill,   use};
+                   local_buffer, fill,  use};
 
   for (;;)
     {

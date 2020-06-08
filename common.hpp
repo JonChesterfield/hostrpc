@@ -669,7 +669,7 @@ inline void step(_Atomic(uint64_t) * steps_left)
 
 struct nop_stepper
 {
-  void operator()(int, void *) {}
+  static void call(int, void *) {}
 };
 
 struct default_stepper_state
@@ -687,7 +687,7 @@ struct default_stepper_state
 
 struct default_stepper
 {
-  void operator()(int line, void *v)
+  static void call(int line, void *v)
   {
     default_stepper_state *state = static_cast<default_stepper_state *>(v);
     if (state->show_step)

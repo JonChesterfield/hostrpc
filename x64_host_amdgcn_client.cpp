@@ -31,7 +31,6 @@ void wip(hsa_region_t fine)
       reinterpret_cast<page_t*>(alloc_from_region(fine, N * sizeof(page_t)));
 
   hostrpc::copy_functor_memcpy_pull cp;
-  hostrpc::nop_stepper st;
 
   using mt = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
                          hsa_allocate_slot_bitmap_data>;
@@ -54,11 +53,11 @@ void wip(hsa_region_t fine)
   lt server_active(server_active_data);
 
   hostrpc::config::x64_amdgcn_client client(cp, recv, send, client_active,
-                                            server_buffer, client_buffer, st,
+                                            server_buffer, client_buffer,
                                             config::fill{}, config::use{});
 
   hostrpc::config::x64_amdgcn_server server(cp, send, recv, server_active,
-                                            client_buffer, server_buffer, st,
+                                            client_buffer, server_buffer,
                                             config::operate{});
 
   (void)client;
