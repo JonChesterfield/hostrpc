@@ -35,9 +35,8 @@ template <size_t N, typename C, typename Fill, typename Use, typename S>
 struct client
 {
   client(C copy, const mailbox_t<N> inbox, mailbox_t<N> outbox,
-         slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active,
-         page_t* remote_buffer, page_t* local_buffer, S step,
-         Fill fill = fill_nop, Use use = use_nop)
+         lockarray_t<N> active, page_t* remote_buffer, page_t* local_buffer,
+         S step, Fill fill = fill_nop, Use use = use_nop)
 
       : copy(copy),
         inbox(inbox),

@@ -165,44 +165,47 @@ struct cache
   }
 };
 
-// probably need scope as a template parameter on this
-// not a general purpose bitmap
-
-template <size_t N, size_t scope>
-struct slot_bitmap;
-
-template <size_t N>
-using mailbox_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>;
-
-template <size_t N>
-using lockarray_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>;
-
 template <size_t size>
-struct slot_bitmap_data
+struct x64_x64_slot_bitmap_data
 {
   constexpr const static size_t align = 64;
   static_assert(size % 64 == 0, "Size must be multiple of 64");
 
-  static slot_bitmap_data *alloc()
+  static x64_x64_slot_bitmap_data *alloc()
   {
     void *memory = ::aligned_alloc(align, size);
     assert(memory);
-    return new (memory) slot_bitmap_data;
+    return new (memory) x64_x64_slot_bitmap_data;
   }
-  static void free(slot_bitmap_data *d)
+  static void free(x64_x64_slot_bitmap_data *d)
   {
-    d->~slot_bitmap_data();
+    d->~x64_x64_slot_bitmap_data();
     ::free(d);
   }
   alignas(align) _Atomic uint64_t data[size / 64];
 
   struct deleter
   {
-    void operator()(slot_bitmap_data *d) { slot_bitmap_data::free(d); }
+    void operator()(x64_x64_slot_bitmap_data *d)
+    {
+      x64_x64_slot_bitmap_data::free(d);
+    }
   };
 };
 
-template <size_t N, size_t scope>
+template <size_t N, size_t scope,
+          template <size_t> class data_t = x64_x64_slot_bitmap_data>
+struct slot_bitmap;
+
+template <size_t N>
+using mailbox_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
+                              x64_x64_slot_bitmap_data>;
+
+template <size_t N>
+using lockarray_t =
+    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE, x64_x64_slot_bitmap_data>;
+
+template <size_t N, size_t scope, template <size_t> class data_t>
 struct slot_bitmap
 {
   static_assert(N != 0, "");
@@ -213,7 +216,7 @@ struct slot_bitmap
 
   static_assert(sizeof(uint64_t) == sizeof(_Atomic uint64_t), "");
 
-  using slot_bitmap_data_t = slot_bitmap_data<size()>;
+  using slot_bitmap_data_t = data_t<size()>;
 
   static_assert(sizeof(slot_bitmap_data_t *) == 8, "");
 
@@ -402,8 +405,9 @@ struct slot_bitmap
 };
 
 // on return true, loaded contains active[w]
-template <size_t N, size_t scope>
-bool slot_bitmap<N, scope>::try_claim_empty_slot(size_t i, uint64_t *loaded)
+template <size_t N, size_t scope, template <size_t> class data_t>
+bool slot_bitmap<N, scope, data_t>::try_claim_empty_slot(size_t i,
+                                                         uint64_t *loaded)
 {
   assert(i < N);
   size_t w = index_to_element(i);

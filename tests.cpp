@@ -10,7 +10,8 @@
 TEST_CASE("Bitmap")
 {
   using test_bitmap_t =
-      hostrpc::slot_bitmap<128, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>;
+      hostrpc::slot_bitmap<128, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
+                           hostrpc::x64_x64_slot_bitmap_data>;
   using bitmap_ptr_t =
       std::unique_ptr<test_bitmap_t::slot_bitmap_data_t,
                       test_bitmap_t::slot_bitmap_data_t::deleter>;

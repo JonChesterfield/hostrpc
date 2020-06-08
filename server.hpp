@@ -24,9 +24,8 @@ template <size_t N, typename C, typename Op, typename S>
 struct server
 {
   server(C copy, const mailbox_t<N> inbox, mailbox_t<N> outbox,
-         slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active,
-         page_t* remote_buffer, page_t* local_buffer, S step,
-         Op operate = operate_nop)
+         lockarray_t<N> active, page_t* remote_buffer, page_t* local_buffer,
+         S step, Op operate = operate_nop)
       : copy(copy),
         inbox(inbox),
         outbox(outbox),
