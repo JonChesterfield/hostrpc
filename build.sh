@@ -17,7 +17,7 @@ OPT="opt"
 GPU="--target=amdgcn-amd-amdhsa -march=gfx906 -mcpu=gfx906"
 
 X64FLAGS="-g -O2 -emit-llvm -pthread"
-AMDGCNFLAGS="-O2 -emit-llvm -ffreestanding $GPU"
+AMDGCNFLAGS="-O2 -emit-llvm -ffreestanding -fno-exceptions $GPU"
 
 CXXCL="clang++ -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 $GPU"
 
@@ -67,7 +67,7 @@ $CXX $LDFLAGS amdgcn_loader.x64.bc x64_host_amdgcn_client.x64.bc -o amdgcn_loade
 # Build the device library that calls into main()
 $CXXCL amdgcn_loader_entry.cl -emit-llvm -c -o amdgcn_loader_entry.gcn.bc
 $CXX $AMDGCNFLAGS amdgcn_loader_cast.cpp -c -o amdgcn_loader_cast.gcn.bc
-$LINK amdgcn_loader_entry.gcn.bc amdgcn_loader_cast.gcn.bc -internalize -internalize-public-api-list="device_entry" | opt -O2 -o amdgcn_loader_device.gcn.bc
+$LINK amdgcn_loader_entry.gcn.bc amdgcn_loader_cast.gcn.bc | opt -O2 -o amdgcn_loader_device.gcn.bc
 llvm-dis amdgcn_loader_device.gcn.bc
 llc --mcpu=gfx906 amdgcn_loader_device.gcn.bc
 
@@ -79,7 +79,7 @@ $CXX $AMDGCNFLAGS amdgcn_main.cpp -emit-llvm -c -o amdgcn_main.gcn.bc
 llvm-link amdgcn_main.gcn.bc amdgcn_loader_device.gcn.bc x64_host_amdgcn_client.gcn.bc -o executable_device.gcn.bc
 
 # Link the device image
-$CXX $GPU executable_device.gcn.bc -o a.out && ./a.out other arguments woo
+$CXX $GPU executable_device.gcn.bc -o a.out
 
 # Register amdhsa elf magic with kernel
 # One off
@@ -94,7 +94,10 @@ $CXX $GPU executable_device.gcn.bc -o a.out && ./a.out other arguments woo
 rm -f states.exe
 $CXX tests.x64.bc states.x64.bc catch.o x64_host_x64_client.x64.bc $LDFLAGS -o states.exe
 
-time ./states.exe hazard
+# time ./states.exe hazard
+
+echo "Call executable"
+./a.out
 
 # time valgrind --leak-check=full --fair-sched=yes ./states.exe hazard
 

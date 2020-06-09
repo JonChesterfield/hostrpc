@@ -1,23 +1,15 @@
 
-static int strcmp(const char *l, const char *r)
-{
-  // from musl
-  for (; *l == *r && *l; l++, r++)
-    ;
-  return *(unsigned char *)l - *(unsigned char *)r;
-}
+#include "x64_host_amdgcn_client_api.hpp"
 
 // Example.
 extern "C" __attribute__((visibility("default"))) int main(int argc,
                                                            char **argv)
 {
-  for (int i = 0; i < argc; i++)
-    {
-      if (strcmp(argv[i], "arguments") == 0)
-        {
-          return i;
-        }
-    }
+  (void)argc;
+  (void)argv;
+  uint64_t data[8] = {0, 1, 2, 3, 4, 5, 6, 7};
 
-  return argc;
+  hostcall_client_async(data);
+
+  return 0;
 }

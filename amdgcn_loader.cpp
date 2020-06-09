@@ -291,16 +291,18 @@ int main(int argc, char **argv)
 
   hsa_signal_store_release(queue->doorbell_signal, packet_id);
 
-  while (hsa_signal_wait_acquire(packet->completion_signal,
-                                 HSA_SIGNAL_CONDITION_EQ, 0, UINT64_MAX,
-                                 HSA_WAIT_STATE_ACTIVE) != 0)
+  do
     {
       // TODO: Run a hostcall server in here
       // TODO: Polling is better than waiting here as it lets the initial
       // dispatch spawn a graph
 
+      printf("tick\n");
       hostcall_server_handle_one_packet();
     }
+  while (hsa_signal_wait_acquire(packet->completion_signal,
+                                 HSA_SIGNAL_CONDITION_EQ, 0, UINT64_MAX,
+                                 HSA_WAIT_STATE_ACTIVE) != 0);
 
   int result;
   memcpy(&result, result_location, 4);

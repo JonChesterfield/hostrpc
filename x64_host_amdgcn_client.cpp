@@ -1,12 +1,15 @@
 #include "x64_host_amdgcn_client.hpp"
 
 #if defined(__AMDGCN__)
+__attribute__((visibility("default")))
 hostrpc::x64_amdgcn_client<hostrpc::x64_host_amdgcn_array_size>
     client_singleton;
 
 void hostcall_client_async(uint64_t data[8])
 {
-  client_singleton.rpc_invoke<false>(static_cast<void*>(&data[0]));
+  // slightly easier to tell if it's running if the code is synchronous
+  // currently, true hangs and false disables the queue
+  client_singleton.rpc_invoke<true>(static_cast<void*>(&data[0]));
 }
 
 #else
