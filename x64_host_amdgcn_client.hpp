@@ -58,14 +58,10 @@ struct operate
     for (unsigned c = 0; c < 64; c++)
       {
         hostrpc::cacheline_t &line = page->cacheline[c];
-        std::swap(line.element[0], line.element[7]);
-        std::swap(line.element[1], line.element[6]);
-        std::swap(line.element[2], line.element[5]);
-        std::swap(line.element[3], line.element[4]);
-        for (unsigned i = 0; i < 8; i++)
-          {
-            line.element[i]++;
-          }
+        printf("[%u:] %lu %lu %lu %lu %lu %lu %lu %lu\n", c, line.element[0],
+               line.element[1], line.element[2], line.element[3],
+               line.element[4], line.element[5], line.element[6],
+               line.element[7]);
       }
   }
 };
@@ -88,7 +84,6 @@ class x64_amdgcn_bitmap_types
 // need to allocate buffers for both together
 // allocation functions are only available in the host
 
-
 template <size_t N>
 using x64_amdgcn_client =
     hostrpc::client<N, config::x64_amdgcn_bitmap_types,
@@ -103,26 +98,22 @@ using x64_amdgcn_server =
                     hostrpc::nop_stepper>;
 #endif
 
-
-  // TODO: Put this in an interface header
+// TODO: Put this in an interface header
 static const constexpr size_t x64_host_amdgcn_array_size =
     2048;  // needs to scale with CUs
 
 #if defined(__AMDGCN__)
 // todo: wire up a host alternative?
-  extern x64_amdgcn_client<x64_host_amdgcn_array_size> client_singleton;
-  void hostcall_client_async(uint64_t data[8]);
+extern x64_amdgcn_client<x64_host_amdgcn_array_size> client_singleton;
+void hostcall_client_async(uint64_t data[8]);
 
-  #else
-  extern x64_amdgcn_server<x64_host_amdgcn_array_size> server_singleton;
-  void hostcall_server_init();
-  void hostcall_server_dtor();
-  void hostcall_server_handle_one_packet();
+#else
+extern x64_amdgcn_server<x64_host_amdgcn_array_size> server_singleton;
+void *hostcall_server_init(hsa_region_t fine, void *client_address);
+void hostcall_server_dtor(void *);
+void hostcall_server_handle_one_packet();
 #endif
 
-
-
-  
 #if !defined(__AMDGCN__)
 namespace
 {

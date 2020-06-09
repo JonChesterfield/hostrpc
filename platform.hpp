@@ -70,11 +70,10 @@ namespace platform
 inline void sleep_briefly(void) { __builtin_amdgcn_s_sleep(0); }
 inline void sleep(void) { __builtin_amdgcn_s_sleep(100); }
 
-
-  __attribute__((always_inline)) inline uint32_t get_lane_id(void)
-  {
-return      __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
-  }
+__attribute__((always_inline)) inline uint32_t get_lane_id(void)
+{
+  return __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
+}
 __attribute__((always_inline)) inline bool is_master_lane(void)
 {
   // TODO: 32 wide wavefront, consider not using raw intrinsics here

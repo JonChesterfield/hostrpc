@@ -77,13 +77,9 @@ struct client
   void serialize(uint64_t* to)
   {
     inbox.serialize(&to[0]);
-
     outbox.serialize(&to[1]);
-
     active.serialize(&to[2]);
-
     __builtin_memcpy(&to[3], &remote_buffer, 8);
-
     __builtin_memcpy(&to[4], &local_buffer, 8);
   }
 

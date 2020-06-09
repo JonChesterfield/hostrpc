@@ -49,6 +49,26 @@ struct server
   {
   }
 
+
+  static constexpr size_t serialize_size() { return 5; }
+  void serialize(uint64_t* to)
+  {
+    inbox.serialize(&to[0]);
+    outbox.serialize(&to[1]);
+    active.serialize(&to[2]);
+    __builtin_memcpy(&to[3], &remote_buffer, 8);
+    __builtin_memcpy(&to[4], &local_buffer, 8);
+  }
+
+  void deserialize(uint64_t* from)
+  {
+    inbox.deserialize(&from[0]);
+    outbox.deserialize(&from[1]);
+    active.deserialize(&from[2]);
+    __builtin_memcpy(&remote_buffer, &from[3], 8);
+    __builtin_memcpy(&local_buffer, &from[4], 8);
+  }
+  
   void step(int x, void* y) { Step::call(x, y); }
 
   void dump_word(uint64_t word)
