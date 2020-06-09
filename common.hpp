@@ -223,6 +223,7 @@ struct slot_bitmap
   slot_bitmap_data_t *a;
   slot_bitmap(slot_bitmap_data_t *memory)
   {
+    static_assert(sizeof(slot_bitmap) == 8,"");
     assert(memory);
     a = memory;
     for (size_t i = 0; i < words(); i++)

@@ -74,11 +74,11 @@ clang++ -std=c++17 -Wall -Wextra $X64FLAGS -I$HSAINC x64_host_amdgcn_client.cpp 
 # $CXX $AMDGCNFLAGS client.cpp -c -o client.amdgcn.bc
 # $CXX $AMDGCNFLAGS server.cpp -c -o server.amdgcn.bc
 # llc seems to need to be told what architecture it's disassembling
-#for bc in *.x64.bc *.amdgcn.bc ; do
-#    ll=`echo $bc | sed 's_.bc_.ll_g'`
-#    opt -strip-debug $bc -S -o $ll
-#    llc $ll
-#done
+for bc in *.x64.bc ; do
+    ll=`echo $bc | sed 's_.bc_.ll_g'`
+    opt -strip-debug $bc -S -o $ll
+    llc $ll
+done
 
 # $CXX catch.o x64_host_amdgcn_client.bc $LDFLAGS -o hsa.exe && time ./hsa.exe
 

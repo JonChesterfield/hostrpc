@@ -152,7 +152,7 @@ struct server
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
         uint64_t updated_out = outbox.release_slot_returning_updated_word(slot);
         assert((updated_out & this_slot) == 0);
-
+        (void)updated_out;
         return;
       }
 

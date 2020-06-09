@@ -54,8 +54,11 @@ struct client
         remote_buffer(remote_buffer),
         local_buffer(local_buffer)
   {
+    static_assert(sizeof(client) == 40, "");
   }
 
+
+  
   void step(int x, void* y) { Step::call(x, y); }
 
   size_t words()
@@ -112,6 +115,7 @@ struct client
 
   // true if did work
   template <bool have_continuation>
+  __attribute__((noinline))
   bool rpc_invoke_given_slot(void* application_state, size_t slot)
   {
     assert(slot != SIZE_MAX);
@@ -260,6 +264,7 @@ struct client
 
   // Returns true if it successfully launched the task
   template <bool have_continuation>
+  __attribute__((noinline))
   bool rpc_invoke(void* application_state)
   {
     step(__LINE__, application_state);
@@ -325,9 +330,6 @@ struct client
   typename bt::locks_t active;
   page_t* remote_buffer;
   page_t* local_buffer;
-
-  static_assert(sizeof(inbox) == 8, "");
-  static_assert(sizeof(active) == 8, "");
 };
 
 }  // namespace hostrpc
