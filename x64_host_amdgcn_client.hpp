@@ -2,12 +2,14 @@
 #define HOSTRPC_X64_HOST_AMDGCN_CLIENT_HPP_INCLUDED
 
 #include "client.hpp"
+#include "platform.hpp"
 #include "server.hpp"
 
 // hsa uses freestanding C headers, unlike hsa.hpp
+#if !defined(__AMDGCN__)
 #include "hsa.h"
-
 #include <string.h>
+#endif
 
 namespace hostrpc
 {
@@ -17,28 +19,7 @@ struct hsa_allocate_slot_bitmap_data
   constexpr const static size_t align = 64;
   static_assert(size % 64 == 0, "Size must be multiple of 64");
 
-  static hsa_allocate_slot_bitmap_data *alloc(hsa_region_t region)
-  {
-    void *memory;
-    hsa_status_t r = hsa_memory_allocate(region, size, &memory);
-    if (r != HSA_STATUS_SUCCESS)
-      {
-        return nullptr;
-      }
-
-    return new (memory) hsa_allocate_slot_bitmap_data;
-  }
-  static void free(hsa_allocate_slot_bitmap_data *d) { (void)d; }
   alignas(align) _Atomic uint64_t data[size / 64];
-
-  struct deleter
-  {
-    void operator()(hsa_allocate_slot_bitmap_data *d)
-    {
-      hsa_allocate_slot_bitmap_data::free(d);
-    }
-  };
-
 };
 
 namespace config
@@ -47,18 +28,29 @@ struct fill
 {
   static void call(hostrpc::page_t *page, void *dv)
   {
-    __builtin_memcpy(page, dv, sizeof(hostrpc::page_t));
+    uint64_t *d = static_cast<uint64_t *>(dv);
+    if (platform::is_master_lane())
+      {
+        for (unsigned i = 0; i < 64; i++)
+          {
+            page->cacheline[i].element[0] = 0;
+          }
+      }
+    hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
+    for (unsigned i = 0; i < 8; i++)
+      {
+        line->element[i] = d[i];
+      }
   };
 };
 
 struct use
 {
-  static void call(hostrpc::page_t *page, void *dv)
-  {
-    __builtin_memcpy(dv, page, sizeof(hostrpc::page_t));
-  };
+  static void call(hostrpc::page_t *, void *){};
 };
 
+#if !defined(__AMDGCN__)
+// printf isn't available on target yet
 struct operate
 {
   static void call(hostrpc::page_t *page, void *)
@@ -77,6 +69,7 @@ struct operate
       }
   }
 };
+#endif
 
 template <size_t N>
 class x64_amdgcn_bitmap_types
@@ -95,15 +88,6 @@ class x64_amdgcn_bitmap_types
 // need to allocate buffers for both together
 // allocation functions are only available in the host
 
-namespace
-{
-void *alloc_from_region(hsa_region_t region, size_t size)
-{
-  void *res;
-  hsa_status_t r = hsa_memory_allocate(region, size, &res);
-  return (r == HSA_STATUS_SUCCESS) ? res : nullptr;
-}
-}  // namespace
 
 template <size_t N>
 using x64_amdgcn_client =
@@ -111,11 +95,66 @@ using x64_amdgcn_client =
                     hostrpc::copy_functor_memcpy_pull, config::fill,
                     config::use, hostrpc::nop_stepper>;
 
+#if !defined(__AMDGCN__)
 template <size_t N>
 using x64_amdgcn_server =
     hostrpc::server<N, config::x64_amdgcn_bitmap_types,
                     hostrpc::copy_functor_memcpy_pull, config::operate,
                     hostrpc::nop_stepper>;
+#endif
+
+
+  // TODO: Put this in an interface header
+static const constexpr size_t x64_host_amdgcn_array_size =
+    2048;  // needs to scale with CUs
+
+#if defined(__AMDGCN__)
+// todo: wire up a host alternative?
+  extern x64_amdgcn_client<x64_host_amdgcn_array_size> client_singleton;
+  void hostcall_client_async(uint64_t data[8]);
+
+  #else
+  extern x64_amdgcn_server<x64_host_amdgcn_array_size> server_singleton;
+  void hostcall_server_init();
+  void hostcall_server_dtor();
+  void hostcall_server_handle_one_packet();
+#endif
+
+
+
+  
+#if !defined(__AMDGCN__)
+namespace
+{
+// allocate/free are out of line as they only exist on the host
+template <size_t size>
+inline hsa_allocate_slot_bitmap_data<size> *hsa_allocate_slot_bitmap_data_alloc(
+    hsa_region_t region)
+{
+  void *memory;
+  hsa_status_t r = hsa_memory_allocate(region, size, &memory);
+  if (r != HSA_STATUS_SUCCESS)
+    {
+      return nullptr;
+    }
+
+  return new (memory) hsa_allocate_slot_bitmap_data<size>;
+}
+
+template <size_t size>
+inline void hsa_allocate_slot_bitmap_data_free(
+    hsa_allocate_slot_bitmap_data<size> *d)
+{
+  hsa_memory_free(static_cast<void *>(d));
+}
+
+inline void *alloc_from_region(hsa_region_t region, size_t size)
+{
+  void *res;
+  hsa_status_t r = hsa_memory_allocate(region, size, &res);
+  return (r == HSA_STATUS_SUCCESS) ? res : nullptr;
+}
+}  // namespace
 
 template <size_t N>
 struct x64_amdgcn_pair
@@ -134,15 +173,15 @@ struct x64_amdgcn_pair
         reinterpret_cast<page_t *>(alloc_from_region(fine, N * sizeof(page_t)));
 
     typename mt::slot_bitmap_data_t *send_data =
-        mt::slot_bitmap_data_t::alloc(fine);
+        hsa_allocate_slot_bitmap_data_alloc<N>(fine);
     typename mt::slot_bitmap_data_t *recv_data =
-        mt::slot_bitmap_data_t::alloc(fine);
+        hsa_allocate_slot_bitmap_data_alloc<N>(fine);
 
     typename lt::slot_bitmap_data_t *client_active_data =
-        lt::slot_bitmap_data_t::alloc(fine);
+        hsa_allocate_slot_bitmap_data_alloc<N>(fine);
 
     typename lt::slot_bitmap_data_t *server_active_data =
-        lt::slot_bitmap_data_t::alloc(fine);
+        hsa_allocate_slot_bitmap_data_alloc<N>(fine);
 
     mt send = (send_data);
     mt recv = (recv_data);
@@ -163,20 +202,21 @@ struct x64_amdgcn_pair
       assert(memcmp(&client, &chk, 40) == 0);
     }
   }
-  
+
   ~x64_amdgcn_pair()
   {
     assert(client.inbox.data() == server.outbox.data());
     assert(client.outbox.data() == server.inbox.data());
 
-    mt::slot_bitmap_data_t::free(client.inbox.data());
-    mt::slot_bitmap_data_t::free(client.outbox.data());
+    hsa_allocate_slot_bitmap_data_free<N>(client.inbox.data());
+    hsa_allocate_slot_bitmap_data_free<N>(client.outbox.data());
 
-    mt::slot_bitmap_data_t::free(client.active.data());
-    mt::slot_bitmap_data_t::free(server.active.data());
+    hsa_allocate_slot_bitmap_data_free<N>(client.active.data());
+    hsa_allocate_slot_bitmap_data_free<N>(server.active.data());
 
     assert(client.local_buffer == server.remote_buffer);
     assert(client.remote_buffer == server.local_buffer);
+
     hsa_memory_free(client.local_buffer);
     hsa_memory_free(server.local_buffer);
   }
@@ -184,7 +224,7 @@ struct x64_amdgcn_pair
   x64_amdgcn_client<N> client;
   x64_amdgcn_server<N> server;
 };
-
+#endif
 }  // namespace hostrpc
 
 #endif

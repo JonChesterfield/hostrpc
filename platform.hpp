@@ -32,6 +32,7 @@ inline void sleep_briefly(void)
 inline void sleep(void) { sleep_noexcept(1000); }
 
 inline bool is_master_lane(void) { return true; }
+inline uint32_t get_lane_id(void) { return 0; }
 inline uint32_t broadcast_master(uint32_t x) { return x; }
 inline uint64_t broadcast_master(uint64_t x) { return x; }
 }  // namespace platform
@@ -69,6 +70,11 @@ namespace platform
 inline void sleep_briefly(void) { __builtin_amdgcn_s_sleep(0); }
 inline void sleep(void) { __builtin_amdgcn_s_sleep(100); }
 
+
+  __attribute__((always_inline)) inline uint32_t get_lane_id(void)
+  {
+return      __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
+  }
 __attribute__((always_inline)) inline bool is_master_lane(void)
 {
   // TODO: 32 wide wavefront, consider not using raw intrinsics here
@@ -77,8 +83,7 @@ __attribute__((always_inline)) inline bool is_master_lane(void)
   // TODO: check codegen for trunc lowest_active vs expanding lane_id
   // TODO: ffs is lifted from openmp runtime, looks like it should be ctz
   uint32_t lowest_active = __builtin_ffsl(activemask) - 1;
-  uint32_t lane_id =
-      __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
+  uint32_t lane_id = get_lane_id();
 
   // TODO: readfirstlane(lane_id) == lowest_active?
   return lane_id == lowest_active;
