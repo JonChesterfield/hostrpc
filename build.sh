@@ -8,7 +8,7 @@ HSALIBDIR="$(readlink -f ~/rocm/aomp/hsa/lib/)"
 HSALIB="$HSALIBDIR/libhsa-runtime64.so"
 
 CC="clang -std=c99 -Wall -Wextra"
-CXX="clang++ -std=c++11 -Wall -Wextra " #-DNDEBUG"
+CXX="clang++ -std=c++11 -Wall -Wextra -DNDEBUG"
 LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR"
 LLC="llc"
 LINK="llvm-link"
@@ -16,8 +16,8 @@ OPT="opt"
 
 GPU="--target=amdgcn-amd-amdhsa -march=gfx906 -mcpu=gfx906"
 
-X64FLAGS="-g -O1 -emit-llvm -pthread"
-AMDGCNFLAGS="-O1 -emit-llvm -ffreestanding $GPU"
+X64FLAGS="-g -O3 -emit-llvm -pthread"
+AMDGCNFLAGS="-O3 -emit-llvm -ffreestanding $GPU"
 
 CXXCL="clang++ -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 $GPU"
 

@@ -199,7 +199,7 @@ struct server
   }
 
   // Returns true if it handled one task. Does not attempt multiple tasks
-  bool rpc_handle(void* application_state)
+  bool rpc_handle(void* application_state) noexcept
   {
     // printf("Server rpc_handle\n");
 

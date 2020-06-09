@@ -57,8 +57,6 @@ struct client
     static_assert(sizeof(client) == 40, "");
   }
 
-
-  
   void step(int x, void* y) { Step::call(x, y); }
 
   size_t words()
@@ -115,8 +113,8 @@ struct client
 
   // true if did work
   template <bool have_continuation>
-  __attribute__((noinline))
-  bool rpc_invoke_given_slot(void* application_state, size_t slot)
+  __attribute__((noinline)) bool rpc_invoke_given_slot(void* application_state,
+                                                       size_t slot) noexcept
   {
     assert(slot != SIZE_MAX);
     const uint64_t element = index_to_element(slot);
@@ -204,16 +202,6 @@ struct client
             if (rep == max_rep)
               {
                 rep = 0;
-                if (tracker.slots[slot] != UINT32_MAX)
-                  {
-                    printf("probably stalled here: waiting on slot %zu\n",
-                           slot);
-                    printf("slot %lu owned by %u\n", slot, tracker.slots[slot]);
-                    // e.g. inbox 0, outbox 1, active 1,
-                    inbox.dump();
-                    outbox.dump();
-                    active.dump();
-                  }
               }
           }
 
@@ -264,8 +252,7 @@ struct client
 
   // Returns true if it successfully launched the task
   template <bool have_continuation>
-  __attribute__((noinline))
-  bool rpc_invoke(void* application_state)
+  __attribute__((noinline)) bool rpc_invoke(void* application_state) noexcept
   {
     step(__LINE__, application_state);
 

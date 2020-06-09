@@ -9,7 +9,7 @@ namespace
 {
 struct fill
 {
-static void call(hostrpc::page_t *page, void *dv)
+  static void call(hostrpc::page_t *page, void *dv)
   {
     __builtin_memcpy(page, dv, sizeof(hostrpc::page_t));
   };
@@ -17,7 +17,7 @@ static void call(hostrpc::page_t *page, void *dv)
 
 struct use
 {
- static void call (hostrpc::page_t *page, void *dv)
+  static void call(hostrpc::page_t *page, void *dv)
   {
     __builtin_memcpy(dv, page, sizeof(hostrpc::page_t));
   };
@@ -44,15 +44,13 @@ struct operate
 
 }  // namespace
 
-using x64_x64_client =
-    hostrpc::client<128, hostrpc::x64_x64_bitmap_types,
-                    hostrpc::copy_functor_memcpy_pull, fill,
-                    use, hostrpc::nop_stepper>;
+using x64_x64_client = hostrpc::client<128, hostrpc::x64_x64_bitmap_types,
+                                       hostrpc::copy_functor_memcpy_pull, fill,
+                                       use, hostrpc::nop_stepper>;
 
-using x64_x64_server =
-    hostrpc::server<128, hostrpc::x64_x64_bitmap_types,
-                    hostrpc::copy_functor_memcpy_pull, operate,
-                    hostrpc::nop_stepper>;
+using x64_x64_server = hostrpc::server<128, hostrpc::x64_x64_bitmap_types,
+                                       hostrpc::copy_functor_memcpy_pull,
+                                       operate, hostrpc::nop_stepper>;
 
 static void init_page(hostrpc::page_t *page, uint64_t v)
 {

@@ -223,7 +223,7 @@ struct slot_bitmap
   slot_bitmap_data_t *a;
   slot_bitmap(slot_bitmap_data_t *memory)
   {
-    static_assert(sizeof(slot_bitmap) == 8,"");
+    static_assert(sizeof(slot_bitmap) == 8, "");
     assert(memory);
     a = memory;
     for (size_t i = 0; i < words(); i++)
@@ -464,10 +464,23 @@ bool slot_bitmap<N, scope, data_t>::try_claim_empty_slot(size_t i,
     }
 }
 
-struct slot_owner;
+template <bool enable>
+struct slot_owner_t;
 extern thread_local unsigned my_id;
+
+using slot_owner = slot_owner_t<false>;
 extern slot_owner tracker;
-struct slot_owner
+
+template <>
+struct slot_owner_t<false>
+{
+  void dump() {}
+  void claim(uint64_t) {}
+  void release(uint64_t) {}
+};
+
+template <>
+struct slot_owner_t<true>
 {
   void dump()
   {
@@ -478,7 +491,7 @@ struct slot_owner
       }
   }
   static const bool verbose = false;
-  slot_owner()
+  slot_owner_t()
   {
     for (unsigned i = 0; i < sizeof(slots) / sizeof(slots[0]); i++)
       {

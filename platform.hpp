@@ -15,13 +15,21 @@ void sleep_briefly(void);
 
 namespace platform
 {
+// local toolchain thinks usleep might throw. That induces a bunch of exception
+// control flow where there otherwise wouldn't be any. Will fix by calling into
+// std::chrono, bodge for now
+static __attribute__((noinline)) void sleep_noexcept(unsigned int t) noexcept
+{
+  usleep(t);
+}
+
 inline void sleep_briefly(void)
 {
   // <thread> conflicts with <stdatomic.h>
   // std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  usleep(10);
+  sleep_noexcept(10);
 }
-inline void sleep(void) { usleep(1000); }
+inline void sleep(void) { sleep_noexcept(1000); }
 
 inline bool is_master_lane(void) { return true; }
 inline uint32_t broadcast_master(uint32_t x) { return x; }
