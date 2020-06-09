@@ -8,7 +8,7 @@ HSALIBDIR="$(readlink -f ~/rocm/aomp/hsa/lib/)"
 HSALIB="$HSALIBDIR/libhsa-runtime64.so"
 
 CC="clang -std=c99 -Wall -Wextra"
-CXX="clang++ -std=c++11 -Wall -Wextra -DNDEBUG"
+CXX="clang++ -std=c++11 -Wall -Wextra " # -DNDEBUG"
 LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR"
 LLC="llc"
 LINK="llvm-link"

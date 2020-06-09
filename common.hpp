@@ -234,6 +234,8 @@ struct slot_bitmap
       }
   }
 
+  slot_bitmap_data_t *data() { return a; }
+
   static constexpr size_t serialize_size() { return 1; }
   void serialize(uint64_t *to)
   {

@@ -40,6 +40,15 @@ struct server
   {
   }
 
+  server()
+      : inbox{},
+        outbox{},
+        active{},
+        remote_buffer(nullptr),
+        local_buffer(nullptr)
+  {
+  }
+
   void step(int x, void* y) { Step::call(x, y); }
 
   void dump_word(uint64_t word)
