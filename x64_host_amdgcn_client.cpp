@@ -4,12 +4,14 @@
 hostrpc::x64_amdgcn_client<hostrpc::x64_host_amdgcn_array_size>
     client_singleton;
 
-void hostrpc::hostcall_client_async(uint64_t data[8])
+void hostcall_client_async(uint64_t data[8])
 {
   client_singleton.rpc_invoke<false>(static_cast<void*>(&data[0]));
 }
 
 #else
+
+const char* hostcall_client_symbol() { return "client_singleton"; }
 
 // #include "hsa.hpp" // probably can't use this directly
 hostrpc::x64_amdgcn_server<hostrpc::x64_host_amdgcn_array_size>

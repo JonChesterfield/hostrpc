@@ -5,6 +5,8 @@
 #include "platform.hpp"
 #include "server.hpp"
 
+#include "x64_host_amdgcn_client_api.hpp"
+
 // hsa uses freestanding C headers, unlike hsa.hpp
 #if !defined(__AMDGCN__)
 #include "hsa.h"
@@ -101,18 +103,6 @@ using x64_amdgcn_server =
 // TODO: Put this in an interface header
 static const constexpr size_t x64_host_amdgcn_array_size =
     2048;  // needs to scale with CUs
-
-#if defined(__AMDGCN__)
-// todo: wire up a host alternative?
-extern x64_amdgcn_client<x64_host_amdgcn_array_size> client_singleton;
-void hostcall_client_async(uint64_t data[8]);
-
-#else
-extern x64_amdgcn_server<x64_host_amdgcn_array_size> server_singleton;
-void *hostcall_server_init(hsa_region_t fine, void *client_address);
-void hostcall_server_dtor(void *);
-void hostcall_server_handle_one_packet();
-#endif
 
 #if !defined(__AMDGCN__)
 namespace

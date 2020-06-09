@@ -3,6 +3,8 @@
 #include <cstring>
 #include <vector>
 
+#include "x64_host_amdgcn_client_api.hpp"
+
 size_t bytes_for_argv_strtab(int argc, char **argv)
 {
   size_t count = 0;
@@ -262,6 +264,10 @@ int main(int argc, char **argv)
       }
   }
 
+  uint64_t client_addr = find_symbol_address(ex, hostcall_client_symbol());
+  void *server_state = hostcall_server_init(
+      fine_grained_region, reinterpret_cast<void *>(client_addr));
+
   // Claim a packet
   uint64_t packet_id = hsa_queue_add_write_index_relaxed(queue, 1);
   hsa_kernel_dispatch_packet_t *packet =
@@ -292,10 +298,14 @@ int main(int argc, char **argv)
       // TODO: Run a hostcall server in here
       // TODO: Polling is better than waiting here as it lets the initial
       // dispatch spawn a graph
+
+      hostcall_server_handle_one_packet();
     }
 
   int result;
   memcpy(&result, result_location, 4);
+
+  hostcall_server_dtor(server_state);
 
   hsa_signal_destroy(packet->completion_signal);
   hsa_queue_destroy(queue);
