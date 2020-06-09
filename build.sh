@@ -16,8 +16,8 @@ OPT="opt"
 
 GPU="--target=amdgcn-amd-amdhsa -march=gfx906 -mcpu=gfx906"
 
-X64FLAGS="-g -O3 -emit-llvm -pthread"
-AMDGCNFLAGS="-O3 -emit-llvm -ffreestanding $GPU"
+X64FLAGS="-g -O2 -emit-llvm -pthread"
+AMDGCNFLAGS="-O2 -emit-llvm -ffreestanding $GPU"
 
 CXXCL="clang++ -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 $GPU"
 

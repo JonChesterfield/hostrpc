@@ -221,15 +221,30 @@ struct slot_bitmap
   static_assert(sizeof(slot_bitmap_data_t *) == 8, "");
 
   slot_bitmap_data_t *a;
-  slot_bitmap(slot_bitmap_data_t *memory)
+  slot_bitmap() : a(nullptr) {}
+
+  slot_bitmap(slot_bitmap_data_t *memory) : a(memory)
   {
     static_assert(sizeof(slot_bitmap) == 8, "");
+    static_assert(alignof(slot_bitmap) == 8, "");
     assert(memory);
-    a = memory;
     for (size_t i = 0; i < words(); i++)
       {
         a->data[i] = 0;
       }
+  }
+
+  static constexpr size_t serialize_size() { return 1; }
+  void serialize(uint64_t *to)
+  {
+    uint64_t v;
+    __builtin_memcpy(&v, &a, 8);
+    to[0] = v;
+  }
+  void deserialize(uint64_t *from)
+  {
+    uint64_t v = from[0];
+    __builtin_memcpy(&a, &v, 8);
   }
 
   ~slot_bitmap() {}
@@ -409,8 +424,8 @@ template <size_t N>
 class x64_x64_bitmap_types
 {
  public:
-  using inbox_t = const slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
-                                    x64_x64_slot_bitmap_data>;
+  using inbox_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
+                              x64_x64_slot_bitmap_data>;
   using outbox_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
                                x64_x64_slot_bitmap_data>;
   using locks_t =

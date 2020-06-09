@@ -27,3 +27,13 @@ extern "C" __attribute__((noinline)) void client_instance_from_pointers(
   client_type c = {inbox, outbox, active, remote_buffer, local_buffer};
   client_instance_direct(c);
 }
+
+void sink(client_type*);
+
+extern "C" __attribute__((noinline)) void client_instance_from_words(
+    uint64_t* from)
+{
+  client_type c;
+  c.deserialize(from);
+  client_instance_direct(c);
+}

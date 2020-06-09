@@ -82,8 +82,8 @@ template <size_t N>
 class x64_amdgcn_bitmap_types
 {
  public:
-  using inbox_t = const slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
-                                    hsa_allocate_slot_bitmap_data>;
+  using inbox_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
+                              hsa_allocate_slot_bitmap_data>;
   using outbox_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
                                hsa_allocate_slot_bitmap_data>;
   using locks_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE,
