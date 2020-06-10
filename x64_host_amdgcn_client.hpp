@@ -100,9 +100,8 @@ using x64_amdgcn_server =
                     hostrpc::nop_stepper>;
 #endif
 
-// TODO: Put this in an interface header
-static const constexpr size_t x64_host_amdgcn_array_size =
-    2048;  // needs to scale with CUs
+// needs to scale with CUs
+static const constexpr size_t x64_host_amdgcn_array_size = 128;
 
 #if !defined(__AMDGCN__)
 namespace

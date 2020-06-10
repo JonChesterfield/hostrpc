@@ -44,18 +44,23 @@ inline uint64_t broadcast_master(uint64_t x) { return x; }
 #ifdef NDEBUG
 #define assert(x) (void)0
 #else
-#define assert(x) \
-  ((void)((x) || (__assert_fail(#x, __FILE__, __LINE__, __func__), 0)))
+#define assert_str(x) assert_str_1(x)
+#define assert_str_1(x) #x
+#define assert(x)                                                           \
+  ((void)((x) || (__assert_fail("L:" assert_str(__LINE__) " " #x, __FILE__, \
+                                __LINE__, __func__),                        \
+                  0)))
 #endif
 
 #undef static_assert
 #define static_assert _Static_assert
 
-__attribute__((always_inline)) inline void __assert_fail(const char *,
+__attribute__((always_inline)) inline void __assert_fail(const char *str,
                                                          const char *,
-                                                         unsigned int,
+                                                         unsigned int line,
                                                          const char *)
 {
+  asm("// Assert fail " ::"r"(line), "r"(str));
   __builtin_trap();
 }
 

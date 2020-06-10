@@ -211,7 +211,11 @@ struct client
       __c11_atomic_thread_fence(__ATOMIC_RELEASE);
       uint64_t o = outbox.claim_slot_returning_updated_word(slot);
       c.o = o;
+
+      assert(detail::nthbitset64(o, subindex));
     }
+
+    // We get this far, but the host never sees the work
 
     assert(c.is(0b011));
 
@@ -340,8 +344,10 @@ struct client
     // wave release slot
     step(__LINE__, application_state);
     {
-      uint64_t a = active.release_slot_returning_updated_word(slot);
-      (void)a;
+      if (platform::is_master_lane())
+        {
+          active.release_slot_returning_updated_word(slot);
+        }
     }
 
     return r;

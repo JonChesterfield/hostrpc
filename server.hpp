@@ -95,6 +95,7 @@ struct server
     // tries each bit in the work available at the time of the call
     // doesn't load new information for work_available to preserve termination
 
+    printf("w %lu / visible %lu\n", w, work_visible);
     while (work_available != 0)
       {
         // this tries each slot in the
@@ -267,6 +268,7 @@ struct server
 
     if (slot == SIZE_MAX)
       {
+        printf("No work\n");
         return false;
       }
 

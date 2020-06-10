@@ -3,6 +3,8 @@
 #include <cstring>
 #include <vector>
 
+#include <unistd.h>
+
 #include "x64_host_amdgcn_client_api.hpp"
 
 size_t bytes_for_argv_strtab(int argc, char **argv)
@@ -297,12 +299,19 @@ int main(int argc, char **argv)
       // TODO: Polling is better than waiting here as it lets the initial
       // dispatch spawn a graph
 
-      printf("tick\n");
+      printf("tick A\n");
       hostcall_server_handle_one_packet();
     }
   while (hsa_signal_wait_acquire(packet->completion_signal,
-                                 HSA_SIGNAL_CONDITION_EQ, 0, UINT64_MAX,
+                                 HSA_SIGNAL_CONDITION_EQ, 0, 5000000000,
                                  HSA_WAIT_STATE_ACTIVE) != 0);
+
+  for (unsigned i = 0; i < 10; i++)
+    {
+      printf("tick B\n");
+      hostcall_server_handle_one_packet();
+      sleep(5);
+    }
 
   int result;
   memcpy(&result, result_location, 4);

@@ -9,7 +9,7 @@ void hostcall_client_async(uint64_t data[8])
 {
   // slightly easier to tell if it's running if the code is synchronous
   // currently, true hangs and false disables the queue
-  client_singleton.rpc_invoke<true>(static_cast<void*>(&data[0]));
+  client_singleton.rpc_invoke<false>(static_cast<void*>(&data[0]));
 }
 
 #else

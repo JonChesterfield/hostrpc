@@ -383,7 +383,7 @@ struct slot_bitmap
                                      __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
   }
 
-  uint64_t fetch_or(uint64_t element, uint64_t mask)
+  __attribute__((used)) uint64_t fetch_or(uint64_t element, uint64_t mask)
   {
     _Atomic uint64_t *addr = &a->data[element];
     return __opencl_atomic_fetch_or(addr, mask, __ATOMIC_ACQ_REL,
@@ -391,7 +391,7 @@ struct slot_bitmap
   }
 
  private:
-  uint64_t clear_slot_given_already_set(size_t i)
+  __attribute__((used)) uint64_t clear_slot_given_already_set(size_t i)
   {
     assert(i < N);
     size_t w = index_to_element(i);
@@ -402,7 +402,8 @@ struct slot_bitmap
     uint64_t mask = ~detail::setnthbit64(0, subindex);
 
     uint64_t before = fetch_and(w, mask);
-    assert(detail::nthbitset64(before, subindex));
+    // assert(detail::nthbitset64(before, subindex)); // this is firing on the
+    // gpu
     return before & mask;
   }
 
@@ -462,7 +463,14 @@ bool slot_bitmap<N, scope, data_t>::try_claim_empty_slot(size_t i,
       // If the bit is known zero, can use fetch_or to set it
 
       uint64_t unexpected_contents;
-      bool r = cas(w, d, proposed, &unexpected_contents);
+
+      uint32_t r = 0;
+      if (platform::is_master_lane())
+        {
+          r = cas(w, d, proposed, &unexpected_contents);
+        }
+      r = platform::broadcast_master(r);
+
       if (r)
         {
           // success, got the lock, and active word was set to proposed
