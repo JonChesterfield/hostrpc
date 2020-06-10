@@ -363,7 +363,9 @@ struct slot_bitmap
     // cas is not used across devices by this library
     bool r = __opencl_atomic_compare_exchange_weak(
         addr, &expect, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED,
-        __OPENCL_MEMORY_SCOPE_DEVICE);
+        __OPENCL_MEMORY_SCOPE_DEVICE
+
+    );
 
     // on success, bits in memory have been set to replace
     // on failure, value found is now in expect
@@ -376,18 +378,67 @@ struct slot_bitmap
 
   // returns value from before the and/or
   // these are used on memory visible fromi all svm devices
-  uint64_t fetch_and(uint64_t element, uint64_t mask)
+
+#if defined(__x86_64__)
+#define USE_FETCH_OP 1
+#else
+#define USE_FETCH_OP 0
+
+#endif
+
+  __attribute__((used)) uint64_t fetch_and(uint64_t element, uint64_t mask)
   {
     _Atomic uint64_t *addr = &a->data[element];
-    return __opencl_atomic_fetch_and(addr, mask, __ATOMIC_ACQ_REL,
+
+#if USE_FETCH_OP
+    // This seems to work on amdgcn, but only with acquire. acq/rel fails
+    return __opencl_atomic_fetch_and(addr, mask,
+                                     __ATOMIC_ACQUIRE,  // __ATOMIC_ACQ_REL,
                                      __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+#else
+    uint64_t current = __opencl_atomic_load(
+        addr, __ATOMIC_RELAXED, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+    while (1)
+      {
+        uint64_t replace = current & mask;
+
+        bool r = __opencl_atomic_compare_exchange_weak(
+            addr, &current, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED,
+            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+
+        if (r)
+          {
+            return current;
+          }
+      }
+
+#endif
   }
 
   __attribute__((used)) uint64_t fetch_or(uint64_t element, uint64_t mask)
   {
     _Atomic uint64_t *addr = &a->data[element];
+
+#if USE_FETCH_OP
+    // the host never sees the value set here
     return __opencl_atomic_fetch_or(addr, mask, __ATOMIC_ACQ_REL,
                                     __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+#else
+    uint64_t current = __opencl_atomic_load(
+        addr, __ATOMIC_RELAXED, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+    while (1)
+      {
+        uint64_t replace = current | mask;
+
+        bool r = __opencl_atomic_compare_exchange_weak(
+            addr, &current, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED,
+            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+        if (r)
+          {
+            return current;
+          }
+      }
+#endif
   }
 
  private:

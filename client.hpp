@@ -152,6 +152,8 @@ struct client
 
   void shout()
   {
+    return;
+
     // shout at the host, 0 is 'user data', gets masked with 0xff
 #if defined __AMDGCN__
 
@@ -212,7 +214,10 @@ struct client
         return false;
       }
 
-    assert(c.is(0b001));
+    if (platform::is_master_lane())
+      {
+        assert(c.is(0b001));
+      }
     step(__LINE__, application_state);
     tracker.claim(slot);
 
@@ -237,7 +242,6 @@ struct client
         }
     }
 
-    // We get this far, but the host never sees the work
     if (platform::is_master_lane())
       {
         assert(c.is(0b011));
@@ -252,41 +256,30 @@ struct client
 
     // with a continuation, outbox is cleared before this thread returns
     // otherwise, garbage collection eneds to clear that outbox
+
     if (have_continuation)
       {
         // wait for H1, result available
-        uint64_t loaded;
-        unsigned rep = 0;
-        unsigned max_rep = 10000;
+        uint64_t loaded = 0;
 #if defined __AMDGCN__
         while (true)
           {
             uint32_t got = 1;
             if (platform::is_master_lane())
               {
-                if (0)
-                  {
-                    // I think this should be relaxed, existing hostcall uses
-                    // acquire
-                    got = inbox(slot, &loaded);
-                  }
-                else
-                  {
-                    size_t w = index_to_element(slot);
-                    uint64_t d = __opencl_atomic_load(
-                        &(inbox.a->data[w]), __ATOMIC_ACQUIRE,
-                        __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-                    loaded = d;
-                    got = detail::nthbitset64(d, index_to_subindex(slot));
-                  }
+                // I think this should be relaxed, existing hostcall uses
+                // acquire
+                got = inbox(slot, &loaded);
 
                 c.i = loaded;
-                assert(c.is(0b011));
+                if (!got)
+                  {
+                    assert(c.is(0b011));
+                  }
               }
             loaded = platform::broadcast_master(loaded);
             got = platform::broadcast_master(got);
 
-            assert(got == 0);  //
             if (got == 1)
               {
                 break;
@@ -294,11 +287,6 @@ struct client
 
             shout();
             platform::sleep();
-            rep++;
-            if (rep == max_rep)
-              {
-                rep = 0;
-              }
           }
 #else
         while (inbox(slot, &loaded) != 1)
@@ -306,19 +294,16 @@ struct client
             c.i = loaded;
             assert(c.is(0b011));
             platform::sleep();
-            rep++;
-            if (rep == max_rep)
-              {
-                rep = 0;
-              }
           }
 #endif
 
-        assert(0);
-
         __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
-        c.i = loaded;
-        assert(c.is(0b111));
+
+        if (platform::is_master_lane())
+          {
+            c.i = loaded;
+            assert(c.is(0b111));
+          }
 
         tracker.claim(slot);
 
@@ -338,11 +323,17 @@ struct client
         // todo: is it better to leave this for the GC?
         {
           __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-          uint64_t o = outbox.release_slot_returning_updated_word(slot);
-          c.o = o;
+          if (platform::is_master_lane())
+            {
+              uint64_t o = outbox.release_slot_returning_updated_word(slot);
+              c.o = o;
+            }
         }
 
-        assert(c.is(0b101));
+        if (platform::is_master_lane())
+          {
+            assert(c.is(0b101));
+          }
         step(__LINE__, application_state);
       }
 

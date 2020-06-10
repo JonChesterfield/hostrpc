@@ -95,7 +95,6 @@ struct server
     // tries each bit in the work available at the time of the call
     // doesn't load new information for work_available to preserve termination
 
-    printf("w %lu / visible %lu\n", w, work_visible);
     while (work_available != 0)
       {
         // this tries each slot in the
@@ -230,15 +229,13 @@ struct server
   // Returns true if it handled one task. Does not attempt multiple tasks
   bool rpc_handle(void* application_state) noexcept
   {
-    // printf("Server rpc_handle\n");
-
     step(__LINE__, application_state);
 
     // garbage collection should be fairly cheap when there is none,
     // and the presence of any occupied slots can starve the client
     for (uint64_t w = 0; w < inbox.words(); w++)
       {
-        try_garbage_collect_word_server(w);
+        // try_garbage_collect_word_server(w);
       }
 
     step(__LINE__, application_state);
@@ -268,7 +265,6 @@ struct server
 
     if (slot == SIZE_MAX)
       {
-        printf("No work\n");
         return false;
       }
 

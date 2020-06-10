@@ -48,7 +48,15 @@ struct fill
 
 struct use
 {
-  static void call(hostrpc::page_t *, void *){};
+  static void call(hostrpc::page_t *page, void *dv)
+  {
+    uint64_t *d = static_cast<uint64_t *>(dv);
+    hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
+    for (unsigned i = 0; i < 8; i++)
+      {
+        d[i] = line->element[i];
+      }
+  };
 };
 
 #if !defined(__AMDGCN__)
@@ -60,10 +68,11 @@ struct operate
     for (unsigned c = 0; c < 64; c++)
       {
         hostrpc::cacheline_t &line = page->cacheline[c];
-        printf("[%u:] %lu %lu %lu %lu %lu %lu %lu %lu\n", c, line.element[0],
-               line.element[1], line.element[2], line.element[3],
-               line.element[4], line.element[5], line.element[6],
-               line.element[7]);
+        for (unsigned e = 0; e < 8; e++)
+          {
+            uint64_t elt = line.element[e];
+            line.element[e] = elt * elt;
+          }
       }
   }
 };
@@ -101,7 +110,7 @@ using x64_amdgcn_server =
 #endif
 
 // needs to scale with CUs
-static const constexpr size_t x64_host_amdgcn_array_size = 128;
+static const constexpr size_t x64_host_amdgcn_array_size = 2048;
 
 #if !defined(__AMDGCN__)
 namespace

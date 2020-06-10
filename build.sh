@@ -5,7 +5,10 @@ RDIR=$HOME/rocm/aomp
 
 HSAINC="$(readlink -f ~/aomp/rocr-runtime/src/inc/)"
 HSALIBDIR="$(readlink -f ~/rocm/aomp/hsa/lib/)"
-HSALIB="$HSALIBDIR/libhsa-runtime64.so"
+HSALIB="$HSALIBDIR/libhsa-runtime64.so" # $RDIR/lib/libomptarget.rtl.hsa.so"
+
+# Shouldn't need these, but copying across from initial for reference 
+# DLIBS="$RDIR/lib/libdevice/libhostcall-amdgcn-gfx906.bc $RDIR/lib/ockl.amdgcn.bc $RDIR/lib/oclc_wavefrontsize64_on.amdgcn.bc $RDIR/lib/oclc_isa_version_906.amdgcn.bc"
 
 CC="clang -std=c99 -Wall -Wextra"
 CXX="clang++ -std=c++11 -Wall -Wextra " # -DNDEBUG"

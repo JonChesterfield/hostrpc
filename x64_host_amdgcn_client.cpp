@@ -8,7 +8,6 @@ hostrpc::x64_amdgcn_client<hostrpc::x64_host_amdgcn_array_size>
 void hostcall_client_async(uint64_t data[8])
 {
   // slightly easier to tell if it's running if the code is synchronous
-  // currently, true hangs and false disables the queue
   client_singleton.rpc_invoke<true>(static_cast<void *>(&data[0]));
 }
 
@@ -95,15 +94,38 @@ void hostcall_server_dtor(void* arg)
   delete (res);
 }
 
-void hostcall_server_handle_one_packet(void* arg)
+bool hostcall_server_handle_one_packet(void* arg)
 {
   hostrpc::x64_amdgcn_pair<hostrpc::x64_host_amdgcn_array_size>* res =
       static_cast<
           hostrpc::x64_amdgcn_pair<hostrpc::x64_host_amdgcn_array_size>*>(arg);
+
+  const bool verbose = false;
+  if (verbose)
+    {
+      printf("Client\n");
+      res->client.inbox.dump();
+      res->client.outbox.dump();
+      res->client.active.dump();
+
+      printf("Server\n");
+      res->server.inbox.dump();
+      res->server.outbox.dump();
+      res->server.active.dump();
+    }
+#if 0
   hsa_signal_wait_acquire(res->signal, HSA_SIGNAL_CONDITION_NE, UINT64_MAX,
                           1024 * 1024, HSA_WAIT_STATE_BLOCKED);
+#endif
 
-  server_singleton.rpc_handle(nullptr);
+  bool r = server_singleton.rpc_handle(nullptr);
+
+  if (verbose)
+    {
+      printf(" --------------\n");
+    }
+
+  return r;
 }
 
 #endif
