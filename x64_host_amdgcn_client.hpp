@@ -31,11 +31,15 @@ struct fill
   static void call(hostrpc::page_t *page, void *dv)
   {
     uint64_t *d = static_cast<uint64_t *>(dv);
-    if (platform::is_master_lane())
+    if (0)
       {
-        for (unsigned i = 0; i < 64; i++)
+        // Will want to set inactive lanes to nop here, once there are some
+        if (platform::is_master_lane())
           {
-            page->cacheline[i].element[0] = 0;
+            for (unsigned i = 0; i < 64; i++)
+              {
+                page->cacheline[i].element[0] = 0;
+              }
           }
       }
     hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
@@ -68,11 +72,23 @@ struct operate
     for (unsigned c = 0; c < 64; c++)
       {
         hostrpc::cacheline_t &line = page->cacheline[c];
+
+#if 0
+        std::swap(line.element[0], line.element[7]);
+        std::swap(line.element[1], line.element[6]);
+        std::swap(line.element[2], line.element[5]);
+        std::swap(line.element[3], line.element[4]);
+        for (unsigned i = 0; i < 8; i++)
+          {
+            line.element[i]++;
+          }
+#else
         for (unsigned e = 0; e < 8; e++)
           {
             uint64_t elt = line.element[e];
             line.element[e] = elt * elt;
           }
+#endif
       }
   }
 };

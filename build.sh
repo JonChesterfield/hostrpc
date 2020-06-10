@@ -101,7 +101,7 @@ $CXX tests.x64.bc states.x64.bc catch.o x64_host_x64_client.x64.bc $LDFLAGS -o s
 # time ./states.exe hazard
 
 echo "Call executable"
-./a.out
+./a.out ; echo $?
 
 # time valgrind --leak-check=full --fair-sched=yes ./states.exe hazard
 

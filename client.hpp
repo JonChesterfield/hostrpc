@@ -150,24 +150,6 @@ struct client
     printf("%lu %lu %lu\n", i, o, a);
   }
 
-  void shout()
-  {
-    return;
-
-    // shout at the host, 0 is 'user data', gets masked with 0xff
-#if defined __AMDGCN__
-
-#if 1
-    hostcall_client_kick_signal();
-#else
-    for (unsigned i = 0; i < 256; i++)
-      {
-        __builtin_amdgcn_s_sendmsg(1, i);
-      }
-#endif
-#endif
-  }
-
   // true if did work
   template <bool have_continuation>
   __attribute__((noinline)) bool rpc_invoke_given_slot(void* application_state,
@@ -247,8 +229,6 @@ struct client
         assert(c.is(0b011));
       }
 
-    // hitting the signal doesn't seem to help
-    shout();
     step(__LINE__, application_state);
 
     // current strategy is drop interest in the slot, then wait for the
@@ -285,7 +265,6 @@ struct client
                 break;
               }
 
-            shout();
             platform::sleep();
           }
 #else
