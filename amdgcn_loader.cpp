@@ -267,8 +267,11 @@ int main(int argc, char **argv)
   }
 
   uint64_t client_addr = find_symbol_address(ex, hostcall_client_symbol());
+  uint64_t signal_addr = find_symbol_address(ex, hostcall_signal_symbol());
+    
   void *server_state = hostcall_server_init(
-      fine_grained_region, reinterpret_cast<void *>(client_addr));
+                                            fine_grained_region, reinterpret_cast<void *>(client_addr),
+                                            reinterpret_cast<void*>(signal_addr));
 
   // Claim a packet
   uint64_t packet_id = hsa_queue_add_write_index_relaxed(queue, 1);
@@ -300,7 +303,7 @@ int main(int argc, char **argv)
       // dispatch spawn a graph
 
       printf("tick A\n");
-      hostcall_server_handle_one_packet();
+      hostcall_server_handle_one_packet(server_state);
     }
   while (hsa_signal_wait_acquire(packet->completion_signal,
                                  HSA_SIGNAL_CONDITION_EQ, 0, 5000000000,
@@ -309,7 +312,7 @@ int main(int argc, char **argv)
   for (unsigned i = 0; i < 10; i++)
     {
       printf("tick B\n");
-      hostcall_server_handle_one_packet();
+      hostcall_server_handle_one_packet(server_state);
       sleep(5);
     }
 

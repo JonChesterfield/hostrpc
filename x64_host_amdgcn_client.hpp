@@ -203,6 +203,7 @@ struct x64_amdgcn_pair
 
   x64_amdgcn_client<N> client;
   x64_amdgcn_server<N> server;
+  hsa_signal_t signal;
 };
 #endif
 }  // namespace hostrpc

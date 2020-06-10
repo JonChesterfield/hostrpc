@@ -28,13 +28,14 @@ rm -rf *.s *.ll *.bc *.exe *device.o
 
 $CXX $X64FLAGS states.cpp -c -o states.x64.bc
 
+# TODO: Drop hsainc from x64 code
 
-$CXX $X64FLAGS client.cpp -c -o client.x64.bc
+$CXX $X64FLAGS -I$HSAINC client.cpp -c -o client.x64.bc
 $CXX $X64FLAGS server.cpp -c -o server.x64.bc
 
-$CXX $X64FLAGS x64_host_x64_client.cpp -c -o x64_host_x64_client.x64.bc
+$CXX $X64FLAGS -I$HSAINC x64_host_x64_client.cpp -c -o x64_host_x64_client.x64.bc
 
-$CXX $X64FLAGS tests.cpp -c -o tests.x64.bc
+$CXX $X64FLAGS -I$HSAINC tests.cpp -c -o tests.x64.bc
 
 
 $CXX $AMDGCNFLAGS x64_host_amdgcn_client.cpp -c -o x64_host_amdgcn_client.gcn.bc

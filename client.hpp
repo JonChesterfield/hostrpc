@@ -7,6 +7,10 @@
 // The normal terminology is:
 // Client makes a call to the server, which does ome work and sends back a reply
 
+// Layering falling apart a bit. Trying to work out if a signal is the missing
+// piece for memory visibility
+#include "x64_host_amdgcn_client_api.hpp"
+
 namespace hostrpc
 {
 struct fill_nop
@@ -146,6 +150,22 @@ struct client
     printf("%lu %lu %lu\n", i, o, a);
   }
 
+  void shout()
+  {
+    // shout at the host, 0 is 'user data', gets masked with 0xff
+#if defined __AMDGCN__
+
+#if 1
+    hostcall_client_kick_signal();
+#else
+    for (unsigned i = 0; i < 256; i++)
+      {
+        __builtin_amdgcn_s_sendmsg(1, i);
+      }
+#endif
+#endif
+  }
+
   // true if did work
   template <bool have_continuation>
   __attribute__((noinline)) bool rpc_invoke_given_slot(void* application_state,
@@ -209,16 +229,22 @@ struct client
     // wave_publish work
     {
       __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-      uint64_t o = outbox.claim_slot_returning_updated_word(slot);
-      c.o = o;
-
-      assert(detail::nthbitset64(o, subindex));
+      if (platform::is_master_lane())
+        {
+          uint64_t o = outbox.claim_slot_returning_updated_word(slot);
+          c.o = o;
+          assert(detail::nthbitset64(o, subindex));
+        }
     }
 
     // We get this far, but the host never sees the work
+    if (platform::is_master_lane())
+      {
+        assert(c.is(0b011));
+      }
 
-    assert(c.is(0b011));
-
+    // hitting the signal doesn't seem to help
+    shout();
     step(__LINE__, application_state);
 
     // current strategy is drop interest in the slot, then wait for the
@@ -232,6 +258,49 @@ struct client
         uint64_t loaded;
         unsigned rep = 0;
         unsigned max_rep = 10000;
+#if defined __AMDGCN__
+        while (true)
+          {
+            uint32_t got = 1;
+            if (platform::is_master_lane())
+              {
+                if (0)
+                  {
+                    // I think this should be relaxed, existing hostcall uses
+                    // acquire
+                    got = inbox(slot, &loaded);
+                  }
+                else
+                  {
+                    size_t w = index_to_element(slot);
+                    uint64_t d = __opencl_atomic_load(
+                        &(inbox.a->data[w]), __ATOMIC_ACQUIRE,
+                        __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+                    loaded = d;
+                    got = detail::nthbitset64(d, index_to_subindex(slot));
+                  }
+
+                c.i = loaded;
+                assert(c.is(0b011));
+              }
+            loaded = platform::broadcast_master(loaded);
+            got = platform::broadcast_master(got);
+
+            assert(got == 0);  //
+            if (got == 1)
+              {
+                break;
+              }
+
+            shout();
+            platform::sleep();
+            rep++;
+            if (rep == max_rep)
+              {
+                rep = 0;
+              }
+          }
+#else
         while (inbox(slot, &loaded) != 1)
           {
             c.i = loaded;
@@ -243,6 +312,9 @@ struct client
                 rep = 0;
               }
           }
+#endif
+
+        assert(0);
 
         __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
         c.i = loaded;
