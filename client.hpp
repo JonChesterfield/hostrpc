@@ -187,7 +187,10 @@ struct client
     if (garbage)
       {
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-        outbox.release_slot_returning_updated_word(slot);
+        if (platform::is_master_lane())
+          {
+            outbox.release_slot_returning_updated_word(slot);
+          }
         return false;
       }
 
@@ -196,10 +199,7 @@ struct client
         return false;
       }
 
-    if (platform::is_master_lane())
-      {
-        assert(c.is(0b001));
-      }
+    assert(c.is(0b001));
     step(__LINE__, application_state);
     tracker.claim(slot);
 
@@ -216,18 +216,12 @@ struct client
     // wave_publish work
     {
       __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-      if (platform::is_master_lane())
-        {
-          uint64_t o = outbox.claim_slot_returning_updated_word(slot);
-          c.o = o;
-          assert(detail::nthbitset64(o, subindex));
-        }
+      uint64_t o = platform::critical<uint64_t>(
+          [&]() { return outbox.claim_slot_returning_updated_word(slot); });
+      c.o = o;
+      assert(detail::nthbitset64(o, subindex));
+      assert(c.is(0b011));
     }
-
-    if (platform::is_master_lane())
-      {
-        assert(c.is(0b011));
-      }
 
     step(__LINE__, application_state);
 
@@ -244,21 +238,13 @@ struct client
 #if defined __AMDGCN__
         while (true)
           {
-            uint32_t got = 1;
-            if (platform::is_master_lane())
-              {
-                // I think this should be relaxed, existing hostcall uses
-                // acquire
-                got = inbox(slot, &loaded);
+            uint32_t got = platform::critical<uint32_t>([&]() {
+              // I think this should be relaxed, existing hostcall uses
+              // acquire
+              return inbox(slot, &loaded);
+            });
 
-                c.i = loaded;
-                if (!got)
-                  {
-                    assert(c.is(0b011));
-                  }
-              }
             loaded = platform::broadcast_master(loaded);
-            got = platform::broadcast_master(got);
 
             if (got == 1)
               {
@@ -278,11 +264,8 @@ struct client
 
         __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
-        if (platform::is_master_lane())
-          {
-            c.i = loaded;
-            assert(c.is(0b111));
-          }
+        c.i = loaded;
+        assert(c.is(0b111));
 
         tracker.claim(slot);
 
@@ -300,19 +283,14 @@ struct client
 
         // mark the work as no longer in use
         // todo: is it better to leave this for the GC?
-        {
-          __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-          if (platform::is_master_lane())
-            {
-              uint64_t o = outbox.release_slot_returning_updated_word(slot);
-              c.o = o;
-            }
-        }
 
-        if (platform::is_master_lane())
-          {
-            assert(c.is(0b101));
-          }
+        __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+        uint64_t o = platform::critical<uint64_t>(
+            [&]() { return outbox.release_slot_returning_updated_word(slot); });
+
+        c.o = o;
+
+        assert(c.is(0b101));
         step(__LINE__, application_state);
       }
 
@@ -363,7 +341,6 @@ struct client
             if (active.try_claim_empty_slot(slot, &active_word))
               {
                 assert(active_word != 0);
-                // printf("try_claim succeeded\n");
                 // found a slot and locked it
                 break;
               }

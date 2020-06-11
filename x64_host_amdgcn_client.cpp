@@ -7,12 +7,21 @@ hostrpc::x64_amdgcn_client<hostrpc::x64_host_amdgcn_array_size>
 
 void hostcall_client(uint64_t data[8])
 {
-  client_singleton.rpc_invoke<true>(static_cast<void *>(&data[0]));
+  bool success = false;
+  while (!success)
+    {
+      success =
+          client_singleton.rpc_invoke<true>(static_cast<void *>(&data[0]));
+    }
 }
 
 void hostcall_client_async(uint64_t data[8])
 {
-  client_singleton.rpc_invoke<false>(static_cast<void *>(&data[0]));
+  bool success = false;
+  while (!success)
+    {
+      client_singleton.rpc_invoke<false>(static_cast<void *>(&data[0]));
+    }
 }
 
 namespace hostrpc

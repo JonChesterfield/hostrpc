@@ -288,27 +288,6 @@ struct slot_bitmap
   // cas, true on success
   bool try_claim_empty_slot(size_t i, uint64_t *);
 
-  size_t try_claim_any_empty_slot()
-  {
-    uint64_t tmp;
-    size_t slot = find_empty_slot();
-    if (slot != SIZE_MAX)
-      {
-        if (try_claim_empty_slot(slot, &tmp))
-          {
-            return slot;
-          }
-      }
-    return SIZE_MAX;
-  }
-
-  // not yet implemented, may be able to achieve the same
-  // effect by toggling 0/1
-
-  bool try_claim_full_slot(size_t) { return false; }
-  size_t try_claim_any_full_slot() { return SIZE_MAX; }
-  size_t find_full_slot() { return SIZE_MAX; }
-
   // assumes slot available
   void claim_slot(size_t i) { set_slot_given_already_clear(i); }
   uint64_t claim_slot_returning_updated_word(size_t i)
@@ -524,12 +503,10 @@ bool slot_bitmap<N, scope, data_t>::try_claim_empty_slot(size_t i,
 
       uint64_t unexpected_contents;
 
-      uint32_t r = 0;
-      if (platform::is_master_lane())
-        {
-          r = cas(w, d, proposed, &unexpected_contents);
-        }
-      r = platform::broadcast_master(r);
+      uint32_t r = platform::critical<uint32_t>(
+          [&]() { return cas(w, d, proposed, &unexpected_contents); });
+
+      unexpected_contents = platform::broadcast_master(unexpected_contents);
 
       if (r)
         {

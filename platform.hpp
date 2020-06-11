@@ -35,6 +35,7 @@ inline bool is_master_lane(void) { return true; }
 inline uint32_t get_lane_id(void) { return 0; }
 inline uint32_t broadcast_master(uint32_t x) { return x; }
 inline uint64_t broadcast_master(uint64_t x) { return x; }
+
 }  // namespace platform
 #endif
 
@@ -109,5 +110,21 @@ __attribute__((always_inline)) inline uint64_t broadcast_master(uint64_t x)
 
 }  // namespace platform
 #endif
+
+namespace platform
+{
+template <typename U, typename F>
+U critical(F f)
+{
+  U res = {};
+  if (is_master_lane())
+    {
+      res = f();
+    }
+  res = broadcast_master(res);
+  return res;
+}
+
+}  // namespace platform
 
 #endif
