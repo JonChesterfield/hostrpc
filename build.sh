@@ -19,7 +19,7 @@ OPT="opt"
 
 GPU="--target=amdgcn-amd-amdhsa -march=gfx906 -mcpu=gfx906"
 
-X64FLAGS="-g -O0 -emit-llvm -pthread"
+X64FLAGS="-g -O1 -emit-llvm -pthread"
 AMDGCNFLAGS="-g -O2 -emit-llvm -ffreestanding -fno-exceptions $GPU"
 
 CXXCL="clang++ -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 $GPU"
@@ -90,12 +90,10 @@ for bc in *.gcn.bc ; do
 done
 
 
-# $CXX catch.o x64_host_amdgcn_client.bc $LDFLAGS -o hsa.exe && time ./hsa.exe
-
 rm -f states.exe
 $CXX tests.x64.bc states.x64.bc catch.o x64_host_x64_client.x64.bc $LDFLAGS -o states.exe
 
-# time ./states.exe hazard
+time ./states.exe hazard
 
 echo "Call executable"
 time ./a.out ; echo $?

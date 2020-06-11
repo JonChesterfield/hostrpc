@@ -323,15 +323,10 @@ struct client
 
     step(__LINE__, application_state);
 
-    // wave_acquire_slot
-    // can only acquire a slot which is 000
     size_t slot = SIZE_MAX;
-
     for (uint64_t w = 0; w < words(); w++)
       {
         uint64_t active_word;
-        // may need to gc for there to be a slot
-        // try_garbage_collect_word_client(w);
         slot = find_candidate_client_slot(w);
         if (slot != SIZE_MAX)
           {

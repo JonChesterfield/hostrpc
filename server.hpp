@@ -85,6 +85,26 @@ struct server
     return i & ~o;
   }
 
+  size_t find_candidate_server_slot(uint64_t w)
+  {
+    uint64_t i = inbox.load_word(w);
+    uint64_t o = outbox.load_word(w);
+    uint64_t a = active.load_word(w);
+
+    uint64_t work = i & ~o;
+    uint64_t garbage = ~i & o;
+
+    uint64_t todo = work | garbage;
+
+    uint64_t available = todo & ~a;
+
+    if (available != 0)
+      {
+        return 64 * w + detail::ctz64(available);
+      }
+    return SIZE_MAX;
+  }
+
   size_t find_and_claim_slot(uint64_t w,
                              void* application_state)  // or SIZE_MAX
   {
@@ -137,7 +157,7 @@ struct server
     return inbox.words();
   }
 
-  void rpc_handle_given_slot(void* application_state, size_t slot)
+  bool rpc_handle_given_slot(void* application_state, size_t slot)
   {
     assert(slot != SIZE_MAX);
 
@@ -181,54 +201,64 @@ struct server
         uint64_t updated_out = outbox.release_slot_returning_updated_word(slot);
         assert((updated_out & this_slot) == 0);
         (void)updated_out;
-        return;
+        assert(lock_held());
+        return false;
       }
 
-    if (work_todo)
+    if (!work_todo)
       {
-        tracker.claim(slot);
-
-        assert(c.is(0b101));
-
         step(__LINE__, application_state);
-
-        Copy::pull_to_server_from_client((void*)&local_buffer[slot],
-                                         (void*)&remote_buffer[slot],
-                                         sizeof(page_t));
-        step(__LINE__, application_state);
-
-        Op::call(&local_buffer[slot], application_state);
-        step(__LINE__, application_state);
-
-        Copy::push_from_server_to_client((void*)&remote_buffer[slot],
-                                         (void*)&local_buffer[slot],
-                                         sizeof(page_t));
-        step(__LINE__, application_state);
-
-        assert(c.is(0b101));
-
-        tracker.release(slot);
-
-        // publish result
-        {
-          __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-          uint64_t o = outbox.claim_slot_returning_updated_word(slot);
-          c.o = o;
-        }
-        assert(c.is(0b111));
-        // leaves outbox live
-        return;
+        assert(lock_held());
+        return false;
       }
+
+    tracker.claim(slot);
+
+    assert(c.is(0b101));
 
     step(__LINE__, application_state);
 
+    Copy::pull_to_server_from_client((void*)&local_buffer[slot],
+                                     (void*)&remote_buffer[slot],
+                                     sizeof(page_t));
+    step(__LINE__, application_state);
+
+    Op::call(&local_buffer[slot], application_state);
+    step(__LINE__, application_state);
+
+    Copy::push_from_server_to_client((void*)&remote_buffer[slot],
+                                     (void*)&local_buffer[slot],
+                                     sizeof(page_t));
+    step(__LINE__, application_state);
+
+    assert(c.is(0b101));
+
+    tracker.release(slot);
+
+    // publish result
+    {
+      __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+      uint64_t o = outbox.claim_slot_returning_updated_word(slot);
+      c.o = o;
+    }
+    assert(c.is(0b111));
+    // leaves outbox live
     assert(lock_held());
-    return;
+    return true;
   }
 
   // Returns true if it handled one task. Does not attempt multiple tasks
+
   bool rpc_handle(void* application_state) noexcept
   {
+    uint64_t location = 0;
+    return rpc_handle(application_state, &location);
+  }
+
+  // location != NULL, used to round robin across slots
+  bool rpc_handle(void* application_state, uint64_t* location) noexcept
+  {
+    (void)location;
     step(__LINE__, application_state);
 
     // garbage collection should be fairly cheap when there is none,
@@ -241,36 +271,40 @@ struct server
     step(__LINE__, application_state);
 
     size_t slot = SIZE_MAX;
-    {
-      // Always trying words in order is a potential problem in that later words
-      // may never be collected. Probably need the api to take a indicator of
-      // where to start scanning from
-
-      for (uint64_t w = 0; w < inbox.words(); w++)
-        {
-          // if there is no inbound work, it can be because the slots are
-          // all filled with garbage on the server side
-          try_garbage_collect_word_server(w);
-          slot = find_and_claim_slot(w, application_state);
-          if (slot != SIZE_MAX)
-            {
-              break;
-            }
-        }
-    }
+    for (uint64_t w = 0; w < inbox.words(); w++)
+      {
+        uint64_t active_word;
+        slot = find_candidate_server_slot(w);
+        if (slot != SIZE_MAX)
+          {
+            if (active.try_claim_empty_slot(slot, &active_word))
+              {
+                assert(active_word != 0);
+                break;
+              }
+            else
+              {
+                slot = SIZE_MAX;
+              }
+          }
+      }
 
     if (slot == SIZE_MAX)
       {
+        step(__LINE__, application_state);
         return false;
       }
 
-    rpc_handle_given_slot(application_state, slot);
+    bool r = rpc_handle_given_slot(application_state, slot);
 
-    uint64_t a = active.release_slot_returning_updated_word(slot);
-    assert(!detail::nthbitset64(a, index_to_subindex(slot)));
-    (void)a;
+    step(__LINE__, application_state);
+    {
+      uint64_t a = active.release_slot_returning_updated_word(slot);
+      assert(!detail::nthbitset64(a, index_to_subindex(slot)));
+      (void)a;
+    }
 
-    return true;
+    return r;
   }
 
   typename bt::inbox_t inbox;
