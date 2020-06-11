@@ -108,6 +108,8 @@ TEST_CASE("hazard")
     my_id = id;
     unsigned count = 0;
     unsigned since_work = 0;
+
+    uint64_t server_location = 0;
     for (;;)
       {
         if (!server_live)
@@ -115,7 +117,7 @@ TEST_CASE("hazard")
             printf("server %u did %u tasks\n", id, count);
             break;
           }
-        bool did_work = server.rpc_handle(nullptr);
+        bool did_work = server.rpc_handle(nullptr, &server_location);
         if (did_work)
           {
             count++;

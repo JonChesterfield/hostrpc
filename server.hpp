@@ -85,7 +85,7 @@ struct server
     return i & ~o;
   }
 
-  size_t find_candidate_server_slot(uint64_t w)
+  size_t find_candidate_server_slot(uint64_t w, uint64_t mask)
   {
     uint64_t i = inbox.load_word(w);
     uint64_t o = outbox.load_word(w);
@@ -96,7 +96,7 @@ struct server
 
     uint64_t todo = work | garbage;
 
-    uint64_t available = todo & ~a;
+    uint64_t available = todo & ~a & mask;
 
     if (available != 0)
       {
@@ -256,9 +256,8 @@ struct server
   }
 
   // location != NULL, used to round robin across slots
-  bool rpc_handle(void* application_state, uint64_t* location) noexcept
+  bool rpc_handle(void* application_state, uint64_t* location_arg) noexcept
   {
-    (void)location;
     step(__LINE__, application_state);
 
     // garbage collection should be fairly cheap when there is none,
@@ -270,11 +269,16 @@ struct server
 
     step(__LINE__, application_state);
 
+    uint64_t mask = UINT64_MAX;
     size_t slot = SIZE_MAX;
-    for (uint64_t w = 0; w < inbox.words(); w++)
+
+    uint64_t location = *location_arg;
+
+    for (uint64_t wc = 0; wc < words(); wc++)
       {
+        uint64_t w = (location + wc) % words();
         uint64_t active_word;
-        slot = find_candidate_server_slot(w);
+        slot = find_candidate_server_slot(w, mask);
         if (slot != SIZE_MAX)
           {
             if (active.try_claim_empty_slot(slot, &active_word))
@@ -295,6 +299,8 @@ struct server
         return false;
       }
 
+    *location_arg =
+        slot + 1;  // may only want to move starting point on success
     bool r = rpc_handle_given_slot(application_state, slot);
 
     step(__LINE__, application_state);
