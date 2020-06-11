@@ -293,6 +293,12 @@ inline hsa_region_t region_fine_grained(hsa_agent_t agent)
       agent);
 }
 
+inline hsa_region_t region_coarse_grained(hsa_agent_t agent)
+{
+  return detail::global_region_with_flag<HSA_REGION_GLOBAL_FLAG_COARSE_GRAINED>(
+      agent);
+}
+
 namespace detail
 {
 struct memory_deleter

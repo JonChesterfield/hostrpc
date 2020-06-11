@@ -42,10 +42,12 @@ const char* hostcall_client_symbol() { return "client_singleton"; }
 hostrpc::x64_amdgcn_server<hostrpc::x64_host_amdgcn_array_size>
     server_singleton;
 
-void* hostcall_server_init(hsa_region_t fine, void* client_address)
+void* hostcall_server_init(hsa_region_t fine, hsa_region_t gpu_coarse,
+                           void* client_address)
 {
   hostrpc::x64_amdgcn_pair<hostrpc::x64_host_amdgcn_array_size>* res =
-      new hostrpc::x64_amdgcn_pair<hostrpc::x64_host_amdgcn_array_size>(fine);
+      new hostrpc::x64_amdgcn_pair<hostrpc::x64_host_amdgcn_array_size>(
+          fine, gpu_coarse);
 
   {
     size_t sz = res->client.serialize_size();

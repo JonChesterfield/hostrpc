@@ -110,14 +110,14 @@ class x64_amdgcn_bitmap_types
 template <size_t N>
 using x64_amdgcn_client =
     hostrpc::client<N, config::x64_amdgcn_bitmap_types,
-                    hostrpc::copy_functor_memcpy_pull, config::fill,
+                    hostrpc::copy_functor_given_alias, config::fill,
                     config::use, hostrpc::nop_stepper>;
 
 #if !defined(__AMDGCN__)
 template <size_t N>
 using x64_amdgcn_server =
     hostrpc::server<N, config::x64_amdgcn_bitmap_types,
-                    hostrpc::copy_functor_memcpy_pull, config::operate,
+                    hostrpc::copy_functor_given_alias, config::operate,
                     hostrpc::nop_stepper>;
 #endif
 
@@ -166,12 +166,11 @@ struct x64_amdgcn_pair
   using lt = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE,
                          hsa_allocate_slot_bitmap_data>;
 
-  x64_amdgcn_pair(hsa_region_t fine)
+  x64_amdgcn_pair(hsa_region_t fine, hsa_region_t gpu_coarse)
   {
     hostrpc::page_t *client_buffer =
         reinterpret_cast<page_t *>(alloc_from_region(fine, N * sizeof(page_t)));
-    hostrpc::page_t *server_buffer =
-        reinterpret_cast<page_t *>(alloc_from_region(fine, N * sizeof(page_t)));
+    hostrpc::page_t *server_buffer = client_buffer;
 
     typename mt::slot_bitmap_data_t *send_data =
         hsa_allocate_slot_bitmap_data_alloc<N>(fine);
@@ -179,7 +178,7 @@ struct x64_amdgcn_pair
         hsa_allocate_slot_bitmap_data_alloc<N>(fine);
 
     typename lt::slot_bitmap_data_t *client_active_data =
-        hsa_allocate_slot_bitmap_data_alloc<N>(fine);
+        hsa_allocate_slot_bitmap_data_alloc<N>(gpu_coarse);
 
     typename lt::slot_bitmap_data_t *server_active_data =
         hsa_allocate_slot_bitmap_data_alloc<N>(fine);
@@ -218,8 +217,15 @@ struct x64_amdgcn_pair
     assert(client.local_buffer == server.remote_buffer);
     assert(client.remote_buffer == server.local_buffer);
 
-    hsa_memory_free(client.local_buffer);
-    hsa_memory_free(server.local_buffer);
+    if (client.local_buffer == client.remote_buffer)
+      {
+        hsa_memory_free(client.local_buffer);
+      }
+    else
+      {
+        hsa_memory_free(client.local_buffer);
+        hsa_memory_free(server.local_buffer);
+      }
   }
 
   x64_amdgcn_client<N> client;

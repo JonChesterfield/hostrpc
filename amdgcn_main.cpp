@@ -15,34 +15,12 @@ extern "C" __attribute__((visibility("default"))) int main(int argc,
   hostrpc::cacheline_t line;
   hostrpc::cacheline_t expect;
 
-  for (unsigned e = 0; e < 8; e++)
-    {
-      line.element[e] = initial_value + platform::get_lane_id() + e;
-      expect.element[e] = 2 * (line.element[e] + 1);
-    }
-
-  hostcall_client(&line.element[0]);
-
-  for (unsigned e = 0; e < 8; e++)
-    {
-      differ += (line.element[e] != expect.element[e]);
-    }
-
-  // Calling a second time shows curious properties
-  // O0: Memory violation raised by hsa. Either:
-  //     HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION:  The agent attempted to
-  //     access memory beyond the largest legal address
-  // or
-  // Memory access fault by GPU node-4 (Agent handle: 0x7331d0) on address
-  // 0x7f67fda1b000. Reason: Unknown.
-  // O1: Success
-  // O2: Runs but gets the answer wrong
-
-  if (1)
+  // gets very slow and/or hangs at 4000, suspect GC pressure or server
+  for (unsigned rep = 0; rep < 1500; rep++)
     {
       for (unsigned e = 0; e < 8; e++)
         {
-          line.element[e] = initial_value + platform::get_lane_id() + e;
+          line.element[e] = initial_value + platform::get_lane_id() + e + rep;
           expect.element[e] = 2 * (line.element[e] + 1);
         }
 

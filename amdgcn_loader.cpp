@@ -157,9 +157,11 @@ int main(int argc, char **argv)
 
   hsa_region_t kernarg_region = hsa::region_kernarg(kernel_agent);
   hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
+  hsa_region_t coarse_grained_region = hsa::region_coarse_grained(kernel_agent);
   {
     uint64_t fail = reinterpret_cast<uint64_t>(nullptr);
-    if (kernarg_region.handle == fail || fine_grained_region.handle == fail)
+    if (kernarg_region.handle == fail || fine_grained_region.handle == fail ||
+        coarse_grained_region.handle == fail)
       {
         fprintf(stderr, "Failed to find allocation region on kernel agent\n");
         exit(1);
@@ -298,8 +300,10 @@ int main(int argc, char **argv)
 
   uint64_t client_addr = find_symbol_address(ex, hostcall_client_symbol());
 
+  bool faster = false;  // coarse grain on locks isn't helping at present
   void *server_state = hostcall_server_init(
-      fine_grained_region, reinterpret_cast<void *>(client_addr));
+      fine_grained_region, faster ? coarse_grained_region : fine_grained_region,
+      reinterpret_cast<void *>(client_addr));
 
   // Claim a packet
   uint64_t packet_id = hsa_queue_add_write_index_relaxed(queue, 1);

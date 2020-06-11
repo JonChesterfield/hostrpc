@@ -5,7 +5,8 @@
 #include "memory.hpp"
 // Intend to have call and service working across gcn and x86
 // The normal terminology is:
-// Client makes a call to the server, which does some work and sends back a reply
+// Client makes a call to the server, which does some work and sends back a
+// reply
 
 // Layering falling apart a bit. Trying to work out if a signal is the missing
 // piece for memory visibility
@@ -249,7 +250,7 @@ struct client
             c.i = loaded;
 
             assert(got == 1 ? c.is(0b111) : c.is(0b011));
-            
+
             if (got == 1)
               {
                 break;
