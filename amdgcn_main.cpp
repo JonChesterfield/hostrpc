@@ -3,7 +3,6 @@
 #include "x64_host_amdgcn_client_api.hpp"
 // Example.
 
-
 extern "C" __attribute__((visibility("default"))) int main(int argc,
                                                            char **argv)
 {

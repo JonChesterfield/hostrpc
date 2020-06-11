@@ -177,7 +177,17 @@ int main(int argc, char **argv)
   // int padding
   // void * to_argv
   // int * to_result
-  size_t bytes_for_kernarg = 24;  // no implicit args yet
+
+  // there's also a number of implicit arguments, where those passed by atmi
+  // don't match those I see from an opencl kernel. The first 24 bytes are
+  // consistently used for offset_x, offset_y, offset_z. Zero those.
+  // opencl and atmi both think the implicit structure is 80 long.
+
+  size_t implicit_offset_size = 24;
+  size_t extra_implicit_size = 80 - implicit_offset_size;
+
+  // implicit offset needs to be 8 byte aligned, which it w/ 24 bytes explicit
+  size_t bytes_for_kernarg = 24 + implicit_offset_size + extra_implicit_size;
 
   auto offsets = offsets_into_strtab(app_argc, app_argv);
   size_t bytes_for_argv = 8 * app_argc;
@@ -237,16 +247,32 @@ int main(int argc, char **argv)
   // Set up kernel arguments
   {
     char *kernarg = (char *)kernarg_alloc.get();
-    unsigned z = 0;
+
+    // argc
     memcpy(kernarg, &app_argc, 4);
     kernarg += 4;
-    memcpy(kernarg, &z, 4);
+
+    // padding
+    memset(kernarg, 0, 4);
     kernarg += 4;
+
+    // argv
     void *raw_mutable_alloc = mutable_alloc.get();
     memcpy(kernarg, &raw_mutable_alloc, 8);
     kernarg += 8;
+
+    // result
     memcpy(kernarg, &result_location, 8);
     kernarg += 8;
+
+    // x, y, z implicit offsets
+    memset(kernarg, 0, implicit_offset_size);
+    kernarg += implicit_offset_size;
+
+    // remaining implicit gets scream. I don't think the kernels are
+    // using it, but if they do, -1 is relatively obvious in the dump
+    memset(kernarg, 0xff, extra_implicit_size);
+    kernarg += extra_implicit_size;
   }
 
   hsa_queue_t *queue;

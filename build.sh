@@ -49,19 +49,6 @@ $CXX $X64FLAGS -I$HSAINC x64_host_amdgcn_client.cpp -c -o x64_host_amdgcn_client
 $CXX $AMDGCNFLAGS client.cpp -c -o client.gcn.bc
 $CXX $AMDGCNFLAGS server.cpp -c -o server.gcn.bc
  
-# llc seems to need to be told what architecture it's disassembling
-for bc in *.x64.bc ; do
-    ll=`echo $bc | sed 's_.bc_.ll_g'`
-    opt -strip-debug $bc -S -o $ll
-    llc $ll
-done
-
-for bc in *.gcn.bc ; do
-    ll=`echo $bc | sed 's_.bc_.ll_g'`
-    opt -strip-debug $bc -S -o $ll
-    llc --mcpu=gfx906 $ll
-done
-
 
 # Build the device loader that assumes the device library is linked into the application
 # TODO: Embed it directly in the loader by patching call to main, as the loader doesn't do it
@@ -72,9 +59,6 @@ $CXX $LDFLAGS amdgcn_loader.x64.bc x64_host_amdgcn_client.x64.bc -o amdgcn_loade
 $CXXCL amdgcn_loader_entry.cl -emit-llvm -c -o amdgcn_loader_entry.gcn.bc
 $CXX $AMDGCNFLAGS amdgcn_loader_cast.cpp -c -o amdgcn_loader_cast.gcn.bc
 $LINK amdgcn_loader_entry.gcn.bc amdgcn_loader_cast.gcn.bc | opt -O2 -o amdgcn_loader_device.gcn.bc
-llvm-dis amdgcn_loader_device.gcn.bc
-llc --mcpu=gfx906 amdgcn_loader_device.gcn.bc
-
 
 # Build the device code that uses said library
 $CXX $AMDGCNFLAGS amdgcn_main.cpp -emit-llvm -c -o amdgcn_main.gcn.bc
@@ -91,6 +75,21 @@ $CXX $GPU executable_device.gcn.bc -o a.out
 
 # Persistent
 # echo ':amdgcn:M:0:\x7f\x45\x4c\x46\x02\x01\x01\x40\x01\x00\x00\x00\x00\x00\x00\x00::/home/amd/hostrpc/amdgcn_loader.exe:' >> /etc/binfmt.d/amdgcn.conf
+
+
+
+# llc seems to need to be told what architecture it's disassembling
+for bc in *.x64.bc ; do
+    ll=`echo $bc | sed 's_.bc_.ll_g'`
+    opt -strip-debug $bc -S -o $ll
+    llc $ll
+done
+
+for bc in *.gcn.bc ; do
+    ll=`echo $bc | sed 's_.bc_.ll_g'`
+    opt -strip-debug $bc -S -o $ll
+    llc --mcpu=gfx906 $ll
+done
 
 
 # $CXX catch.o x64_host_amdgcn_client.bc $LDFLAGS -o hsa.exe && time ./hsa.exe
