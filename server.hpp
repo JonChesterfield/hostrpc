@@ -114,7 +114,7 @@ struct server
         assert(detail::nthbitset64(work_available, idx));
         work_available = detail::clearnthbit64(work_available, idx);
 
-        // some things which were availabe in the inbox won't be anymore
+        // some things which were available in the inbox won't be anymore
         // only clear those that are no longer present, don't insert ones
         // that have just arrived, in order to preserve termination
         // this is a potential optimisation - reduces trips through the loop
@@ -242,12 +242,8 @@ struct server
 
     size_t slot = SIZE_MAX;
     {
-      // TODO: probably better to give up if there's no work to do instead of
-      // keep waiting for some. That means this call always completes in
-      // bounded time, after handling zero or one call
-
-      // always trying words in order is a potential problem in that later words
-      // may never be collected. probably need the api to take a indicator of
+      // Always trying words in order is a potential problem in that later words
+      // may never be collected. Probably need the api to take a indicator of
       // where to start scanning from
 
       for (uint64_t w = 0; w < inbox.words(); w++)

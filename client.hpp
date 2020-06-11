@@ -5,7 +5,7 @@
 #include "memory.hpp"
 // Intend to have call and service working across gcn and x86
 // The normal terminology is:
-// Client makes a call to the server, which does ome work and sends back a reply
+// Client makes a call to the server, which does some work and sends back a reply
 
 // Layering falling apart a bit. Trying to work out if a signal is the missing
 // piece for memory visibility
@@ -235,7 +235,7 @@ struct client
       {
         // wait for H1, result available
         uint64_t loaded = 0;
-#if defined __AMDGCN__
+
         while (true)
           {
             uint32_t got = platform::critical<uint32_t>([&]() {
@@ -246,27 +246,23 @@ struct client
 
             loaded = platform::broadcast_master(loaded);
 
+            c.i = loaded;
+
+            assert(got == 1 ? c.is(0b111) : c.is(0b011));
+            
             if (got == 1)
               {
                 break;
               }
 
+            // make this spin slightly cheaper
+            // todo: can the client do useful work while it waits? e.g. gc?
             platform::sleep();
           }
-#else
-        while (inbox(slot, &loaded) != 1)
-          {
-            c.i = loaded;
-            assert(c.is(0b011));
-            platform::sleep();
-          }
-#endif
 
         __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
-        c.i = loaded;
         assert(c.is(0b111));
-
         tracker.claim(slot);
 
         step(__LINE__, application_state);
@@ -289,8 +285,8 @@ struct client
             [&]() { return outbox.release_slot_returning_updated_word(slot); });
 
         c.o = o;
-
         assert(c.is(0b101));
+
         step(__LINE__, application_state);
       }
 
