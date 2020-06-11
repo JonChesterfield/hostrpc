@@ -24,10 +24,8 @@ AMDGCNFLAGS="-g -O1 -emit-llvm -ffreestanding -fno-exceptions $GPU"
 
 CXXCL="clang++ -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 $GPU"
 
-
 # time $CXX -O3 catch.cpp -c -o catch.o
 rm -rf *.s *.ll *.bc *.exe *device.o
-
 
 $CXX $X64FLAGS states.cpp -c -o states.x64.bc
 

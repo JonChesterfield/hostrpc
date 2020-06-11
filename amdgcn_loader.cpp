@@ -192,7 +192,8 @@ int main(int argc, char **argv)
   auto offsets = offsets_into_strtab(app_argc, app_argv);
   size_t bytes_for_argv = 8 * app_argc;
   size_t bytes_for_strtab = (offsets.back() + 3) & ~size_t{3};
-  size_t bytes_for_return = 4;
+  size_t number_return_values = 64;  // max number waves
+  size_t bytes_for_return = sizeof(int) * number_return_values;
 
   // Always allocates > 0 because of the return slot
   auto mutable_alloc =
@@ -239,9 +240,12 @@ int main(int argc, char **argv)
   // init the return value. not strictly necessary
   {
     assert(argv_array == result_location);
-    unsigned z = 0xdead;
-    memcpy(argv_array, &z, 4);
-    argv_array += 4;
+    for (size_t i = 0; i < number_return_values; i++)
+      {
+        unsigned z = 0xdead;
+        memcpy(argv_array, &z, 4);
+        argv_array += 4;
+      }
   }
 
   // Set up kernel arguments
@@ -332,13 +336,34 @@ int main(int argc, char **argv)
                                  HSA_SIGNAL_CONDITION_EQ, 0, 5000 /*000000*/,
                                  HSA_WAIT_STATE_ACTIVE) != 0);
 
-  int result;
-  memcpy(&result, result_location, 4);
+  int result[number_return_values];
+  memcpy(&result, result_location, sizeof(int) * number_return_values);
 
   hostcall_server_dtor(server_state);
 
   hsa_signal_destroy(packet->completion_signal);
   hsa_queue_destroy(queue);
 
-  return result;
+  bool results_match = true;
+  {
+    int res = result[0];
+    for (size_t i = 1; i < number_return_values; i++)
+      {
+        if (result[i] != res)
+          {
+            results_match = false;
+          }
+      }
+  }
+
+  if (!results_match)
+    {
+      fprintf(stderr, "Warning: Non-uniform return values\n");
+      for (size_t i = 0; i < number_return_values; i++)
+        {
+          fprintf(stderr, "rc[%zu] = %d\n", i, result[i]);
+        }
+    }
+
+  return result[0];
 }
