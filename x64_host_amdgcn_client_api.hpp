@@ -4,6 +4,7 @@
 #if defined(__AMDGCN__)
 // todo: wire up a host alternative?
 #include <stdint.h>
+void hostcall_client(uint64_t data[8]);
 void hostcall_client_async(uint64_t data[8]);
 #else
 #include "hsa.h"

@@ -42,6 +42,7 @@ struct fill
               }
           }
       }
+
     hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
     for (unsigned i = 0; i < 8; i++)
       {
@@ -72,15 +73,10 @@ struct operate
     for (unsigned c = 0; c < 64; c++)
       {
         hostrpc::cacheline_t &line = page->cacheline[c];
-
-#if 0
-        std::swap(line.element[0], line.element[7]);
-        std::swap(line.element[1], line.element[6]);
-        std::swap(line.element[2], line.element[5]);
-        std::swap(line.element[3], line.element[4]);
+#if 1
         for (unsigned i = 0; i < 8; i++)
           {
-            line.element[i]++;
+            line.element[i] = 2 * (line.element[i] + 1);
           }
 #else
         for (unsigned e = 0; e < 8; e++)

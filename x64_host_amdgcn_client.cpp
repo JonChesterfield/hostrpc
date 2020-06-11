@@ -5,10 +5,14 @@ __attribute__((visibility("default")))
 hostrpc::x64_amdgcn_client<hostrpc::x64_host_amdgcn_array_size>
     client_singleton;
 
+void hostcall_client(uint64_t data[8])
+{
+  client_singleton.rpc_invoke<true>(static_cast<void *>(&data[0]));
+}
+
 void hostcall_client_async(uint64_t data[8])
 {
-  // slightly easier to tell if it's running if the code is synchronous
-  client_singleton.rpc_invoke<true>(static_cast<void *>(&data[0]));
+  client_singleton.rpc_invoke<false>(static_cast<void *>(&data[0]));
 }
 
 #else

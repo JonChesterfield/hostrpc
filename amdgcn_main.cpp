@@ -1,24 +1,31 @@
 
+#include "common.hpp"
+#include "platform.hpp"
 #include "x64_host_amdgcn_client_api.hpp"
-
 // Example.
+
 extern "C" __attribute__((visibility("default"))) int main(int argc,
                                                            char **argv)
 {
   (void)argc;
   (void)argv;
 
-  uint64_t data[8] = {0, 1, 2, 3, 4, 5, 6, 7};
-  uint64_t want[8];
-  for (unsigned i = 0; i < 8; i++)
+  uint64_t initial_value = 7;
+
+  hostrpc::cacheline_t line;
+  hostrpc::cacheline_t expect;
+  for (unsigned e = 0; e < 8; e++)
     {
-      want[i] = data[i] * data[i];
+      line.element[e] = initial_value + platform::get_lane_id() + e;
+      expect.element[e] = 2 * (line.element[e] + 1);
     }
-  hostcall_client_async(data);
-  int differ = 8;
-  for (unsigned i = 0; i < 8; i++)
+
+  hostcall_client(&line.element[0]);
+
+  int differ = 0;
+  for (unsigned e = 0; e < 8; e++)
     {
-      if (want[i] == data[i]) differ--;
+      differ += (line.element[e] != expect.element[e]);
     }
 
   return differ;
