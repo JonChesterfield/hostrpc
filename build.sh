@@ -19,8 +19,8 @@ OPT="opt"
 
 GPU="--target=amdgcn-amd-amdhsa -march=gfx906 -mcpu=gfx906"
 
-X64FLAGS="-g -O2 -emit-llvm -pthread"
-AMDGCNFLAGS="-O2 -emit-llvm -ffreestanding -fno-exceptions $GPU"
+X64FLAGS="-g -O0 -emit-llvm -pthread"
+AMDGCNFLAGS="-g -O1 -emit-llvm -ffreestanding -fno-exceptions $GPU"
 
 CXXCL="clang++ -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 $GPU"
 
@@ -101,7 +101,7 @@ $CXX tests.x64.bc states.x64.bc catch.o x64_host_x64_client.x64.bc $LDFLAGS -o s
 # time ./states.exe hazard
 
 echo "Call executable"
-./a.out ; echo $?
+time ./a.out ; echo $?
 
 # time valgrind --leak-check=full --fair-sched=yes ./states.exe hazard
 

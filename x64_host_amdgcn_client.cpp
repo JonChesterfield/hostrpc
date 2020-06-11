@@ -15,7 +15,18 @@ void hostcall_client_async(uint64_t data[8])
   client_singleton.rpc_invoke<false>(static_cast<void *>(&data[0]));
 }
 
+namespace hostrpc
+{
+slot_owner tracker;
+}  // namespace hostrpc
+
 #else
+
+namespace hostrpc
+{
+thread_local unsigned my_id = 0;
+slot_owner tracker;
+}  // namespace hostrpc
 
 const char* hostcall_client_symbol() { return "client_singleton"; }
 

@@ -304,6 +304,8 @@ inline std::unique_ptr<void, detail::memory_deleter> allocate(
     hsa_region_t region, size_t size)
 {
   void* res;
+  // NB: hsa_memory_allocate is deprecated, should move to
+  // hsa_amd_memory_pool_allocate with a fine grain pool
   hsa_status_t r = hsa_memory_allocate(region, size, &res);
   if (r == HSA_STATUS_SUCCESS)
     {

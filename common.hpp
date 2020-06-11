@@ -379,6 +379,15 @@ struct slot_bitmap
   // returns value from before the and/or
   // these are used on memory visible fromi all svm devices
 
+  // atomic operations on fine grained memory are limited to those that the
+  // pci-e bus supports. There is no cache involved to mask this - fetch_and on
+  // the gpu will silently do the wrong thing if the pci-e bus doesn't support
+  // it. That means using cas (or swap, or faa) to communicate or buffering. The
+  // fetch_and works fine on coarse grained memory, but multiple waves will
+  // clobber each other, leaving the flag flickering from the other device
+  // perspective. Can downgrade to swap fairly easily, which will be roughly as
+  // expensive as a load & store.
+
 #if defined(__x86_64__)
 #define USE_FETCH_OP 1
 #else
