@@ -171,26 +171,25 @@ struct x64_x64_slot_bitmap_data
   constexpr const static size_t align = 64;
   static_assert(size % 64 == 0, "Size must be multiple of 64");
 
-  static x64_x64_slot_bitmap_data *alloc()
+  alignas(align) _Atomic uint64_t data[size / 64];
+};
+
+template <size_t size>
+inline x64_x64_slot_bitmap_data<size> *x64_allocate_slot_bitmap_data()
+{
+  void *memory = ::aligned_alloc(x64_x64_slot_bitmap_data<size>::align, size);
+  assert(memory);
+  return new (memory) x64_x64_slot_bitmap_data<size>;
+}
+
+template <size_t size>
+struct x64_allocate_slot_bitmap_data_deleter
+{
+  void operator()(x64_x64_slot_bitmap_data<size> *d)
   {
-    void *memory = ::aligned_alloc(align, size);
-    assert(memory);
-    return new (memory) x64_x64_slot_bitmap_data;
-  }
-  static void free(x64_x64_slot_bitmap_data *d)
-  {
-    d->~x64_x64_slot_bitmap_data();
+    d->~x64_x64_slot_bitmap_data<size>();
     ::free(d);
   }
-  alignas(align) _Atomic uint64_t data[size / 64];
-
-  struct deleter
-  {
-    void operator()(x64_x64_slot_bitmap_data *d)
-    {
-      x64_x64_slot_bitmap_data::free(d);
-    }
-  };
 };
 
 template <size_t N, size_t scope,

@@ -78,18 +78,16 @@ TEST_CASE("hazard")
 
   using mailbox_ptr_t =
       std::unique_ptr<mailbox_t<N>::slot_bitmap_data_t,
-                      mailbox_t<N>::slot_bitmap_data_t::deleter>;
+                      x64_allocate_slot_bitmap_data_deleter<N>>;
 
   using lockarray_ptr_t =
       std::unique_ptr<lockarray_t<N>::slot_bitmap_data_t,
-                      lockarray_t<N>::slot_bitmap_data_t::deleter>;
+                      x64_allocate_slot_bitmap_data_deleter<N>>;
 
-  mailbox_ptr_t send_data(mailbox_t<N>::slot_bitmap_data_t::alloc());
-  mailbox_ptr_t recv_data(mailbox_t<N>::slot_bitmap_data_t::alloc());
-  lockarray_ptr_t client_active_data(
-      lockarray_t<N>::slot_bitmap_data_t::alloc());
-  lockarray_ptr_t server_active_data(
-      lockarray_t<N>::slot_bitmap_data_t::alloc());
+  mailbox_ptr_t send_data(x64_allocate_slot_bitmap_data<N>());
+  mailbox_ptr_t recv_data(x64_allocate_slot_bitmap_data<N>());
+  lockarray_ptr_t client_active_data(x64_allocate_slot_bitmap_data<N>());
+  lockarray_ptr_t server_active_data(x64_allocate_slot_bitmap_data<N>());
 
   mailbox_t<N> send(send_data.get());
   mailbox_t<N> recv(recv_data.get());
