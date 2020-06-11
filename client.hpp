@@ -180,12 +180,12 @@ struct client
     // That this lock has been taken means no other thread is
     // waiting for that result
     uint64_t this_slot = detail::setnthbit64(0, subindex);
-
-    uint64_t garbage = i & o & this_slot;
+    uint64_t garbage_todo = i & o & this_slot;
     uint64_t available = ~i & ~o & this_slot;
 
-    assert((garbage & available) == 0);  // disjoint
-    if (garbage)
+    assert((garbage_todo & available) == 0);  // disjoint
+
+    if (garbage_todo)
       {
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
         if (platform::is_master_lane())
@@ -197,6 +197,7 @@ struct client
 
     if (!available)
       {
+        step(__LINE__, application_state);
         return false;
       }
 
@@ -324,6 +325,9 @@ struct client
     step(__LINE__, application_state);
 
     size_t slot = SIZE_MAX;
+    // tries each word in sequnce. A cas failing suggests contention, in which
+    // case try the next word instead of the next slot
+    // may be worth supporting non-zero starting word for cache locality effects
     for (uint64_t w = 0; w < words(); w++)
       {
         uint64_t active_word;
@@ -332,36 +336,26 @@ struct client
           {
             if (active.try_claim_empty_slot(slot, &active_word))
               {
+                // Success, got the lock.
                 assert(active_word != 0);
-                // found a slot and locked it
-                break;
-              }
-            else
-              {
-                slot = SIZE_MAX;
+
+                bool r = rpc_invoke_given_slot<have_continuation>(
+                    application_state, slot);
+
+                // wave release slot
+                step(__LINE__, application_state);
+                if (platform::is_master_lane())
+                  {
+                    active.release_slot_returning_updated_word(slot);
+                  }
+                return r;
               }
           }
       }
 
-    if (slot == SIZE_MAX)
-      {
-        // couldn't get a slot, won't launch
-        step(__LINE__, application_state);
-        return false;
-      }
-
-    bool r = rpc_invoke_given_slot<have_continuation>(application_state, slot);
-
-    // wave release slot
+    // couldn't get a slot, won't launch
     step(__LINE__, application_state);
-    {
-      if (platform::is_master_lane())
-        {
-          active.release_slot_returning_updated_word(slot);
-        }
-    }
-
-    return r;
+    return false;
   }
 
   typename bt::inbox_t inbox;

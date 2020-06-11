@@ -85,60 +85,26 @@ struct server
     return i & ~o;
   }
 
-  size_t find_candidate_server_slot(uint64_t w, uint64_t mask)
+  size_t find_candidate_server_available_bitmap(uint64_t w, uint64_t mask)
   {
     uint64_t i = inbox.load_word(w);
     uint64_t o = outbox.load_word(w);
     uint64_t a = active.load_word(w);
+    __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
     uint64_t work = i & ~o;
     uint64_t garbage = ~i & o;
-
     uint64_t todo = work | garbage;
-
     uint64_t available = todo & ~a & mask;
+    return available;
+  }
 
+  size_t find_candidate_server_slot(uint64_t w, uint64_t mask)
+  {
+    uint64_t available = find_candidate_server_available_bitmap(w, mask);
     if (available != 0)
       {
         return 64 * w + detail::ctz64(available);
-      }
-    return SIZE_MAX;
-  }
-
-  size_t find_and_claim_slot(uint64_t w,
-                             void* application_state)  // or SIZE_MAX
-  {
-    uint64_t work_visible = work_todo(w);
-    uint64_t work_available = work_visible & ~active.load_word(w);
-    __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
-
-    // tries each bit in the work available at the time of the call
-    // doesn't load new information for work_available to preserve termination
-
-    while (work_available != 0)
-      {
-        // this tries each slot in the
-        uint64_t idx = detail::ctz64(work_available);
-        assert(detail::nthbitset64(work_available, idx));
-        uint64_t slot = 64 * w + idx;
-        // attempt to get that slot
-        uint64_t active_word;
-        bool r = active.try_claim_empty_slot(slot, &active_word);
-        if (r)
-          {
-            step(__LINE__, application_state);
-            return slot;
-          }
-
-        // cas failed, or lost race, assume something else claimed it
-        assert(detail::nthbitset64(work_available, idx));
-        work_available = detail::clearnthbit64(work_available, idx);
-
-        // some things which were available in the inbox won't be anymore
-        // only clear those that are no longer present, don't insert ones
-        // that have just arrived, in order to preserve termination
-        // this is a potential optimisation - reduces trips through the loop
-        // work_available &= inbox.load_word(w);
       }
     return SIZE_MAX;
   }
@@ -156,6 +122,9 @@ struct server
     // todo: constexpr, static assert matches outbox and active
     return inbox.words();
   }
+
+  // may want to rename this, number-slots?
+  size_t size() { return inbox.size(); }
 
   bool rpc_handle_given_slot(void* application_state, size_t slot)
   {
@@ -198,9 +167,14 @@ struct server
       {
         assert((o & this_slot) != 0);
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-        uint64_t updated_out = outbox.release_slot_returning_updated_word(slot);
-        assert((updated_out & this_slot) == 0);
-        (void)updated_out;
+
+        if (platform::is_master_lane())
+          {
+            uint64_t updated_out =
+                outbox.release_slot_returning_updated_word(slot);
+            assert((updated_out & this_slot) == 0);
+            (void)updated_out;
+          }
         assert(lock_held());
         return false;
       }
@@ -212,12 +186,11 @@ struct server
         return false;
       }
 
+    assert(c.is(0b101));
+    step(__LINE__, application_state);
     tracker.claim(slot);
 
-    assert(c.is(0b101));
-
-    step(__LINE__, application_state);
-
+    // make the calls
     Copy::pull_to_server_from_client((void*)&local_buffer[slot],
                                      (void*)&remote_buffer[slot],
                                      sizeof(page_t));
@@ -238,7 +211,8 @@ struct server
     // publish result
     {
       __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-      uint64_t o = outbox.claim_slot_returning_updated_word(slot);
+      uint64_t o = platform::critical<uint64_t>(
+          [&]() { return outbox.claim_slot_returning_updated_word(slot); });
       c.o = o;
     }
     assert(c.is(0b111));
@@ -269,48 +243,56 @@ struct server
 
     step(__LINE__, application_state);
 
-    uint64_t mask = UINT64_MAX;
-    size_t slot = SIZE_MAX;
+    const uint64_t location = *location_arg % size();
+    const uint64_t element = index_to_element(location);
 
-    uint64_t location = *location_arg;
+    // skip bits in the first word <= subindex
+    uint64_t mask = detail::setbitsrange64(index_to_subindex(location), 63);
 
-    for (uint64_t wc = 0; wc < words(); wc++)
+    // Tries a few bits in element, then all bits in all the other words, then
+    // all bits in element. This overshoots somewhat but ensures that all slots
+    // are checked. Could truncate the last word to check each slot exactly once
+    for (uint64_t wc = 0; wc < words() + 1; wc++)
       {
-        uint64_t w = (location + wc) % words();
-        uint64_t active_word;
-        slot = find_candidate_server_slot(w, mask);
-        if (slot != SIZE_MAX)
+        uint64_t w = (element + wc) % words();
+        uint64_t available = find_candidate_server_available_bitmap(w, mask);
+        while (available != 0)
           {
+            uint64_t idx = detail::ctz64(available);
+            assert(detail::nthbitset64(available, idx));
+            uint64_t slot = 64 * w + idx;
+            uint64_t active_word;
             if (active.try_claim_empty_slot(slot, &active_word))
               {
+                // Success, got the lock. Aim location_arg at next slot
                 assert(active_word != 0);
-                break;
+                *location_arg = slot + 1;
+
+                bool r = rpc_handle_given_slot(application_state, slot);
+
+                step(__LINE__, application_state);
+
+                if (platform::is_master_lane())
+                  {
+                    uint64_t a =
+                        active.release_slot_returning_updated_word(slot);
+                    assert(!detail::nthbitset64(a, index_to_subindex(slot)));
+                    (void)a;
+                  }
+
+                return r;
               }
-            else
-              {
-                slot = SIZE_MAX;
-              }
+
+            // don't try the same slot repeatedly
+            available = detail::clearnthbit64(available, idx);
           }
+
+        mask = UINT64_MAX;
       }
 
-    if (slot == SIZE_MAX)
-      {
-        step(__LINE__, application_state);
-        return false;
-      }
-
-    *location_arg =
-        slot + 1;  // may only want to move starting point on success
-    bool r = rpc_handle_given_slot(application_state, slot);
-
+    // Nothing hit, may as well go from the same location on the next call
     step(__LINE__, application_state);
-    {
-      uint64_t a = active.release_slot_returning_updated_word(slot);
-      assert(!detail::nthbitset64(a, index_to_subindex(slot)));
-      (void)a;
-    }
-
-    return r;
+    return false;
   }
 
   typename bt::inbox_t inbox;

@@ -15,8 +15,7 @@ extern "C" __attribute__((visibility("default"))) int main(int argc,
   hostrpc::cacheline_t line;
   hostrpc::cacheline_t expect;
 
-  // gets very slow and/or hangs at 4000, suspect GC pressure or server
-  for (unsigned rep = 0; rep < 1500; rep++)
+  for (unsigned rep = 0; rep < 64000; rep++)
     {
       for (unsigned e = 0; e < 8; e++)
         {
