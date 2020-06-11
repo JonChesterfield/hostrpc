@@ -12,7 +12,7 @@ TEST_CASE("Bitmap")
   static constexpr const size_t N = 128;
   using test_bitmap_t = hostrpc::slot_bitmap_all_svm<N>;
   using bitmap_ptr_t =
-      std::unique_ptr<test_bitmap_t::slot_bitmap_data_t,
+      std::unique_ptr<hostrpc::slot_bitmap_data<N>,
                       hostrpc::x64_allocate_slot_bitmap_data_deleter<N>>;
 
   bitmap_ptr_t ptr(hostrpc::x64_allocate_slot_bitmap_data<N>());
@@ -153,11 +153,11 @@ TEST_CASE("set up single word system")
   };
 
   using mailbox_ptr_t =
-      std::unique_ptr<slot_bitmap_all_svm<N>::slot_bitmap_data_t,
+      std::unique_ptr<slot_bitmap_data<N>,
                       x64_allocate_slot_bitmap_data_deleter<N>>;
 
   using lockarray_ptr_t =
-      std::unique_ptr<slot_bitmap_device<N>::slot_bitmap_data_t,
+      std::unique_ptr<slot_bitmap_data<N>,
                       x64_allocate_slot_bitmap_data_deleter<N>>;
 
   mailbox_ptr_t send_data(hostrpc::x64_allocate_slot_bitmap_data<N>());

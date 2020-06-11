@@ -1,54 +1,10 @@
-#include "catch.hpp"
+#include "x64_host_x64_client.hpp"
+
 #include "client.hpp"
+#include "memory.hpp"
 #include "server.hpp"
-#include "tests.hpp"
 
-#include <cstring>
-
-namespace
-{
-struct fill
-{
-  static void call(hostrpc::page_t *page, void *dv)
-  {
-    __builtin_memcpy(page, dv, sizeof(hostrpc::page_t));
-  };
-};
-
-struct use
-{
-  static void call(hostrpc::page_t *page, void *dv)
-  {
-    __builtin_memcpy(dv, page, sizeof(hostrpc::page_t));
-  };
-};
-
-struct operate
-{
-  static void call(hostrpc::page_t *page, void *)
-  {
-    for (unsigned c = 0; c < 64; c++)
-      {
-        hostrpc::cacheline_t &line = page->cacheline[c];
-        std::swap(line.element[0], line.element[7]);
-        std::swap(line.element[1], line.element[6]);
-        std::swap(line.element[2], line.element[5]);
-        std::swap(line.element[3], line.element[4]);
-        for (unsigned i = 0; i < 8; i++)
-          {
-            line.element[i]++;
-          }
-      }
-  }
-};
-
-}  // namespace
-
-using x64_x64_client = hostrpc::client<128, hostrpc::copy_functor_memcpy_pull,
-                                       fill, use, hostrpc::nop_stepper>;
-
-using x64_x64_server = hostrpc::server<128, hostrpc::copy_functor_memcpy_pull,
-                                       operate, hostrpc::nop_stepper>;
+#include <string.h>
 
 static void init_page(hostrpc::page_t *page, uint64_t v)
 {
@@ -67,37 +23,14 @@ thread_local unsigned my_id = 0;
 slot_owner tracker;
 }  // namespace hostrpc
 
-TEST_CASE("hazard")
+void hazard(void)
 {
   using namespace hostrpc;
   constexpr size_t N = 128;
-  page_t client_buffer[N];
-  page_t server_buffer[N];
 
-  using mailbox_ptr_t =
-      std::unique_ptr<slot_bitmap_all_svm<N>::slot_bitmap_data_t,
-                      x64_allocate_slot_bitmap_data_deleter<N>>;
-
-  using lockarray_ptr_t =
-      std::unique_ptr<slot_bitmap_device<N>::slot_bitmap_data_t,
-                      x64_allocate_slot_bitmap_data_deleter<N>>;
-
-  mailbox_ptr_t send_data(x64_allocate_slot_bitmap_data<N>());
-  mailbox_ptr_t recv_data(x64_allocate_slot_bitmap_data<N>());
-  lockarray_ptr_t client_active_data(x64_allocate_slot_bitmap_data<N>());
-  lockarray_ptr_t server_active_data(x64_allocate_slot_bitmap_data<N>());
-
-  slot_bitmap_all_svm<N> send(send_data.get());
-  slot_bitmap_all_svm<N> recv(recv_data.get());
-  slot_bitmap_device<N> client_active(client_active_data.get());
-  slot_bitmap_device<N> server_active(server_active_data.get());
-
-  x64_x64_client client(recv, send, client_active, &server_buffer[0],
-                        &client_buffer[0]);
-
-  x64_x64_server server(send, recv, server_active, &client_buffer[0],
-                        &server_buffer[0]);
-
+  x64_x64_pair<N> p;
+  (void)p;
+#if 0
   _Atomic bool server_live(true);
 
   auto server_worker = [&](unsigned id) {
@@ -113,7 +46,7 @@ TEST_CASE("hazard")
             printf("server %u did %u tasks\n", id, count);
             break;
           }
-        bool did_work = server.rpc_handle(nullptr, &server_location);
+        bool did_work = p.server.rpc_handle(nullptr, &server_location);
         if (did_work)
           {
             count++;
@@ -122,23 +55,6 @@ TEST_CASE("hazard")
           {
             since_work++;
             platform::sleep_briefly();
-          }
-
-        if (since_work == 200000)
-          {
-            since_work = 0;
-
-            if (id == 0)
-              {
-                printf("server %u stalled\n", id);
-                printf("i:   ");
-                send.dump();
-                printf("o:   ");
-                recv.dump();
-                printf("a: ");
-                server_active.dump();
-                tracker.dump();
-              }
           }
       }
   };
@@ -156,7 +72,7 @@ TEST_CASE("hazard")
       {
         init_page(&scratch, id);
         init_page(&expect, id + 1);
-        if (client.rpc_invoke<true>(&scratch))
+        if (p.client.rpc_invoke<true>(&scratch))
           {
             count++;
             if (memcmp(&scratch, &expect, sizeof(page_t)) != 0)
@@ -208,4 +124,5 @@ TEST_CASE("hazard")
     {
       i.join();
     }
+#endif
 }

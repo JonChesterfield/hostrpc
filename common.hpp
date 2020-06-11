@@ -4,7 +4,7 @@
 #include <stdatomic.h>
 #include <stdint.h>
 
-#include "memory.hpp"  // free, aligned alloc
+#include "memory.hpp"
 #include "platform.hpp"
 
 namespace hostrpc
@@ -173,12 +173,18 @@ struct slot_bitmap_data
   alignas(align) _Atomic uint64_t data[size / 64];
 };
 
+#if defined(__x86_64__)
+
 template <size_t size>
 inline slot_bitmap_data<size> *x64_allocate_slot_bitmap_data()
 {
-  void *memory = ::aligned_alloc(slot_bitmap_data<size>::align, size);
+  // strictly this should use operator new
+  // however I don't have a freestanding implementation of <new> and it is
+  // surprisingly tedious to forward declare it
+  void *memory =
+      hostrpc::x64_native::allocate(slot_bitmap_data<size>::align, size);
   assert(memory);
-  return new (memory) slot_bitmap_data<size>;
+  return reinterpret_cast<slot_bitmap_data<size> *>(memory);
 }
 
 template <size_t size>
@@ -186,10 +192,10 @@ struct x64_allocate_slot_bitmap_data_deleter
 {
   void operator()(slot_bitmap_data<size> *d)
   {
-    d->~slot_bitmap_data<size>();
-    ::free(d);
+    hostrpc::x64_native::deallocate(static_cast<void *>(d));
   }
 };
+#endif
 
 template <size_t N, size_t scope>
 struct slot_bitmap;
@@ -212,13 +218,12 @@ struct slot_bitmap
 
   static_assert(sizeof(uint64_t) == sizeof(_Atomic uint64_t), "");
 
-  using slot_bitmap_data_t = slot_bitmap_data<size()>;
-  static_assert(sizeof(slot_bitmap_data_t *) == 8, "");
+  static_assert(sizeof(slot_bitmap_data<size()> *) == 8, "");
 
-  slot_bitmap_data_t *a;
+  slot_bitmap_data<size()> *a;
   slot_bitmap() : a(nullptr) {}
 
-  slot_bitmap(slot_bitmap_data_t *memory) : a(memory)
+  slot_bitmap(slot_bitmap_data<size()> *memory) : a(memory)
   {
     static_assert(sizeof(slot_bitmap) == 8, "");
     static_assert(alignof(slot_bitmap) == 8, "");
@@ -229,7 +234,7 @@ struct slot_bitmap
       }
   }
 
-  slot_bitmap_data_t *data() { return a; }
+  slot_bitmap_data<size()> *data() { return a; }
 
   static constexpr size_t serialize_size() { return 1; }
   void serialize(uint64_t *to)
@@ -362,11 +367,8 @@ struct slot_bitmap
   // perspective. Can downgrade to swap fairly easily, which will be roughly as
   // expensive as a load & store.
 
-#if defined(__x86_64__)
-#define USE_FETCH_OP 1
-#else
+#ifndef USE_FETCH_OP
 #define USE_FETCH_OP 0
-
 #endif
 
   __attribute__((used)) uint64_t fetch_and(uint64_t element, uint64_t mask)
@@ -610,7 +612,9 @@ struct malloc_lock
     init();
     for (uint64_t i = 0; i < 64; i++)
       {
-        data[i] = detail::nthbitset64(x, i) ? aligned_alloc(1, 1) : nullptr;
+        data[i] = detail::nthbitset64(x, i)
+                      ? hostrpc::x64_native::allocate(1, 1)
+                      : nullptr;
       }
     held = x;
   }
@@ -630,7 +634,7 @@ struct malloc_lock
       {
         if (detail::nthbitset64(x, i))
           {
-            free(data[i]);
+            hostrpc::x64_native::deallocate(data[i]);
           }
       }
     init();

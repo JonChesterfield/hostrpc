@@ -15,7 +15,7 @@
 
 namespace hostrpc
 {
-namespace config
+namespace x64_host_amdgcn_client
 {
 struct fill
 {
@@ -81,21 +81,22 @@ struct operate
 };
 #endif
 
-}  // namespace config
+}  // namespace x64_host_amdgcn_client
 
 // need to allocate buffers for both together
 // allocation functions are only available in the host
 
 template <size_t N>
 using x64_amdgcn_client =
-    hostrpc::client<N, hostrpc::copy_functor_given_alias, config::fill,
-                    config::use, hostrpc::nop_stepper>;
+    hostrpc::client<N, hostrpc::copy_functor_given_alias,
+                    x64_host_amdgcn_client::fill, x64_host_amdgcn_client::use,
+                    hostrpc::nop_stepper>;
 
 #if !defined(__AMDGCN__)
 template <size_t N>
 using x64_amdgcn_server =
-    hostrpc::server<N, hostrpc::copy_functor_given_alias, config::operate,
-                    hostrpc::nop_stepper>;
+    hostrpc::server<N, hostrpc::copy_functor_given_alias,
+                    x64_host_amdgcn_client::operate, hostrpc::nop_stepper>;
 #endif
 
 // needs to scale with CUs
@@ -104,75 +105,76 @@ static const constexpr size_t x64_host_amdgcn_array_size = 2048;
 #if !defined(__AMDGCN__)
 namespace
 {
-// allocate/free are out of line as they only exist on the host
 template <size_t size>
 inline slot_bitmap_data<size> *hsa_allocate_slot_bitmap_data_alloc(
     hsa_region_t region)
 {
-  void *memory;
-  hsa_status_t r = hsa_memory_allocate(region, size, &memory);
-  if (r != HSA_STATUS_SUCCESS)
-    {
-      return nullptr;
-    }
-
-  return new (memory) slot_bitmap_data<size>;
+  void *memory = hostrpc::hsa::allocate(region.handle,
+                                        alignof(slot_bitmap_data<size>), size);
+  return reinterpret_cast<slot_bitmap_data<size> *>(memory);
 }
 
 template <size_t size>
 inline void hsa_allocate_slot_bitmap_data_free(slot_bitmap_data<size> *d)
 {
-  hsa_memory_free(static_cast<void *>(d));
+  hostrpc::hsa::deallocate(static_cast<void *>(d));
 }
 
 inline void *alloc_from_region(hsa_region_t region, size_t size)
 {
-  void *res;
-  hsa_status_t r = hsa_memory_allocate(region, size, &res);
-  return (r == HSA_STATUS_SUCCESS) ? res : nullptr;
+  return hostrpc::hsa::allocate(region.handle, 8, size);
 }
 }  // namespace
 
 template <size_t N>
 struct x64_amdgcn_pair
 {
-  using mt = slot_bitmap_all_svm<N>;
-  using lt = slot_bitmap_device<N>;
+  x64_amdgcn_client<N> client;
+  x64_amdgcn_server<N> server;
 
   x64_amdgcn_pair(hsa_region_t fine, hsa_region_t gpu_coarse)
   {
+    // todo: alignment on the page_t, works at present because allocate has high
+    // granularity
     hostrpc::page_t *client_buffer =
         reinterpret_cast<page_t *>(alloc_from_region(fine, N * sizeof(page_t)));
     hostrpc::page_t *server_buffer = client_buffer;
 
-    typename mt::slot_bitmap_data_t *send_data =
+    slot_bitmap_data<N> *send_data =
         hsa_allocate_slot_bitmap_data_alloc<N>(fine);
-    typename mt::slot_bitmap_data_t *recv_data =
+    slot_bitmap_data<N> *recv_data =
         hsa_allocate_slot_bitmap_data_alloc<N>(fine);
-
-    typename lt::slot_bitmap_data_t *client_active_data =
+    slot_bitmap_data<N> *client_active_data =
         hsa_allocate_slot_bitmap_data_alloc<N>(gpu_coarse);
-
-    typename lt::slot_bitmap_data_t *server_active_data =
+    slot_bitmap_data<N> *server_active_data =
         hsa_allocate_slot_bitmap_data_alloc<N>(fine);
 
-    mt send = (send_data);
-    mt recv = (recv_data);
-    lt client_active = (client_active_data);
-    lt server_active = (server_active_data);
+    slot_bitmap_all_svm<N> send = {send_data};
+    slot_bitmap_all_svm<N> recv = {recv_data};
+    slot_bitmap_device<N> client_active = {client_active_data};
+    slot_bitmap_device<N> server_active = {server_active_data};
 
     client = {recv, send, client_active, server_buffer, client_buffer};
 
     server = {send, recv, server_active, client_buffer, server_buffer};
 
+    // sanity check deserialize
     {
       uint64_t data[client.serialize_size()];
       client.serialize(data);
 
-      // sanity check deserialize
       x64_amdgcn_client<N> chk;
       chk.deserialize(data);
       assert(memcmp(&client, &chk, 40) == 0);
+    }
+
+    {
+      uint64_t data[server.serialize_size()];
+      server.serialize(data);
+
+      x64_amdgcn_server<N> chk;
+      chk.deserialize(data);
+      assert(memcmp(&server, &chk, 40) == 0);
     }
   }
 
@@ -200,10 +202,6 @@ struct x64_amdgcn_pair
         hsa_memory_free(server.local_buffer);
       }
   }
-
-  x64_amdgcn_client<N> client;
-  x64_amdgcn_server<N> server;
-  hsa_signal_t signal;
 };
 #endif
 }  // namespace hostrpc

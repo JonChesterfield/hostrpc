@@ -32,7 +32,9 @@ $CXX $X64FLAGS states.cpp -c -o states.x64.bc
 # TODO: Drop hsainc from x64 code
 
 $CXX $X64FLAGS -I$HSAINC client.cpp -c -o client.x64.bc
-$CXX $X64FLAGS server.cpp -c -o server.x64.bc
+$CXX $X64FLAGS -I$HSAINC server.cpp -c -o server.x64.bc
+
+$CXX $X64FLAGS -I$HSAINC memory.cpp -c -o memory.x64.bc
 
 $CXX $X64FLAGS -I$HSAINC x64_host_x64_client.cpp -c -o x64_host_x64_client.x64.bc
 
@@ -51,7 +53,7 @@ $CXX $AMDGCNFLAGS server.cpp -c -o server.gcn.bc
 # Build the device loader that assumes the device library is linked into the application
 # TODO: Embed it directly in the loader by patching call to main, as the loader doesn't do it
 $CXX $X64FLAGS -I$HSAINC amdgcn_loader.cpp -c -o amdgcn_loader.x64.bc
-$CXX $LDFLAGS amdgcn_loader.x64.bc x64_host_amdgcn_client.x64.bc -o amdgcn_loader.exe
+$CXX $LDFLAGS amdgcn_loader.x64.bc memory.x64.bc x64_host_amdgcn_client.x64.bc -o amdgcn_loader.exe
 
 # Build the device library that calls into main()
 $CXXCL amdgcn_loader_entry.cl -emit-llvm -c -o amdgcn_loader_entry.gcn.bc
@@ -91,7 +93,7 @@ done
 
 
 rm -f states.exe
-$CXX tests.x64.bc states.x64.bc catch.o x64_host_x64_client.x64.bc $LDFLAGS -o states.exe
+$CXX tests.x64.bc states.x64.bc catch.o memory.x64.bc x64_host_x64_client.x64.bc $LDFLAGS -o states.exe
 
 time ./states.exe hazard
 
