@@ -15,15 +15,6 @@
 
 namespace hostrpc
 {
-template <size_t size>
-struct hsa_allocate_slot_bitmap_data
-{
-  constexpr const static size_t align = 64;
-  static_assert(size % 64 == 0, "Size must be multiple of 64");
-
-  alignas(align) _Atomic uint64_t data[size / 64];
-};
-
 namespace config
 {
 struct fill
@@ -90,18 +81,6 @@ struct operate
 };
 #endif
 
-template <size_t N>
-class x64_amdgcn_bitmap_types
-{
- public:
-  using inbox_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
-                              hsa_allocate_slot_bitmap_data>;
-  using outbox_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
-                               hsa_allocate_slot_bitmap_data>;
-  using locks_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE,
-                              hsa_allocate_slot_bitmap_data>;
-};
-
 }  // namespace config
 
 // need to allocate buffers for both together
@@ -109,15 +88,13 @@ class x64_amdgcn_bitmap_types
 
 template <size_t N>
 using x64_amdgcn_client =
-    hostrpc::client<N, config::x64_amdgcn_bitmap_types,
-                    hostrpc::copy_functor_given_alias, config::fill,
+    hostrpc::client<N, hostrpc::copy_functor_given_alias, config::fill,
                     config::use, hostrpc::nop_stepper>;
 
 #if !defined(__AMDGCN__)
 template <size_t N>
 using x64_amdgcn_server =
-    hostrpc::server<N, config::x64_amdgcn_bitmap_types,
-                    hostrpc::copy_functor_given_alias, config::operate,
+    hostrpc::server<N, hostrpc::copy_functor_given_alias, config::operate,
                     hostrpc::nop_stepper>;
 #endif
 
@@ -129,7 +106,7 @@ namespace
 {
 // allocate/free are out of line as they only exist on the host
 template <size_t size>
-inline hsa_allocate_slot_bitmap_data<size> *hsa_allocate_slot_bitmap_data_alloc(
+inline slot_bitmap_data<size> *hsa_allocate_slot_bitmap_data_alloc(
     hsa_region_t region)
 {
   void *memory;
@@ -139,12 +116,11 @@ inline hsa_allocate_slot_bitmap_data<size> *hsa_allocate_slot_bitmap_data_alloc(
       return nullptr;
     }
 
-  return new (memory) hsa_allocate_slot_bitmap_data<size>;
+  return new (memory) slot_bitmap_data<size>;
 }
 
 template <size_t size>
-inline void hsa_allocate_slot_bitmap_data_free(
-    hsa_allocate_slot_bitmap_data<size> *d)
+inline void hsa_allocate_slot_bitmap_data_free(slot_bitmap_data<size> *d)
 {
   hsa_memory_free(static_cast<void *>(d));
 }
@@ -160,11 +136,10 @@ inline void *alloc_from_region(hsa_region_t region, size_t size)
 template <size_t N>
 struct x64_amdgcn_pair
 {
-  using mt = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
-                         hsa_allocate_slot_bitmap_data>;
+  using mt =
+      slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, slot_bitmap_data>;
 
-  using lt = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE,
-                         hsa_allocate_slot_bitmap_data>;
+  using lt = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE, slot_bitmap_data>;
 
   x64_amdgcn_pair(hsa_region_t fine, hsa_region_t gpu_coarse)
   {

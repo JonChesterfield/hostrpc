@@ -166,43 +166,42 @@ struct cache
 };
 
 template <size_t size>
-struct x64_x64_slot_bitmap_data
+struct slot_bitmap_data
 {
   constexpr const static size_t align = 64;
   static_assert(size % 64 == 0, "Size must be multiple of 64");
-
   alignas(align) _Atomic uint64_t data[size / 64];
 };
 
 template <size_t size>
-inline x64_x64_slot_bitmap_data<size> *x64_allocate_slot_bitmap_data()
+inline slot_bitmap_data<size> *x64_allocate_slot_bitmap_data()
 {
-  void *memory = ::aligned_alloc(x64_x64_slot_bitmap_data<size>::align, size);
+  void *memory = ::aligned_alloc(slot_bitmap_data<size>::align, size);
   assert(memory);
-  return new (memory) x64_x64_slot_bitmap_data<size>;
+  return new (memory) slot_bitmap_data<size>;
 }
 
 template <size_t size>
 struct x64_allocate_slot_bitmap_data_deleter
 {
-  void operator()(x64_x64_slot_bitmap_data<size> *d)
+  void operator()(slot_bitmap_data<size> *d)
   {
-    d->~x64_x64_slot_bitmap_data<size>();
+    d->~slot_bitmap_data<size>();
     ::free(d);
   }
 };
 
 template <size_t N, size_t scope,
-          template <size_t> class data_t = x64_x64_slot_bitmap_data>
+          template <size_t> class data_t = slot_bitmap_data>
 struct slot_bitmap;
 
 template <size_t N>
-using mailbox_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
-                              x64_x64_slot_bitmap_data>;
+using mailbox_t =
+    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, slot_bitmap_data>;
 
 template <size_t N>
 using lockarray_t =
-    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE, x64_x64_slot_bitmap_data>;
+    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE, slot_bitmap_data>;
 
 template <size_t N, size_t scope, template <size_t> class data_t>
 struct slot_bitmap
@@ -465,12 +464,12 @@ template <size_t N>
 class x64_x64_bitmap_types
 {
  public:
-  using inbox_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
-                              x64_x64_slot_bitmap_data>;
-  using outbox_t = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
-                               x64_x64_slot_bitmap_data>;
+  using inbox_t =
+      slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, slot_bitmap_data>;
+  using outbox_t =
+      slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, slot_bitmap_data>;
   using locks_t =
-      slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE, x64_x64_slot_bitmap_data>;
+      slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE, slot_bitmap_data>;
 };
 
 // on return true, loaded contains active[w]
@@ -658,12 +657,13 @@ struct malloc_lock
   void *data[64];
 };
 
-template <size_t N, template <size_t> class bitmap_types, typename G>
-void try_garbage_collect_word(G garbage_bits,
-                              const typename bitmap_types<N>::inbox_t inbox,
-                              typename bitmap_types<N>::outbox_t outbox,
-                              typename bitmap_types<N>::locks_t active,
 
+
+template <size_t N, typename G>
+void try_garbage_collect_word(G garbage_bits,
+slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, slot_bitmap_data> inbox,
+                              slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, slot_bitmap_data> outbox,                               slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE, slot_bitmap_data> active,     
+                              
                               uint64_t w)
 {
   malloc_lock<true> lk;

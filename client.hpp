@@ -43,14 +43,17 @@ enum class client_state : uint8_t
 // garbage that is, can't claim the slot for a new thread is that a sufficient
 // criteria for the slot to be awaiting gc?
 
-template <size_t N, template <size_t> class bitmap_types, typename Copy,
-          typename Fill, typename Use, typename Step>
+template <size_t N, typename Copy, typename Fill, typename Use, typename Step>
 struct client
 {
-  using bt = bitmap_types<N>;
+  using inbox_t =
+      slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, slot_bitmap_data>;
+  using outbox_t =
+      slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, slot_bitmap_data>;
+  using locks_t =
+      slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE, slot_bitmap_data>;
 
-  client(typename bt::inbox_t inbox, typename bt::outbox_t outbox,
-         typename bt::locks_t active, page_t* remote_buffer,
+  client(inbox_t inbox, outbox_t outbox, locks_t active, page_t* remote_buffer,
          page_t* local_buffer)
 
       : inbox(inbox),
@@ -72,9 +75,9 @@ struct client
   {
   }
 
-  static_assert(bt::inbox_t::serialize_size() == 1, "");
-  static_assert(bt::outbox_t::serialize_size() == 1, "");
-  static_assert(bt::locks_t::serialize_size() == 1, "");
+  static_assert(inbox_t::serialize_size() == 1, "");
+  static_assert(outbox_t::serialize_size() == 1, "");
+  static_assert(locks_t::serialize_size() == 1, "");
   static_assert(sizeof(page_t*) == 8, "");
 
   // in uint64_ts
@@ -139,8 +142,7 @@ struct client
   void try_garbage_collect_word_client(uint64_t w)
   {
     auto c = [](uint64_t i, uint64_t) -> uint64_t { return i; };
-    try_garbage_collect_word<N, bitmap_types, decltype(c)>(c, inbox, outbox,
-                                                           active, w);
+    try_garbage_collect_word<N, decltype(c)>(c, inbox, outbox, active, w);
   }
 
   void dump_word(uint64_t word)
@@ -358,9 +360,9 @@ struct client
     return false;
   }
 
-  typename bt::inbox_t inbox;
-  typename bt::outbox_t outbox;
-  typename bt::locks_t active;
+  inbox_t inbox;
+  outbox_t outbox;
+  locks_t active;
   page_t* remote_buffer;
   page_t* local_buffer;
 };

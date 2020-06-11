@@ -6,9 +6,8 @@ struct copy_functor_nop
 {
 };
 
-using client_type =
-    hostrpc::client<N, hostrpc::x64_x64_bitmap_types, copy_functor_nop,
-                    hostrpc::fill_nop, hostrpc::use_nop, hostrpc::nop_stepper>;
+using client_type = hostrpc::client<N, copy_functor_nop, hostrpc::fill_nop,
+                                    hostrpc::use_nop, hostrpc::nop_stepper>;
 
 extern "C" __attribute__((noinline)) void client_instance_direct(client_type& c)
 {

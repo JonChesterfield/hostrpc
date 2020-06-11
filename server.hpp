@@ -23,14 +23,17 @@ enum class server_state : uint8_t
   result_with_thread = 0b111,
 };
 
-template <size_t N, template <size_t> class bitmap_types, typename Copy,
-          typename Op, typename Step>
+template <size_t N, typename Copy, typename Op, typename Step>
 struct server
 {
-  using bt = bitmap_types<N>;
+  using inbox_t =
+      slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, slot_bitmap_data>;
+  using outbox_t =
+      slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, slot_bitmap_data>;
+  using locks_t =
+      slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE, slot_bitmap_data>;
 
-  server(typename bt::inbox_t inbox, typename bt::outbox_t outbox,
-         typename bt::locks_t active, page_t* remote_buffer,
+  server(inbox_t inbox, outbox_t outbox, locks_t active, page_t* remote_buffer,
          page_t* local_buffer)
       : inbox(inbox),
         outbox(outbox),
@@ -113,8 +116,7 @@ struct server
   void try_garbage_collect_word_server(uint64_t w)
   {
     auto c = [](uint64_t i, uint64_t o) -> uint64_t { return ~i & o; };
-    try_garbage_collect_word<N, bitmap_types, decltype(c)>(c, inbox, outbox,
-                                                           active, w);
+    try_garbage_collect_word<N, decltype(c)>(c, inbox, outbox, active, w);
   }
 
   size_t words()
@@ -295,9 +297,9 @@ struct server
     return false;
   }
 
-  typename bt::inbox_t inbox;
-  typename bt::outbox_t outbox;
-  typename bt::locks_t active;
+  inbox_t inbox;
+  outbox_t outbox;
+  locks_t active;
   page_t* remote_buffer;
   page_t* local_buffer;
 };

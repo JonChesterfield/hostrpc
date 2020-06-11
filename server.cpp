@@ -12,9 +12,8 @@ void server_instance(
   {
   };
 
-  using server_type =
-      hostrpc::server<N, hostrpc::x64_x64_bitmap_types, copy_functor_nop,
-                      hostrpc::operate_nop, hostrpc::nop_stepper>;
+  using server_type = hostrpc::server<N, copy_functor_nop, hostrpc::operate_nop,
+                                      hostrpc::nop_stepper>;
 
   server_type s = {inbox, outbox, active, remote_buffer, local_buffer};
 

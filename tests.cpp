@@ -12,7 +12,7 @@ TEST_CASE("Bitmap")
   static constexpr const size_t N = 128;
   using test_bitmap_t =
       hostrpc::slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
-                           hostrpc::x64_x64_slot_bitmap_data>;
+                           hostrpc::slot_bitmap_data>;
   using bitmap_ptr_t =
       std::unique_ptr<test_bitmap_t::slot_bitmap_data_t,
                       hostrpc::x64_allocate_slot_bitmap_data_deleter<N>>;
@@ -185,8 +185,7 @@ TEST_CASE("set up single word system")
       auto app_state = application_state_t(&val, &client_steps, show_step);
 
       using client_type =
-          client<N, hostrpc::x64_x64_bitmap_types,
-                 hostrpc::copy_functor_memcpy_pull, fill, use, stepper>;
+          client<N, hostrpc::copy_functor_memcpy_pull, fill, use, stepper>;
       client_type cl = {recv, send, client_active, &server_buffer[0],
                         &client_buffer[0]};
 
@@ -209,8 +208,8 @@ TEST_CASE("set up single word system")
       auto stepper_state =
           hostrpc::default_stepper_state(&server_steps, show_step);
 
-      using server_type = server<N, hostrpc::x64_x64_bitmap_types, decltype(cp),
-                                 operate, hostrpc::default_stepper>;
+      using server_type =
+          server<N, decltype(cp), operate, hostrpc::default_stepper>;
 
       server_type sv = {send, recv, server_active, &client_buffer[0],
                         &server_buffer[0]};
