@@ -19,9 +19,10 @@ extern "C" __attribute__((noinline)) void client_instance_direct(client_type& c)
 }
 
 extern "C" __attribute__((noinline)) void client_instance_from_pointers(
-    hostrpc::mailbox_t<N> inbox, hostrpc::mailbox_t<N> outbox,
-    hostrpc::slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE> active,
-    hostrpc::page_t* remote_buffer, hostrpc::page_t* local_buffer)
+    hostrpc::slot_bitmap_all_svm<N> inbox,
+    hostrpc::slot_bitmap_all_svm<N> outbox,
+    hostrpc::slot_bitmap_device<N> active, hostrpc::page_t* remote_buffer,
+    hostrpc::page_t* local_buffer)
 {
   client_type c = {inbox, outbox, active, remote_buffer, local_buffer};
   client_instance_direct(c);

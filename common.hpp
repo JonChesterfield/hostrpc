@@ -191,19 +191,17 @@ struct x64_allocate_slot_bitmap_data_deleter
   }
 };
 
-template <size_t N, size_t scope,
-          template <size_t> class data_t = slot_bitmap_data>
+template <size_t N, size_t scope>
 struct slot_bitmap;
 
 template <size_t N>
-using mailbox_t =
-    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, slot_bitmap_data>;
+using slot_bitmap_all_svm =
+    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>;
 
 template <size_t N>
-using lockarray_t =
-    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE, slot_bitmap_data>;
+using slot_bitmap_device = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>;
 
-template <size_t N, size_t scope, template <size_t> class data_t>
+template <size_t N, size_t scope>
 struct slot_bitmap
 {
   static_assert(N != 0, "");
@@ -214,8 +212,7 @@ struct slot_bitmap
 
   static_assert(sizeof(uint64_t) == sizeof(_Atomic uint64_t), "");
 
-  using slot_bitmap_data_t = data_t<size()>;
-
+  using slot_bitmap_data_t = slot_bitmap_data<size()>;
   static_assert(sizeof(slot_bitmap_data_t *) == 8, "");
 
   slot_bitmap_data_t *a;
@@ -460,22 +457,9 @@ struct slot_bitmap
   }
 };
 
-template <size_t N>
-class x64_x64_bitmap_types
-{
- public:
-  using inbox_t =
-      slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, slot_bitmap_data>;
-  using outbox_t =
-      slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, slot_bitmap_data>;
-  using locks_t =
-      slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE, slot_bitmap_data>;
-};
-
 // on return true, loaded contains active[w]
-template <size_t N, size_t scope, template <size_t> class data_t>
-bool slot_bitmap<N, scope, data_t>::try_claim_empty_slot(size_t i,
-                                                         uint64_t *loaded)
+template <size_t N, size_t scope>
+bool slot_bitmap<N, scope>::try_claim_empty_slot(size_t i, uint64_t *loaded)
 {
   assert(i < N);
   size_t w = index_to_element(i);
@@ -657,14 +641,10 @@ struct malloc_lock
   void *data[64];
 };
 
-
-
 template <size_t N, typename G>
-void try_garbage_collect_word(G garbage_bits,
-slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, slot_bitmap_data> inbox,
-                              slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, slot_bitmap_data> outbox,                               slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE, slot_bitmap_data> active,     
-                              
-                              uint64_t w)
+void try_garbage_collect_word(G garbage_bits, slot_bitmap_all_svm<N> inbox,
+                              slot_bitmap_all_svm<N> outbox,
+                              slot_bitmap_device<N> active, uint64_t w)
 {
   malloc_lock<true> lk;
   if (platform::is_master_lane())

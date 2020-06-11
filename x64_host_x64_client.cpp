@@ -75,11 +75,11 @@ TEST_CASE("hazard")
   page_t server_buffer[N];
 
   using mailbox_ptr_t =
-      std::unique_ptr<mailbox_t<N>::slot_bitmap_data_t,
+      std::unique_ptr<slot_bitmap_all_svm<N>::slot_bitmap_data_t,
                       x64_allocate_slot_bitmap_data_deleter<N>>;
 
   using lockarray_ptr_t =
-      std::unique_ptr<lockarray_t<N>::slot_bitmap_data_t,
+      std::unique_ptr<slot_bitmap_device<N>::slot_bitmap_data_t,
                       x64_allocate_slot_bitmap_data_deleter<N>>;
 
   mailbox_ptr_t send_data(x64_allocate_slot_bitmap_data<N>());
@@ -87,10 +87,10 @@ TEST_CASE("hazard")
   lockarray_ptr_t client_active_data(x64_allocate_slot_bitmap_data<N>());
   lockarray_ptr_t server_active_data(x64_allocate_slot_bitmap_data<N>());
 
-  mailbox_t<N> send(send_data.get());
-  mailbox_t<N> recv(recv_data.get());
-  lockarray_t<N> client_active(client_active_data.get());
-  lockarray_t<N> server_active(server_active_data.get());
+  slot_bitmap_all_svm<N> send(send_data.get());
+  slot_bitmap_all_svm<N> recv(recv_data.get());
+  slot_bitmap_device<N> client_active(client_active_data.get());
+  slot_bitmap_device<N> server_active(server_active_data.get());
 
   x64_x64_client client(recv, send, client_active, &server_buffer[0],
                         &client_buffer[0]);

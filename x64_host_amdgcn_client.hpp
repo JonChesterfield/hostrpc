@@ -136,10 +136,8 @@ inline void *alloc_from_region(hsa_region_t region, size_t size)
 template <size_t N>
 struct x64_amdgcn_pair
 {
-  using mt =
-      slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, slot_bitmap_data>;
-
-  using lt = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE, slot_bitmap_data>;
+  using mt = slot_bitmap_all_svm<N>;
+  using lt = slot_bitmap_device<N>;
 
   x64_amdgcn_pair(hsa_region_t fine, hsa_region_t gpu_coarse)
   {
