@@ -493,7 +493,7 @@ struct slot_owner_t;
 
 #ifdef __CUDACC__
 // TODO: amdgcn doesn't have thread_local either, just doesn't error on it
-extern  unsigned my_id;
+extern unsigned my_id;
 #else
 extern thread_local unsigned my_id;
 #endif

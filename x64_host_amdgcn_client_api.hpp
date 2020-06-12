@@ -10,7 +10,7 @@ void hostcall_client_async(uint64_t data[8]);
 
 #endif
 
-#if defined (__x86_64__)
+#if defined(__x86_64__)
 
 #include "hsa.h"
 

@@ -1,7 +1,7 @@
 #include "x64_host_x64_client.hpp"
 
-#include "interface.hpp"
 #include "client_impl.hpp"
+#include "interface.hpp"
 #include "memory.hpp"
 #include "server_impl.hpp"
 

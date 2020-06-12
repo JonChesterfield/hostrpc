@@ -64,7 +64,6 @@ __attribute__((always_inline)) inline void __assert_fail(const char *str,
   __builtin_trap();
 }
 
-
 // stub printf for now
 __attribute__((always_inline)) inline int printf(const char *, ...)
 {
@@ -116,29 +115,63 @@ __attribute__((always_inline)) inline uint64_t broadcast_master(uint64_t x)
 }  // namespace platform
 #endif
 
-
 #if defined(__CUDACC__)
 
 namespace platform
 {
-  inline void sleep_briefly(void) {}
-  inline void sleep(void) { }
+inline void sleep_briefly(void) {}
+inline void sleep(void) {}
 
+namespace detail
+{
+__attribute__((always_inline)) inline uint32_t ballot()
+{
+#if CUDA_VERSION >= 9000
+  return __activemask();
+#else
+  return 0;  // __ballot undeclared, definitely can't include cuda.h though
+             // return __ballot(1);
+#endif
+}
+
+__attribute__((always_inline)) inline uint32_t get_master_lane_id(void)
+{
+  return 0;  // todo
+}
+
+}  // namespace detail
 __attribute__((always_inline)) inline uint32_t get_lane_id(void)
 {
+  // uses threadIdx.x & 0x1f from cuda, need to find the corresponding intrinsic
+  return 0;
 }
+
 __attribute__((always_inline)) inline bool is_master_lane(void)
 {
+  return get_lane_id() == detail::get_master_lane_id();
 }
 
 __attribute__((always_inline)) inline uint32_t broadcast_master(uint32_t x)
 {
+  // involves __shfl_sync
+  uint32_t lane_id = get_lane_id();
+  uint32_t master_id = detail::get_master_lane_id();
+  uint32_t v;
+  if (lane_id == master_id)
+    {
+      v = x;
+    }
+  // shfl_sync isn't declared either
+  // v = __shfl_sync(UINT32_MAX, v, master_id);
+  return v;
 }
 
 __attribute__((always_inline)) inline uint64_t broadcast_master(uint64_t x)
 {
+  // probably don't want to model 64 wide warps on nvptx
+  return x;
 }
-}
+}  // namespace platform
 #endif
 
 namespace platform

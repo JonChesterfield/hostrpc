@@ -1,7 +1,7 @@
 #include "catch.hpp"
 
-#include "interface.hpp"
 #include "client_impl.hpp"
+#include "interface.hpp"
 #include "server_impl.hpp"
 #include "tests.hpp"
 
