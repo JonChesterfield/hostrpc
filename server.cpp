@@ -1,4 +1,4 @@
-#include "server.hpp"
+#include "server_impl.hpp"
 #include "memory.hpp"
 
 #define N 128
@@ -13,7 +13,7 @@ void server_instance(hostrpc::slot_bitmap_all_svm<N> inbox,
   {
   };
 
-  using server_type = hostrpc::server<N, copy_functor_nop, hostrpc::operate_nop,
+  using server_type = hostrpc::server_impl<N, copy_functor_nop, hostrpc::operate_nop,
                                       hostrpc::nop_stepper>;
 
   server_type s = {inbox, outbox, active, remote_buffer, local_buffer};

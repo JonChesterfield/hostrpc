@@ -1,9 +1,9 @@
 #ifndef HOSTRPC_X64_HOST_AMDGCN_CLIENT_HPP_INCLUDED
 #define HOSTRPC_X64_HOST_AMDGCN_CLIENT_HPP_INCLUDED
 
-#include "client.hpp"
+#include "client_impl.hpp"
 #include "platform.hpp"
-#include "server.hpp"
+#include "server_impl.hpp"
 
 #include "x64_host_amdgcn_client_api.hpp"
 
@@ -88,14 +88,14 @@ struct operate
 
 template <size_t N>
 using x64_amdgcn_client =
-    hostrpc::client<N, hostrpc::copy_functor_given_alias,
+    hostrpc::client_impl<N, hostrpc::copy_functor_given_alias,
                     x64_host_amdgcn_client::fill, x64_host_amdgcn_client::use,
                     hostrpc::nop_stepper>;
 
 #if !defined(__AMDGCN__)
 template <size_t N>
 using x64_amdgcn_server =
-    hostrpc::server<N, hostrpc::copy_functor_given_alias,
+    hostrpc::server_impl<N, hostrpc::copy_functor_given_alias,
                     x64_host_amdgcn_client::operate, hostrpc::nop_stepper>;
 #endif
 

@@ -1,4 +1,4 @@
-#include "client.hpp"
+#include "client_impl.hpp"
 #define N 128
 
 struct copy_functor_nop
@@ -6,7 +6,7 @@ struct copy_functor_nop
 {
 };
 
-using client_type = hostrpc::client<N, copy_functor_nop, hostrpc::fill_nop,
+using client_type = hostrpc::client_impl<N, copy_functor_nop, hostrpc::fill_nop,
                                     hostrpc::use_nop, hostrpc::nop_stepper>;
 
 extern "C" __attribute__((noinline)) void client_instance_direct(client_type& c)

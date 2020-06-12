@@ -24,13 +24,13 @@ enum class server_state : uint8_t
 };
 
 template <size_t N, typename Copy, typename Op, typename Step>
-struct server
+struct server_impl
 {
   using inbox_t = slot_bitmap_all_svm<N>;
   using outbox_t = slot_bitmap_all_svm<N>;
   using locks_t = slot_bitmap_device<N>;
 
-  server(inbox_t inbox, outbox_t outbox, locks_t active, page_t* remote_buffer,
+  server_impl(inbox_t inbox, outbox_t outbox, locks_t active, page_t* remote_buffer,
          page_t* local_buffer)
       : inbox(inbox),
         outbox(outbox),
@@ -40,7 +40,7 @@ struct server
   {
   }
 
-  server()
+  server_impl()
       : inbox{},
         outbox{},
         active{},

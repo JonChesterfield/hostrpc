@@ -1,11 +1,53 @@
 #include "x64_host_x64_client.hpp"
 
 #include "client.hpp"
+#include "client_impl.hpp"
 #include "memory.hpp"
-#include "server.hpp"
+#include "server_impl.hpp"
 
 #include <string.h>
 
+namespace hostrpc
+{
+x64_x64_t::client_t::client_t(size_t N) {}
+x64_x64_t::client_t::client_t() {}
+x64_x64_t::client_t::~client_t() {}
+bool x64_x64_t::client_t::valid_impl() { return true; }
+
+x64_x64_t::x64_x64_t(size_t N) : state(nullptr), N(N)
+{
+  if (N <= 128)
+    {
+      x64_x64_pair<128> *s = new x64_x64_pair<128>;
+      state = static_cast<void *>(s);
+    }
+}
+
+using ty = x64_x64_pair<128>;
+
+x64_x64_t::~x64_x64_t()
+{
+  ty *s = static_cast<ty *>(state);
+  if (s)
+    {
+      delete s;
+    }
+}
+x64_x64_t::client_t x64_x64_t::client()
+{
+  ty *s = static_cast<ty *>(state);
+  assert(s);
+  client_t res;
+
+  static_assert(sizeof(client_t::state) ==
+                    decltype(x64_x64_pair<128>::client)::serialize_size() *
+                        sizeof(uint64_t),
+                "");
+  s->client.serialize(&res.state[0]);
+  return res;
+}
+
+}  // namespace hostrpc
 static void init_page(hostrpc::page_t *page, uint64_t v)
 {
   for (unsigned i = 0; i < 64; i++)

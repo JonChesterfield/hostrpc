@@ -1,8 +1,8 @@
 #ifndef HOSTRPC_X64_HOST_X64_CLIENT_HPP_INCLUDED
 #define HOSTRPC_X64_HOST_X64_CLIENT_HPP_INCLUDED
 
-#include "client.hpp"
-#include "server.hpp"
+#include "client_impl.hpp"
+#include "server_impl.hpp"
 
 namespace hostrpc
 {
@@ -47,12 +47,12 @@ struct operate
 
 template <size_t N>
 using x64_x64_client =
-    hostrpc::client<N, hostrpc::copy_functor_memcpy_pull,
+    hostrpc::client_impl<N, hostrpc::copy_functor_memcpy_pull,
                     hostrpc::x64_host_x64_client::fill,
                     hostrpc::x64_host_x64_client::use, hostrpc::nop_stepper>;
 
 template <size_t N>
-using x64_x64_server = hostrpc::server<N, hostrpc::copy_functor_memcpy_pull,
+using x64_x64_server = hostrpc::server_impl<N, hostrpc::copy_functor_memcpy_pull,
                                        hostrpc::x64_host_x64_client::operate,
                                        hostrpc::nop_stepper>;
 

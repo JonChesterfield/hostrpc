@@ -1,11 +1,21 @@
 #include "catch.hpp"
 
 #include "client.hpp"
-#include "server.hpp"
+#include "client_impl.hpp"
+#include "server_impl.hpp"
 #include "tests.hpp"
 
 #include <thread>
 #include <unistd.h>
+
+TEST_CASE("instantiate")
+{
+
+  hostrpc::x64_x64_t::client_t foo(64);
+  CHECK(foo.valid());
+  
+
+}
 
 TEST_CASE("Bitmap")
 {
@@ -183,7 +193,7 @@ TEST_CASE("set up single word system")
       auto app_state = application_state_t(&val, &client_steps, show_step);
 
       using client_type =
-          client<N, hostrpc::copy_functor_memcpy_pull, fill, use, stepper>;
+          client_impl<N, hostrpc::copy_functor_memcpy_pull, fill, use, stepper>;
       client_type cl = {recv, send, client_active, &server_buffer[0],
                         &client_buffer[0]};
 
@@ -207,7 +217,7 @@ TEST_CASE("set up single word system")
           hostrpc::default_stepper_state(&server_steps, show_step);
 
       using server_type =
-          server<N, decltype(cp), operate, hostrpc::default_stepper>;
+          server_impl<N, decltype(cp), operate, hostrpc::default_stepper>;
 
       server_type sv = {send, recv, server_active, &client_buffer[0],
                         &server_buffer[0]};
