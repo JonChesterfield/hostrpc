@@ -47,9 +47,7 @@ $CXX $X64FLAGS -I$HSAINC x64_hazard_test.cpp -c -o x64_hazard_test.x64.bc
 $CXX $AMDGCNFLAGS client.cpp -c -o client.gcn.bc
 $CXX $AMDGCNFLAGS server.cpp -c -o server.gcn.bc
 
-
-$CXX $NVPTXFLAGS client.cpp -c -o client.ptx.bc
-
+# $CXX $NVPTXFLAGS client.cpp -c -o client.ptx.bc
 
 $CXX $AMDGCNFLAGS x64_host_amdgcn_client.cpp -c -o x64_host_amdgcn_client.gcn.bc
 

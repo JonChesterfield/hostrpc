@@ -65,6 +65,10 @@ struct x64_x64_t
   x64_x64_t(const x64_x64_t &) = delete;
   bool valid();  // true if construction succeeded
 
+  // This implements an architecture pair and a set of functions together
+  // It would be better to decouple that, which is tricky without reintroducing
+  // templates or overhead
+
   struct client_t : public client::interface<client_t>
   {
     friend struct client::interface<client_t>;

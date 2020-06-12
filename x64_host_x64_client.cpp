@@ -1,5 +1,3 @@
-#include "x64_host_x64_client.hpp"
-
 #include "client_impl.hpp"
 #include "interface.hpp"
 #include "memory.hpp"
@@ -11,6 +9,108 @@
 
 namespace hostrpc
 {
+namespace x64_host_x64_client
+{
+struct fill
+{
+  static void call(hostrpc::page_t *page, void *dv)
+  {
+    __builtin_memcpy(page, dv, sizeof(hostrpc::page_t));
+  };
+};
+
+struct use
+{
+  static void call(hostrpc::page_t *page, void *dv)
+  {
+    __builtin_memcpy(dv, page, sizeof(hostrpc::page_t));
+  };
+};
+
+struct operate
+{
+  static void call(hostrpc::page_t *page, void *)
+  {
+    for (unsigned c = 0; c < 64; c++)
+      {
+        hostrpc::cacheline_t &line = page->cacheline[c];
+        std::swap(line.element[0], line.element[7]);
+        std::swap(line.element[1], line.element[6]);
+        std::swap(line.element[2], line.element[5]);
+        std::swap(line.element[3], line.element[4]);
+        for (unsigned i = 0; i < 8; i++)
+          {
+            line.element[i]++;
+          }
+      }
+  }
+};
+
+}  // namespace x64_host_x64_client
+
+template <size_t N>
+using x64_x64_client = hostrpc::client_impl<
+    N, hostrpc::copy_functor_memcpy_pull, hostrpc::x64_host_x64_client::fill,
+    hostrpc::x64_host_x64_client::use, hostrpc::nop_stepper>;
+
+template <size_t N>
+using x64_x64_server =
+    hostrpc::server_impl<N, hostrpc::copy_functor_memcpy_pull,
+                         hostrpc::x64_host_x64_client::operate,
+                         hostrpc::nop_stepper>;
+
+// This doesn't especially care about fill/use/operate/step
+// It needs new, probably shouldn't try to compile it on non-x64
+template <size_t N>
+struct x64_x64_pair
+{
+  x64_x64_client<N> client;
+  x64_x64_server<N> server;
+
+  hostrpc::page_t *client_buffer;
+  hostrpc::page_t *server_buffer;
+  x64_x64_pair()
+  {
+    using namespace hostrpc;
+    size_t buffer_size = sizeof(page_t) * N;
+
+    // TODO: strictly should placement new here
+    client_buffer = reinterpret_cast<page_t *>(
+        x64_native::allocate(alignof(page_t), buffer_size));
+    server_buffer = reinterpret_cast<page_t *>(
+        x64_native::allocate(alignof(page_t), buffer_size));
+    assert(client_buffer != server_buffer);
+
+    slot_bitmap_data<N> *send_data = x64_allocate_slot_bitmap_data<N>();
+    slot_bitmap_data<N> *recv_data = x64_allocate_slot_bitmap_data<N>();
+    slot_bitmap_data<N> *client_locks_data = x64_allocate_slot_bitmap_data<N>();
+    slot_bitmap_data<N> *server_locks_data = x64_allocate_slot_bitmap_data<N>();
+
+    slot_bitmap_all_svm<N> send(send_data);
+    slot_bitmap_all_svm<N> recv(recv_data);
+    slot_bitmap_device<N> client_locks(client_locks_data);
+    slot_bitmap_device<N> server_locks(server_locks_data);
+
+    client = {recv, send, client_locks, server_buffer, client_buffer};
+    server = {send, recv, server_locks, client_buffer, server_buffer};
+  }
+  ~x64_x64_pair()
+  {
+    assert(client.inbox.data() == server.outbox.data());
+    assert(client.outbox.data() == server.inbox.data());
+
+    hostrpc::x64_allocate_slot_bitmap_data_deleter<N> del;
+    del(client.inbox.data());
+    del(server.inbox.data());
+    del(client.active.data());
+    del(server.active.data());
+
+    assert(client.local_buffer != server.local_buffer);
+    x64_native::deallocate(client.local_buffer);
+    x64_native::deallocate(server.local_buffer);
+  }
+};
+
 // TODO: Handle N variable w/out loss efficiency
 using ty = x64_x64_pair<128>;
 
@@ -18,8 +118,7 @@ x64_x64_t::x64_x64_t(size_t N) : state(nullptr), N(N)
 {
   if (N <= 128)
     {
-      // TODO: want the nothrow new but don't have <new>
-      x64_x64_pair<128> *s = new x64_x64_pair<128>;
+      x64_x64_pair<128> *s = new (std::nothrow) x64_x64_pair<128>;
       state = static_cast<void *>(s);
     }
 }
@@ -56,7 +155,6 @@ x64_x64_t::client_t x64_x64_t::client()
 
 __attribute__((used)) x64_x64_t::server_t x64_x64_t::server()
 {
-  asm("# HERE");
   ty *s = static_cast<ty *>(state);
   assert(s);
   server_t res;
