@@ -89,14 +89,14 @@ struct operate
 template <size_t N>
 using x64_amdgcn_client =
     hostrpc::client_impl<N, hostrpc::copy_functor_given_alias,
-                    x64_host_amdgcn_client::fill, x64_host_amdgcn_client::use,
-                    hostrpc::nop_stepper>;
+                         x64_host_amdgcn_client::fill,
+                         x64_host_amdgcn_client::use, hostrpc::nop_stepper>;
 
 #if !defined(__AMDGCN__)
 template <size_t N>
 using x64_amdgcn_server =
     hostrpc::server_impl<N, hostrpc::copy_functor_given_alias,
-                    x64_host_amdgcn_client::operate, hostrpc::nop_stepper>;
+                         x64_host_amdgcn_client::operate, hostrpc::nop_stepper>;
 #endif
 
 // needs to scale with CUs
@@ -160,7 +160,7 @@ struct x64_amdgcn_pair
 
     // sanity check deserialize
     {
-      uint64_t data[client.serialize_size()];
+      void *data[client.serialize_size()];
       client.serialize(data);
 
       x64_amdgcn_client<N> chk;
@@ -169,7 +169,7 @@ struct x64_amdgcn_pair
     }
 
     {
-      uint64_t data[server.serialize_size()];
+      void *data[server.serialize_size()];
       server.serialize(data);
 
       x64_amdgcn_server<N> chk;

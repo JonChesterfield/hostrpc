@@ -234,20 +234,9 @@ struct slot_bitmap
       }
   }
 
-  slot_bitmap_data<size()> *data() { return a; }
+  slot_bitmap(void *d) : a(static_cast<slot_bitmap_data<size()> *>(d)) {}
 
-  static constexpr size_t serialize_size() { return 1; }
-  void serialize(uint64_t *to)
-  {
-    uint64_t v;
-    __builtin_memcpy(&v, &a, 8);
-    to[0] = v;
-  }
-  void deserialize(uint64_t *from)
-  {
-    uint64_t v = from[0];
-    __builtin_memcpy(&a, &v, 8);
-  }
+  slot_bitmap_data<size()> *data() { return a; }
 
   ~slot_bitmap() {}
 

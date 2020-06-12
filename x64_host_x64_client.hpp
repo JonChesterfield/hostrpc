@@ -46,15 +46,15 @@ struct operate
 }  // namespace x64_host_x64_client
 
 template <size_t N>
-using x64_x64_client =
-    hostrpc::client_impl<N, hostrpc::copy_functor_memcpy_pull,
-                    hostrpc::x64_host_x64_client::fill,
-                    hostrpc::x64_host_x64_client::use, hostrpc::nop_stepper>;
+using x64_x64_client = hostrpc::client_impl<
+    N, hostrpc::copy_functor_memcpy_pull, hostrpc::x64_host_x64_client::fill,
+    hostrpc::x64_host_x64_client::use, hostrpc::nop_stepper>;
 
 template <size_t N>
-using x64_x64_server = hostrpc::server_impl<N, hostrpc::copy_functor_memcpy_pull,
-                                       hostrpc::x64_host_x64_client::operate,
-                                       hostrpc::nop_stepper>;
+using x64_x64_server =
+    hostrpc::server_impl<N, hostrpc::copy_functor_memcpy_pull,
+                         hostrpc::x64_host_x64_client::operate,
+                         hostrpc::nop_stepper>;
 
 template <size_t N>
 struct x64_x64_pair

@@ -30,8 +30,8 @@ struct server_impl
   using outbox_t = slot_bitmap_all_svm<N>;
   using locks_t = slot_bitmap_device<N>;
 
-  server_impl(inbox_t inbox, outbox_t outbox, locks_t active, page_t* remote_buffer,
-         page_t* local_buffer)
+  server_impl(inbox_t inbox, outbox_t outbox, locks_t active,
+              page_t* remote_buffer, page_t* local_buffer)
       : inbox(inbox),
         outbox(outbox),
         active(active),
@@ -49,23 +49,24 @@ struct server_impl
   {
   }
 
+  // in void*s
   static constexpr size_t serialize_size() { return 5; }
-  void serialize(uint64_t* to)
+  void serialize(void* to[5])
   {
-    inbox.serialize(&to[0]);
-    outbox.serialize(&to[1]);
-    active.serialize(&to[2]);
-    __builtin_memcpy(&to[3], &remote_buffer, 8);
-    __builtin_memcpy(&to[4], &local_buffer, 8);
+    to[0] = static_cast<void*>(inbox.data());
+    to[1] = static_cast<void*>(outbox.data());
+    to[2] = static_cast<void*>(active.data());
+    to[3] = static_cast<void*>(remote_buffer);
+    to[4] = static_cast<void*>(local_buffer);
   }
 
-  void deserialize(uint64_t* from)
+  void deserialize(void* from[5])
   {
-    inbox.deserialize(&from[0]);
-    outbox.deserialize(&from[1]);
-    active.deserialize(&from[2]);
-    __builtin_memcpy(&remote_buffer, &from[3], 8);
-    __builtin_memcpy(&local_buffer, &from[4], 8);
+    inbox = {from[0]};
+    outbox = {from[1]};
+    active = {from[2]};
+    remote_buffer = {static_cast<page_t*>(from[3])};
+    local_buffer = {static_cast<page_t*>(from[4])};
   }
 
   void step(int x, void* y) { Step::call(x, y); }

@@ -10,11 +10,8 @@
 
 TEST_CASE("instantiate")
 {
-
   hostrpc::x64_x64_t::client_t foo(64);
   CHECK(foo.valid());
-  
-
 }
 
 TEST_CASE("Bitmap")

@@ -6,8 +6,9 @@ struct copy_functor_nop
 {
 };
 
-using client_type = hostrpc::client_impl<N, copy_functor_nop, hostrpc::fill_nop,
-                                    hostrpc::use_nop, hostrpc::nop_stepper>;
+using client_type =
+    hostrpc::client_impl<N, copy_functor_nop, hostrpc::fill_nop,
+                         hostrpc::use_nop, hostrpc::nop_stepper>;
 
 extern "C" __attribute__((noinline)) void client_instance_direct(client_type& c)
 {
@@ -18,7 +19,7 @@ extern "C" __attribute__((noinline)) void client_instance_direct(client_type& c)
     }
 }
 
-extern "C" __attribute__((noinline)) void client_instance_from_pointers(
+extern "C" __attribute__((noinline)) void client_instance_from_components(
     hostrpc::slot_bitmap_all_svm<N> inbox,
     hostrpc::slot_bitmap_all_svm<N> outbox,
     hostrpc::slot_bitmap_device<N> active, hostrpc::page_t* remote_buffer,
@@ -31,9 +32,15 @@ extern "C" __attribute__((noinline)) void client_instance_from_pointers(
 void sink(client_type*);
 
 extern "C" __attribute__((noinline)) void client_instance_from_words(
-    uint64_t* from)
+    void** from)
 {
   client_type c;
   c.deserialize(from);
   client_instance_direct(c);
+}
+
+extern "C" __attribute__((noinline)) void client_instance_from_cast(void* from)
+{
+  client_type* c = reinterpret_cast<client_type*>(from);
+  client_instance_direct(*c);
 }

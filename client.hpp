@@ -109,7 +109,10 @@ struct x64_x64_t
     // of calling methods on it and an array of bytes from the perspective of
     // moving it around
     // the client_impl<> type is essentially a short list of pointers.
-    uint64_t state[5];
+    // Leaning towards putting the values into void* [5] in the right order
+    // and reinterpret_casting the start of the array as alternatives routing
+    // through integers are hitting the inttoptr blocks
+    void *state[5];
   };
 
   struct server_t : public server::interface<server_t>
@@ -122,7 +125,7 @@ struct x64_x64_t
     server_t();
     bool handle_impl(void *, uint64_t *);
     bool valid_impl();
-    uint64_t state[5];
+    void *state[5];
   };
 
   client_t client();

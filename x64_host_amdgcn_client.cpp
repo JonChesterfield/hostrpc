@@ -51,13 +51,13 @@ void* hostcall_server_init(hsa_region_t fine, hsa_region_t gpu_coarse,
 
   {
     size_t sz = res->client.serialize_size();
-    uint64_t bytes[sz];
+    void* bytes[sz];
     res->client.serialize(bytes);
     memcpy(client_address, bytes, sz * sizeof(uint64_t));
   }
   {
     size_t sz = res->server.serialize_size();
-    uint64_t bytes[sz];
+    void* bytes[sz];
     res->server.serialize(bytes);
     server_singleton.deserialize(bytes);
   }
