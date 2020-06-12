@@ -31,16 +31,16 @@ extern "C" __attribute__((noinline)) void client_instance_from_components(
 
 void sink(client_type*);
 
-extern "C" __attribute__((noinline)) void client_instance_from_words(
-    void** from)
-{
-  client_type c;
-  c.deserialize(from);
-  client_instance_direct(c);
-}
-
 extern "C" __attribute__((noinline)) void client_instance_from_cast(void* from)
 {
   client_type* c = reinterpret_cast<client_type*>(from);
+  client_instance_direct(*c);
+}
+
+extern "C" __attribute__((noinline)) void client_instance_from_aliasing(
+    void* from)
+{
+  using aliasing_client_type = __attribute__((__may_alias__)) client_type;
+  aliasing_client_type* c = reinterpret_cast<aliasing_client_type*>(from);
   client_instance_direct(*c);
 }

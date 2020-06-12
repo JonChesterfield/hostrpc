@@ -39,6 +39,7 @@ $CXX $X64FLAGS -I$HSAINC memory.cpp -c -o memory.x64.bc
 $CXX $X64FLAGS -I$HSAINC x64_host_x64_client.cpp -c -o x64_host_x64_client.x64.bc
 
 $CXX $X64FLAGS -I$HSAINC tests.cpp -c -o tests.x64.bc
+$CXX $X64FLAGS -I$HSAINC x64_hazard_test.cpp -c -o x64_hazard_test.x64.bc
 
 
 $CXX $AMDGCNFLAGS x64_host_amdgcn_client.cpp -c -o x64_host_amdgcn_client.gcn.bc
@@ -93,7 +94,7 @@ done
 
 
 rm -f states.exe
-$CXX tests.x64.bc states.x64.bc catch.o memory.x64.bc x64_host_x64_client.x64.bc $LDFLAGS -o states.exe
+$CXX tests.x64.bc x64_hazard_test.x64.bc states.x64.bc catch.o memory.x64.bc x64_host_x64_client.x64.bc $LDFLAGS -o states.exe
 
 time ./states.exe hazard
 

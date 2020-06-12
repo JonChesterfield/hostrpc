@@ -157,25 +157,6 @@ struct x64_amdgcn_pair
     client = {recv, send, client_active, server_buffer, client_buffer};
 
     server = {send, recv, server_active, client_buffer, server_buffer};
-
-    // sanity check deserialize
-    {
-      void *data[client.serialize_size()];
-      client.serialize(data);
-
-      x64_amdgcn_client<N> chk;
-      chk.deserialize(data);
-      assert(memcmp(&client, &chk, 40) == 0);
-    }
-
-    {
-      void *data[server.serialize_size()];
-      server.serialize(data);
-
-      x64_amdgcn_server<N> chk;
-      chk.deserialize(data);
-      assert(memcmp(&server, &chk, 40) == 0);
-    }
   }
 
   ~x64_amdgcn_pair()

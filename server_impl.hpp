@@ -49,26 +49,6 @@ struct server_impl
   {
   }
 
-  // in void*s
-  static constexpr size_t serialize_size() { return 5; }
-  void serialize(void* to[5])
-  {
-    to[0] = static_cast<void*>(inbox.data());
-    to[1] = static_cast<void*>(outbox.data());
-    to[2] = static_cast<void*>(active.data());
-    to[3] = static_cast<void*>(remote_buffer);
-    to[4] = static_cast<void*>(local_buffer);
-  }
-
-  void deserialize(void* from[5])
-  {
-    inbox = {from[0]};
-    outbox = {from[1]};
-    active = {from[2]};
-    remote_buffer = {static_cast<page_t*>(from[3])};
-    local_buffer = {static_cast<page_t*>(from[4])};
-  }
-
   void step(int x, void* y) { Step::call(x, y); }
 
   void dump_word(uint64_t word)

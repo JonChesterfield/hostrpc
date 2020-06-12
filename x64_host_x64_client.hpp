@@ -3,6 +3,7 @@
 
 #include "client_impl.hpp"
 #include "server_impl.hpp"
+#include "memory.hpp"
 
 namespace hostrpc
 {
@@ -62,18 +63,16 @@ struct x64_x64_pair
   x64_x64_client<N> client;
   x64_x64_server<N> server;
 
-  hostrpc::page_t client_buffer[N];
-  hostrpc::page_t server_buffer[N];
+  hostrpc::page_t *client_buffer;
+  hostrpc::page_t *server_buffer;
   x64_x64_pair()
   {
     using namespace hostrpc;
-#if 0
     size_t buffer_size = sizeof(page_t) * N;
-      page_t *client_buffer =
-    new (buffer_size, aligned_alloc(alignof(page_t), buffer_size)) page_t[N];
-    page_t *server_buffer =
-      new (buffer_size, aligned_alloc(alignof(page_t), buffer_size) page_t[N];
-#endif
+
+    // TODO: strictly should placement new here, or use aliasing annotations
+    client_buffer = reinterpret_cast<page_t*>(x64_native::allocate(alignof(page_t), buffer_size));
+    server_buffer = reinterpret_cast<page_t*>(x64_native::allocate(alignof(page_t), buffer_size));
     assert(client_buffer != server_buffer);
 
     slot_bitmap_data<N> *send_data = x64_allocate_slot_bitmap_data<N>();
@@ -101,8 +100,8 @@ struct x64_x64_pair
     del(server.active.data());
 
     assert(client.local_buffer != server.local_buffer);
-    // free(client.local_buffer);
-    // free(server.local_buffer);
+    x64_native::deallocate (client.local_buffer);
+    x64_native::deallocate (server.local_buffer);
   }
 };
 

@@ -49,19 +49,12 @@ void* hostcall_server_init(hsa_region_t fine, hsa_region_t gpu_coarse,
       new hostrpc::x64_amdgcn_pair<hostrpc::x64_host_amdgcn_array_size>(
           fine, gpu_coarse);
 
-  {
-    size_t sz = res->client.serialize_size();
-    void* bytes[sz];
-    res->client.serialize(bytes);
-    memcpy(client_address, bytes, sz * sizeof(uint64_t));
-  }
-  {
-    size_t sz = res->server.serialize_size();
-    void* bytes[sz];
-    res->server.serialize(bytes);
-    server_singleton.deserialize(bytes);
-  }
 
+  using ct =  decltype(hostrpc::x64_amdgcn_pair<hostrpc::x64_host_amdgcn_array_size>::client);
+
+  *reinterpret_cast<ct*>(client_address) = res->client;
+  server_singleton = res->server;
+  
   return static_cast<void*>(res);
 }
 

@@ -6,21 +6,10 @@
 
 #include "memory.hpp"
 #include "platform.hpp"
+#include "base_types.hpp"
 
 namespace hostrpc
 {
-struct cacheline_t
-{
-  alignas(64) uint64_t element[8];
-};
-static_assert(sizeof(cacheline_t) == 64, "");
-
-struct page_t
-{
-  alignas(4096) cacheline_t cacheline[64];
-};
-static_assert(sizeof(page_t) == 4096, "");
-
 // The bitmap in question is usually a runtime parameter, but as it's
 // invariant during program execution I think it's worth tolerating this
 // anyway. Going to lead to a switch somewhere.
