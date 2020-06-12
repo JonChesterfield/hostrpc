@@ -24,7 +24,8 @@ TEST_CASE("instantiate")
 TEST_CASE("Bitmap")
 {
   static constexpr const size_t N = 128;
-  using test_bitmap_t = hostrpc::slot_bitmap_all_svm<N>;
+  using ty = hostrpc::size_compiletime<N>;
+  using test_bitmap_t = hostrpc::slot_bitmap_all_svm<ty>;
   using bitmap_ptr_t =
       std::unique_ptr<_Atomic uint64_t,
                       hostrpc::x64_allocate_slot_bitmap_data_deleter>;
@@ -34,7 +35,7 @@ TEST_CASE("Bitmap")
   uint64_t tmp;
   SECTION("set and clear each element")
   {
-    test_bitmap_t b(ptr.get());
+    test_bitmap_t b(ptr.get(), ty{N});
     if (0)
       for (size_t i = 0; i < b.size(); i++)
         {
@@ -50,7 +51,7 @@ TEST_CASE("Bitmap")
 
   SECTION("find and unconditionally claim each element")
   {
-    test_bitmap_t b(ptr.get());
+    test_bitmap_t b(ptr.get(), ty{N});
     for (size_t i = 0; i < b.size(); i++)
       {
         size_t e = b.find_empty_slot();
@@ -65,7 +66,7 @@ TEST_CASE("Bitmap")
 
   SECTION("find and try claim each element")
   {
-    test_bitmap_t b(ptr.get());
+    test_bitmap_t b(ptr.get(), ty{N});
     for (size_t i = 0; i < b.size(); i++)
       {
         size_t e = b.find_empty_slot();
@@ -80,7 +81,7 @@ TEST_CASE("Bitmap")
 
   SECTION("find elements in the middle of the bitmap")
   {
-    test_bitmap_t b(ptr.get());
+    test_bitmap_t b(ptr.get(), ty{N});
     for (size_t i = 0; i < b.size(); i++)
       {
         b.try_claim_empty_slot(i, &tmp);
@@ -177,10 +178,11 @@ TEST_CASE("set up single word system")
   lockarray_ptr_t client_active_data(hostrpc::x64_allocate_slot_bitmap_data(N));
   lockarray_ptr_t server_active_data(hostrpc::x64_allocate_slot_bitmap_data(N));
 
-  slot_bitmap_all_svm<N> send(send_data.get());
-  slot_bitmap_all_svm<N> recv(recv_data.get());
-  slot_bitmap_device<N> client_active(client_active_data.get());
-  slot_bitmap_device<N> server_active(server_active_data.get());
+  using SZ = hostrpc::size_compiletime<N>;
+  slot_bitmap_all_svm<SZ> send(send_data.get(), SZ{});
+  slot_bitmap_all_svm<SZ> recv(recv_data.get(), SZ{});
+  slot_bitmap_device<SZ> client_active(client_active_data.get(), SZ{});
+  slot_bitmap_device<SZ> server_active(server_active_data.get(), SZ{});
 
   const uint64_t calls_planned = 1024;
   _Atomic(uint64_t) calls_launched(0);
@@ -192,8 +194,8 @@ TEST_CASE("set up single word system")
     safe_thread cl_thrd([&]() {
       auto app_state = application_state_t(&val, &client_steps, show_step);
 
-      using client_type =
-          client_impl<N, hostrpc::copy_functor_memcpy_pull, fill, use, stepper>;
+      using client_type = client_impl<SZ, hostrpc::copy_functor_memcpy_pull,
+                                      fill, use, stepper>;
       client_type cl = {recv, send, client_active, &server_buffer[0],
                         &client_buffer[0]};
 
@@ -217,7 +219,7 @@ TEST_CASE("set up single word system")
           hostrpc::default_stepper_state(&server_steps, show_step);
 
       using server_type =
-          server_impl<N, decltype(cp), operate, hostrpc::default_stepper>;
+          server_impl<SZ, decltype(cp), operate, hostrpc::default_stepper>;
 
       server_type sv = {send, recv, server_active, &client_buffer[0],
                         &server_buffer[0]};

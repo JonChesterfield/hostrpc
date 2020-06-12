@@ -1,8 +1,8 @@
 #include "x64_host_amdgcn_client.hpp"
 
 #if defined(__AMDGCN__)
-__attribute__((visibility("default")))
-hostrpc::x64_amdgcn_client<hostrpc::x64_host_amdgcn_array_size>
+__attribute__((visibility("default"))) hostrpc::x64_amdgcn_client<
+    hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>>
     client_singleton;
 
 void hostcall_client(uint64_t data[8])
@@ -33,7 +33,8 @@ thread_local unsigned my_id = 0;
 
 const char* hostcall_client_symbol() { return "client_singleton"; }
 
-hostrpc::x64_amdgcn_server<hostrpc::x64_host_amdgcn_array_size>
+hostrpc::x64_amdgcn_server<
+    hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>>
     server_singleton;
 
 void* hostcall_server_init(hsa_region_t fine, hsa_region_t gpu_coarse,

@@ -1,5 +1,6 @@
 #include "client_impl.hpp"
-#define N 128
+
+using SZ = hostrpc::size_compiletime<128>;
 
 struct copy_functor_nop
     : public hostrpc::copy_functor_interface<copy_functor_nop>
@@ -7,7 +8,7 @@ struct copy_functor_nop
 };
 
 using client_type =
-    hostrpc::client_impl<N, copy_functor_nop, hostrpc::fill_nop,
+    hostrpc::client_impl<SZ, copy_functor_nop, hostrpc::fill_nop,
                          hostrpc::use_nop, hostrpc::nop_stepper>;
 
 extern "C" __attribute__((noinline)) void client_instance_direct(client_type& c)
@@ -20,9 +21,9 @@ extern "C" __attribute__((noinline)) void client_instance_direct(client_type& c)
 }
 
 extern "C" __attribute__((noinline)) void client_instance_from_components(
-    hostrpc::slot_bitmap_all_svm<N> inbox,
-    hostrpc::slot_bitmap_all_svm<N> outbox,
-    hostrpc::slot_bitmap_device<N> active, hostrpc::page_t* remote_buffer,
+    hostrpc::slot_bitmap_all_svm<SZ> inbox,
+    hostrpc::slot_bitmap_all_svm<SZ> outbox,
+    hostrpc::slot_bitmap_device<SZ> active, hostrpc::page_t* remote_buffer,
     hostrpc::page_t* local_buffer)
 {
   client_type c = {inbox, outbox, active, remote_buffer, local_buffer};

@@ -86,16 +86,16 @@ struct operate
 // need to allocate buffers for both together
 // allocation functions are only available in the host
 
-template <size_t N>
+template <typename SZ>
 using x64_amdgcn_client =
-    hostrpc::client_impl<N, hostrpc::copy_functor_given_alias,
+    hostrpc::client_impl<SZ, hostrpc::copy_functor_given_alias,
                          x64_host_amdgcn_client::fill,
                          x64_host_amdgcn_client::use, hostrpc::nop_stepper>;
 
 #if !defined(__AMDGCN__)
-template <size_t N>
+template <typename SZ>
 using x64_amdgcn_server =
-    hostrpc::server_impl<N, hostrpc::copy_functor_given_alias,
+    hostrpc::server_impl<SZ, hostrpc::copy_functor_given_alias,
                          x64_host_amdgcn_client::operate, hostrpc::nop_stepper>;
 #endif
 
@@ -129,8 +129,9 @@ inline void *alloc_from_region(hsa_region_t region, size_t size)
 template <size_t N>
 struct x64_amdgcn_pair
 {
-  x64_amdgcn_client<N> client;
-  x64_amdgcn_server<N> server;
+  using SZ = hostrpc::size_compiletime<N>;
+  x64_amdgcn_client<SZ> client;
+  x64_amdgcn_server<SZ> server;
 
   x64_amdgcn_pair(hsa_region_t fine, hsa_region_t gpu_coarse)
   {
@@ -146,10 +147,10 @@ struct x64_amdgcn_pair
         hsa_allocate_slot_bitmap_data_alloc<N>(gpu_coarse);
     auto *server_active_data = hsa_allocate_slot_bitmap_data_alloc<N>(fine);
 
-    slot_bitmap_all_svm<N> send = {send_data};
-    slot_bitmap_all_svm<N> recv = {recv_data};
-    slot_bitmap_device<N> client_active = {client_active_data};
-    slot_bitmap_device<N> server_active = {server_active_data};
+    slot_bitmap_all_svm<SZ> send = {send_data, SZ{}};
+    slot_bitmap_all_svm<SZ> recv = {recv_data, SZ{}};
+    slot_bitmap_device<SZ> client_active = {client_active_data, SZ{}};
+    slot_bitmap_device<SZ> server_active = {server_active_data, SZ{}};
 
     client = {recv, send, client_active, server_buffer, client_buffer};
 

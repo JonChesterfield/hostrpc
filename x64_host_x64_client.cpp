@@ -48,14 +48,14 @@ struct operate
 
 }  // namespace x64_host_x64_client
 
-template <size_t N>
+template <typename SZ>
 using x64_x64_client = hostrpc::client_impl<
-    N, hostrpc::copy_functor_memcpy_pull, hostrpc::x64_host_x64_client::fill,
+    SZ, hostrpc::copy_functor_memcpy_pull, hostrpc::x64_host_x64_client::fill,
     hostrpc::x64_host_x64_client::use, hostrpc::nop_stepper>;
 
-template <size_t N>
+template <typename SZ>
 using x64_x64_server =
-    hostrpc::server_impl<N, hostrpc::copy_functor_memcpy_pull,
+    hostrpc::server_impl<SZ, hostrpc::copy_functor_memcpy_pull,
                          hostrpc::x64_host_x64_client::operate,
                          hostrpc::nop_stepper>;
 
@@ -64,8 +64,9 @@ using x64_x64_server =
 template <size_t N>
 struct x64_x64_pair
 {
-  x64_x64_client<N> client;
-  x64_x64_server<N> server;
+  using SZ = size_compiletime<N>;
+  x64_x64_client<SZ> client;
+  x64_x64_server<SZ> server;
 
   hostrpc::page_t *client_buffer;
   hostrpc::page_t *server_buffer;
@@ -86,10 +87,10 @@ struct x64_x64_pair
     auto *client_locks_data = x64_allocate_slot_bitmap_data(N);
     auto *server_locks_data = x64_allocate_slot_bitmap_data(N);
 
-    slot_bitmap_all_svm<N> send(send_data);
-    slot_bitmap_all_svm<N> recv(recv_data);
-    slot_bitmap_device<N> client_locks(client_locks_data);
-    slot_bitmap_device<N> server_locks(server_locks_data);
+    slot_bitmap_all_svm<SZ> send(send_data, SZ{N});
+    slot_bitmap_all_svm<SZ> recv(recv_data, SZ{N});
+    slot_bitmap_device<SZ> client_locks(client_locks_data, SZ{N});
+    slot_bitmap_device<SZ> server_locks(server_locks_data, SZ{N});
 
     client = {recv, send, client_locks, server_buffer, client_buffer};
     server = {send, recv, server_locks, client_buffer, server_buffer};
@@ -118,7 +119,7 @@ x64_x64_t::x64_x64_t(size_t N) : state(nullptr)
 {
   if (N <= 128)
     {
-      x64_x64_pair<128> *s = new (std::nothrow) x64_x64_pair<128>;
+      ty *s = new (std::nothrow) ty;
       state = static_cast<void *>(s);
     }
 }

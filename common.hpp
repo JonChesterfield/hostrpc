@@ -153,16 +153,6 @@ struct cache
   }
 };
 
-#if 0
-  template <size_t size>
-struct slot_bitmap_data
-{
-  constexpr const static size_t align = 64;
-  static_assert(size % 64 == 0, "Size must be multiple of 64");
-  alignas(align) _Atomic uint64_t data[size / 64];
-};
-#endif
-
 #if defined(__x86_64__)
 
 inline _Atomic uint64_t *x64_allocate_slot_bitmap_data(size_t size)
@@ -186,42 +176,73 @@ struct x64_allocate_slot_bitmap_data_deleter
 };
 #endif
 
-template <size_t N, size_t scope>
+struct size_runtime
+{
+  size_runtime(size_t N) : SZ(N) {}
+  size_t N() const { return SZ; }
+
+ private:
+  size_t SZ;
+};
+
+template <size_t SZ>
+struct size_compiletime
+{
+  size_compiletime() {}
+  size_compiletime(size_t) {}
+  constexpr size_t N() const { return SZ; }
+};
+
+template <typename SZ, size_t scope>
 struct slot_bitmap;
 
-template <size_t N>
+template <typename SZ>
 using slot_bitmap_all_svm =
-    slot_bitmap<N, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>;
+    slot_bitmap<SZ, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>;
 
-template <size_t N>
-using slot_bitmap_device = slot_bitmap<N, __OPENCL_MEMORY_SCOPE_DEVICE>;
+template <typename SZ>
+using slot_bitmap_device = slot_bitmap<SZ, __OPENCL_MEMORY_SCOPE_DEVICE>;
 
-template <size_t N, size_t scope>
-struct slot_bitmap
+template <typename SZ, size_t scope>
+struct slot_bitmap : public SZ
 {
-  static_assert(N != 0, "");
-  static_assert(N != SIZE_MAX, "Used as a sentinel");
-  static_assert(N % 64 == 0, "Size must be multiple of 64");
-  static constexpr size_t size() { return N; }
-  static constexpr size_t words() { return size() / 64; }
+  // SZ argument is used to get the number of slots, a multiple of 64
+  // This type is required to occupy 8 bytes, which will not be the case
+  // for non-empty base. May end up passing SZ into the methods.
+
+  // static_assert(N != 0, "");
+  // static_assert(N != SIZE_MAX, "Used as a sentinel");
+  // static_assert(N % 64 == 0, "Size must be multiple of 64");
+  size_t size() const { return SZ::N(); }
+  size_t words() const { return size() / 64; }
 
   static_assert(sizeof(uint64_t) == sizeof(_Atomic uint64_t), "");
 
   static_assert(sizeof(_Atomic uint64_t *) == 8, "");
 
-  _Atomic uint64_t *a;
-  slot_bitmap() : a(nullptr) {}
-
-  slot_bitmap(_Atomic uint64_t *d) : a(d)
+  bool valid()
   {
-    assert(d);
+    // Notably, default constructed instance isn't valid
+    static_assert(sizeof(slot_bitmap<SZ, scope>) == 8, "");
+    return (a != nullptr) && (SZ::N() != 0) && (SZ::N() != SIZE_MAX) &&
+           (SZ::N() % 64 == 0);
+  }
+  _Atomic uint64_t *a;
+
+  slot_bitmap() : SZ{0}, a(nullptr) {}
+  slot_bitmap(_Atomic uint64_t *d, SZ sz) : SZ{sz}, a(d)
+  {
+    assert(valid());
     for (size_t i = 0; i < words(); i++)
       {
         a[i] = 0;
       }
   }
 
-  slot_bitmap(void *d) : a(static_cast<_Atomic uint64_t *>(d)) {}
+  slot_bitmap(void *d, SZ sz) : SZ{sz}, a(static_cast<_Atomic uint64_t *>(d))
+  {
+    assert(valid());
+  }
 
   _Atomic uint64_t *data() { return a; }
 
@@ -404,7 +425,7 @@ struct slot_bitmap
  private:
   __attribute__((used)) uint64_t clear_slot_given_already_set(size_t i)
   {
-    assert(i < N);
+    assert(i < size());
     size_t w = index_to_element(i);
     uint64_t subindex = index_to_subindex(i);
     assert(detail::nthbitset64(load_word(w), subindex));
@@ -420,7 +441,7 @@ struct slot_bitmap
 
   uint64_t set_slot_given_already_clear(size_t i)
   {
-    assert(i < N);
+    assert(i < size());
     size_t w = index_to_element(i);
     uint64_t subindex = index_to_subindex(i);
     assert(!detail::nthbitset64(load_word(w), subindex));
@@ -435,10 +456,10 @@ struct slot_bitmap
 };
 
 // on return true, loaded contains active[w]
-template <size_t N, size_t scope>
-bool slot_bitmap<N, scope>::try_claim_empty_slot(size_t i, uint64_t *loaded)
+template <typename SZ, size_t scope>
+bool slot_bitmap<SZ, scope>::try_claim_empty_slot(size_t i, uint64_t *loaded)
 {
-  assert(i < N);
+  assert(i < size());
   size_t w = index_to_element(i);
   uint64_t subindex = index_to_subindex(i);
 
@@ -631,10 +652,10 @@ struct malloc_lock
   void *data[64];
 };
 
-template <size_t N, typename G>
-void try_garbage_collect_word(G garbage_bits, slot_bitmap_all_svm<N> inbox,
-                              slot_bitmap_all_svm<N> outbox,
-                              slot_bitmap_device<N> active, uint64_t w)
+template <typename SZ, typename G>
+void try_garbage_collect_word(G garbage_bits, slot_bitmap_all_svm<SZ> inbox,
+                              slot_bitmap_all_svm<SZ> outbox,
+                              slot_bitmap_device<SZ> active, uint64_t w)
 {
   malloc_lock<true> lk;
   if (platform::is_master_lane())

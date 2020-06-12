@@ -23,12 +23,12 @@ enum class server_state : uint8_t
   result_with_thread = 0b111,
 };
 
-template <size_t N, typename Copy, typename Op, typename Step>
+template <typename SZ, typename Copy, typename Op, typename Step>
 struct server_impl
 {
-  using inbox_t = slot_bitmap_all_svm<N>;
-  using outbox_t = slot_bitmap_all_svm<N>;
-  using locks_t = slot_bitmap_device<N>;
+  using inbox_t = slot_bitmap_all_svm<SZ>;
+  using outbox_t = slot_bitmap_all_svm<SZ>;
+  using locks_t = slot_bitmap_device<SZ>;
 
   server_impl(inbox_t inbox, outbox_t outbox, locks_t active,
               page_t* remote_buffer, page_t* local_buffer)
@@ -94,7 +94,7 @@ struct server_impl
   void try_garbage_collect_word_server(uint64_t w)
   {
     auto c = [](uint64_t i, uint64_t o) -> uint64_t { return ~i & o; };
-    try_garbage_collect_word<N, decltype(c)>(c, inbox, outbox, active, w);
+    try_garbage_collect_word<SZ, decltype(c)>(c, inbox, outbox, active, w);
   }
 
   size_t words()

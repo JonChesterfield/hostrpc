@@ -43,12 +43,13 @@ enum class client_state : uint8_t
 // garbage that is, can't claim the slot for a new thread is that a sufficient
 // criteria for the slot to be awaiting gc?
 
-template <size_t N, typename Copy, typename Fill, typename Use, typename Step>
+template <typename SZ, typename Copy, typename Fill, typename Use,
+          typename Step>
 struct client_impl
 {
-  using inbox_t = slot_bitmap_all_svm<N>;
-  using outbox_t = slot_bitmap_all_svm<N>;
-  using locks_t = slot_bitmap_device<N>;
+  using inbox_t = slot_bitmap_all_svm<SZ>;
+  using outbox_t = slot_bitmap_all_svm<SZ>;
+  using locks_t = slot_bitmap_device<SZ>;
 
   client_impl(inbox_t inbox, outbox_t outbox, locks_t active,
               page_t* remote_buffer, page_t* local_buffer)
@@ -114,7 +115,7 @@ struct client_impl
   void try_garbage_collect_word_client(uint64_t w)
   {
     auto c = [](uint64_t i, uint64_t) -> uint64_t { return i; };
-    try_garbage_collect_word<N, decltype(c)>(c, inbox, outbox, active, w);
+    try_garbage_collect_word<SZ, decltype(c)>(c, inbox, outbox, active, w);
   }
 
   void dump_word(uint64_t word)
