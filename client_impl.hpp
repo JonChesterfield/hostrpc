@@ -45,41 +45,39 @@ enum class client_state : uint8_t
 
 template <typename SZ, typename Copy, typename Fill, typename Use,
           typename Step>
-struct client_impl
+struct client_impl : public SZ
 {
   using inbox_t = slot_bitmap_all_svm<SZ>;
   using outbox_t = slot_bitmap_all_svm<SZ>;
   using locks_t = slot_bitmap_device<SZ>;
 
-  client_impl(inbox_t inbox, outbox_t outbox, locks_t active,
+  client_impl(SZ sz, inbox_t inbox, outbox_t outbox, locks_t active,
               page_t* remote_buffer, page_t* local_buffer)
 
-      : inbox(inbox),
-        outbox(outbox),
-        active(active),
+      : SZ{sz},
         remote_buffer(remote_buffer),
-        local_buffer(local_buffer)
+        local_buffer(local_buffer),
+        inbox(inbox),
+        outbox(outbox),
+        active(active)
   {
     static_assert(sizeof(client_impl) == 40, "");
     static_assert(alignof(client_impl) == 8, "");
   }
 
   client_impl()
-      : inbox{},
-        outbox{},
-        active{},
+      : SZ{0},
         remote_buffer(nullptr),
-        local_buffer(nullptr)
+        local_buffer(nullptr),
+        inbox{},
+        outbox{},
+        active{}
   {
   }
 
   void step(int x, void* y) { Step::call(x, y); }
 
-  size_t words()
-  {
-    // todo: constexpr, static assert matches outbox and active
-    return inbox.words();
-  }
+  size_t words() { return SZ::N() / 64; }
 
   size_t find_candidate_client_slot(uint64_t w)
   {
@@ -333,11 +331,11 @@ struct client_impl
     return false;
   }
 
+  page_t* remote_buffer;
+  page_t* local_buffer;
   inbox_t inbox;
   outbox_t outbox;
   locks_t active;
-  page_t* remote_buffer;
-  page_t* local_buffer;
 };
 
 }  // namespace hostrpc

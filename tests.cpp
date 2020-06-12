@@ -196,7 +196,11 @@ TEST_CASE("set up single word system")
 
       using client_type = client_impl<SZ, hostrpc::copy_functor_memcpy_pull,
                                       fill, use, stepper>;
-      client_type cl = {recv, send, client_active, &server_buffer[0],
+      client_type cl = {SZ{},
+                        recv,
+                        send,
+                        client_active,
+                        &server_buffer[0],
                         &client_buffer[0]};
 
       void* application_state_ptr = static_cast<void*>(&app_state);
@@ -221,7 +225,11 @@ TEST_CASE("set up single word system")
       using server_type =
           server_impl<SZ, decltype(cp), operate, hostrpc::default_stepper>;
 
-      server_type sv = {send, recv, server_active, &client_buffer[0],
+      server_type sv = {SZ{},
+                        send,
+                        recv,
+                        server_active,
+                        &client_buffer[0],
                         &server_buffer[0]};
 
       void* application_state = static_cast<void*>(&stepper_state);

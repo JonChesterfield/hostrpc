@@ -3,7 +3,7 @@
 
 using SZ = hostrpc::size_compiletime<128>;
 
-void server_instance(hostrpc::slot_bitmap_all_svm<SZ> inbox,
+void server_instance(SZ sz, hostrpc::slot_bitmap_all_svm<SZ> inbox,
                      hostrpc::slot_bitmap_all_svm<SZ> outbox,
                      hostrpc::slot_bitmap_device<SZ> active,
                      hostrpc::page_t* remote_buffer,
@@ -18,7 +18,7 @@ void server_instance(hostrpc::slot_bitmap_all_svm<SZ> inbox,
       hostrpc::server_impl<SZ, copy_functor_nop, hostrpc::operate_nop,
                            hostrpc::nop_stepper>;
 
-  server_type s = {inbox, outbox, active, remote_buffer, local_buffer};
+  server_type s = {sz, inbox, outbox, active, remote_buffer, local_buffer};
 
   for (;;)
     {

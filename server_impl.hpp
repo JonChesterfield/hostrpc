@@ -24,28 +24,32 @@ enum class server_state : uint8_t
 };
 
 template <typename SZ, typename Copy, typename Op, typename Step>
-struct server_impl
+struct server_impl : public SZ
 {
   using inbox_t = slot_bitmap_all_svm<SZ>;
   using outbox_t = slot_bitmap_all_svm<SZ>;
   using locks_t = slot_bitmap_device<SZ>;
 
-  server_impl(inbox_t inbox, outbox_t outbox, locks_t active,
+  server_impl(SZ sz, inbox_t inbox, outbox_t outbox, locks_t active,
               page_t* remote_buffer, page_t* local_buffer)
-      : inbox(inbox),
-        outbox(outbox),
-        active(active),
+      : SZ{sz},
+
         remote_buffer(remote_buffer),
-        local_buffer(local_buffer)
+        local_buffer(local_buffer),
+
+        inbox(inbox),
+        outbox(outbox),
+        active(active)
   {
   }
 
   server_impl()
-      : inbox{},
-        outbox{},
-        active{},
+      : SZ{0},
         remote_buffer(nullptr),
-        local_buffer(nullptr)
+        local_buffer(nullptr),
+        inbox{},
+        outbox{},
+        active{}
   {
   }
 
@@ -97,14 +101,10 @@ struct server_impl
     try_garbage_collect_word<SZ, decltype(c)>(c, inbox, outbox, active, w);
   }
 
-  size_t words()
-  {
-    // todo: constexpr, static assert matches outbox and active
-    return inbox.words();
-  }
+  size_t words() { return size() / 64; }
 
   // may want to rename this, number-slots?
-  size_t size() { return inbox.size(); }
+  size_t size() { return SZ::N(); }
 
   bool rpc_handle_given_slot(void* application_state, size_t slot)
   {
@@ -275,11 +275,11 @@ struct server_impl
     return false;
   }
 
+  page_t* remote_buffer;
+  page_t* local_buffer;
   inbox_t inbox;
   outbox_t outbox;
   locks_t active;
-  page_t* remote_buffer;
-  page_t* local_buffer;
 };
 
 }  // namespace hostrpc

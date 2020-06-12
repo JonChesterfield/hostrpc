@@ -85,7 +85,7 @@ struct x64_x64_t
     // Leaning towards putting the values into void* [5] in the right order
     // and reinterpret_casting the start of the array as alternatives routing
     // through integers are hitting the inttoptr blocks
-    __attribute__((__may_alias__)) uint64_t state[5];
+    __attribute__((__may_alias__)) uint64_t state[6];
   };
 
   struct server_t : public server::interface<server_t>
@@ -96,7 +96,7 @@ struct x64_x64_t
 
    private:
     bool handle_impl(void *, uint64_t *);
-    __attribute__((__may_alias__)) uint64_t state[5];
+    __attribute__((__may_alias__)) uint64_t state[6];
   };
 
   client_t client();

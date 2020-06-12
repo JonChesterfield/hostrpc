@@ -87,13 +87,13 @@ struct x64_x64_pair
     auto *client_locks_data = x64_allocate_slot_bitmap_data(N);
     auto *server_locks_data = x64_allocate_slot_bitmap_data(N);
 
-    slot_bitmap_all_svm<SZ> send(send_data, SZ{N});
-    slot_bitmap_all_svm<SZ> recv(recv_data, SZ{N});
-    slot_bitmap_device<SZ> client_locks(client_locks_data, SZ{N});
-    slot_bitmap_device<SZ> server_locks(server_locks_data, SZ{N});
+    slot_bitmap_all_svm<SZ> send(send_data, SZ{});
+    slot_bitmap_all_svm<SZ> recv(recv_data, SZ{});
+    slot_bitmap_device<SZ> client_locks(client_locks_data, SZ{});
+    slot_bitmap_device<SZ> server_locks(server_locks_data, SZ{});
 
-    client = {recv, send, client_locks, server_buffer, client_buffer};
-    server = {send, recv, server_locks, client_buffer, server_buffer};
+    client = {SZ{}, recv, send, client_locks, server_buffer, client_buffer};
+    server = {SZ{}, send, recv, server_locks, client_buffer, server_buffer};
   }
   ~x64_x64_pair()
   {

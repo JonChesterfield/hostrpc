@@ -152,9 +152,9 @@ struct x64_amdgcn_pair
     slot_bitmap_device<SZ> client_active = {client_active_data, SZ{}};
     slot_bitmap_device<SZ> server_active = {server_active_data, SZ{}};
 
-    client = {recv, send, client_active, server_buffer, client_buffer};
+    client = {SZ{}, recv, send, client_active, server_buffer, client_buffer};
 
-    server = {send, recv, server_active, client_buffer, server_buffer};
+    server = {SZ{}, send, recv, server_active, client_buffer, server_buffer};
   }
 
   ~x64_amdgcn_pair()
