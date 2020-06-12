@@ -168,7 +168,7 @@ struct server_impl
 
     assert(c.is(0b101));
     step(__LINE__, application_state);
-    tracker.claim(slot);
+    tracker().claim(slot);
 
     // make the calls
     Copy::pull_to_server_from_client((void*)&local_buffer[slot],
@@ -186,7 +186,7 @@ struct server_impl
 
     assert(c.is(0b101));
 
-    tracker.release(slot);
+    tracker().release(slot);
 
     // publish result
     {

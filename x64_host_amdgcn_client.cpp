@@ -24,17 +24,11 @@ void hostcall_client_async(uint64_t data[8])
     }
 }
 
-namespace hostrpc
-{
-slot_owner tracker;
-}  // namespace hostrpc
-
 #else
 
 namespace hostrpc
 {
 thread_local unsigned my_id = 0;
-slot_owner tracker;
 }  // namespace hostrpc
 
 const char* hostcall_client_symbol() { return "client_singleton"; }
@@ -49,12 +43,12 @@ void* hostcall_server_init(hsa_region_t fine, hsa_region_t gpu_coarse,
       new hostrpc::x64_amdgcn_pair<hostrpc::x64_host_amdgcn_array_size>(
           fine, gpu_coarse);
 
-
-  using ct =  decltype(hostrpc::x64_amdgcn_pair<hostrpc::x64_host_amdgcn_array_size>::client);
+  using ct = decltype(
+      hostrpc::x64_amdgcn_pair<hostrpc::x64_host_amdgcn_array_size>::client);
 
   *reinterpret_cast<ct*>(client_address) = res->client;
   server_singleton = res->server;
-  
+
   return static_cast<void*>(res);
 }
 

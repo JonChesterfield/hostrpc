@@ -4,9 +4,9 @@
 #include <stdatomic.h>
 #include <stdint.h>
 
+#include "base_types.hpp"
 #include "memory.hpp"
 #include "platform.hpp"
-#include "base_types.hpp"
 
 namespace hostrpc
 {
@@ -493,7 +493,6 @@ struct slot_owner_t;
 extern thread_local unsigned my_id;
 
 using slot_owner = slot_owner_t<false>;
-extern slot_owner tracker;
 
 template <>
 struct slot_owner_t<false>
@@ -561,6 +560,12 @@ struct slot_owner_t<true>
       }
   }
 };
+
+inline slot_owner tracker()
+{
+  static slot_owner t;
+  return t;
+}
 
 template <bool enable>
 struct malloc_lock

@@ -19,7 +19,6 @@ TEST_CASE("instantiate")
   client.invoke(0);
 
   server.handle(0);
-  
 }
 
 TEST_CASE("Bitmap")

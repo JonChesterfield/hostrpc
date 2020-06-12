@@ -1,9 +1,9 @@
-#include "client.hpp"
-#include "catch.hpp"
 #include "base_types.hpp"
+#include "catch.hpp"
+#include "client.hpp"
 
-#include <thread>
 #include <cstring>
+#include <thread>
 
 static void init_page(hostrpc::page_t *page, uint64_t v)
 {
@@ -21,13 +21,12 @@ namespace hostrpc
 thread_local unsigned my_id = 0;
 }  // namespace hostrpc
 
-
 TEST_CASE("hazard")
 {
   using namespace hostrpc;
   hostrpc::x64_x64_t p(128);
 
-    _Atomic bool server_live(true);
+  _Atomic bool server_live(true);
 
   auto server_worker = [&](unsigned id) {
     my_id = id;
@@ -118,5 +117,4 @@ TEST_CASE("hazard")
     {
       i.join();
     }
-
 }

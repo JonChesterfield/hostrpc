@@ -3,8 +3,8 @@
 
 // TODO: Rename file
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 namespace hostrpc
 {
@@ -46,7 +46,7 @@ struct interface
   bool handle(void *x) noexcept
   {
     uint64_t loc;
-    return handle(x,&loc);
+    return handle(x, &loc);
   }
 
  protected:
@@ -65,13 +65,13 @@ struct x64_x64_t
   x64_x64_t(size_t);
   ~x64_x64_t();
   x64_x64_t(const x64_x64_t &) = delete;
-  bool valid(); // true if construction succeeded
-  
+  bool valid();  // true if construction succeeded
+
   struct client_t : public client::interface<client_t>
   {
     friend struct client::interface<client_t>;
     friend struct x64_x64_t;
-    client_t() {} // would like this to be private
+    client_t() {}  // would like this to be private
    private:
     bool invoke_impl(void *);
     bool invoke_async_impl(void *);
@@ -90,7 +90,8 @@ struct x64_x64_t
   {
     friend struct server::interface<server_t>;
     friend struct x64_x64_t;
-    server_t(){}
+    server_t() {}
+
    private:
     bool handle_impl(void *, uint64_t *);
     __attribute__((__may_alias__)) uint64_t state[5];

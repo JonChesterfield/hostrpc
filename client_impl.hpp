@@ -177,7 +177,7 @@ struct client_impl
 
     assert(c.is(0b001));
     step(__LINE__, application_state);
-    tracker.claim(slot);
+    tracker().claim(slot);
 
     // wave_populate
     Fill::call(&local_buffer[slot], application_state);
@@ -187,7 +187,7 @@ struct client_impl
                                      sizeof(page_t));
     step(__LINE__, application_state);
 
-    tracker.release(slot);
+    tracker().release(slot);
 
     // wave_publish work
     {
@@ -239,7 +239,7 @@ struct client_impl
         __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
         assert(c.is(0b111));
-        tracker.claim(slot);
+        tracker().claim(slot);
 
         step(__LINE__, application_state);
         Copy::pull_to_client_from_server((void*)&local_buffer[slot],
@@ -251,7 +251,7 @@ struct client_impl
 
         step(__LINE__, application_state);
 
-        tracker.release(slot);
+        tracker().release(slot);
 
         // mark the work as no longer in use
         // todo: is it better to leave this for the GC?

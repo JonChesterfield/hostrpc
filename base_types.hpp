@@ -16,6 +16,6 @@ struct page_t
   alignas(4096) cacheline_t cacheline[64];
 };
 static_assert(sizeof(page_t) == 4096, "");
-}
+}  // namespace hostrpc
 
 #endif

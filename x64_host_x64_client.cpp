@@ -54,10 +54,9 @@ x64_x64_t::client_t x64_x64_t::client()
   return res;
 }
 
-  __attribute__((used))
-x64_x64_t::server_t x64_x64_t::server()
+__attribute__((used)) x64_x64_t::server_t x64_x64_t::server()
 {
-  asm ("# HERE");
+  asm("# HERE");
   ty *s = static_cast<ty *>(state);
   assert(s);
   server_t res;
@@ -85,9 +84,3 @@ bool x64_x64_t::server_t::handle_impl(void *application_state, uint64_t *l)
 }
 
 }  // namespace hostrpc
-
-namespace hostrpc
-{
-slot_owner tracker;
-}  // namespace hostrpc
-

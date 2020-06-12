@@ -2,8 +2,8 @@
 #define HOSTRPC_X64_HOST_X64_CLIENT_HPP_INCLUDED
 
 #include "client_impl.hpp"
-#include "server_impl.hpp"
 #include "memory.hpp"
+#include "server_impl.hpp"
 
 namespace hostrpc
 {
@@ -71,8 +71,10 @@ struct x64_x64_pair
     size_t buffer_size = sizeof(page_t) * N;
 
     // TODO: strictly should placement new here, or use aliasing annotations
-    client_buffer = reinterpret_cast<page_t*>(x64_native::allocate(alignof(page_t), buffer_size));
-    server_buffer = reinterpret_cast<page_t*>(x64_native::allocate(alignof(page_t), buffer_size));
+    client_buffer = reinterpret_cast<page_t *>(
+        x64_native::allocate(alignof(page_t), buffer_size));
+    server_buffer = reinterpret_cast<page_t *>(
+        x64_native::allocate(alignof(page_t), buffer_size));
     assert(client_buffer != server_buffer);
 
     slot_bitmap_data<N> *send_data = x64_allocate_slot_bitmap_data<N>();
@@ -100,8 +102,8 @@ struct x64_x64_pair
     del(server.active.data());
 
     assert(client.local_buffer != server.local_buffer);
-    x64_native::deallocate (client.local_buffer);
-    x64_native::deallocate (server.local_buffer);
+    x64_native::deallocate(client.local_buffer);
+    x64_native::deallocate(server.local_buffer);
   }
 };
 
