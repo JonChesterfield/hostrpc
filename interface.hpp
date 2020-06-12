@@ -104,7 +104,6 @@ struct x64_x64_t
 
  private:
   void *state;
-  size_t N;
 };
 
 }  // namespace hostrpc

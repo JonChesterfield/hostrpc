@@ -134,7 +134,7 @@ struct client_impl
     const uint64_t element = index_to_element(slot);
     const uint64_t subindex = index_to_subindex(slot);
 
-    cache<N> c;
+    cache c;
     c.init(slot);
     uint64_t i = inbox.load_word(element);
     uint64_t o = outbox.load_word(element);

@@ -106,16 +106,16 @@ static const constexpr size_t x64_host_amdgcn_array_size = 2048;
 namespace
 {
 template <size_t size>
-inline slot_bitmap_data<size> *hsa_allocate_slot_bitmap_data_alloc(
+inline _Atomic uint64_t *hsa_allocate_slot_bitmap_data_alloc(
     hsa_region_t region)
 {
-  void *memory = hostrpc::hsa::allocate(region.handle,
-                                        alignof(slot_bitmap_data<size>), size);
-  return reinterpret_cast<slot_bitmap_data<size> *>(memory);
+  const size_t align = 64;
+  void *memory = hostrpc::hsa::allocate(region.handle, align, size);
+  return reinterpret_cast<_Atomic uint64_t *>(memory);
 }
 
 template <size_t size>
-inline void hsa_allocate_slot_bitmap_data_free(slot_bitmap_data<size> *d)
+inline void hsa_allocate_slot_bitmap_data_free(_Atomic uint64_t *d)
 {
   hostrpc::hsa::deallocate(static_cast<void *>(d));
 }
@@ -140,14 +140,11 @@ struct x64_amdgcn_pair
         reinterpret_cast<page_t *>(alloc_from_region(fine, N * sizeof(page_t)));
     hostrpc::page_t *server_buffer = client_buffer;
 
-    slot_bitmap_data<N> *send_data =
-        hsa_allocate_slot_bitmap_data_alloc<N>(fine);
-    slot_bitmap_data<N> *recv_data =
-        hsa_allocate_slot_bitmap_data_alloc<N>(fine);
-    slot_bitmap_data<N> *client_active_data =
+    auto *send_data = hsa_allocate_slot_bitmap_data_alloc<N>(fine);
+    auto *recv_data = hsa_allocate_slot_bitmap_data_alloc<N>(fine);
+    auto *client_active_data =
         hsa_allocate_slot_bitmap_data_alloc<N>(gpu_coarse);
-    slot_bitmap_data<N> *server_active_data =
-        hsa_allocate_slot_bitmap_data_alloc<N>(fine);
+    auto *server_active_data = hsa_allocate_slot_bitmap_data_alloc<N>(fine);
 
     slot_bitmap_all_svm<N> send = {send_data};
     slot_bitmap_all_svm<N> recv = {recv_data};

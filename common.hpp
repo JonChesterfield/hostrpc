@@ -114,7 +114,6 @@ inline uint64_t clz64(uint64_t value)
 }  // namespace detail
 }  // namespace
 
-template <size_t N>
 struct cache
 {
   cache() = default;
@@ -154,32 +153,33 @@ struct cache
   }
 };
 
-template <size_t size>
+#if 0
+  template <size_t size>
 struct slot_bitmap_data
 {
   constexpr const static size_t align = 64;
   static_assert(size % 64 == 0, "Size must be multiple of 64");
   alignas(align) _Atomic uint64_t data[size / 64];
 };
+#endif
 
 #if defined(__x86_64__)
 
-template <size_t size>
-inline slot_bitmap_data<size> *x64_allocate_slot_bitmap_data()
+inline _Atomic uint64_t *x64_allocate_slot_bitmap_data(size_t size)
 {
   // strictly this should use operator new
   // however I don't have a freestanding implementation of <new> and it is
   // surprisingly tedious to forward declare it
-  void *memory =
-      hostrpc::x64_native::allocate(slot_bitmap_data<size>::align, size);
+  assert(size % 64 == 0 && "Size must be a multiple of 64");
+  constexpr const static size_t align = 64;
+  void *memory = hostrpc::x64_native::allocate(align, size);
   assert(memory);
-  return reinterpret_cast<slot_bitmap_data<size> *>(memory);
+  return reinterpret_cast<_Atomic uint64_t *>(memory);
 }
 
-template <size_t size>
 struct x64_allocate_slot_bitmap_data_deleter
 {
-  void operator()(slot_bitmap_data<size> *d)
+  void operator()(_Atomic uint64_t *d)
   {
     hostrpc::x64_native::deallocate(static_cast<void *>(d));
   }
@@ -203,29 +203,27 @@ struct slot_bitmap
   static_assert(N != SIZE_MAX, "Used as a sentinel");
   static_assert(N % 64 == 0, "Size must be multiple of 64");
   static constexpr size_t size() { return N; }
-  static constexpr size_t words() { return N / 64; }
+  static constexpr size_t words() { return size() / 64; }
 
   static_assert(sizeof(uint64_t) == sizeof(_Atomic uint64_t), "");
 
-  static_assert(sizeof(slot_bitmap_data<size()> *) == 8, "");
+  static_assert(sizeof(_Atomic uint64_t *) == 8, "");
 
-  slot_bitmap_data<size()> *a;
+  _Atomic uint64_t *a;
   slot_bitmap() : a(nullptr) {}
 
-  slot_bitmap(slot_bitmap_data<size()> *memory) : a(memory)
+  slot_bitmap(_Atomic uint64_t *d) : a(d)
   {
-    static_assert(sizeof(slot_bitmap) == 8, "");
-    static_assert(alignof(slot_bitmap) == 8, "");
-    assert(memory);
+    assert(d);
     for (size_t i = 0; i < words(); i++)
       {
-        a->data[i] = 0;
+        a[i] = 0;
       }
   }
 
-  slot_bitmap(void *d) : a(static_cast<slot_bitmap_data<size()> *>(d)) {}
+  slot_bitmap(void *d) : a(static_cast<_Atomic uint64_t *>(d)) {}
 
-  slot_bitmap_data<size()> *data() { return a; }
+  _Atomic uint64_t *data() { return a; }
 
   ~slot_bitmap() {}
 
@@ -246,7 +244,7 @@ struct slot_bitmap
 
   void dump() const
   {
-    uint64_t w = N / 64;
+    uint64_t w = words();
     printf("Size %lu / words %lu\n", size(), w);
     for (uint64_t i = 0; i < w; i++)
       {
@@ -283,8 +281,8 @@ struct slot_bitmap
   size_t find_empty_slot()  // SIZE_MAX if none available
   {
     // find a zero. May be worth inverting in order to find a set
-    const size_t words = N / 64;
-    for (size_t i = 0; i < words; i++)
+    const size_t w = words();
+    for (size_t i = 0; i < w; i++)
       {
         uint64_t w = ~load_word(i);
         if (w != 0)
@@ -296,14 +294,13 @@ struct slot_bitmap
             return 64 * i + (detail::ctz64(w));
           }
       }
-
     return SIZE_MAX;
   }
 
   uint64_t load_word(size_t i) const
   {
     assert(i < words());
-    return __opencl_atomic_load(&a->data[i], __ATOMIC_RELAXED, scope);
+    return __opencl_atomic_load(&a[i], __ATOMIC_RELAXED, scope);
   }
 
   bool cas(uint64_t element, uint64_t expect, uint64_t replace)
@@ -315,7 +312,7 @@ struct slot_bitmap
   bool cas(uint64_t element, uint64_t expect, uint64_t replace,
            uint64_t *loaded)
   {
-    _Atomic uint64_t *addr = &a->data[element];
+    _Atomic uint64_t *addr = &a[element];
 
     // cas is not used across devices by this library
     bool r = __opencl_atomic_compare_exchange_weak(
@@ -351,7 +348,7 @@ struct slot_bitmap
 
   __attribute__((used)) uint64_t fetch_and(uint64_t element, uint64_t mask)
   {
-    _Atomic uint64_t *addr = &a->data[element];
+    _Atomic uint64_t *addr = &a[element];
 
 #if USE_FETCH_OP
     // This seems to work on amdgcn, but only with acquire. acq/rel fails
@@ -380,7 +377,7 @@ struct slot_bitmap
 
   __attribute__((used)) uint64_t fetch_or(uint64_t element, uint64_t mask)
   {
-    _Atomic uint64_t *addr = &a->data[element];
+    _Atomic uint64_t *addr = &a[element];
 
 #if USE_FETCH_OP
     // the host never sees the value set here

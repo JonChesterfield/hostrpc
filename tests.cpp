@@ -26,10 +26,10 @@ TEST_CASE("Bitmap")
   static constexpr const size_t N = 128;
   using test_bitmap_t = hostrpc::slot_bitmap_all_svm<N>;
   using bitmap_ptr_t =
-      std::unique_ptr<hostrpc::slot_bitmap_data<N>,
-                      hostrpc::x64_allocate_slot_bitmap_data_deleter<N>>;
+      std::unique_ptr<_Atomic uint64_t,
+                      hostrpc::x64_allocate_slot_bitmap_data_deleter>;
 
-  bitmap_ptr_t ptr(hostrpc::x64_allocate_slot_bitmap_data<N>());
+  bitmap_ptr_t ptr(hostrpc::x64_allocate_slot_bitmap_data(N));
 
   uint64_t tmp;
   SECTION("set and clear each element")
@@ -167,19 +167,15 @@ TEST_CASE("set up single word system")
   };
 
   using mailbox_ptr_t =
-      std::unique_ptr<slot_bitmap_data<N>,
-                      x64_allocate_slot_bitmap_data_deleter<N>>;
+      std::unique_ptr<_Atomic uint64_t, x64_allocate_slot_bitmap_data_deleter>;
 
   using lockarray_ptr_t =
-      std::unique_ptr<slot_bitmap_data<N>,
-                      x64_allocate_slot_bitmap_data_deleter<N>>;
+      std::unique_ptr<_Atomic uint64_t, x64_allocate_slot_bitmap_data_deleter>;
 
-  mailbox_ptr_t send_data(hostrpc::x64_allocate_slot_bitmap_data<N>());
-  mailbox_ptr_t recv_data(hostrpc::x64_allocate_slot_bitmap_data<N>());
-  lockarray_ptr_t client_active_data(
-      hostrpc::x64_allocate_slot_bitmap_data<N>());
-  lockarray_ptr_t server_active_data(
-      hostrpc::x64_allocate_slot_bitmap_data<N>());
+  mailbox_ptr_t send_data(hostrpc::x64_allocate_slot_bitmap_data(N));
+  mailbox_ptr_t recv_data(hostrpc::x64_allocate_slot_bitmap_data(N));
+  lockarray_ptr_t client_active_data(hostrpc::x64_allocate_slot_bitmap_data(N));
+  lockarray_ptr_t server_active_data(hostrpc::x64_allocate_slot_bitmap_data(N));
 
   slot_bitmap_all_svm<N> send(send_data.get());
   slot_bitmap_all_svm<N> recv(recv_data.get());

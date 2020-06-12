@@ -81,10 +81,10 @@ struct x64_x64_pair
         x64_native::allocate(alignof(page_t), buffer_size));
     assert(client_buffer != server_buffer);
 
-    slot_bitmap_data<N> *send_data = x64_allocate_slot_bitmap_data<N>();
-    slot_bitmap_data<N> *recv_data = x64_allocate_slot_bitmap_data<N>();
-    slot_bitmap_data<N> *client_locks_data = x64_allocate_slot_bitmap_data<N>();
-    slot_bitmap_data<N> *server_locks_data = x64_allocate_slot_bitmap_data<N>();
+    auto *send_data = x64_allocate_slot_bitmap_data(N);
+    auto *recv_data = x64_allocate_slot_bitmap_data(N);
+    auto *client_locks_data = x64_allocate_slot_bitmap_data(N);
+    auto *server_locks_data = x64_allocate_slot_bitmap_data(N);
 
     slot_bitmap_all_svm<N> send(send_data);
     slot_bitmap_all_svm<N> recv(recv_data);
@@ -99,7 +99,7 @@ struct x64_x64_pair
     assert(client.inbox.data() == server.outbox.data());
     assert(client.outbox.data() == server.inbox.data());
 
-    hostrpc::x64_allocate_slot_bitmap_data_deleter<N> del;
+    hostrpc::x64_allocate_slot_bitmap_data_deleter del;
     del(client.inbox.data());
     del(server.inbox.data());
     del(client.active.data());
@@ -114,7 +114,7 @@ struct x64_x64_pair
 // TODO: Handle N variable w/out loss efficiency
 using ty = x64_x64_pair<128>;
 
-x64_x64_t::x64_x64_t(size_t N) : state(nullptr), N(N)
+x64_x64_t::x64_x64_t(size_t N) : state(nullptr)
 {
   if (N <= 128)
     {

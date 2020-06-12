@@ -118,7 +118,7 @@ struct server_impl
     };
     (void)lock_held;
 
-    cache<N> c;
+    cache c;
     c.init(slot);
 
     uint64_t i = inbox.load_word(element);
