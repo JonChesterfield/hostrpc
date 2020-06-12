@@ -17,12 +17,17 @@ LLC="llc"
 LINK="llvm-link"
 OPT="opt"
 
-GPU="--target=amdgcn-amd-amdhsa -march=gfx906 -mcpu=gfx906"
+AMDGPU="--target=amdgcn-amd-amdhsa -march=gfx906 -mcpu=gfx906"
+
+# Not sure why CUDACC isn't being set by clang here, probably a bad sign
+NVGPU="--target=nvptx64-nvidia-cuda -march=sm_50 --cuda-gpu-arch=sm_50 -D__CUDACC__"
 
 X64FLAGS="-g -O2 -emit-llvm -pthread"
-AMDGCNFLAGS="-g -O2 -emit-llvm -ffreestanding -fno-exceptions $GPU"
+AMDGCNFLAGS="-g -O2 -emit-llvm -ffreestanding -fno-exceptions $AMDGPU"
+# atomic alignment objection seems reasonable - may want 32 wide atomics on nvptx
+NVPTXFLAGS="-g -O2 -emit-llvm -ffreestanding -fno-exceptions -Wno-atomic-alignment $NVGPU"
 
-CXXCL="clang++ -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 $GPU"
+CXXCL="clang++ -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 $AMDGPU"
 
 # time $CXX -O3 catch.cpp -c -o catch.o
 rm -rf *.s *.ll *.bc *.exe *device.o
@@ -33,13 +38,17 @@ $CXX $X64FLAGS states.cpp -c -o states.x64.bc
 
 $CXX $X64FLAGS -I$HSAINC client.cpp -c -o client.x64.bc
 $CXX $X64FLAGS -I$HSAINC server.cpp -c -o server.x64.bc
-
 $CXX $X64FLAGS -I$HSAINC memory.cpp -c -o memory.x64.bc
-
 $CXX $X64FLAGS -I$HSAINC x64_host_x64_client.cpp -c -o x64_host_x64_client.x64.bc
-
 $CXX $X64FLAGS -I$HSAINC tests.cpp -c -o tests.x64.bc
 $CXX $X64FLAGS -I$HSAINC x64_hazard_test.cpp -c -o x64_hazard_test.x64.bc
+
+
+$CXX $AMDGCNFLAGS client.cpp -c -o client.gcn.bc
+$CXX $AMDGCNFLAGS server.cpp -c -o server.gcn.bc
+
+
+$CXX $NVPTXFLAGS client.cpp -c -o client.ptx.bc
 
 
 $CXX $AMDGCNFLAGS x64_host_amdgcn_client.cpp -c -o x64_host_amdgcn_client.gcn.bc
@@ -47,8 +56,6 @@ $CXX $AMDGCNFLAGS x64_host_amdgcn_client.cpp -c -o x64_host_amdgcn_client.gcn.bc
 $CXX $X64FLAGS -I$HSAINC x64_host_amdgcn_client.cpp -c -o x64_host_amdgcn_client.x64.bc
 
 
-$CXX $AMDGCNFLAGS client.cpp -c -o client.gcn.bc
-$CXX $AMDGCNFLAGS server.cpp -c -o server.gcn.bc
  
 
 # Build the device loader that assumes the device library is linked into the application
@@ -68,7 +75,7 @@ $CXX $AMDGCNFLAGS amdgcn_main.cpp -emit-llvm -c -o amdgcn_main.gcn.bc
 llvm-link amdgcn_main.gcn.bc amdgcn_loader_device.gcn.bc x64_host_amdgcn_client.gcn.bc -o executable_device.gcn.bc
 
 # Link the device image
-$CXX $GPU executable_device.gcn.bc -o a.out
+$CXX $AMDGPU executable_device.gcn.bc -o a.out
 
 # Register amdhsa elf magic with kernel
 # One off

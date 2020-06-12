@@ -490,7 +490,13 @@ bool slot_bitmap<N, scope>::try_claim_empty_slot(size_t i, uint64_t *loaded)
 
 template <bool enable>
 struct slot_owner_t;
+
+#ifdef __CUDACC__
+// TODO: amdgcn doesn't have thread_local either, just doesn't error on it
+extern  unsigned my_id;
+#else
 extern thread_local unsigned my_id;
+#endif
 
 using slot_owner = slot_owner_t<false>;
 

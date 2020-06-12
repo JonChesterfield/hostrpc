@@ -39,8 +39,7 @@ inline uint64_t broadcast_master(uint64_t x) { return x; }
 }  // namespace platform
 #endif
 
-#if defined(__AMDGCN__)
-
+#if defined(__AMDGCN__) || defined(__CUDACC__)
 // Enough of assert.h, derived from musl
 #ifdef NDEBUG
 #define assert(x) (void)0
@@ -65,11 +64,17 @@ __attribute__((always_inline)) inline void __assert_fail(const char *str,
   __builtin_trap();
 }
 
+
+// stub printf for now
 __attribute__((always_inline)) inline int printf(const char *, ...)
 {
   // printf is implement with hostcall, so going to have to do without
   return 0;
 }
+
+#endif
+
+#if defined(__AMDGCN__)
 
 namespace platform
 {
@@ -109,6 +114,31 @@ __attribute__((always_inline)) inline uint64_t broadcast_master(uint64_t x)
 }
 
 }  // namespace platform
+#endif
+
+
+#if defined(__CUDACC__)
+
+namespace platform
+{
+  inline void sleep_briefly(void) {}
+  inline void sleep(void) { }
+
+__attribute__((always_inline)) inline uint32_t get_lane_id(void)
+{
+}
+__attribute__((always_inline)) inline bool is_master_lane(void)
+{
+}
+
+__attribute__((always_inline)) inline uint32_t broadcast_master(uint32_t x)
+{
+}
+
+__attribute__((always_inline)) inline uint64_t broadcast_master(uint64_t x)
+{
+}
+}
 #endif
 
 namespace platform
