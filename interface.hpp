@@ -1,7 +1,5 @@
-#ifndef CLIENT_HPP_INCLUDED
-#define CLIENT_HPP_INCLUDED
-
-// TODO: Rename file
+#ifndef INTERFACE_HPP_INCLUDED
+#define INTERFACE_HPP_INCLUDED
 
 #include <stddef.h>
 #include <stdint.h>

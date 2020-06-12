@@ -1,6 +1,6 @@
 #include "catch.hpp"
 
-#include "client.hpp"
+#include "interface.hpp"
 #include "client_impl.hpp"
 #include "server_impl.hpp"
 #include "tests.hpp"

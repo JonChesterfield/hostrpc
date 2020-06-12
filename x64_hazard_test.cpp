@@ -1,6 +1,6 @@
 #include "base_types.hpp"
 #include "catch.hpp"
-#include "client.hpp"
+#include "interface.hpp"
 
 #include <cstring>
 #include <thread>
