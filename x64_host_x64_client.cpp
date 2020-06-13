@@ -66,22 +66,26 @@ struct x64_x64_pair
 {
   x64_x64_client<SZ> client;
   x64_x64_server<SZ> server;
-
-  hostrpc::page_t *client_buffer;
-  hostrpc::page_t *server_buffer;
-
   SZ sz;
+
   x64_x64_pair(SZ sz) : sz(sz)
   {
     size_t N = sz.N();
     using namespace hostrpc;
     size_t buffer_size = sizeof(page_t) * N;
 
-    // TODO: strictly should placement new here
-    client_buffer = reinterpret_cast<page_t *>(
+    // placement new[] requires additional space to wire up delete[]
+    hostrpc::page_t *client_buffer = static_cast<page_t *>(
         x64_native::allocate(alignof(page_t), buffer_size));
-    server_buffer = reinterpret_cast<page_t *>(
+    hostrpc::page_t *server_buffer = static_cast<page_t *>(
         x64_native::allocate(alignof(page_t), buffer_size));
+
+    for (size_t i = 0; i < N; i++)
+      {
+        new (client_buffer + i) page_t;
+        new (server_buffer + i) page_t;
+      }
+
     assert(client_buffer != server_buffer);
 
     auto *send_data = x64_allocate_slot_bitmap_data(N);
@@ -89,17 +93,18 @@ struct x64_x64_pair
     auto *client_locks_data = x64_allocate_slot_bitmap_data(N);
     auto *server_locks_data = x64_allocate_slot_bitmap_data(N);
 
-    const size_t size = N;
-    slot_bitmap_all_svm send(size, send_data);
-    slot_bitmap_all_svm recv(size, recv_data);
-    slot_bitmap_device client_locks(size, client_locks_data);
-    slot_bitmap_device server_locks(size, server_locks_data);
+    slot_bitmap_all_svm send(N, send_data);
+    slot_bitmap_all_svm recv(N, recv_data);
+    slot_bitmap_device client_locks(N, client_locks_data);
+    slot_bitmap_device server_locks(N, server_locks_data);
 
     client = {sz, recv, send, client_locks, server_buffer, client_buffer};
     server = {sz, send, recv, server_locks, client_buffer, server_buffer};
   }
   ~x64_x64_pair()
   {
+    size_t N = sz.N();
+
     assert(client.inbox.data() == server.outbox.data());
     assert(client.outbox.data() == server.inbox.data());
 
@@ -110,6 +115,13 @@ struct x64_x64_pair
     del(server.active.data());
 
     assert(client.local_buffer != server.local_buffer);
+
+    for (size_t i = 0; i < N; i++)
+      {
+        client.local_buffer[i].~page_t();
+        server.local_buffer[i].~page_t();
+      }
+
     x64_native::deallocate(client.local_buffer);
     x64_native::deallocate(server.local_buffer);
   }
