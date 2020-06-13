@@ -204,69 +204,62 @@ template <typename SZ>
 using slot_bitmap_device = slot_bitmap<SZ, __OPENCL_MEMORY_SCOPE_DEVICE>;
 
 template <typename SZ, size_t scope>
-struct slot_bitmap : public SZ
+struct slot_bitmap
 {
   // SZ argument is used to get the number of slots, a multiple of 64
   // This type is required to occupy 8 bytes, which will not be the case
   // for non-empty base. May end up passing SZ into the methods.
 
-  // static_assert(N != 0, "");
-  // static_assert(N != SIZE_MAX, "Used as a sentinel");
-  // static_assert(N % 64 == 0, "Size must be multiple of 64");
-  size_t size() const { return SZ::N(); }
-  size_t words() const { return size() / 64; }
-
   static_assert(sizeof(uint64_t) == sizeof(_Atomic uint64_t), "");
-
   static_assert(sizeof(_Atomic uint64_t *) == 8, "");
 
-  bool valid()
+  bool valid(uint64_t N)
   {
     // Notably, default constructed instance isn't valid
     static_assert(sizeof(slot_bitmap<SZ, scope>) == 8, "");
-    return (a != nullptr) && (SZ::N() != 0) && (SZ::N() != SIZE_MAX) &&
-           (SZ::N() % 64 == 0);
+    return (a != nullptr) && (N != 0) && (N != SIZE_MAX) && (N % 64 == 0);
   }
   _Atomic uint64_t *a;
 
-  slot_bitmap() : SZ{0}, a(nullptr) {}
-  slot_bitmap(_Atomic uint64_t *d, SZ sz) : SZ{sz}, a(d)
+  slot_bitmap() : a(nullptr) {}
+
+  slot_bitmap(size_t size, _Atomic uint64_t *d) : a(d)
   {
-    assert(valid());
-    for (size_t i = 0; i < words(); i++)
+    assert(valid(size));
+    for (size_t i = 0; i < size / 64; i++)
       {
         a[i] = 0;
       }
   }
 
-  slot_bitmap(void *d, SZ sz) : SZ{sz}, a(static_cast<_Atomic uint64_t *>(d))
+  slot_bitmap(size_t size, void *d) : a(static_cast<_Atomic uint64_t *>(d))
   {
-    assert(valid());
+    assert(valid(size));
   }
 
   _Atomic uint64_t *data() { return a; }
 
   ~slot_bitmap() {}
 
-  bool operator[](size_t i) const
+  bool operator()(size_t size, size_t i) const
   {
     size_t w = index_to_element(i);
-    uint64_t d = load_word(w);
+    uint64_t d = load_word(size, w);
     return detail::nthbitset64(d, index_to_subindex(i));
   }
 
-  bool operator()(size_t i, uint64_t *loaded) const
+  bool operator()(size_t size, size_t i, uint64_t *loaded) const
   {
     size_t w = index_to_element(i);
-    uint64_t d = load_word(w);
+    uint64_t d = load_word(size, w);
     *loaded = d;
     return detail::nthbitset64(d, index_to_subindex(i));
   }
 
-  void dump() const
+  void dump(size_t size) const
   {
-    uint64_t w = words();
-    printf("Size %lu / words %lu\n", size(), w);
+    uint64_t w = size / 64;
+    printf("Size %lu / words %lu\n", size, w);
     for (uint64_t i = 0; i < w; i++)
       {
         printf("[%2lu]:", i);
@@ -276,51 +269,39 @@ struct slot_bitmap : public SZ
               {
                 printf(" ");
               }
-            printf("%c", this->operator[](64 * i + j) ? '1' : '0');
+            printf("%c", this->operator()(size, 64 * i + j) ? '1' : '0');
           }
         printf("\n");
       }
   }
 
   // cas, true on success
-  bool try_claim_empty_slot(size_t i, uint64_t *);
+  bool try_claim_empty_slot(size_t size, size_t i, uint64_t *);
 
   // assumes slot available
-  void claim_slot(size_t i) { set_slot_given_already_clear(i); }
-  uint64_t claim_slot_returning_updated_word(size_t i)
+  void claim_slot(size_t size, size_t i)
   {
-    return set_slot_given_already_clear(i);
+    set_slot_given_already_clear(size, i);
+  }
+  uint64_t claim_slot_returning_updated_word(size_t size, size_t i)
+  {
+    return set_slot_given_already_clear(size, i);
   }
 
   // assumes slot taken
-  void release_slot(size_t i) { clear_slot_given_already_set(i); }
-  uint64_t release_slot_returning_updated_word(size_t i)
+  void release_slot(size_t size, size_t i)
   {
-    return clear_slot_given_already_set(i);
+    clear_slot_given_already_set(size, i);
+  }
+  uint64_t release_slot_returning_updated_word(size_t size, size_t i)
+  {
+    return clear_slot_given_already_set(size, i);
   }
 
-  size_t find_empty_slot()  // SIZE_MAX if none available
+  uint64_t load_word(size_t size, size_t i) const
   {
-    // find a zero. May be worth inverting in order to find a set
-    const size_t w = words();
-    for (size_t i = 0; i < w; i++)
-      {
-        uint64_t w = ~load_word(i);
-        if (w != 0)
-          {
-            static_assert(sizeof(unsigned long) == sizeof(uint64_t),
-                          "Calling __builtin_ctzl on a uint64_t requires 64 "
-                          "bit unsigned long");
-
-            return 64 * i + (detail::ctz64(w));
-          }
-      }
-    return SIZE_MAX;
-  }
-
-  uint64_t load_word(size_t i) const
-  {
-    assert(i < words());
+    (void)size;
+    assert(i < (size / 64));
     return __opencl_atomic_load(&a[i], __ATOMIC_RELAXED, scope);
   }
 
@@ -423,12 +404,12 @@ struct slot_bitmap : public SZ
   }
 
  private:
-  __attribute__((used)) uint64_t clear_slot_given_already_set(size_t i)
+  uint64_t clear_slot_given_already_set(size_t size, size_t i)
   {
-    assert(i < size());
+    assert(i < size);
     size_t w = index_to_element(i);
     uint64_t subindex = index_to_subindex(i);
-    assert(detail::nthbitset64(load_word(w), subindex));
+    assert(detail::nthbitset64(load_word(size, w), subindex));
 
     // and with everything other than the slot set
     uint64_t mask = ~detail::setnthbit64(0, subindex);
@@ -439,12 +420,12 @@ struct slot_bitmap : public SZ
     return before & mask;
   }
 
-  uint64_t set_slot_given_already_clear(size_t i)
+  uint64_t set_slot_given_already_clear(size_t size, size_t i)
   {
-    assert(i < size());
+    assert(i < size);
     size_t w = index_to_element(i);
     uint64_t subindex = index_to_subindex(i);
-    assert(!detail::nthbitset64(load_word(w), subindex));
+    assert(!detail::nthbitset64(load_word(size, w), subindex));
 
     // or with only the slot set
     uint64_t mask = detail::setnthbit64(0, subindex);
@@ -457,13 +438,14 @@ struct slot_bitmap : public SZ
 
 // on return true, loaded contains active[w]
 template <typename SZ, size_t scope>
-bool slot_bitmap<SZ, scope>::try_claim_empty_slot(size_t i, uint64_t *loaded)
+bool slot_bitmap<SZ, scope>::try_claim_empty_slot(size_t size, size_t i,
+                                                  uint64_t *loaded)
 {
-  assert(i < size());
+  assert(i < size);
   size_t w = index_to_element(i);
   uint64_t subindex = index_to_subindex(i);
 
-  uint64_t d = load_word(w);
+  uint64_t d = load_word(size, w);
 
   // printf("Slot %lu, w %lu, subindex %lu, d %lu\n", i, w, subindex, d);
 
@@ -657,12 +639,13 @@ void try_garbage_collect_word(G garbage_bits, slot_bitmap_all_svm<SZ> inbox,
                               slot_bitmap_all_svm<SZ> outbox,
                               slot_bitmap_device<SZ> active, uint64_t w)
 {
+  const size_t size = SZ::N();
   malloc_lock<true> lk;
   if (platform::is_master_lane())
     {
-      uint64_t i = inbox.load_word(w);
-      uint64_t o = outbox.load_word(w);
-      uint64_t a = active.load_word(w);
+      uint64_t i = inbox.load_word(size, w);
+      uint64_t o = outbox.load_word(size, w);
+      uint64_t a = active.load_word(size, w);
       __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
       uint64_t garbage_visible = garbage_bits(i, o);
@@ -704,8 +687,8 @@ void try_garbage_collect_word(G garbage_bits, slot_bitmap_all_svm<SZ> inbox,
 
       // Some of the slots may have already been garbage collected
       // in which case some of the input may be work-available again
-      i = inbox.load_word(w);
-      o = outbox.load_word(w);
+      i = inbox.load_word(size, w);
+      o = outbox.load_word(size, w);
       __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
       uint64_t garbage_and_locked = garbage_bits(i, o) & locks_held;

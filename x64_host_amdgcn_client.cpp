@@ -68,17 +68,19 @@ bool hostcall_server_handle_one_packet(void* arg)
           hostrpc::x64_amdgcn_pair<hostrpc::x64_host_amdgcn_array_size>*>(arg);
 
   const bool verbose = false;
+
+  const size_t size = hostrpc::x64_host_amdgcn_array_size;
   if (verbose)
     {
       printf("Client\n");
-      res->client.inbox.dump();
-      res->client.outbox.dump();
-      res->client.active.dump();
+      res->client.inbox.dump(size);
+      res->client.outbox.dump(size);
+      res->client.active.dump(size);
 
       printf("Server\n");
-      res->server.inbox.dump();
-      res->server.outbox.dump();
-      res->server.active.dump();
+      res->server.inbox.dump(size);
+      res->server.outbox.dump(size);
+      res->server.active.dump(size);
     }
 
   bool r = server_singleton.rpc_handle(nullptr);

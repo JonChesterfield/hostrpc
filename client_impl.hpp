@@ -77,7 +77,8 @@ struct client_impl : public SZ
 
   void step(int x, void* y) { Step::call(x, y); }
 
-  size_t words() { return SZ::N() / 64; }
+  size_t size() { return SZ::N(); }
+  size_t words() { return size() / 64; }
 
   size_t find_candidate_client_slot(uint64_t w)
   {
@@ -94,8 +95,8 @@ struct client_impl : public SZ
 
     // choosing to ignore inbox here - if inbox is set there's garbage to
     // collect
-    uint64_t o = outbox.load_word(w);
-    uint64_t a = active.load_word(w);
+    uint64_t o = outbox.load_word(size(), w);
+    uint64_t a = active.load_word(size(), w);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
     uint64_t some_use = o | a;
@@ -135,9 +136,10 @@ struct client_impl : public SZ
 
     cache c;
     c.init(slot);
-    uint64_t i = inbox.load_word(element);
-    uint64_t o = outbox.load_word(element);
-    uint64_t a = active.load_word(element);
+    const size_t size = this->size();
+    uint64_t i = inbox.load_word(size, element);
+    uint64_t o = outbox.load_word(size, element);
+    uint64_t a = active.load_word(size, element);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
     c.i = i;
     c.o = o;
@@ -163,7 +165,7 @@ struct client_impl : public SZ
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
         if (platform::is_master_lane())
           {
-            outbox.release_slot_returning_updated_word(slot);
+            outbox.release_slot_returning_updated_word(size, slot);
           }
         return false;
       }
@@ -191,8 +193,9 @@ struct client_impl : public SZ
     // wave_publish work
     {
       __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-      uint64_t o = platform::critical<uint64_t>(
-          [&]() { return outbox.claim_slot_returning_updated_word(slot); });
+      uint64_t o = platform::critical<uint64_t>([&]() {
+        return outbox.claim_slot_returning_updated_word(size, slot);
+      });
       c.o = o;
       assert(detail::nthbitset64(o, subindex));
       assert(c.is(0b011));
@@ -216,7 +219,7 @@ struct client_impl : public SZ
             uint32_t got = platform::critical<uint32_t>([&]() {
               // I think this should be relaxed, existing hostcall uses
               // acquire
-              return inbox(slot, &loaded);
+              return inbox(size, slot, &loaded);
             });
 
             loaded = platform::broadcast_master(loaded);
@@ -256,8 +259,9 @@ struct client_impl : public SZ
         // todo: is it better to leave this for the GC?
 
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-        uint64_t o = platform::critical<uint64_t>(
-            [&]() { return outbox.release_slot_returning_updated_word(slot); });
+        uint64_t o = platform::critical<uint64_t>([&]() {
+          return outbox.release_slot_returning_updated_word(size, slot);
+        });
 
         c.o = o;
         assert(c.is(0b101));
@@ -286,11 +290,13 @@ struct client_impl : public SZ
   {
     step(__LINE__, application_state);
 
+    const size_t size = this->size();
+    const size_t words = size / 64;
     // 0b111 is posted request, waited for it, got it
     // 0b110 is posted request, nothing waited, got one
     // 0b101 is got a result, don't need it, only spun up a thread for cleanup
     // 0b100 is got a result, don't need it
-    for (uint64_t w = 0; w < inbox.words(); w++)
+    for (uint64_t w = 0; w < words; w++)
       {
         // try_garbage_collect_word_client(w);
       }
@@ -301,13 +307,13 @@ struct client_impl : public SZ
     // tries each word in sequnce. A cas failing suggests contention, in which
     // case try the next word instead of the next slot
     // may be worth supporting non-zero starting word for cache locality effects
-    for (uint64_t w = 0; w < words(); w++)
+    for (uint64_t w = 0; w < words; w++)
       {
         uint64_t active_word;
         slot = find_candidate_client_slot(w);
         if (slot != SIZE_MAX)
           {
-            if (active.try_claim_empty_slot(slot, &active_word))
+            if (active.try_claim_empty_slot(size, slot, &active_word))
               {
                 // Success, got the lock.
                 assert(active_word != 0);
@@ -319,7 +325,7 @@ struct client_impl : public SZ
                 step(__LINE__, application_state);
                 if (platform::is_master_lane())
                   {
-                    active.release_slot_returning_updated_word(slot);
+                    active.release_slot_returning_updated_word(size, slot);
                   }
                 return r;
               }

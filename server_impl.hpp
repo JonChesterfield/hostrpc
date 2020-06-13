@@ -72,9 +72,10 @@ struct server_impl : public SZ
 
   size_t find_candidate_server_available_bitmap(uint64_t w, uint64_t mask)
   {
-    uint64_t i = inbox.load_word(w);
-    uint64_t o = outbox.load_word(w);
-    uint64_t a = active.load_word(w);
+    const size_t size = this->size();
+    uint64_t i = inbox.load_word(size, w);
+    uint64_t o = outbox.load_word(size, w);
+    uint64_t a = active.load_word(size, w);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
     uint64_t work = i & ~o;
@@ -114,16 +115,17 @@ struct server_impl : public SZ
     const uint64_t subindex = index_to_subindex(slot);
 
     auto lock_held = [&]() -> bool {
-      return detail::nthbitset64(active.load_word(element), subindex);
+      return detail::nthbitset64(active.load_word(size(), element), subindex);
     };
     (void)lock_held;
 
+    const size_t size = this->size();
     cache c;
     c.init(slot);
 
-    uint64_t i = inbox.load_word(element);
-    uint64_t o = outbox.load_word(element);
-    uint64_t a = active.load_word(element);
+    uint64_t i = inbox.load_word(size, element);
+    uint64_t o = outbox.load_word(size, element);
+    uint64_t a = active.load_word(size, element);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
     c.i = i;
     c.o = o;
@@ -151,7 +153,7 @@ struct server_impl : public SZ
         if (platform::is_master_lane())
           {
             uint64_t updated_out =
-                outbox.release_slot_returning_updated_word(slot);
+                outbox.release_slot_returning_updated_word(size, slot);
             assert((updated_out & this_slot) == 0);
             (void)updated_out;
           }
@@ -191,8 +193,9 @@ struct server_impl : public SZ
     // publish result
     {
       __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-      uint64_t o = platform::critical<uint64_t>(
-          [&]() { return outbox.claim_slot_returning_updated_word(slot); });
+      uint64_t o = platform::critical<uint64_t>([&]() {
+        return outbox.claim_slot_returning_updated_word(size, slot);
+      });
       c.o = o;
     }
     assert(c.is(0b111));
@@ -213,17 +216,18 @@ struct server_impl : public SZ
   bool rpc_handle(void* application_state, uint64_t* location_arg) noexcept
   {
     step(__LINE__, application_state);
-
+    const size_t size = this->size();
+    const size_t words = size / 64;
     // garbage collection should be fairly cheap when there is none,
     // and the presence of any occupied slots can starve the client
-    for (uint64_t w = 0; w < inbox.words(); w++)
+    for (uint64_t w = 0; w < words; w++)
       {
         // try_garbage_collect_word_server(w);
       }
 
     step(__LINE__, application_state);
 
-    const uint64_t location = *location_arg % size();
+    const uint64_t location = *location_arg % size;
     const uint64_t element = index_to_element(location);
 
     // skip bits in the first word <= subindex
@@ -232,9 +236,9 @@ struct server_impl : public SZ
     // Tries a few bits in element, then all bits in all the other words, then
     // all bits in element. This overshoots somewhat but ensures that all slots
     // are checked. Could truncate the last word to check each slot exactly once
-    for (uint64_t wc = 0; wc < words() + 1; wc++)
+    for (uint64_t wc = 0; wc < words + 1; wc++)
       {
-        uint64_t w = (element + wc) % words();
+        uint64_t w = (element + wc) % words;
         uint64_t available = find_candidate_server_available_bitmap(w, mask);
         while (available != 0)
           {
@@ -242,7 +246,7 @@ struct server_impl : public SZ
             assert(detail::nthbitset64(available, idx));
             uint64_t slot = 64 * w + idx;
             uint64_t active_word;
-            if (active.try_claim_empty_slot(slot, &active_word))
+            if (active.try_claim_empty_slot(size, slot, &active_word))
               {
                 // Success, got the lock. Aim location_arg at next slot
                 assert(active_word != 0);
@@ -255,7 +259,7 @@ struct server_impl : public SZ
                 if (platform::is_master_lane())
                   {
                     uint64_t a =
-                        active.release_slot_returning_updated_word(slot);
+                        active.release_slot_returning_updated_word(size, slot);
                     assert(!detail::nthbitset64(a, index_to_subindex(slot)));
                     (void)a;
                   }
