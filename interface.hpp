@@ -65,10 +65,6 @@ struct x64_x64_t
   x64_x64_t(const x64_x64_t &) = delete;
   bool valid();  // true if construction succeeded
 
-  // This implements an architecture pair and a set of functions together
-  // It would be better to decouple that, which is tricky without reintroducing
-  // templates or overhead
-
   struct client_t : public client::interface<client_t>
   {
     friend struct client::interface<client_t>;
@@ -77,14 +73,6 @@ struct x64_x64_t
    private:
     bool invoke_impl(void *);
     bool invoke_async_impl(void *);
-
-    // state needs to be an x64_x64_client<128> or similar from the perspective
-    // of calling methods on it and an array of bytes from the perspective of
-    // moving it around
-    // the client_impl<> type is essentially a short list of pointers.
-    // Leaning towards putting the values into void* [5] in the right order
-    // and reinterpret_casting the start of the array as alternatives routing
-    // through integers are hitting the inttoptr blocks
     __attribute__((__may_alias__)) uint64_t state[6];
   };
 
@@ -92,6 +80,43 @@ struct x64_x64_t
   {
     friend struct server::interface<server_t>;
     friend struct x64_x64_t;
+    server_t() {}
+
+   private:
+    bool handle_impl(void *, uint64_t *);
+    __attribute__((__may_alias__)) uint64_t state[6];
+  };
+
+  client_t client();
+  server_t server();
+
+ private:
+  void *state;
+};
+
+struct x64_amdgcn_t
+{
+  x64_amdgcn_t(uint64_t hsa_region_t_fine_handle,
+               uint64_t hsa_region_t_coarse_handle);
+  ~x64_amdgcn_t();
+  x64_amdgcn_t(const x64_amdgcn_t &) = delete;
+  bool valid();
+
+  struct client_t : public client::interface<client_t>
+  {
+    friend struct client::interface<client_t>;
+    friend struct x64_amdgcn_t;
+    client_t() {}  // would like this to be private
+   private:
+    bool invoke_impl(void *);
+    bool invoke_async_impl(void *);
+    __attribute__((__may_alias__)) uint64_t state[6];
+  };
+
+  struct server_t : public server::interface<server_t>
+  {
+    friend struct server::interface<server_t>;
+    friend struct x64_amdgcn_t;
     server_t() {}
 
    private:

@@ -1,12 +1,13 @@
 #include "client_impl.hpp"
+#include "interface.hpp"
 #include "platform.hpp"
 #include "server_impl.hpp"
-
 #include "x64_host_amdgcn_client_api.hpp"
 
 // hsa uses freestanding C headers, unlike hsa.hpp
 #if !defined(__AMDGCN__)
 #include "hsa.h"
+#include <new>
 #include <string.h>
 #endif
 
@@ -66,7 +67,6 @@ struct operate
       }
   }
 };
-
 }  // namespace x64_host_amdgcn_client
 
 template <typename SZ>
@@ -108,8 +108,8 @@ inline void *alloc_from_region(hsa_region_t region, size_t size)
 template <typename SZ>
 struct x64_amdgcn_pair
 {
-  x64_amdgcn_client<SZ> client;
-  x64_amdgcn_server<SZ> server;
+  hostrpc::x64_amdgcn_client<SZ> client;
+  hostrpc::x64_amdgcn_server<SZ> server;
   SZ sz;
 
   x64_amdgcn_pair(SZ sz, hsa_region_t fine, hsa_region_t gpu_coarse) : sz(sz)
@@ -162,7 +162,81 @@ struct x64_amdgcn_pair
       }
   }
 };
+
+using SZ = hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
+using ty = x64_amdgcn_pair<SZ>;
+
+x64_amdgcn_t::x64_amdgcn_t(uint64_t hsa_region_t_fine_handle,
+                           uint64_t hsa_region_t_coarse_handle)
+{
+  SZ sz;
+  hsa_region_t fine = {.handle = hsa_region_t_fine_handle};
+  hsa_region_t coarse = {.handle = hsa_region_t_coarse_handle};
+
+  ty *s = new (std::nothrow) ty(sz, fine, coarse);
+  state = static_cast<void *>(s);
+}
+
+x64_amdgcn_t::~x64_amdgcn_t()
+{
+  ty *s = static_cast<ty *>(state);
+  if (s)
+    {
+      delete s;
+    }
+}
+
+bool x64_amdgcn_t::valid() { return state != nullptr; }
+
+static decltype(ty::client) *open_client(uint64_t *state)
+{
+  return reinterpret_cast<decltype(ty::client) *>(state);
+}
+static decltype(ty::server) *open_server(uint64_t *state)
+{
+  return reinterpret_cast<decltype(ty::server) *>(state);
+}
+
+x64_amdgcn_t::client_t x64_amdgcn_t::client()
+{
+  ty *s = static_cast<ty *>(state);
+  assert(s);
+  client_t res;
+  auto *cl = reinterpret_cast<decltype(ty::client) *>(&res.state[0]);
+  *cl = s->client;
+  return res;
+}
+
+__attribute__((used)) x64_amdgcn_t::server_t x64_amdgcn_t::server()
+{
+  ty *s = static_cast<ty *>(state);
+  assert(s);
+  server_t res;
+  auto *cl = reinterpret_cast<decltype(ty::server) *>(&res.state[0]);
+  *cl = s->server;
+  return res;
+}
+
+bool x64_amdgcn_t::client_t::invoke_impl(void *application_state)
+{
+  auto *cl = open_client(&state[0]);
+  return cl->rpc_invoke<true>(application_state);
+}
+
+bool x64_amdgcn_t::client_t::invoke_async_impl(void *application_state)
+{
+  auto *cl = open_client(&state[0]);
+  return cl->rpc_invoke<false>(application_state);
+}
+
+bool x64_amdgcn_t::server_t::handle_impl(void *application_state, uint64_t *l)
+{
+  auto *se = open_server(&state[0]);
+  return se->rpc_handle(application_state, l);
+}
+
 #endif
+
 }  // namespace hostrpc
 
 #if defined(__AMDGCN__)
