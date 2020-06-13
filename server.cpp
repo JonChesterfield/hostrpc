@@ -3,9 +3,9 @@
 
 using SZ = hostrpc::size_compiletime<128>;
 
-void server_instance(SZ sz, hostrpc::slot_bitmap_all_svm<SZ> inbox,
-                     hostrpc::slot_bitmap_all_svm<SZ> outbox,
-                     hostrpc::slot_bitmap_device<SZ> active,
+void server_instance(SZ sz, hostrpc::slot_bitmap_all_svm inbox,
+                     hostrpc::slot_bitmap_all_svm outbox,
+                     hostrpc::slot_bitmap_device active,
                      hostrpc::page_t* remote_buffer,
                      hostrpc::page_t* local_buffer)
 {

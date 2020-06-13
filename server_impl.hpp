@@ -26,9 +26,9 @@ enum class server_state : uint8_t
 template <typename SZ, typename Copy, typename Op, typename Step>
 struct server_impl : public SZ
 {
-  using inbox_t = slot_bitmap_all_svm<SZ>;
-  using outbox_t = slot_bitmap_all_svm<SZ>;
-  using locks_t = slot_bitmap_device<SZ>;
+  using inbox_t = slot_bitmap_all_svm;
+  using outbox_t = slot_bitmap_all_svm;
+  using locks_t = slot_bitmap_device;
 
   server_impl(SZ sz, inbox_t inbox, outbox_t outbox, locks_t active,
               page_t* remote_buffer, page_t* local_buffer)
@@ -55,19 +55,12 @@ struct server_impl : public SZ
 
   void step(int x, void* y) { Step::call(x, y); }
 
-  void dump_word(uint64_t word)
+  void dump_word(size_t size, uint64_t word)
   {
-    uint64_t i = inbox.load_word(word);
-    uint64_t o = outbox.load_word(word);
-    uint64_t a = active.load_word(word);
+    uint64_t i = inbox.load_word(size, word);
+    uint64_t o = outbox.load_word(size, word);
+    uint64_t a = active.load_word(size, word);
     printf("%lu %lu %lu\n", i, o, a);
-  }
-
-  uint64_t work_todo(uint64_t word)
-  {
-    uint64_t i = inbox.load_word(word);
-    uint64_t o = outbox.load_word(word);
-    return i & ~o;
   }
 
   size_t find_candidate_server_available_bitmap(uint64_t w, uint64_t mask)
@@ -96,10 +89,10 @@ struct server_impl : public SZ
   }
 
   // return true if no garbage (briefly) during call
-  void try_garbage_collect_word_server(uint64_t w)
+  void try_garbage_collect_word_server(size_t size, uint64_t w)
   {
     auto c = [](uint64_t i, uint64_t o) -> uint64_t { return ~i & o; };
-    try_garbage_collect_word<SZ, decltype(c)>(c, inbox, outbox, active, w);
+    try_garbage_collect_word<decltype(c)>(size, c, inbox, outbox, active, w);
   }
 
   size_t words() { return size() / 64; }
@@ -222,7 +215,7 @@ struct server_impl : public SZ
     // and the presence of any occupied slots can starve the client
     for (uint64_t w = 0; w < words; w++)
       {
-        // try_garbage_collect_word_server(w);
+        // try_garbage_collect_word_server(size, w);
       }
 
     step(__LINE__, application_state);

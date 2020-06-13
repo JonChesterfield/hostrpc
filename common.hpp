@@ -193,30 +193,23 @@ struct size_compiletime
   constexpr size_t N() const { return SZ; }
 };
 
-template <typename SZ, size_t scope>
+template <size_t scope>
 struct slot_bitmap;
 
-template <typename SZ>
-using slot_bitmap_all_svm =
-    slot_bitmap<SZ, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>;
+using slot_bitmap_all_svm = slot_bitmap<__OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>;
 
-template <typename SZ>
-using slot_bitmap_device = slot_bitmap<SZ, __OPENCL_MEMORY_SCOPE_DEVICE>;
+using slot_bitmap_device = slot_bitmap<__OPENCL_MEMORY_SCOPE_DEVICE>;
 
-template <typename SZ, size_t scope>
+template <size_t scope>
 struct slot_bitmap
 {
-  // SZ argument is used to get the number of slots, a multiple of 64
-  // This type is required to occupy 8 bytes, which will not be the case
-  // for non-empty base. May end up passing SZ into the methods.
-
   static_assert(sizeof(uint64_t) == sizeof(_Atomic uint64_t), "");
   static_assert(sizeof(_Atomic uint64_t *) == 8, "");
 
   bool valid(uint64_t N)
   {
     // Notably, default constructed instance isn't valid
-    static_assert(sizeof(slot_bitmap<SZ, scope>) == 8, "");
+    static_assert(sizeof(slot_bitmap<scope>) == 8, "");
     return (a != nullptr) && (N != 0) && (N != SIZE_MAX) && (N % 64 == 0);
   }
   _Atomic uint64_t *a;
@@ -437,9 +430,9 @@ struct slot_bitmap
 };
 
 // on return true, loaded contains active[w]
-template <typename SZ, size_t scope>
-bool slot_bitmap<SZ, scope>::try_claim_empty_slot(size_t size, size_t i,
-                                                  uint64_t *loaded)
+template <size_t scope>
+bool slot_bitmap<scope>::try_claim_empty_slot(size_t size, size_t i,
+                                              uint64_t *loaded)
 {
   assert(i < size);
   size_t w = index_to_element(i);
@@ -634,12 +627,12 @@ struct malloc_lock
   void *data[64];
 };
 
-template <typename SZ, typename G>
-void try_garbage_collect_word(G garbage_bits, slot_bitmap_all_svm<SZ> inbox,
-                              slot_bitmap_all_svm<SZ> outbox,
-                              slot_bitmap_device<SZ> active, uint64_t w)
+template <typename G>
+void try_garbage_collect_word(size_t size, G garbage_bits,
+                              slot_bitmap_all_svm inbox,
+                              slot_bitmap_all_svm outbox,
+                              slot_bitmap_device active, uint64_t w)
 {
-  const size_t size = SZ::N();
   malloc_lock<true> lk;
   if (platform::is_master_lane())
     {

@@ -47,9 +47,9 @@ template <typename SZ, typename Copy, typename Fill, typename Use,
           typename Step>
 struct client_impl : public SZ
 {
-  using inbox_t = slot_bitmap_all_svm<SZ>;
-  using outbox_t = slot_bitmap_all_svm<SZ>;
-  using locks_t = slot_bitmap_device<SZ>;
+  using inbox_t = slot_bitmap_all_svm;
+  using outbox_t = slot_bitmap_all_svm;
+  using locks_t = slot_bitmap_device;
 
   client_impl(SZ sz, inbox_t inbox, outbox_t outbox, locks_t active,
               page_t* remote_buffer, page_t* local_buffer)
@@ -111,17 +111,17 @@ struct client_impl : public SZ
   }
 
   // return true if no garbage (briefly) during call
-  void try_garbage_collect_word_client(uint64_t w)
+  void try_garbage_collect_word_client(size_t size, uint64_t w)
   {
     auto c = [](uint64_t i, uint64_t) -> uint64_t { return i; };
-    try_garbage_collect_word<SZ, decltype(c)>(c, inbox, outbox, active, w);
+    try_garbage_collect_word<decltype(c)>(size, c, inbox, outbox, active, w);
   }
 
-  void dump_word(uint64_t word)
+  void dump_word(size_t size, uint64_t word)
   {
-    uint64_t i = inbox.load_word(word);
-    uint64_t o = outbox.load_word(word);
-    uint64_t a = active.load_word(word);
+    uint64_t i = inbox.load_word(size, word);
+    uint64_t o = outbox.load_word(size, word);
+    uint64_t a = active.load_word(size, word);
     printf("%lu %lu %lu\n", i, o, a);
   }
 
@@ -298,7 +298,7 @@ struct client_impl : public SZ
     // 0b100 is got a result, don't need it
     for (uint64_t w = 0; w < words; w++)
       {
-        // try_garbage_collect_word_client(w);
+        // try_garbage_collect_word_client(size, w);
       }
 
     step(__LINE__, application_state);

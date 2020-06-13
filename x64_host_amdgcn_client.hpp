@@ -148,10 +148,10 @@ struct x64_amdgcn_pair
     auto *server_active_data = hsa_allocate_slot_bitmap_data_alloc<N>(fine);
 
     const size_t size = N;
-    slot_bitmap_all_svm<SZ> send = {size, send_data};
-    slot_bitmap_all_svm<SZ> recv = {size, recv_data};
-    slot_bitmap_device<SZ> client_active = {size, client_active_data};
-    slot_bitmap_device<SZ> server_active = {size, server_active_data};
+    slot_bitmap_all_svm send = {size, send_data};
+    slot_bitmap_all_svm recv = {size, recv_data};
+    slot_bitmap_device client_active = {size, client_active_data};
+    slot_bitmap_device server_active = {size, server_active_data};
 
     client = {SZ{}, recv, send, client_active, server_buffer, client_buffer};
 

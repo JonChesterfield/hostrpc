@@ -181,10 +181,10 @@ TEST_CASE("set up single word system")
   lockarray_ptr_t server_active_data(hostrpc::x64_allocate_slot_bitmap_data(N));
 
   using SZ = hostrpc::size_compiletime<N>;
-  slot_bitmap_all_svm<SZ> send(N, send_data.get());
-  slot_bitmap_all_svm<SZ> recv(N, recv_data.get());
-  slot_bitmap_device<SZ> client_active(N, client_active_data.get());
-  slot_bitmap_device<SZ> server_active(N, server_active_data.get());
+  slot_bitmap_all_svm send(N, send_data.get());
+  slot_bitmap_all_svm recv(N, recv_data.get());
+  slot_bitmap_device client_active(N, client_active_data.get());
+  slot_bitmap_device server_active(N, server_active_data.get());
 
   const uint64_t calls_planned = 1024;
   _Atomic(uint64_t) calls_launched(0);
