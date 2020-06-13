@@ -61,17 +61,19 @@ using x64_x64_server =
 
 // This doesn't especially care about fill/use/operate/step
 // It needs new, probably shouldn't try to compile it on non-x64
-template <size_t N>
+template <typename SZ>
 struct x64_x64_pair
 {
-  using SZ = size_compiletime<N>;
   x64_x64_client<SZ> client;
   x64_x64_server<SZ> server;
 
   hostrpc::page_t *client_buffer;
   hostrpc::page_t *server_buffer;
-  x64_x64_pair()
+
+  SZ sz;
+  x64_x64_pair(SZ sz) : sz(sz)
   {
+    size_t N = sz.N();
     using namespace hostrpc;
     size_t buffer_size = sizeof(page_t) * N;
 
@@ -93,8 +95,8 @@ struct x64_x64_pair
     slot_bitmap_device client_locks(size, client_locks_data);
     slot_bitmap_device server_locks(size, server_locks_data);
 
-    client = {SZ{}, recv, send, client_locks, server_buffer, client_buffer};
-    server = {SZ{}, send, recv, server_locks, client_buffer, server_buffer};
+    client = {sz, recv, send, client_locks, server_buffer, client_buffer};
+    server = {sz, send, recv, server_locks, client_buffer, server_buffer};
   }
   ~x64_x64_pair()
   {
@@ -114,15 +116,13 @@ struct x64_x64_pair
 };
 
 // TODO: Handle N variable w/out loss efficiency
-using ty = x64_x64_pair<128>;
+using ty = x64_x64_pair<hostrpc::size_runtime>;
 
 x64_x64_t::x64_x64_t(size_t N) : state(nullptr)
 {
-  if (N <= 128)
-    {
-      ty *s = new (std::nothrow) ty;
-      state = static_cast<void *>(s);
-    }
+  hostrpc::size_runtime sz(N);
+  ty *s = new (std::nothrow) ty(sz);
+  state = static_cast<void *>(s);
 }
 
 x64_x64_t::~x64_x64_t()

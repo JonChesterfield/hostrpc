@@ -61,7 +61,13 @@ struct client_impl : public SZ
         outbox(outbox),
         active(active)
   {
-    static_assert(sizeof(client_impl) == 40, "");
+    // SZ is expected to be zero bytes or a uint64_t
+    struct local : public SZ
+    {
+      float x;
+    };
+    constexpr bool sz_empty = sizeof(local) == sizeof(float);
+    static_assert(sizeof(client_impl) == (sz_empty ? 40 : 48), "");
     static_assert(alignof(client_impl) == 8, "");
   }
 
