@@ -60,7 +60,7 @@ struct interface
 struct x64_x64_t
 {
   // This probably can't be copied, but could be movable
-  x64_x64_t(size_t number_slots);
+  x64_x64_t(size_t minimum_number_slots);  // != 0
   ~x64_x64_t();
   x64_x64_t(const x64_x64_t &) = delete;
   bool valid();  // true if construction succeeded

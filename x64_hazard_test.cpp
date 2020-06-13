@@ -24,7 +24,7 @@ thread_local unsigned my_id = 0;
 TEST_CASE("hazard")
 {
   using namespace hostrpc;
-  hostrpc::x64_x64_t p(192);
+  hostrpc::x64_x64_t p(100);
 
   _Atomic bool server_live(true);
 
