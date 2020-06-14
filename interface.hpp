@@ -110,7 +110,7 @@ struct x64_amdgcn_t
    private:
     bool invoke_impl(void *);
     bool invoke_async_impl(void *);
-    __attribute__((__may_alias__)) uint64_t state[6];
+    __attribute__((__may_alias__)) uint64_t state[5];
   };
 
   struct server_t : public server::interface<server_t>
@@ -121,7 +121,7 @@ struct x64_amdgcn_t
 
    private:
     bool handle_impl(void *, uint64_t *);
-    __attribute__((__may_alias__)) uint64_t state[6];
+    __attribute__((__may_alias__)) uint64_t state[5];
   };
 
   client_t client();

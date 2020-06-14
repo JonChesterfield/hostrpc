@@ -74,17 +74,10 @@ struct x64_x64_pair
     using namespace hostrpc;
     size_t buffer_size = sizeof(page_t) * N;
 
-    // placement new[] requires additional space to wire up delete[]
-    hostrpc::page_t *client_buffer = static_cast<page_t *>(
-        x64_native::allocate(alignof(page_t), buffer_size));
-    hostrpc::page_t *server_buffer = static_cast<page_t *>(
-        x64_native::allocate(alignof(page_t), buffer_size));
-
-    for (size_t i = 0; i < N; i++)
-      {
-        new (client_buffer + i) page_t;
-        new (server_buffer + i) page_t;
-      }
+    hostrpc::page_t *client_buffer = hostrpc::careful_array_cast<page_t>(
+        x64_native::allocate(alignof(page_t), buffer_size), N);
+    hostrpc::page_t *server_buffer = hostrpc::careful_array_cast<page_t>(
+        x64_native::allocate(alignof(page_t), buffer_size), N);
 
     assert(client_buffer != server_buffer);
 

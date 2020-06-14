@@ -157,14 +157,10 @@ struct cache
 
 inline _Atomic uint64_t *x64_allocate_slot_bitmap_data(size_t size)
 {
-  // strictly this should use operator new
-  // however I don't have a freestanding implementation of <new> and it is
-  // surprisingly tedious to forward declare it
   assert(size % 64 == 0 && "Size must be a multiple of 64");
   constexpr const static size_t align = 64;
   void *memory = hostrpc::x64_native::allocate(align, size);
-  assert(memory);
-  return reinterpret_cast<_Atomic uint64_t *>(memory);
+  return hostrpc::careful_array_cast<_Atomic uint64_t>(memory, size);
 }
 
 struct x64_allocate_slot_bitmap_data_deleter
@@ -210,6 +206,8 @@ struct slot_bitmap
 
   slot_bitmap(size_t size, void *d) : a(static_cast<_Atomic uint64_t *>(d))
   {
+    // this is intended for converting back from a cast bitmap, but it's
+    // error prone given then size/uint64_t* constructor that zero initializes
     assert(valid(size));
   }
 

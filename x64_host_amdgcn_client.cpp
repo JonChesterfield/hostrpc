@@ -88,7 +88,7 @@ inline _Atomic uint64_t *hsa_allocate_slot_bitmap_data_alloc(
 {
   const size_t align = 64;
   void *memory = hostrpc::hsa::allocate(region.handle, align, size);
-  return reinterpret_cast<_Atomic uint64_t *>(memory);
+  return hostrpc::careful_array_cast<_Atomic uint64_t>(memory, size);
 }
 
 inline void hsa_allocate_slot_bitmap_data_free(_Atomic uint64_t *d)
@@ -96,10 +96,6 @@ inline void hsa_allocate_slot_bitmap_data_free(_Atomic uint64_t *d)
   hostrpc::hsa::deallocate(static_cast<void *>(d));
 }
 
-inline void *alloc_from_region(hsa_region_t region, size_t size)
-{
-  return hostrpc::hsa::allocate(region.handle, 8, size);
-}
 }  // namespace
 
 #endif
@@ -118,10 +114,11 @@ struct x64_amdgcn_pair
     hsa_region_t fine = {.handle = fine_handle};
     hsa_region_t coarse = {.handle = coarse_handle};
 
-    // todo: alignment on the page_t, works at present because allocate has high
-    // granularity. Also new().
-    hostrpc::page_t *client_buffer =
-        reinterpret_cast<page_t *>(alloc_from_region(fine, N * sizeof(page_t)));
+    hostrpc::page_t *client_buffer = hostrpc::careful_array_cast<page_t>(
+        hostrpc::hsa::allocate(fine_handle, alignof(page_t),
+                               N * sizeof(page_t)),
+        N);
+
     hostrpc::page_t *server_buffer = client_buffer;
 
     auto *send_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
@@ -129,11 +126,10 @@ struct x64_amdgcn_pair
     auto *client_active_data = hsa_allocate_slot_bitmap_data_alloc(coarse, N);
     auto *server_active_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
 
-    const size_t size = N;
-    slot_bitmap_all_svm send = {size, send_data};
-    slot_bitmap_all_svm recv = {size, recv_data};
-    slot_bitmap_device client_active = {size, client_active_data};
-    slot_bitmap_device server_active = {size, server_active_data};
+    slot_bitmap_all_svm send = {N, send_data};
+    slot_bitmap_all_svm recv = {N, recv_data};
+    slot_bitmap_device client_active = {N, client_active_data};
+    slot_bitmap_device server_active = {N, server_active_data};
 
     client = {sz, recv, send, client_active, server_buffer, client_buffer};
 
