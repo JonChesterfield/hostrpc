@@ -81,6 +81,8 @@ struct client_impl : public SZ
   {
   }
 
+  static void* operator new(size_t, client_impl* p) { return p; }
+
   void step(int x, void* y) { Step::call(x, y); }
 
   size_t size() { return SZ::N(); }

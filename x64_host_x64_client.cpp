@@ -154,32 +154,44 @@ x64_x64_t::~x64_x64_t()
 
 bool x64_x64_t::valid() { return state != nullptr; }
 
-static decltype(ty::client) *open_client(uint64_t *state)
+static decltype(ty::client) *open_client(unsigned char *state)
 {
-  return reinterpret_cast<decltype(ty::client) *>(state);
+  return __builtin_launder(reinterpret_cast<decltype(ty::client) *>(state));
 }
-static decltype(ty::server) *open_server(uint64_t *state)
+static decltype(ty::server) *open_server(unsigned char *state)
 {
-  return reinterpret_cast<decltype(ty::server) *>(state);
+  return __builtin_launder(reinterpret_cast<decltype(ty::server) *>(state));
 }
 
 x64_x64_t::client_t x64_x64_t::client()
 {
+  // Construct an opaque client_t
   ty *s = static_cast<ty *>(state);
   assert(s);
-  client_t res;
-  auto *cl = reinterpret_cast<decltype(ty::client) *>(&res.state[0]);
+
+  // Default constructed one has an array of chars
+  x64_x64_t::client_t res;
+  // Construct an instance into that array of chars
+  auto *cl = new (reinterpret_cast<decltype(s->client) *>(res.state)) decltype(
+      s->client);
+
+  // Don't need to do the launder here as we have a pointer to the new instance
+  assert(cl == open_client(res.state));
+
+  // Populate new instance
   *cl = s->client;
   return res;
 }
 
-__attribute__((used)) x64_x64_t::server_t x64_x64_t::server()
+x64_x64_t::server_t x64_x64_t::server()
 {
   ty *s = static_cast<ty *>(state);
   assert(s);
   server_t res;
-  auto *cl = reinterpret_cast<decltype(ty::server) *>(&res.state[0]);
-  *cl = s->server;
+  auto *sv = new (reinterpret_cast<decltype(s->server) *>(res.state)) decltype(
+      s->server);
+  assert(sv == open_server(res.state));
+  *sv = s->server;
   return res;
 }
 

@@ -5,7 +5,7 @@
 #include "x64_host_amdgcn_client_api.hpp"
 
 // hsa uses freestanding C headers, unlike hsa.hpp
-#if !defined(__AMDGCN__)
+#if defined(__x86_64__)
 #include "hsa.h"
 #include <new>
 #include <string.h>
@@ -199,36 +199,38 @@ x64_amdgcn_t::~x64_amdgcn_t()
 bool x64_amdgcn_t::valid() { return state != nullptr; }
 
 #if defined(__AMDGCN__)
-static decltype(ty::client) *open_client(uint64_t *state)
+static decltype(ty::client) *open_client(unsigned char *state)
 {
-  return reinterpret_cast<decltype(ty::client) *>(state);
+  return __builtin_launder(reinterpret_cast<decltype(ty::client) *>(state));
 }
 #endif
 
 #if defined(__x86_64__)
-static decltype(ty::server) *open_server(uint64_t *state)
+static decltype(ty::server) *open_server(unsigned char *state)
 {
-  return reinterpret_cast<decltype(ty::server) *>(state);
+  return __builtin_launder(reinterpret_cast<decltype(ty::server) *>(state));
 }
 #endif
 
 x64_amdgcn_t::client_t x64_amdgcn_t::client()
 {
-  client_t res;
   ty *s = static_cast<ty *>(state);
   assert(s);
-  auto *cl = reinterpret_cast<decltype(ty::client) *>(&res.state[0]);
-  *cl = s->client;
+  x64_amdgcn_t::client_t res;
+  auto *p = new (reinterpret_cast<decltype(ty::client) *>(res.state)) decltype(
+      s->client);
+  *p = s->client;
   return res;
 }
 
-__attribute__((used)) x64_amdgcn_t::server_t x64_amdgcn_t::server()
+x64_amdgcn_t::server_t x64_amdgcn_t::server()
 {
-  server_t res;
   ty *s = static_cast<ty *>(state);
   assert(s);
-  auto *cl = reinterpret_cast<decltype(ty::server) *>(&res.state[0]);
-  *cl = s->server;
+  x64_amdgcn_t::server_t res;
+  auto *p = new (reinterpret_cast<decltype(ty::server) *>(res.state)) decltype(
+      s->server);
+  *p = s->server;
   return res;
 }
 

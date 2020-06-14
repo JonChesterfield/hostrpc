@@ -53,6 +53,8 @@ struct server_impl : public SZ
   {
   }
 
+  static void* operator new(size_t, server_impl* p) { return p; }
+
   void step(int x, void* y) { Step::call(x, y); }
 
   void dump_word(size_t size, uint64_t word)

@@ -14,6 +14,15 @@ namespace hostrpc
 // memory so can be copied at will. They can be used until the owning instance
 // destructs.
 
+// Notes on the legality of the char state[] handling and aliasing.
+// Constructing an instance into state[] is done with placement new, which needs
+// the header <new> that is unavailable for amdgcn at present. Following
+// libunwind's solution discussed at D57455, operator new is added as a member
+// function to client_impl, server_impl. Combined with a reinterpret cast to
+// select the right operator new, that creates the object. Access is via
+// std::launder'ed reinterpret cast, but as one can't assume C++17 and doesn't
+// have <new> for amdgcn, this uses __builtin_launder.
+
 namespace client
 {
 template <typename T>
@@ -70,10 +79,11 @@ struct x64_x64_t
     friend struct client::interface<client_t>;
     friend struct x64_x64_t;
     client_t() {}  // would like this to be private
+
    private:
     bool invoke_impl(void *);
     bool invoke_async_impl(void *);
-    __attribute__((__may_alias__)) uint64_t state[6];
+    alignas(8) unsigned char state[48];
   };
 
   struct server_t : public server::interface<server_t>
@@ -84,7 +94,7 @@ struct x64_x64_t
 
    private:
     bool handle_impl(void *, uint64_t *);
-    __attribute__((__may_alias__)) uint64_t state[6];
+    alignas(8) unsigned char state[48];
   };
 
   client_t client();
@@ -110,7 +120,7 @@ struct x64_amdgcn_t
    private:
     bool invoke_impl(void *);
     bool invoke_async_impl(void *);
-    __attribute__((__may_alias__)) uint64_t state[5];
+    alignas(8) unsigned char state[40];
   };
 
   struct server_t : public server::interface<server_t>
@@ -121,7 +131,7 @@ struct x64_amdgcn_t
 
    private:
     bool handle_impl(void *, uint64_t *);
-    __attribute__((__may_alias__)) uint64_t state[5];
+    alignas(8) unsigned char state[40];
   };
 
   client_t client();
