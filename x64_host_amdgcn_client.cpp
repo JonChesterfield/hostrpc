@@ -219,24 +219,20 @@ static decltype(ty::server) *open_server(uint64_t *state)
 x64_amdgcn_t::client_t x64_amdgcn_t::client()
 {
   client_t res;
-#if defined(__AMDGCN__)
   ty *s = static_cast<ty *>(state);
   assert(s);
   auto *cl = reinterpret_cast<decltype(ty::client) *>(&res.state[0]);
   *cl = s->client;
-#endif
   return res;
 }
 
 __attribute__((used)) x64_amdgcn_t::server_t x64_amdgcn_t::server()
 {
   server_t res;
-#if defined(__x86_64__)
   ty *s = static_cast<ty *>(state);
   assert(s);
   auto *cl = reinterpret_cast<decltype(ty::server) *>(&res.state[0]);
   *cl = s->server;
-#endif
   return res;
 }
 
