@@ -176,23 +176,6 @@ struct x64_allocate_slot_bitmap_data_deleter
 };
 #endif
 
-struct size_runtime
-{
-  size_runtime(size_t N) : SZ(N) {}
-  size_t N() const { return SZ; }
-
- private:
-  size_t SZ;
-};
-
-template <size_t SZ>
-struct size_compiletime
-{
-  size_compiletime() {}
-  size_compiletime(size_t) {}
-  constexpr size_t N() const { return SZ; }
-};
-
 template <size_t scope>
 struct slot_bitmap;
 

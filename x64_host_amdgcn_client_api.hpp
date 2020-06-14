@@ -1,6 +1,14 @@
 #ifndef HOSTRPC_X64_HOST_AMDGCN_CLIENT_API_HPP_INCLUDED
 #define HOSTRPC_X64_HOST_AMDGCN_CLIENT_API_HPP_INCLUDED
 
+#include <stddef.h>
+
+// needs to scale with CUs
+namespace hostrpc
+{
+static const constexpr size_t x64_host_amdgcn_array_size = 2048;
+}
+
 #if defined(__AMDGCN__)
 
 // todo: wire up a host alternative?

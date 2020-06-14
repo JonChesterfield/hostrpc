@@ -80,10 +80,7 @@ using x64_amdgcn_server =
     hostrpc::server_impl<SZ, hostrpc::copy_functor_given_alias,
                          x64_host_amdgcn_client::operate, hostrpc::nop_stepper>;
 
-// needs to scale with CUs
-static const constexpr size_t x64_host_amdgcn_array_size = 2048;
-
-#if !defined(__AMDGCN__)
+#if defined(__x86_64__)
 namespace
 {
 inline _Atomic uint64_t *hsa_allocate_slot_bitmap_data_alloc(
@@ -105,6 +102,8 @@ inline void *alloc_from_region(hsa_region_t region, size_t size)
 }
 }  // namespace
 
+#endif
+
 template <typename SZ>
 struct x64_amdgcn_pair
 {
@@ -112,19 +111,22 @@ struct x64_amdgcn_pair
   hostrpc::x64_amdgcn_server<SZ> server;
   SZ sz;
 
-  x64_amdgcn_pair(SZ sz, hsa_region_t fine, hsa_region_t gpu_coarse) : sz(sz)
+  x64_amdgcn_pair(SZ sz, uint64_t fine_handle, uint64_t coarse_handle) : sz(sz)
   {
+#if defined(__x86_64__)
     size_t N = sz.N();
+    hsa_region_t fine = {.handle = fine_handle};
+    hsa_region_t coarse = {.handle = coarse_handle};
+
     // todo: alignment on the page_t, works at present because allocate has high
-    // granularity
+    // granularity. Also new().
     hostrpc::page_t *client_buffer =
         reinterpret_cast<page_t *>(alloc_from_region(fine, N * sizeof(page_t)));
     hostrpc::page_t *server_buffer = client_buffer;
 
     auto *send_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
     auto *recv_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
-    auto *client_active_data =
-        hsa_allocate_slot_bitmap_data_alloc(gpu_coarse, N);
+    auto *client_active_data = hsa_allocate_slot_bitmap_data_alloc(coarse, N);
     auto *server_active_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
 
     const size_t size = N;
@@ -136,10 +138,15 @@ struct x64_amdgcn_pair
     client = {sz, recv, send, client_active, server_buffer, client_buffer};
 
     server = {sz, send, recv, server_active, client_buffer, server_buffer};
+#else
+    (void)fine_handle;
+    (void)coarse_handle;
+#endif
   }
 
   ~x64_amdgcn_pair()
   {
+#if defined(__x86_64__)
     assert(client.inbox.data() == server.outbox.data());
     assert(client.outbox.data() == server.inbox.data());
 
@@ -160,6 +167,7 @@ struct x64_amdgcn_pair
         hsa_memory_free(client.local_buffer);
         hsa_memory_free(server.local_buffer);
       }
+#endif
   }
 };
 
@@ -169,163 +177,101 @@ using ty = x64_amdgcn_pair<SZ>;
 x64_amdgcn_t::x64_amdgcn_t(uint64_t hsa_region_t_fine_handle,
                            uint64_t hsa_region_t_coarse_handle)
 {
+  state = nullptr;
+#if defined(__x86_64__)
   SZ sz;
-  hsa_region_t fine = {.handle = hsa_region_t_fine_handle};
-  hsa_region_t coarse = {.handle = hsa_region_t_coarse_handle};
-
-  ty *s = new (std::nothrow) ty(sz, fine, coarse);
+  ty *s = new (std::nothrow)
+      ty(sz, hsa_region_t_fine_handle, hsa_region_t_coarse_handle);
   state = static_cast<void *>(s);
+#else
+  (void)hsa_region_t_fine_handle;
+  (void)hsa_region_t_coarse_handle;
+#endif
 }
 
 x64_amdgcn_t::~x64_amdgcn_t()
 {
+#if defined(__x86_64__)
   ty *s = static_cast<ty *>(state);
   if (s)
     {
       delete s;
     }
+#endif
 }
 
 bool x64_amdgcn_t::valid() { return state != nullptr; }
 
+#if defined(__AMDGCN__)
 static decltype(ty::client) *open_client(uint64_t *state)
 {
   return reinterpret_cast<decltype(ty::client) *>(state);
 }
+#endif
+
+#if defined(__x86_64__)
 static decltype(ty::server) *open_server(uint64_t *state)
 {
   return reinterpret_cast<decltype(ty::server) *>(state);
 }
+#endif
 
 x64_amdgcn_t::client_t x64_amdgcn_t::client()
 {
+  client_t res;
+#if defined(__AMDGCN__)
   ty *s = static_cast<ty *>(state);
   assert(s);
-  client_t res;
   auto *cl = reinterpret_cast<decltype(ty::client) *>(&res.state[0]);
   *cl = s->client;
+#endif
   return res;
 }
 
 __attribute__((used)) x64_amdgcn_t::server_t x64_amdgcn_t::server()
 {
+  server_t res;
+#if defined(__x86_64__)
   ty *s = static_cast<ty *>(state);
   assert(s);
-  server_t res;
   auto *cl = reinterpret_cast<decltype(ty::server) *>(&res.state[0]);
   *cl = s->server;
+#endif
   return res;
 }
 
 bool x64_amdgcn_t::client_t::invoke_impl(void *application_state)
 {
+#if defined(__AMDGCN__)
   auto *cl = open_client(&state[0]);
   return cl->rpc_invoke<true>(application_state);
+#else
+  (void)application_state;
+  return false;
+#endif
 }
 
 bool x64_amdgcn_t::client_t::invoke_async_impl(void *application_state)
 {
+#if defined(__AMDGCN__)
   auto *cl = open_client(&state[0]);
   return cl->rpc_invoke<false>(application_state);
+#else
+  (void)application_state;
+  return false;
+#endif
 }
 
 bool x64_amdgcn_t::server_t::handle_impl(void *application_state, uint64_t *l)
 {
+#if defined(__x86_64__)
   auto *se = open_server(&state[0]);
   return se->rpc_handle(application_state, l);
-}
-
-#endif
-
-}  // namespace hostrpc
-
-#if defined(__AMDGCN__)
-__attribute__((visibility("default"))) hostrpc::x64_amdgcn_client<
-    hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>>
-    client_singleton;
-
-void hostcall_client(uint64_t data[8])
-{
-  bool success = false;
-  while (!success)
-    {
-      success =
-          client_singleton.rpc_invoke<true>(static_cast<void *>(&data[0]));
-    }
-}
-
-void hostcall_client_async(uint64_t data[8])
-{
-  bool success = false;
-  while (!success)
-    {
-      client_singleton.rpc_invoke<false>(static_cast<void *>(&data[0]));
-    }
-}
-
 #else
-
-namespace hostrpc
-{
-thread_local unsigned my_id = 0;
-}  // namespace hostrpc
-
-const char *hostcall_client_symbol() { return "client_singleton"; }
-
-hostrpc::x64_amdgcn_server<
-    hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>>
-    server_singleton;
-
-using SZ = hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
-using rt = hostrpc::x64_amdgcn_pair<SZ>;
-
-void *hostcall_server_init(hsa_region_t fine, hsa_region_t gpu_coarse,
-                           void *client_address)
-{
-  rt *res = new rt(SZ{}, fine, gpu_coarse);
-
-  using ct = decltype(rt::client);
-
-  *reinterpret_cast<ct *>(client_address) = res->client;
-  server_singleton = res->server;
-
-  return static_cast<void *>(res);
-}
-
-void hostcall_server_dtor(void *arg)
-{
-  rt *res = static_cast<rt *>(arg);
-  delete (res);
-}
-
-bool hostcall_server_handle_one_packet(void *arg)
-{
-  rt *res = static_cast<rt *>(arg);
-
-  const bool verbose = false;
-
-  const size_t size = hostrpc::x64_host_amdgcn_array_size;
-  if (verbose)
-    {
-      printf("Client\n");
-      res->client.inbox.dump(size);
-      res->client.outbox.dump(size);
-      res->client.active.dump(size);
-
-      printf("Server\n");
-      res->server.inbox.dump(size);
-      res->server.outbox.dump(size);
-      res->server.active.dump(size);
-    }
-
-  bool r = server_singleton.rpc_handle(nullptr);
-
-  if (verbose)
-    {
-      printf(" --------------\n");
-    }
-
-  return r;
-}
-
+  (void)application_state;
+  (void)l;
+  return false;
 #endif
+}
+
+}  // namespace hostrpc
