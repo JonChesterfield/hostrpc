@@ -9,53 +9,15 @@
 
 namespace hostrpc
 {
-struct pack
-{
-  x64_x64_t::callback_func_t func;
-  void *state;
-};
-
-namespace x64_host_x64_client
-{
-struct fill
-{
-  static void call(hostrpc::page_t *page, void *pv)
-  {
-    pack *p = static_cast<pack *>(pv);
-    p->func(page, p->state);
-  };
-};
-
-struct use
-{
-  static void call(hostrpc::page_t *page, void *pv)
-  {
-    pack *p = static_cast<pack *>(pv);
-    p->func(page, p->state);
-  };
-};
-
-struct operate
-{
-  static void call(hostrpc::page_t *page, void *pv)
-  {
-    pack *p = static_cast<pack *>(pv);
-    p->func(page, p->state);
-  }
-};
-
-}  // namespace x64_host_x64_client
-
 template <typename SZ>
-using x64_x64_client = hostrpc::client_impl<
-    SZ, hostrpc::copy_functor_memcpy_pull, hostrpc::x64_host_x64_client::fill,
-    hostrpc::x64_host_x64_client::use, hostrpc::nop_stepper>;
+using x64_x64_client =
+    hostrpc::client_indirect_impl<SZ, hostrpc::copy_functor_memcpy_pull,
+                                  hostrpc::nop_stepper>;
 
 template <typename SZ>
 using x64_x64_server =
-    hostrpc::server_impl<SZ, hostrpc::copy_functor_memcpy_pull,
-                         hostrpc::x64_host_x64_client::operate,
-                         hostrpc::nop_stepper>;
+    hostrpc::server_indirect_impl<SZ, hostrpc::copy_functor_memcpy_pull,
+                                  hostrpc::nop_stepper>;
 
 // This doesn't especially care about fill/use/operate/step
 // It needs new, probably shouldn't try to compile it on non-x64
@@ -184,33 +146,31 @@ x64_x64_t::server_t x64_x64_t::server()
   return res;
 }
 
-bool x64_x64_t::client_t::invoke(x64_x64_t::callback_func_t fill,
-                                 void *fill_state,
-                                 x64_x64_t::callback_func_t use,
-                                 void *use_state)
+bool x64_x64_t::client_t::invoke(hostrpc::closure_func_t fill, void *fill_state,
+                                 hostrpc::closure_func_t use, void *use_state)
 {
-  pack fill_arg = {.func = fill, .state = fill_state};
-  pack use_arg = {.func = use, .state = use_state};
+  hostrpc::closure_pair fill_arg = {.func = fill, .state = fill_state};
+  hostrpc::closure_pair use_arg = {.func = use, .state = use_state};
   auto *cl = state.open<ty::client_type>();
   return cl->rpc_invoke<true>(static_cast<void *>(&fill_arg),
                               static_cast<void *>(&use_arg));
 }
 
-bool x64_x64_t::client_t::invoke_async(x64_x64_t::callback_func_t fill,
-                                       void *fill_state, callback_func_t use,
+bool x64_x64_t::client_t::invoke_async(hostrpc::closure_func_t fill,
+                                       void *fill_state, closure_func_t use,
                                        void *use_state)
 {
-  pack fill_arg = {.func = fill, .state = fill_state};
-  pack use_arg = {.func = use, .state = use_state};
+  hostrpc::closure_pair fill_arg = {.func = fill, .state = fill_state};
+  hostrpc::closure_pair use_arg = {.func = use, .state = use_state};
   auto *cl = state.open<ty::client_type>();
   return cl->rpc_invoke<false>(static_cast<void *>(&fill_arg),
                                static_cast<void *>(&use_arg));
 }
 
-bool x64_x64_t::server_t::handle(x64_x64_t::callback_func_t func,
+bool x64_x64_t::server_t::handle(hostrpc::closure_func_t func,
                                  void *application_state, uint64_t *l)
 {
-  pack arg = {.func = func, .state = application_state};
+  hostrpc::closure_pair arg = {.func = func, .state = application_state};
 
   auto *se = state.open<ty::server_type>();
   return se->rpc_handle(static_cast<void *>(&arg), l);

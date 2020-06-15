@@ -283,5 +283,20 @@ struct server_impl : public SZ
   locks_t active;
 };
 
+namespace indirect
+{
+struct operate
+{
+  static void call(hostrpc::page_t* page, void* pv)
+  {
+    hostrpc::closure_pair* p = static_cast<hostrpc::closure_pair*>(pv);
+    p->func(page, p->state);
+  }
+};
+}  // namespace indirect
+
+template <typename SZ, typename Copy, typename Step>
+using server_indirect_impl = server_impl<SZ, Copy, indirect::operate, Step>;
+
 }  // namespace hostrpc
 #endif

@@ -358,6 +358,32 @@ struct client_impl : public SZ
   locks_t active;
 };
 
+namespace indirect
+{
+struct fill
+{
+  static void call(hostrpc::page_t* page, void* pv)
+  {
+    hostrpc::closure_pair* p = static_cast<hostrpc::closure_pair*>(pv);
+    p->func(page, p->state);
+  };
+};
+
+struct use
+{
+  static void call(hostrpc::page_t* page, void* pv)
+  {
+    hostrpc::closure_pair* p = static_cast<hostrpc::closure_pair*>(pv);
+    p->func(page, p->state);
+  };
+};
+
+}  // namespace indirect
+
+template <typename SZ, typename Copy, typename Step>
+using client_indirect_impl =
+    client_impl<SZ, Copy, indirect::fill, indirect::use, Step>;
+
 }  // namespace hostrpc
 
 #endif

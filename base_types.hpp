@@ -35,6 +35,13 @@ struct size_compiletime
   constexpr size_t N() const { return SZ; }
 };
 
+using closure_func_t = void (*)(page_t*, void*);
+struct closure_pair
+{
+  closure_func_t func;
+  void* state;
+};
+
 template <size_t Size, size_t Align>
 struct storage
 {

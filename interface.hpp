@@ -80,18 +80,16 @@ struct x64_x64_t
   x64_x64_t(const x64_x64_t &) = delete;
   bool valid();  // true if construction succeeded
 
-  using callback_func_t = void (*)(hostrpc::page_t *, void *);
-
   struct client_t
   {
     friend struct x64_x64_t;
     client_t() {}  // would like this to be private
     using state_t = hostrpc::storage<48, 8>;
 
-    bool invoke(callback_func_t fill, void *fill_state, callback_func_t use,
+    bool invoke(closure_func_t fill, void *fill_state, closure_func_t use,
                 void *use_state);
-    bool invoke_async(callback_func_t fill, void *fill_state,
-                      callback_func_t use, void *use_state);
+    bool invoke_async(closure_func_t fill, void *fill_state, closure_func_t use,
+                      void *use_state);
 
     template <typename Fill, typename Use>
     bool invoke(Fill f, Use u)
@@ -132,7 +130,7 @@ struct x64_x64_t
     server_t() {}
     using state_t = hostrpc::storage<48, 8>;
 
-    bool handle(callback_func_t operate, void *state, uint64_t *loc);
+    bool handle(closure_func_t operate, void *state, uint64_t *loc);
 
     template <typename Func>
     bool handle(Func f, uint64_t *loc)
