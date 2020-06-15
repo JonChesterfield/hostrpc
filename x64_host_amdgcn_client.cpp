@@ -19,24 +19,12 @@ struct fill
 {
   static void call(hostrpc::page_t *page, void *dv)
   {
-    uint64_t *d = static_cast<uint64_t *>(dv);
-    if (0)
-      {
-        // Will want to set inactive lanes to nop here, once there are some
-        if (platform::is_master_lane())
-          {
-            for (unsigned i = 0; i < 64; i++)
-              {
-                page->cacheline[i].element[0] = 0;
-              }
-          }
-      }
-
-    hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
-    for (unsigned i = 0; i < 8; i++)
-      {
-        line->element[i] = d[i];
-      }
+#if defined(__AMDGCN__)
+    hostrpc::x64_host_amdgcn_client_api::fill(page, dv);
+#else
+    (void)page;
+    (void)dv;
+#endif
   };
 };
 
@@ -44,27 +32,25 @@ struct use
 {
   static void call(hostrpc::page_t *page, void *dv)
   {
-    uint64_t *d = static_cast<uint64_t *>(dv);
-    hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
-    for (unsigned i = 0; i < 8; i++)
-      {
-        d[i] = line->element[i];
-      }
+#if defined(__AMDGCN__)
+    hostrpc::x64_host_amdgcn_client_api::use(page, dv);
+#else
+    (void)page;
+    (void)dv;
+#endif
   };
 };
 
 struct operate
 {
-  static void call(hostrpc::page_t *page, void *)
+  static void call(hostrpc::page_t *page, void *dv)
   {
-    for (unsigned c = 0; c < 64; c++)
-      {
-        hostrpc::cacheline_t &line = page->cacheline[c];
-        for (unsigned i = 0; i < 8; i++)
-          {
-            line.element[i] = 2 * (line.element[i] + 1);
-          }
-      }
+#if defined(__x86_64__)
+    hostrpc::x64_host_amdgcn_client_api::operate(page, dv);
+#else
+    (void)page;
+    (void)dv;
+#endif
   }
 };
 }  // namespace x64_host_amdgcn_client
