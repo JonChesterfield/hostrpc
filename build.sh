@@ -64,7 +64,7 @@ $CXX $LDFLAGS amdgcn_loader.x64.bc memory.x64.bc x64_host_amdgcn_client.x64.bc x
 # Build the device library that calls into main()
 $CXXCL amdgcn_loader_entry.cl -emit-llvm -c -o amdgcn_loader_entry.gcn.bc
 $CXX $AMDGCNFLAGS amdgcn_loader_cast.cpp -c -o amdgcn_loader_cast.gcn.bc
-$LINK amdgcn_loader_entry.gcn.bc amdgcn_loader_cast.gcn.bc | opt -O2 -o amdgcn_loader_device.gcn.bc
+$LINK amdgcn_loader_entry.gcn.bc amdgcn_loader_cast.gcn.bc | opt -always-inline -O2 -o amdgcn_loader_device.gcn.bc
 
 # Build the device code that uses said library
 $CXX $AMDGCNFLAGS amdgcn_main.cpp -emit-llvm -c -o amdgcn_main.gcn.bc
@@ -100,6 +100,11 @@ done
 
 rm -f states.exe
 $CXX tests.x64.bc x64_hazard_test.x64.bc states.x64.bc catch.o memory.x64.bc x64_host_x64_client.x64.bc x64_host_amdgcn_client.x64.bc x64_host_amdgcn_client_api.x64.bc $LDFLAGS -o states.exe
+
+llvm-extract server.x64.bc -func server_instance_indirect | opt -strip-debug -S -o indir.ll
+llvm-extract server.x64.bc -func server_instance_direct | opt -strip-debug -S -o dir.ll
+llc indir.ll
+llc dir.ll
 
 time ./states.exe hazard
 

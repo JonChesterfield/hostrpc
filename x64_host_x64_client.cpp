@@ -9,40 +9,38 @@
 
 namespace hostrpc
 {
+struct pack
+{
+  x64_x64_t::callback_func_t func;
+  void *state;
+};
+
 namespace x64_host_x64_client
 {
 struct fill
 {
-  static void call(hostrpc::page_t *page, void *dv)
+  static void call(hostrpc::page_t *page, void *pv)
   {
-    __builtin_memcpy(page, dv, sizeof(hostrpc::page_t));
+    pack *p = static_cast<pack *>(pv);
+    p->func(page, p->state);
   };
 };
 
 struct use
 {
-  static void call(hostrpc::page_t *page, void *dv)
+  static void call(hostrpc::page_t *page, void *pv)
   {
-    __builtin_memcpy(dv, page, sizeof(hostrpc::page_t));
+    pack *p = static_cast<pack *>(pv);
+    p->func(page, p->state);
   };
 };
 
 struct operate
 {
-  static void call(hostrpc::page_t *page, void *)
+  static void call(hostrpc::page_t *page, void *pv)
   {
-    for (unsigned c = 0; c < 64; c++)
-      {
-        hostrpc::cacheline_t &line = page->cacheline[c];
-        std::swap(line.element[0], line.element[7]);
-        std::swap(line.element[1], line.element[6]);
-        std::swap(line.element[2], line.element[5]);
-        std::swap(line.element[3], line.element[4]);
-        for (unsigned i = 0; i < 8; i++)
-          {
-            line.element[i]++;
-          }
-      }
+    pack *p = static_cast<pack *>(pv);
+    p->func(page, p->state);
   }
 };
 
@@ -159,9 +157,13 @@ bool x64_x64_t::valid() { return state != nullptr; }
 x64_x64_t::client_t x64_x64_t::client()
 {
   // Construct an opaque client_t into the aligned state field
+  using res_t = x64_x64_t::client_t;
+  static_assert(res_t::state_t::size() == sizeof(ty::client_type), "");
+  static_assert(res_t::state_t::align() == alignof(ty::client_type), "");
+
   ty *s = static_cast<ty *>(state);
   assert(s);
-  x64_x64_t::client_t res;
+  res_t res;
   auto *cl = res.state.construct<ty::client_type>(s->client);
   assert(cl == res.state.open<ty::client_type>());
   return res;
@@ -170,32 +172,48 @@ x64_x64_t::client_t x64_x64_t::client()
 x64_x64_t::server_t x64_x64_t::server()
 {
   // Construct an opaque server_t into the aligned state field
+  using res_t = x64_x64_t::server_t;
+  static_assert(res_t::state_t::size() == sizeof(ty::server_type), "");
+  static_assert(res_t::state_t::align() == alignof(ty::server_type), "");
+
   ty *s = static_cast<ty *>(state);
   assert(s);
-  server_t res;
+  res_t res;
   auto *sv = res.state.construct<ty::server_type>(s->server);
   assert(sv == res.state.open<ty::server_type>());
   return res;
 }
 
-bool x64_x64_t::client_t::invoke_impl(void *fill_application_state,
-                                      void *use_application_state)
+bool x64_x64_t::client_t::invoke(x64_x64_t::callback_func_t fill,
+                                 void *fill_state,
+                                 x64_x64_t::callback_func_t use,
+                                 void *use_state)
 {
+  pack fill_arg = {.func = fill, .state = fill_state};
+  pack use_arg = {.func = use, .state = use_state};
   auto *cl = state.open<ty::client_type>();
-  return cl->rpc_invoke<true>(fill_application_state, use_application_state);
+  return cl->rpc_invoke<true>(static_cast<void *>(&fill_arg),
+                              static_cast<void *>(&use_arg));
 }
 
-bool x64_x64_t::client_t::invoke_async_impl(void *fill_application_state,
-                                            void *use_application_state)
+bool x64_x64_t::client_t::invoke_async(x64_x64_t::callback_func_t fill,
+                                       void *fill_state, callback_func_t use,
+                                       void *use_state)
 {
+  pack fill_arg = {.func = fill, .state = fill_state};
+  pack use_arg = {.func = use, .state = use_state};
   auto *cl = state.open<ty::client_type>();
-  return cl->rpc_invoke<false>(fill_application_state, use_application_state);
+  return cl->rpc_invoke<false>(static_cast<void *>(&fill_arg),
+                               static_cast<void *>(&use_arg));
 }
 
-bool x64_x64_t::server_t::handle_impl(void *application_state, uint64_t *l)
+bool x64_x64_t::server_t::handle(x64_x64_t::callback_func_t func,
+                                 void *application_state, uint64_t *l)
 {
+  pack arg = {.func = func, .state = application_state};
+
   auto *se = state.open<ty::server_type>();
-  return se->rpc_handle(application_state, l);
+  return se->rpc_handle(static_cast<void *>(&arg), l);
 }
 
 }  // namespace hostrpc

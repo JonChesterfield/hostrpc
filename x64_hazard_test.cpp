@@ -28,6 +28,21 @@ TEST_CASE("hazard")
 
   _Atomic bool server_live(true);
 
+  auto op_func = [](hostrpc::page_t *page) {
+    for (unsigned c = 0; c < 64; c++)
+      {
+        hostrpc::cacheline_t &line = page->cacheline[c];
+        std::swap(line.element[0], line.element[7]);
+        std::swap(line.element[1], line.element[6]);
+        std::swap(line.element[2], line.element[5]);
+        std::swap(line.element[3], line.element[4]);
+        for (unsigned i = 0; i < 8; i++)
+          {
+            line.element[i]++;
+          }
+      }
+  };
+
   auto server_worker = [&](unsigned id) {
     my_id = id;
     unsigned count = 0;
@@ -41,7 +56,7 @@ TEST_CASE("hazard")
             printf("server %u did %u tasks\n", id, count);
             break;
           }
-        bool did_work = p.server().handle(nullptr, &server_location);
+        bool did_work = p.server().handle(op_func, &server_location);
         if (did_work)
           {
             count++;
@@ -66,7 +81,13 @@ TEST_CASE("hazard")
       {
         init_page(&scratch, id);
         init_page(&expect, id + 1);
-        if (p.client().invoke(&scratch, &scratch))
+        if (p.client().invoke(
+                [&](hostrpc::page_t *page) {
+                  __builtin_memcpy(page, &scratch, sizeof(hostrpc::page_t));
+                },
+                [&](hostrpc::page_t *page) {
+                  __builtin_memcpy(&scratch, page, sizeof(hostrpc::page_t));
+                }))
           {
             count++;
             if (memcmp(&scratch, &expect, sizeof(page_t)) != 0)

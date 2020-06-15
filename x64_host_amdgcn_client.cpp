@@ -203,9 +203,13 @@ bool x64_amdgcn_t::valid() { return state != nullptr; }
 
 x64_amdgcn_t::client_t x64_amdgcn_t::client()
 {
+  using res_t = x64_amdgcn_t::client_t;
+  static_assert(res_t::state_t::size() == sizeof(ty::client_type), "");
+  static_assert(res_t::state_t::align() == alignof(ty::client_type), "");
+
   ty *s = static_cast<ty *>(state);
   assert(s);
-  x64_amdgcn_t::client_t res;
+  res_t res;
   auto *cl = res.state.construct<ty::client_type>(s->client);
   assert(cl == res.state.open<ty::client_type>());
   return res;
@@ -213,9 +217,13 @@ x64_amdgcn_t::client_t x64_amdgcn_t::client()
 
 x64_amdgcn_t::server_t x64_amdgcn_t::server()
 {
+  using res_t = x64_amdgcn_t::server_t;
+  static_assert(res_t::state_t::size() == sizeof(ty::server_type), "");
+  static_assert(res_t::state_t::align() == alignof(ty::server_type), "");
+
   ty *s = static_cast<ty *>(state);
   assert(s);
-  server_t res;
+  res_t res;
   auto *sv = res.state.construct<ty::server_type>(s->server);
   assert(sv == res.state.open<ty::server_type>());
   return res;

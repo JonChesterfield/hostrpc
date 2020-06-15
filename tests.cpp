@@ -16,9 +16,11 @@ TEST_CASE("instantiate")
   auto client = foo.client();
   auto server = foo.server();
 
-  client.invoke(0, 0);
+  auto v = [](hostrpc::page_t*, void*) -> void {};
+  client.invoke(v, 0, v, 0);
 
-  server.handle(0);
+  uint64_t loc = 0;
+  server.handle(v, 0, &loc);
 }
 
 #if 0

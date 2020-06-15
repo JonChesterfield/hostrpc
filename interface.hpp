@@ -80,27 +80,72 @@ struct x64_x64_t
   x64_x64_t(const x64_x64_t &) = delete;
   bool valid();  // true if construction succeeded
 
-  struct client_t : public client::interface<client_t>
+  using callback_func_t = void (*)(hostrpc::page_t *, void *);
+
+  struct client_t
   {
-    friend struct client::interface<client_t>;
     friend struct x64_x64_t;
     client_t() {}  // would like this to be private
+    using state_t = hostrpc::storage<48, 8>;
+
+    bool invoke(callback_func_t fill, void *fill_state, callback_func_t use,
+                void *use_state);
+    bool invoke_async(callback_func_t fill, void *fill_state,
+                      callback_func_t use, void *use_state);
+
+    template <typename Fill, typename Use>
+    bool invoke(Fill f, Use u)
+    {
+      auto cbf = [](hostrpc::page_t *page, void *vf) {
+        Fill *f = static_cast<Fill *>(vf);
+        (*f)(page);
+      };
+      auto cbu = [](hostrpc::page_t *page, void *vf) {
+        Use *f = static_cast<Use *>(vf);
+        (*f)(page);
+      };
+      return invoke(cbf, static_cast<void *>(&f), cbu, static_cast<void *>(&u));
+    }
+
+    template <typename Fill, typename Use>
+    bool invoke_async(Fill f, Use u)
+    {
+      auto cbf = [](hostrpc::page_t *page, void *vf) {
+        Fill *f = static_cast<Fill *>(vf);
+        (*f)(page);
+      };
+      auto cbu = [](hostrpc::page_t *page, void *vf) {
+        Use *f = static_cast<Use *>(vf);
+        (*f)(page);
+      };
+      return invoke_async(cbf, static_cast<void *>(&f), cbu,
+                          static_cast<void *>(&u));
+    }
 
    private:
-    bool invoke_impl(void *, void *);
-    bool invoke_async_impl(void *, void *);
-    hostrpc::storage<48, 8> state;
+    state_t state;
   };
 
-  struct server_t : public server::interface<server_t>
+  struct server_t
   {
-    friend struct server::interface<server_t>;
     friend struct x64_x64_t;
     server_t() {}
+    using state_t = hostrpc::storage<48, 8>;
+
+    bool handle(callback_func_t operate, void *state, uint64_t *loc);
+
+    template <typename Func>
+    bool handle(Func f, uint64_t *loc)
+    {
+      auto cb = [](hostrpc::page_t *page, void *vf) {
+        Func *f = static_cast<Func *>(vf);
+        (*f)(page);
+      };
+      return handle(cb, static_cast<void *>(&f), loc);
+    }
 
    private:
-    bool handle_impl(void *, uint64_t *);
-    hostrpc::storage<48, 8> state;
+    state_t state;
   };
 
   client_t client();
@@ -123,10 +168,12 @@ struct x64_amdgcn_t
     friend struct client::interface<client_t>;
     friend struct x64_amdgcn_t;
     client_t() {}  // would like this to be private
+    using state_t = hostrpc::storage<40, 8>;
+
    private:
     bool invoke_impl(void *, void *);
     bool invoke_async_impl(void *, void *);
-    hostrpc::storage<40, 8> state;
+    state_t state;
   };
 
   struct server_t : public server::interface<server_t>
@@ -134,10 +181,11 @@ struct x64_amdgcn_t
     friend struct server::interface<server_t>;
     friend struct x64_amdgcn_t;
     server_t() {}
+    using state_t = hostrpc::storage<40, 8>;
 
    private:
     bool handle_impl(void *, uint64_t *);
-    hostrpc::storage<40, 8> state;
+    state_t state;
   };
 
   client_t client();

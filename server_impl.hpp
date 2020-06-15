@@ -101,8 +101,8 @@ struct server_impl : public SZ
 
   // may want to rename this, number-slots?
   size_t size() { return SZ::N(); }
-
-  bool rpc_handle_given_slot(void* application_state, size_t slot)
+  __attribute__((always_inline)) bool rpc_handle_given_slot(
+      void* application_state, size_t slot)
   {
     assert(slot != SIZE_MAX);
 
@@ -201,14 +201,16 @@ struct server_impl : public SZ
 
   // Returns true if it handled one task. Does not attempt multiple tasks
 
-  bool rpc_handle(void* application_state) noexcept
+  __attribute__((always_inline)) bool rpc_handle(
+      void* application_state) noexcept
   {
     uint64_t location = 0;
     return rpc_handle(application_state, &location);
   }
 
   // location != NULL, used to round robin across slots
-  bool rpc_handle(void* application_state, uint64_t* location_arg) noexcept
+  __attribute__((always_inline)) bool rpc_handle(
+      void* application_state, uint64_t* location_arg) noexcept
   {
     step(__LINE__, application_state);
     const size_t size = this->size();
