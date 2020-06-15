@@ -39,7 +39,7 @@ uint64_t find_entry_address(hsa::executable &ex)
 {
   const char *kernel_entry = "device_entry.kd";
   hsa_executable_symbol_t symbol = ex.get_symbol_by_name(kernel_entry);
-  if (symbol.handle == hsa::executable::sentinel())
+  if (symbol.handle == hsa::sentinel())
     {
       fprintf(stderr, "HSA failed to find kernel %s\n", kernel_entry);
       exit(1);
@@ -58,7 +58,7 @@ uint64_t find_entry_address(hsa::executable &ex)
 uint64_t find_symbol_address(hsa::executable &ex, const char *sym)
 {
   hsa_executable_symbol_t symbol = ex.get_symbol_by_name(sym);
-  if (symbol.handle == hsa::executable::sentinel())
+  if (symbol.handle == hsa::sentinel())
     {
       fprintf(stderr, "HSA failed to find symbol %s\n", sym);
       exit(1);
@@ -111,32 +111,15 @@ uint16_t kernel_dispatch_setup()
   return 1 << HSA_KERNEL_DISPATCH_PACKET_SETUP_DIMENSIONS;
 }
 
-int main(int argc, char **argv)
+int main2(int argc, char **argv)
 {
-  // valgrind thinks this is leaking slightly
-  hsa::init hsa_state;  // probably need to destroy this last
-
   if (argc < 2)
     {
       fprintf(stderr, "Require at least one argument\n");
       return 1;
     }
 
-  hsa_agent_t kernel_agent;
-  if (HSA_STATUS_INFO_BREAK !=
-      hsa::iterate_agents([&](hsa_agent_t agent) -> hsa_status_t {
-        auto features = hsa::agent_get_info_feature(agent);
-        if (features & HSA_AGENT_FEATURE_KERNEL_DISPATCH)
-          {
-            kernel_agent = agent;
-            return HSA_STATUS_INFO_BREAK;
-          }
-        return HSA_STATUS_SUCCESS;
-      }))
-    {
-      fprintf(stderr, "Failed to find a kernel agent\n");
-      return 1;
-    }
+  hsa_agent_t kernel_agent = hsa::find_a_gpu_or_exit();
 
   // Load argv[1]
   FILE *fh = fopen(argv[1], "rb");
@@ -154,7 +137,6 @@ int main(int argc, char **argv)
     }
 
   // probably need to populate some of the implicit args for intrinsics to work
-
   hsa_region_t kernarg_region = hsa::region_kernarg(kernel_agent);
   hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
   hsa_region_t coarse_grained_region = hsa::region_coarse_grained(kernel_agent);
@@ -307,8 +289,15 @@ int main(int argc, char **argv)
 
   // Claim a packet
   uint64_t packet_id = hsa_queue_add_write_index_relaxed(queue, 1);
+
+  while (packet_id >= (hsa_queue_load_read_index_acquire(queue) + queue->size))
+    {
+      // spin until the queue is not full
+    }
+
+  const uint32_t mask = queue->size - 1;  // %
   hsa_kernel_dispatch_packet_t *packet =
-      (hsa_kernel_dispatch_packet_t *)queue->base_address + packet_id;
+      (hsa_kernel_dispatch_packet_t *)queue->base_address + (packet_id & mask);
 
   initialize_packet_defaults(packet);
 
@@ -370,4 +359,11 @@ int main(int argc, char **argv)
     }
 
   return result[0];
+}
+
+int main(int argc, char **argv)
+{
+  // valgrind thinks this is leaking slightly
+  hsa::init hsa_state;  // Need to destroy this last
+  return main2(argc, argv);
 }

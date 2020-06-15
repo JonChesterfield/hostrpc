@@ -323,6 +323,8 @@ inline std::unique_ptr<void, detail::memory_deleter> allocate(
     }
 }
 
+inline uint64_t sentinel() { return reinterpret_cast<uint64_t>(nullptr); }
+
 struct executable
 {
   // hsa expects executable management to be quite dynamic
@@ -332,8 +334,6 @@ struct executable
   // wrapper is
 
   operator hsa_executable_t() { return state; }
-
-  static uint64_t sentinel() { return reinterpret_cast<uint64_t>(nullptr); }
 
   bool valid() { return reinterpret_cast<void*>(state.handle) != nullptr; }
 
@@ -465,6 +465,26 @@ struct executable
   hsa_executable_t state;
   hsa_code_object_reader_t reader;
 };
+
+hsa_agent_t find_a_gpu_or_exit()
+{
+  hsa_agent_t kernel_agent;
+  if (HSA_STATUS_INFO_BREAK !=
+      hsa::iterate_agents([&](hsa_agent_t agent) -> hsa_status_t {
+        auto features = hsa::agent_get_info_feature(agent);
+        if (features & HSA_AGENT_FEATURE_KERNEL_DISPATCH)
+          {
+            kernel_agent = agent;
+            return HSA_STATUS_INFO_BREAK;
+          }
+        return HSA_STATUS_SUCCESS;
+      }))
+    {
+      fprintf(stderr, "Failed to find a kernel agent\n");
+      exit(1);
+    }
+  return kernel_agent;
+}
 
 }  // namespace hsa
 
