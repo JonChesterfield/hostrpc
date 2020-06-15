@@ -28,8 +28,14 @@ namespace client
 template <typename T>
 struct interface
 {
-  bool invoke(void *x) noexcept { return derived().invoke_impl(x); }
-  bool invoke_async(void *x) noexcept { return derived().invoke_async_impl(x); }
+  bool invoke(void *fill, void *use) noexcept
+  {
+    return derived().invoke_impl(fill, use);
+  }
+  bool invoke_async(void *fill, void *use) noexcept
+  {
+    return derived().invoke_async_impl(fill, use);
+  }
 
  protected:
   interface() {}
@@ -37,8 +43,8 @@ struct interface
  private:
   friend T;
   T &derived() { return *static_cast<T *>(this); }
-  bool invoke_impl(void *) { return false; }
-  bool invoke_async_impl(void *) { return false; }
+  bool invoke_impl(void *, void *) { return false; }
+  bool invoke_async_impl(void *, void *) { return false; }
 };
 }  // namespace client
 namespace server
@@ -81,8 +87,8 @@ struct x64_x64_t
     client_t() {}  // would like this to be private
 
    private:
-    bool invoke_impl(void *);
-    bool invoke_async_impl(void *);
+    bool invoke_impl(void *, void *);
+    bool invoke_async_impl(void *, void *);
     alignas(8) unsigned char state[48];
   };
 
@@ -118,8 +124,8 @@ struct x64_amdgcn_t
     friend struct x64_amdgcn_t;
     client_t() {}  // would like this to be private
    private:
-    bool invoke_impl(void *);
-    bool invoke_async_impl(void *);
+    bool invoke_impl(void *, void *);
+    bool invoke_async_impl(void *, void *);
     alignas(8) unsigned char state[40];
   };
 

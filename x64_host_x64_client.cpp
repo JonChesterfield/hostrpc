@@ -195,16 +195,18 @@ x64_x64_t::server_t x64_x64_t::server()
   return res;
 }
 
-bool x64_x64_t::client_t::invoke_impl(void *application_state)
+bool x64_x64_t::client_t::invoke_impl(void *fill_application_state,
+                                      void *use_application_state)
 {
   auto *cl = open_client(&state[0]);
-  return cl->rpc_invoke<true>(application_state);
+  return cl->rpc_invoke<true>(fill_application_state, use_application_state);
 }
 
-bool x64_x64_t::client_t::invoke_async_impl(void *application_state)
+bool x64_x64_t::client_t::invoke_async_impl(void *fill_application_state,
+                                            void *use_application_state)
 {
   auto *cl = open_client(&state[0]);
-  return cl->rpc_invoke<false>(application_state);
+  return cl->rpc_invoke<false>(fill_application_state, use_application_state);
 }
 
 bool x64_x64_t::server_t::handle_impl(void *application_state, uint64_t *l)

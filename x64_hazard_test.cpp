@@ -66,7 +66,7 @@ TEST_CASE("hazard")
       {
         init_page(&scratch, id);
         init_page(&expect, id + 1);
-        if (p.client().invoke(&scratch))
+        if (p.client().invoke(&scratch, &scratch))
           {
             count++;
             if (memcmp(&scratch, &expect, sizeof(page_t)) != 0)

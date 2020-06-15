@@ -83,7 +83,11 @@ struct client_impl : public SZ
 
   static void* operator new(size_t, client_impl* p) { return p; }
 
-  void step(int x, void* y) { Step::call(x, y); }
+  void step(int x, void* y, void* z)
+  {
+    Step::call(x, y);
+    Step::call(x, z);
+  }
 
   size_t size() { return SZ::N(); }
   size_t words() { return size() / 64; }
@@ -135,8 +139,9 @@ struct client_impl : public SZ
 
   // true if did work
   template <bool have_continuation>
-  __attribute__((noinline)) bool rpc_invoke_given_slot(void* application_state,
-                                                       size_t slot) noexcept
+  __attribute__((noinline)) bool rpc_invoke_given_slot(
+      void* fill_application_state, void* use_application_state,
+      size_t slot) noexcept
   {
     assert(slot != SIZE_MAX);
     const uint64_t element = index_to_element(slot);
@@ -180,21 +185,21 @@ struct client_impl : public SZ
 
     if (!available)
       {
-        step(__LINE__, application_state);
+        step(__LINE__, fill_application_state, use_application_state);
         return false;
       }
 
     assert(c.is(0b001));
-    step(__LINE__, application_state);
+    step(__LINE__, fill_application_state, use_application_state);
     tracker().claim(slot);
 
     // wave_populate
-    Fill::call(&local_buffer[slot], application_state);
-    step(__LINE__, application_state);
+    Fill::call(&local_buffer[slot], fill_application_state);
+    step(__LINE__, fill_application_state, use_application_state);
     Copy::push_from_client_to_server((void*)&remote_buffer[slot],
                                      (void*)&local_buffer[slot],
                                      sizeof(page_t));
-    step(__LINE__, application_state);
+    step(__LINE__, fill_application_state, use_application_state);
 
     tracker().release(slot);
 
@@ -209,7 +214,7 @@ struct client_impl : public SZ
       assert(c.is(0b011));
     }
 
-    step(__LINE__, application_state);
+    step(__LINE__, fill_application_state, use_application_state);
 
     // current strategy is drop interest in the slot, then wait for the
     // server to confirm, then drop local thread
@@ -251,15 +256,15 @@ struct client_impl : public SZ
         assert(c.is(0b111));
         tracker().claim(slot);
 
-        step(__LINE__, application_state);
+        step(__LINE__, fill_application_state, use_application_state);
         Copy::pull_to_client_from_server((void*)&local_buffer[slot],
                                          (void*)&remote_buffer[slot],
                                          sizeof(page_t));
-        step(__LINE__, application_state);
+        step(__LINE__, fill_application_state, use_application_state);
         // call the continuation
-        Use::call(&local_buffer[slot], application_state);
+        Use::call(&local_buffer[slot], use_application_state);
 
-        step(__LINE__, application_state);
+        step(__LINE__, fill_application_state, use_application_state);
 
         tracker().release(slot);
 
@@ -274,7 +279,7 @@ struct client_impl : public SZ
         c.o = o;
         assert(c.is(0b101));
 
-        step(__LINE__, application_state);
+        step(__LINE__, fill_application_state, use_application_state);
       }
 
     // if we don't have a continuation, would return on 0b010
@@ -294,9 +299,10 @@ struct client_impl : public SZ
 
   // Returns true if it successfully launched the task
   template <bool have_continuation>
-  __attribute__((noinline)) bool rpc_invoke(void* application_state) noexcept
+  __attribute__((noinline)) bool rpc_invoke(
+      void* fill_application_state, void* use_application_state) noexcept
   {
-    step(__LINE__, application_state);
+    step(__LINE__, fill_application_state, use_application_state);
 
     const size_t size = this->size();
     const size_t words = size / 64;
@@ -309,7 +315,7 @@ struct client_impl : public SZ
         // try_garbage_collect_word_client(size, w);
       }
 
-    step(__LINE__, application_state);
+    step(__LINE__, fill_application_state, use_application_state);
 
     size_t slot = SIZE_MAX;
     // tries each word in sequnce. A cas failing suggests contention, in which
@@ -327,10 +333,10 @@ struct client_impl : public SZ
                 assert(active_word != 0);
 
                 bool r = rpc_invoke_given_slot<have_continuation>(
-                    application_state, slot);
+                    fill_application_state, use_application_state, slot);
 
                 // wave release slot
-                step(__LINE__, application_state);
+                step(__LINE__, fill_application_state, use_application_state);
                 if (platform::is_master_lane())
                   {
                     active.release_slot_returning_updated_word(size, slot);
@@ -341,7 +347,7 @@ struct client_impl : public SZ
       }
 
     // couldn't get a slot, won't launch
-    step(__LINE__, application_state);
+    step(__LINE__, fill_application_state, use_application_state);
     return false;
   }
 

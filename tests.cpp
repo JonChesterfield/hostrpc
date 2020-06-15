@@ -16,7 +16,7 @@ TEST_CASE("instantiate")
   auto client = foo.client();
   auto server = foo.server();
 
-  client.invoke(0);
+  client.invoke(0, 0);
 
   server.handle(0);
 }
@@ -209,11 +209,12 @@ TEST_CASE("set up single word system")
 
       while (calls_launched < calls_planned)
         {
-          if (cl.rpc_invoke<false>(application_state_ptr))
+          if (cl.rpc_invoke<false>(application_state_ptr,
+                                   application_state_ptr))
             {
               calls_launched++;
             }
-          if (cl.rpc_invoke<true>(application_state_ptr))
+          if (cl.rpc_invoke<true>(application_state_ptr, application_state_ptr))
             {
               calls_launched++;
             }

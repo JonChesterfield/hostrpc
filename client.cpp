@@ -15,8 +15,8 @@ extern "C" __attribute__((noinline)) void client_instance_direct(client_type& c)
 {
   for (;;)
     {
-      c.rpc_invoke<true>(nullptr);
-      c.rpc_invoke<false>(nullptr);
+      c.rpc_invoke<true>(nullptr, nullptr);
+      c.rpc_invoke<false>(nullptr, nullptr);
     }
 }
 

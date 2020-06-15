@@ -220,6 +220,13 @@ x64_amdgcn_t::client_t x64_amdgcn_t::client()
   auto *p = new (reinterpret_cast<decltype(ty::client) *>(res.state)) decltype(
       s->client);
   *p = s->client;
+
+  storage<40, 8> ex;
+  using ext = decltype(ty::client);
+  auto r = ex.construct<ext>(s->client);
+  assert(r == ex.open<ext>());
+  ex.destroy<ext>();
+
   return res;
 }
 
@@ -234,24 +241,26 @@ x64_amdgcn_t::server_t x64_amdgcn_t::server()
   return res;
 }
 
-bool x64_amdgcn_t::client_t::invoke_impl(void *application_state)
+bool x64_amdgcn_t::client_t::invoke_impl(void *f, void *u)
 {
 #if defined(__AMDGCN__)
   auto *cl = open_client(&state[0]);
-  return cl->rpc_invoke<true>(application_state);
+  return cl->rpc_invoke<true>(f, u);
 #else
-  (void)application_state;
+  (void)f;
+  (void)u;
   return false;
 #endif
 }
 
-bool x64_amdgcn_t::client_t::invoke_async_impl(void *application_state)
+bool x64_amdgcn_t::client_t::invoke_async_impl(void *f, void *u)
 {
 #if defined(__AMDGCN__)
   auto *cl = open_client(&state[0]);
-  return cl->rpc_invoke<false>(application_state);
+  return cl->rpc_invoke<false>(f, u);
 #else
-  (void)application_state;
+  (void)f;
+  (void)u;
   return false;
 #endif
 }
