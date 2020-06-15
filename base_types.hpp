@@ -35,6 +35,33 @@ struct size_compiletime
   constexpr size_t N() const { return SZ; }
 };
 
+template <size_t Size, size_t Align>
+struct storage
+{
+  static constexpr size_t size() { return Size; }
+  static constexpr size_t align() { return Align; }
+
+  template <typename T>
+  T* open()
+  {
+    return __builtin_launder(reinterpret_cast<T*>(data));
+  }
+
+  template <typename T>
+  T* construct(T t)
+  {
+    return new (reinterpret_cast<T*>(data)) T(t);
+  }
+
+  template <typename T>
+  void destroy()
+  {
+    open<T>()->~T();
+  }
+
+  alignas(Align) unsigned char data[Size];
+};
+
 }  // namespace hostrpc
 
 #endif

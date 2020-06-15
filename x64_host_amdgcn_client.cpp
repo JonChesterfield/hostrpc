@@ -103,8 +103,10 @@ inline void hsa_allocate_slot_bitmap_data_free(_Atomic uint64_t *d)
 template <typename SZ>
 struct x64_amdgcn_pair
 {
-  hostrpc::x64_amdgcn_client<SZ> client;
-  hostrpc::x64_amdgcn_server<SZ> server;
+  using client_type = hostrpc::x64_amdgcn_client<SZ>;
+  using server_type = hostrpc::x64_amdgcn_server<SZ>;
+  client_type client;
+  server_type server;
   SZ sz;
 
   x64_amdgcn_pair(SZ sz, uint64_t fine_handle, uint64_t coarse_handle) : sz(sz)
@@ -191,6 +193,7 @@ x64_amdgcn_t::~x64_amdgcn_t()
   ty *s = static_cast<ty *>(state);
   if (s)
     {
+      // Should probably call the destructors on client/server state here
       delete s;
     }
 #endif
@@ -198,35 +201,13 @@ x64_amdgcn_t::~x64_amdgcn_t()
 
 bool x64_amdgcn_t::valid() { return state != nullptr; }
 
-#if defined(__AMDGCN__)
-static decltype(ty::client) *open_client(unsigned char *state)
-{
-  return __builtin_launder(reinterpret_cast<decltype(ty::client) *>(state));
-}
-#endif
-
-#if defined(__x86_64__)
-static decltype(ty::server) *open_server(unsigned char *state)
-{
-  return __builtin_launder(reinterpret_cast<decltype(ty::server) *>(state));
-}
-#endif
-
 x64_amdgcn_t::client_t x64_amdgcn_t::client()
 {
   ty *s = static_cast<ty *>(state);
   assert(s);
   x64_amdgcn_t::client_t res;
-  auto *p = new (reinterpret_cast<decltype(ty::client) *>(res.state)) decltype(
-      s->client);
-  *p = s->client;
-
-  storage<40, 8> ex;
-  using ext = decltype(ty::client);
-  auto r = ex.construct<ext>(s->client);
-  assert(r == ex.open<ext>());
-  ex.destroy<ext>();
-
+  auto *cl = res.state.construct<ty::client_type>(s->client);
+  assert(cl == res.state.open<ty::client_type>());
   return res;
 }
 
@@ -234,17 +215,16 @@ x64_amdgcn_t::server_t x64_amdgcn_t::server()
 {
   ty *s = static_cast<ty *>(state);
   assert(s);
-  x64_amdgcn_t::server_t res;
-  auto *p = new (reinterpret_cast<decltype(ty::server) *>(res.state)) decltype(
-      s->server);
-  *p = s->server;
+  server_t res;
+  auto *sv = res.state.construct<ty::server_type>(s->server);
+  assert(sv == res.state.open<ty::server_type>());
   return res;
 }
 
 bool x64_amdgcn_t::client_t::invoke_impl(void *f, void *u)
 {
 #if defined(__AMDGCN__)
-  auto *cl = open_client(&state[0]);
+  auto *cl = state.open<ty::client_type>();
   return cl->rpc_invoke<true>(f, u);
 #else
   (void)f;
@@ -256,8 +236,8 @@ bool x64_amdgcn_t::client_t::invoke_impl(void *f, void *u)
 bool x64_amdgcn_t::client_t::invoke_async_impl(void *f, void *u)
 {
 #if defined(__AMDGCN__)
-  auto *cl = open_client(&state[0]);
-  return cl->rpc_invoke<false>(f, u);
+  auto *cl = state.open<ty::client_type>();
+  return cl->rpc_invoke<true>(f, u);
 #else
   (void)f;
   (void)u;
@@ -268,7 +248,7 @@ bool x64_amdgcn_t::client_t::invoke_async_impl(void *f, void *u)
 bool x64_amdgcn_t::server_t::handle_impl(void *application_state, uint64_t *l)
 {
 #if defined(__x86_64__)
-  auto *se = open_server(&state[0]);
+  auto *se = state.open<ty::server_type>();
   return se->rpc_handle(application_state, l);
 #else
   (void)application_state;

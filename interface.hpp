@@ -89,7 +89,7 @@ struct x64_x64_t
    private:
     bool invoke_impl(void *, void *);
     bool invoke_async_impl(void *, void *);
-    alignas(8) unsigned char state[48];
+    hostrpc::storage<48, 8> state;
   };
 
   struct server_t : public server::interface<server_t>
@@ -100,7 +100,7 @@ struct x64_x64_t
 
    private:
     bool handle_impl(void *, uint64_t *);
-    alignas(8) unsigned char state[48];
+    hostrpc::storage<48, 8> state;
   };
 
   client_t client();
@@ -126,7 +126,7 @@ struct x64_amdgcn_t
    private:
     bool invoke_impl(void *, void *);
     bool invoke_async_impl(void *, void *);
-    alignas(8) unsigned char state[40];
+    hostrpc::storage<40, 8> state;
   };
 
   struct server_t : public server::interface<server_t>
@@ -137,7 +137,7 @@ struct x64_amdgcn_t
 
    private:
     bool handle_impl(void *, uint64_t *);
-    alignas(8) unsigned char state[40];
+    hostrpc::storage<40, 8> state;
   };
 
   client_t client();

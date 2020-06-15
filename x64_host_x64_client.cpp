@@ -64,8 +64,10 @@ using x64_x64_server =
 template <typename SZ>
 struct x64_x64_pair
 {
-  x64_x64_client<SZ> client;
-  x64_x64_server<SZ> server;
+  using client_type = x64_x64_client<SZ>;
+  using server_type = x64_x64_server<SZ>;
+  client_type client;
+  server_type server;
   SZ sz;
 
   x64_x64_pair(SZ sz) : sz(sz)
@@ -154,64 +156,45 @@ x64_x64_t::~x64_x64_t()
 
 bool x64_x64_t::valid() { return state != nullptr; }
 
-static decltype(ty::client) *open_client(unsigned char *state)
-{
-  return __builtin_launder(reinterpret_cast<decltype(ty::client) *>(state));
-}
-static decltype(ty::server) *open_server(unsigned char *state)
-{
-  return __builtin_launder(reinterpret_cast<decltype(ty::server) *>(state));
-}
-
 x64_x64_t::client_t x64_x64_t::client()
 {
-  // Construct an opaque client_t
+  // Construct an opaque client_t into the aligned state field
   ty *s = static_cast<ty *>(state);
   assert(s);
-
-  // Default constructed one has an array of chars
   x64_x64_t::client_t res;
-  // Construct an instance into that array of chars
-  auto *cl = new (reinterpret_cast<decltype(s->client) *>(res.state)) decltype(
-      s->client);
-
-  // Don't need to do the launder here as we have a pointer to the new instance
-  assert(cl == open_client(res.state));
-
-  // Populate new instance
-  *cl = s->client;
+  auto *cl = res.state.construct<ty::client_type>(s->client);
+  assert(cl == res.state.open<ty::client_type>());
   return res;
 }
 
 x64_x64_t::server_t x64_x64_t::server()
 {
+  // Construct an opaque server_t into the aligned state field
   ty *s = static_cast<ty *>(state);
   assert(s);
   server_t res;
-  auto *sv = new (reinterpret_cast<decltype(s->server) *>(res.state)) decltype(
-      s->server);
-  assert(sv == open_server(res.state));
-  *sv = s->server;
+  auto *sv = res.state.construct<ty::server_type>(s->server);
+  assert(sv == res.state.open<ty::server_type>());
   return res;
 }
 
 bool x64_x64_t::client_t::invoke_impl(void *fill_application_state,
                                       void *use_application_state)
 {
-  auto *cl = open_client(&state[0]);
+  auto *cl = state.open<ty::client_type>();
   return cl->rpc_invoke<true>(fill_application_state, use_application_state);
 }
 
 bool x64_x64_t::client_t::invoke_async_impl(void *fill_application_state,
                                             void *use_application_state)
 {
-  auto *cl = open_client(&state[0]);
+  auto *cl = state.open<ty::client_type>();
   return cl->rpc_invoke<false>(fill_application_state, use_application_state);
 }
 
 bool x64_x64_t::server_t::handle_impl(void *application_state, uint64_t *l)
 {
-  auto *se = open_server(&state[0]);
+  auto *se = state.open<ty::server_type>();
   return se->rpc_handle(application_state, l);
 }
 
