@@ -11,17 +11,13 @@ static const constexpr size_t x64_host_amdgcn_array_size = 2048;
 }
 
 #if defined(__AMDGCN__)
-
 #include <stdint.h>
 void hostcall_client(uint64_t data[8]);
 void hostcall_client_async(uint64_t data[8]);
-
 #endif
 
 #if defined(__x86_64__)
-
 #include "hsa.h"
-
 const char *hostcall_client_symbol();
 
 class hostcall
@@ -36,12 +32,26 @@ class hostcall
   using state_t = hostrpc::storage<128, 8>;
   state_t state;
 };
-
 #endif
 
 // x64 uses inlined function pointers to provide a cleaner interface
 // That's not working on amdgcn with clang-10 or tot at present.
 
+// Instead, exposing undefined functions to be implemented by the client
+
+namespace hostcall_ops
+{
+#if defined(__x86_64__)
+void operate(hostrpc::page_t *page);
+#endif
+
+#if defined __AMDGCN__
+void pass_arguments(hostrpc::page_t *page, uint64_t data[8]);
+void use_result(hostrpc::page_t *page, uint64_t data[8]);
+#endif
+}  // namespace hostcall_ops
+
+#if 1
 namespace hostrpc
 {
 namespace x64_host_amdgcn_client_api
@@ -56,5 +66,6 @@ void operate(hostrpc::page_t *, void *);
 #endif
 }  // namespace x64_host_amdgcn_client_api
 }  // namespace hostrpc
+#endif
 
 #endif

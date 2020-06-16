@@ -11,14 +11,26 @@
 
 static const constexpr uint32_t MAX_NUM_DOORBELLS = 0x400;
 
-namespace hostrpc
+// Implementations currently tested against, will move out of this file
+namespace hostcall_ops
 {
-namespace x64_host_amdgcn_client_api
+#if defined(__x86_64__)
+void operate(hostrpc::page_t *page)
 {
-#if defined(__AMDGCN__)
-void fill(hostrpc::page_t *page, void *dv)
+  for (unsigned c = 0; c < 64; c++)
+    {
+      hostrpc::cacheline_t &line = page->cacheline[c];
+      for (unsigned i = 0; i < 8; i++)
+        {
+          line.element[i] = 2 * (line.element[i] + 1);
+        }
+    }
+}
+#endif
+
+#if defined __AMDGCN__
+void pass_arguments(hostrpc::page_t *page, uint64_t d[8])
 {
-  uint64_t *d = static_cast<uint64_t *>(dv);
   if (0)
     {
       // Will want to set inactive lanes to nop here, once there are some
@@ -37,29 +49,36 @@ void fill(hostrpc::page_t *page, void *dv)
       line->element[i] = d[i];
     }
 }
-void use(hostrpc::page_t *page, void *dv)
+void use_result(hostrpc::page_t *page, uint64_t d[8])
 {
-  uint64_t *d = static_cast<uint64_t *>(dv);
   hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
   for (unsigned i = 0; i < 8; i++)
     {
       d[i] = line->element[i];
     }
 }
+#endif
 
+}  // namespace hostcall_ops
+
+namespace hostrpc
+{
+namespace x64_host_amdgcn_client_api
+{
+#if defined(__AMDGCN__)
+void fill(hostrpc::page_t *page, void *dv)
+{
+  uint64_t *d = static_cast<uint64_t *>(dv);
+  hostcall_ops::pass_arguments(page, d);
+}
+void use(hostrpc::page_t *page, void *dv)
+{
+  uint64_t *d = static_cast<uint64_t *>(dv);
+  hostcall_ops::use_result(page, d);
+}
 #endif
 #if defined(__x86_64__)
-void operate(hostrpc::page_t *page, void *)
-{
-  for (unsigned c = 0; c < 64; c++)
-    {
-      hostrpc::cacheline_t &line = page->cacheline[c];
-      for (unsigned i = 0; i < 8; i++)
-        {
-          line.element[i] = 2 * (line.element[i] + 1);
-        }
-    }
-}
+void operate(hostrpc::page_t *page, void *) { hostcall_ops::operate(page); }
 #endif
 }  // namespace x64_host_amdgcn_client_api
 }  // namespace hostrpc
