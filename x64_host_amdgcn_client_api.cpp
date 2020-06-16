@@ -3,6 +3,8 @@
 #include "interface.hpp"
 #include "platform.hpp"
 
+static const constexpr uint32_t MAX_NUM_DOORBELLS = 0x400;
+
 namespace hostrpc
 {
 namespace x64_host_amdgcn_client_api
@@ -59,12 +61,13 @@ void operate(hostrpc::page_t *page, void *)
 using SZ = hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
 
 #if defined(__AMDGCN__)
-__attribute__((visibility("default")))
-hostrpc::x64_amdgcn_t::client_t client_singleton;
 
-uint16_t get_queue_index()
+__attribute__((visibility("default")))
+hostrpc::x64_amdgcn_t::client_t client_singleton[MAX_NUM_DOORBELLS];
+
+// Also in hsa.hpp
+static uint16_t get_queue_index()
 {
-  const constexpr uint32_t MAX_NUM_DOORBELLS = 0x400;
   static_assert(MAX_NUM_DOORBELLS < UINT16_MAX, "");
   uint32_t tmp0, tmp1;
 
@@ -92,57 +95,96 @@ uint16_t get_queue_index()
 
 void hostcall_client(uint64_t data[8])
 {
+  hostrpc::x64_amdgcn_t::client_t &c = client_singleton[get_queue_index()];
+
   bool success = false;
 
   while (!success)
     {
       void *d = static_cast<void *>(&data[0]);
-      success = client_singleton.invoke(d, d);
+      success = c.invoke(d, d);
     }
 }
 
 void hostcall_client_async(uint64_t data[8])
 {
+  hostrpc::x64_amdgcn_t::client_t &c = client_singleton[get_queue_index()];
   bool success = false;
 
   while (!success)
     {
       void *d = static_cast<void *>(&data[0]);
-      success = client_singleton.invoke_async(d, d);
+      success = c.invoke_async(d, d);
     }
 }
 
 #else
 
+// Get the start of the array
 const char *hostcall_client_symbol() { return "client_singleton"; }
 
-hostrpc::x64_amdgcn_t::server_t server_singleton;
+hostrpc::x64_amdgcn_t::server_t server_singleton[MAX_NUM_DOORBELLS];
 
-void *hostcall_server_init(hsa_region_t fine, hsa_region_t gpu_coarse,
-                           void *client_address)
+uint16_t queue_to_index(hsa_queue_t *q)
 {
+  char *sig = reinterpret_cast<char *>(q->doorbell_signal.handle);
+  int64_t kind;
+  __builtin_memcpy(&kind, sig, 8);
+  // TODO: Work out if any hardware that works for openmp uses legacy doorbell
+  assert(kind == -1);
+  sig += 8;
+
+  const uint64_t MAX_NUM_DOORBELLS = 0x400;
+
+  uint64_t ptr;
+  __builtin_memcpy(&ptr, sig, 8);
+  ptr >>= 3;
+  ptr %= MAX_NUM_DOORBELLS;
+
+  return static_cast<uint16_t>(ptr);
+}
+
+hostrpc::x64_amdgcn_t *stored_pairs[MAX_NUM_DOORBELLS] = {0};
+
+int hostcall_server_init(hsa_queue_t *queue, hsa_region_t fine,
+                         hsa_region_t gpu_coarse, void *client_address)
+{
+  // Creates one of these heap types per call (roughly, per queue)
+
+  uint16_t queue_id = queue_to_index(queue);
+  assert(stored_pairs[queue_id] == 0);
+
+  // TODO: Avoid this heap alloc
   hostrpc::x64_amdgcn_t *res =
       new hostrpc::x64_amdgcn_t(fine.handle, gpu_coarse.handle);
+  if (!res)
+    {
+      return 1;
+    }
 
-  *static_cast<hostrpc::x64_amdgcn_t::client_t *>(client_address) =
-      res->client();
+  hostrpc::x64_amdgcn_t::client_t *clients =
+      static_cast<hostrpc::x64_amdgcn_t::client_t *>(client_address);
 
-  server_singleton = res->server();
+  clients[queue_id] = res->client();
 
-  return static_cast<void *>(res);
+  server_singleton[queue_id] = res->server();
+
+  stored_pairs[queue_id] = res;
+  return 0;
 }
 
-void hostcall_server_dtor(void *arg)
+void hostcall_server_dtor(hsa_queue_t *queue)
 {
-  hostrpc::x64_amdgcn_t *res = static_cast<hostrpc::x64_amdgcn_t *>(arg);
-  delete (res);
+  uint16_t queue_id = queue_to_index(queue);
+  assert(stored_pairs[queue_id] != 0);
+  delete stored_pairs[queue_id];
 }
 
-bool hostcall_server_handle_one_packet(void *arg)
+bool hostcall_server_handle_one_packet(hsa_queue_t *queue)
 {
-  (void)arg;
-  static thread_local uint64_t loc;
-  return server_singleton.handle(nullptr, &loc);
+  uint16_t queue_id = queue_to_index(queue);
+  static thread_local uint64_t loc;  // this needs to be per-queue really
+  return server_singleton[queue_id].handle(nullptr, &loc);
 }
 
 #endif
