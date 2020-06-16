@@ -5,6 +5,7 @@
 
 #if defined(__x86_64__)
 #include "hsa.hpp"
+#include <thread>
 #endif
 
 static const constexpr uint32_t MAX_NUM_DOORBELLS = 0x400;
@@ -179,7 +180,28 @@ class hostcall
 
     stored_pairs[queue_id] = res;
 
-    return 0;
+    return spawn(queue_id, &thread_killer);
+  }
+
+  int spawn(uint16_t queue_id, _Atomic uint32_t *thread_killer)
+  {
+    // TODO. Can't actually use std::thread because the constructor throws.
+    threads.emplace_back([=]() {
+      for (;;)
+        {
+          while (servers[queue_id].handle(nullptr, &queue_loc[queue_id]))
+            {
+            }
+
+          if (*thread_killer != 0)
+            {
+              return;
+            }
+
+          // yield
+        }
+    });
+    return 0;  // can't detect errors from std::thread
   }
 
   bool handle_one_packet(hsa_queue_t *queue)
@@ -194,6 +216,11 @@ class hostcall
       {
         delete stored_pairs[i];
       }
+    thread_killer = 1;
+    for (size_t i = 0; i < threads.size(); i++)
+      {
+        threads[i].join();
+      }
   }
   // Going to need these to be opaque
   hostrpc::x64_amdgcn_t::client_t *clients;  // statically allocated
@@ -203,6 +230,8 @@ class hostcall
   std::vector<hostrpc::x64_amdgcn_t *> stored_pairs;
   std::vector<uint64_t> queue_loc;
 
+  _Atomic uint32_t thread_killer = 0;
+  std::vector<std::thread> threads;
   hsa_region_t fine_grained_region;
   hsa_region_t coarse_grained_region;
 };
@@ -218,7 +247,10 @@ hostcall::hostcall(hsa_executable_t executable, hsa_agent_t kernel_agent)
 
   // todo: error checks here
   fine_grained_region = hsa::region_fine_grained(kernel_agent);
-  coarse_grained_region = hsa::region_coarse_grained(kernel_agent);
+
+  bool faster = false;  // coarse grain on locks isn't helping at present
+  coarse_grained_region =
+      faster ? hsa::region_coarse_grained(kernel_agent) : fine_grained_region;
 
   // probably can't use vector for exception-safety reasons
   servers.resize(MAX_NUM_DOORBELLS);
