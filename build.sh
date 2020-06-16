@@ -106,10 +106,10 @@ llvm-extract server.x64.bc -func server_instance_direct | opt -strip-debug -S -o
 llc indir.ll
 llc dir.ll
 
-time ./states.exe hazard
-
 echo "Call executable"
 time ./a.out ; echo $?
+
+time ./states.exe hazard
 
 # time valgrind --leak-check=full --fair-sched=yes ./states.exe hazard
 
