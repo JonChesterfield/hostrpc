@@ -3,6 +3,10 @@
 #include "interface.hpp"
 #include "platform.hpp"
 
+#if defined(__x86_64__)
+#include "hsa.hpp"
+#endif
+
 static const constexpr uint32_t MAX_NUM_DOORBELLS = 0x400;
 
 namespace hostrpc
@@ -145,6 +149,110 @@ uint16_t queue_to_index(hsa_queue_t *q)
 }
 
 hostrpc::x64_amdgcn_t *stored_pairs[MAX_NUM_DOORBELLS] = {0};
+
+#if defined(__x86_64__)
+
+class hostcall
+{
+  hostcall(hsa_executable_t executable, hsa_agent_t kernel_agent);
+
+  static uint64_t find_symbol_address(hsa_executable_t &ex,
+                                      hsa_agent_t kernel_agent,
+                                      const char *sym);
+
+  int enable_queue(hsa_queue_t *queue)
+  {
+    uint16_t queue_id = queue_to_index(queue);
+    assert(stored_pairs[queue_id] == 0);
+
+    // TODO: Avoid this heap alloc
+    hostrpc::x64_amdgcn_t *res = new hostrpc::x64_amdgcn_t(
+        fine_grained_region.handle, coarse_grained_region.handle);
+    if (!res)
+      {
+        return 1;
+      }
+
+    clients[queue_id] = res->client();
+
+    servers[queue_id] = res->server();
+
+    stored_pairs[queue_id] = res;
+
+    return 0;
+  }
+
+  bool handle_one_packet(hsa_queue_t *queue)
+  {
+    uint16_t queue_id = queue_to_index(queue);
+    return servers[queue_id].handle(nullptr, &queue_loc[queue_id]);
+  }
+
+  ~hostcall()
+  {
+    for (size_t i = 0; i < MAX_NUM_DOORBELLS; i++)
+      {
+        delete stored_pairs[i];
+      }
+  }
+  // Going to need these to be opaque
+  hostrpc::x64_amdgcn_t::client_t *clients;  // statically allocated
+
+  // heap allocated, may not need the servers() instance
+  std::vector<hostrpc::x64_amdgcn_t::server_t> servers;
+  std::vector<hostrpc::x64_amdgcn_t *> stored_pairs;
+  std::vector<uint64_t> queue_loc;
+
+  hsa_region_t fine_grained_region;
+  hsa_region_t coarse_grained_region;
+};
+
+// todo: port to hsa.h api
+
+hostcall::hostcall(hsa_executable_t executable, hsa_agent_t kernel_agent)
+{
+  // The client_t array is per-gpu-image. Find it.
+  uint64_t client_addr =
+      find_symbol_address(executable, kernel_agent, hostcall_client_symbol());
+  clients = reinterpret_cast<hostrpc::x64_amdgcn_t::client_t *>(client_addr);
+
+  // todo: error checks here
+  fine_grained_region = hsa::region_fine_grained(kernel_agent);
+  coarse_grained_region = hsa::region_coarse_grained(kernel_agent);
+
+  // probably can't use vector for exception-safety reasons
+  servers.resize(MAX_NUM_DOORBELLS);
+  stored_pairs.resize(MAX_NUM_DOORBELLS);
+  queue_loc.resize(MAX_NUM_DOORBELLS);
+}
+
+uint64_t hostcall::find_symbol_address(hsa_executable_t &ex,
+                                       hsa_agent_t kernel_agent,
+                                       const char *sym)
+{
+  // TODO: This was copied from the loader, sort out the error handling
+  hsa_executable_symbol_t symbol;
+  {
+    hsa_status_t rc =
+        hsa_executable_get_symbol_by_name(ex, sym, &kernel_agent, &symbol);
+    if (rc != HSA_STATUS_SUCCESS)
+      {
+        fprintf(stderr, "HSA failed to find symbol %s\n", sym);
+        exit(1);
+      }
+  }
+
+  hsa_symbol_kind_t kind = hsa::symbol_get_info_type(symbol);
+  if (kind != HSA_SYMBOL_KIND_VARIABLE)
+    {
+      fprintf(stderr, "Symbol %s is not a variable\n", sym);
+      exit(1);
+    }
+
+  return hsa::symbol_get_info_variable_address(symbol);
+}
+
+#endif
 
 int hostcall_server_init(hsa_queue_t *queue, hsa_region_t fine,
                          hsa_region_t gpu_coarse, void *client_address)

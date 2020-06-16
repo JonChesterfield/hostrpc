@@ -21,6 +21,7 @@ void hostcall_client_async(uint64_t data[8]);
 #if defined(__x86_64__)
 
 #include "hsa.h"
+#include <vector>
 
 const char *hostcall_client_symbol();
 int hostcall_server_init(hsa_queue_t *queue, hsa_region_t fine,

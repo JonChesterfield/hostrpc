@@ -161,19 +161,19 @@ struct symbol_get_info
   }
 };
 
-hsa_symbol_kind_t symbol_get_info_type(hsa_executable_symbol_t sym)
+inline hsa_symbol_kind_t symbol_get_info_type(hsa_executable_symbol_t sym)
 {
   return symbol_get_info<hsa_symbol_kind_t,
                          HSA_EXECUTABLE_SYMBOL_INFO_TYPE>::call(sym);
 }
 
-uint32_t symbol_get_info_name_length(hsa_executable_symbol_t sym)
+inline uint32_t symbol_get_info_name_length(hsa_executable_symbol_t sym)
 {
   return symbol_get_info<uint32_t,
                          HSA_EXECUTABLE_SYMBOL_INFO_NAME_LENGTH>::call(sym);
 }
 
-std::string symbol_get_info_name(hsa_executable_symbol_t sym)
+inline std::string symbol_get_info_name(hsa_executable_symbol_t sym)
 {
   uint32_t size = symbol_get_info_name_length(sym);
   std::string res;
@@ -185,7 +185,7 @@ std::string symbol_get_info_name(hsa_executable_symbol_t sym)
   return res;
 }
 
-uint64_t symbol_get_info_variable_address(hsa_executable_symbol_t sym)
+inline uint64_t symbol_get_info_variable_address(hsa_executable_symbol_t sym)
 {
   // could assert that symbol kind is variable
   return symbol_get_info<
@@ -193,7 +193,7 @@ uint64_t symbol_get_info_variable_address(hsa_executable_symbol_t sym)
 }
 
 // The handle written to the kernel dispatch packet
-uint64_t symbol_get_info_kernel_object(hsa_executable_symbol_t sym)
+inline uint64_t symbol_get_info_kernel_object(hsa_executable_symbol_t sym)
 {
   return symbol_get_info<uint64_t,
                          HSA_EXECUTABLE_SYMBOL_INFO_KERNEL_OBJECT>::call(sym);
@@ -224,10 +224,10 @@ struct region_get_info
   }
 };
 
-#define REGION_GEN_INFO(suffix, type, req)           \
-  type region_get_info_##suffix(hsa_region_t region) \
-  {                                                  \
-    return region_get_info<type, req>::call(region); \
+#define REGION_GEN_INFO(suffix, type, req)                  \
+  inline type region_get_info_##suffix(hsa_region_t region) \
+  {                                                         \
+    return region_get_info<type, req>::call(region);        \
   }
 
 REGION_GEN_INFO(segment, hsa_region_segment_t, HSA_REGION_INFO_SEGMENT);
@@ -468,7 +468,7 @@ struct executable
   hsa_code_object_reader_t reader;
 };
 
-hsa_agent_t find_a_gpu_or_exit()
+inline hsa_agent_t find_a_gpu_or_exit()
 {
   hsa_agent_t kernel_agent;
   if (HSA_STATUS_INFO_BREAK !=
@@ -490,7 +490,7 @@ hsa_agent_t find_a_gpu_or_exit()
 
 // Maps a queue to an integer in [0, 1023] which survives CWSR, so can be used
 // to index into device local structures. Inspired by the rocr.
-uint16_t queue_to_index(hsa_queue_t* q)
+inline uint16_t queue_to_index(hsa_queue_t* q)
 {
   char* sig = reinterpret_cast<char*>(q->doorbell_signal.handle);
   int64_t kind;
