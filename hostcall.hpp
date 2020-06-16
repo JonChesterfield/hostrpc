@@ -1,5 +1,5 @@
-#ifndef HOSTRPC_X64_HOST_AMDGCN_CLIENT_API_HPP_INCLUDED
-#define HOSTRPC_X64_HOST_AMDGCN_CLIENT_API_HPP_INCLUDED
+#ifndef HOSTCALL_HPP_INCLUDED
+#define HOSTCALL_HPP_INCLUDED
 
 #include "base_types.hpp"
 #include <stddef.h>
@@ -11,12 +11,16 @@ static const constexpr size_t x64_host_amdgcn_array_size = 2048;
 }
 
 #if defined(__AMDGCN__)
+// amdgcn client API
+
 #include <stdint.h>
 void hostcall_client(uint64_t data[8]);
 void hostcall_client_async(uint64_t data[8]);
 #endif
 
 #if defined(__x86_64__)
+// x64 host API
+
 #include "hsa.h"
 const char *hostcall_client_symbol();
 
@@ -34,17 +38,13 @@ class hostcall
 };
 #endif
 
-// x64 uses inlined function pointers to provide a cleaner interface
-// That's not working on amdgcn with clang-10 or tot at present.
 
-// Instead, exposing undefined functions to be implemented by the client
-
+// Functions implemented by the user of the library
 namespace hostcall_ops
 {
 #if defined(__x86_64__)
 void operate(hostrpc::page_t *page);
 #endif
-
 #if defined __AMDGCN__
 void pass_arguments(hostrpc::page_t *page, uint64_t data[8]);
 void use_result(hostrpc::page_t *page, uint64_t data[8]);

@@ -8,10 +8,6 @@
 // Client makes a call to the server, which does some work and sends back a
 // reply
 
-// Layering falling apart a bit. Trying to work out if a signal is the missing
-// piece for memory visibility
-#include "x64_host_amdgcn_client_api.hpp"
-
 namespace hostrpc
 {
 struct fill_nop

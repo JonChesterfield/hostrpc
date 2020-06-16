@@ -2,7 +2,7 @@
 #include "interface.hpp"
 #include "platform.hpp"
 #include "server_impl.hpp"
-#include "x64_host_amdgcn_client_api.hpp"
+#include "hostcall.hpp" // hostcall_ops prototypes
 
 // hsa uses freestanding C headers, unlike hsa.hpp
 #if defined(__x86_64__)

@@ -1,8 +1,46 @@
 #include "common.hpp"
 #include "platform.hpp"
-#include "x64_host_amdgcn_client_api.hpp"
-// Example.
+#include "hostcall.hpp"
 
+namespace hostcall_ops
+{
+#if defined(__x86_64__)
+void operate(hostrpc::page_t *page)
+{
+  for (unsigned c = 0; c < 64; c++)
+    {
+      hostrpc::cacheline_t &line = page->cacheline[c];
+      for (unsigned i = 0; i < 8; i++)
+        {
+          line.element[i] = 2 * (line.element[i] + 1);
+        }
+    }
+}
+#endif
+
+#if defined __AMDGCN__
+void pass_arguments(hostrpc::page_t *page, uint64_t d[8])
+{
+  hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
+  for (unsigned i = 0; i < 8; i++)
+    {
+      line->element[i] = d[i];
+    }
+}
+void use_result(hostrpc::page_t *page, uint64_t d[8])
+{
+  hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
+  for (unsigned i = 0; i < 8; i++)
+    {
+      d[i] = line->element[i];
+    }
+}
+#endif
+
+}  // namespace hostcall_ops
+
+
+#if defined __AMDGCN__
 extern "C" __attribute__((visibility("default"))) int main(int argc,
                                                            char **argv)
 {
@@ -33,3 +71,4 @@ extern "C" __attribute__((visibility("default"))) int main(int argc,
 
   return differ;
 }
+#endif

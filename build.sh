@@ -52,14 +52,14 @@ $CXX $AMDGCNFLAGS server.cpp -c -o server.gcn.bc
 $CXX $AMDGCNFLAGS x64_host_amdgcn_client.cpp -c -o x64_host_amdgcn_client.gcn.bc
 $CXX $X64FLAGS -I$HSAINC x64_host_amdgcn_client.cpp -c -o x64_host_amdgcn_client.x64.bc
 
-$CXX $AMDGCNFLAGS x64_host_amdgcn_client_api.cpp -c -o x64_host_amdgcn_client_api.gcn.bc
-$CXX $X64FLAGS -I$HSAINC x64_host_amdgcn_client_api.cpp -c -o x64_host_amdgcn_client_api.x64.bc
+$CXX $AMDGCNFLAGS hostcall.cpp -c -o hostcall.gcn.bc
+$CXX $X64FLAGS -I$HSAINC hostcall.cpp -c -o hostcall.x64.bc
 
 
 # Build the device loader that assumes the device library is linked into the application
 # TODO: Embed it directly in the loader by patching call to main, as the loader doesn't do it
 $CXX $X64FLAGS -I$HSAINC amdgcn_loader.cpp -c -o amdgcn_loader.x64.bc
-$CXX $LDFLAGS amdgcn_loader.x64.bc memory.x64.bc x64_host_amdgcn_client.x64.bc x64_host_amdgcn_client_api.x64.bc -o amdgcn_loader.exe
+$CXX $LDFLAGS amdgcn_loader.x64.bc memory.x64.bc x64_host_amdgcn_client.x64.bc hostcall.x64.bc amdgcn_main.gcn.bc -o amdgcn_loader.exe
 
 # Build the device library that calls into main()
 $CXXCL amdgcn_loader_entry.cl -emit-llvm -c -o amdgcn_loader_entry.gcn.bc
@@ -67,10 +67,11 @@ $CXX $AMDGCNFLAGS amdgcn_loader_cast.cpp -c -o amdgcn_loader_cast.gcn.bc
 $LINK amdgcn_loader_entry.gcn.bc amdgcn_loader_cast.gcn.bc | opt -always-inline -O2 -o amdgcn_loader_device.gcn.bc
 
 # Build the device code that uses said library
+$CXX $X64FLAGS -I$HSAINC amdgcn_main.cpp -emit-llvm -c -o amdgcn_main.x64.bc
 $CXX $AMDGCNFLAGS amdgcn_main.cpp -emit-llvm -c -o amdgcn_main.gcn.bc
 
 
-llvm-link amdgcn_main.gcn.bc amdgcn_loader_device.gcn.bc x64_host_amdgcn_client.gcn.bc x64_host_amdgcn_client_api.gcn.bc  -o executable_device.gcn.bc
+llvm-link amdgcn_main.gcn.bc amdgcn_loader_device.gcn.bc x64_host_amdgcn_client.gcn.bc hostcall.gcn.bc  -o executable_device.gcn.bc
 
 # Link the device image
 $CXX $AMDGPU executable_device.gcn.bc -o a.out
@@ -99,12 +100,7 @@ done
 
 
 rm -f states.exe
-$CXX tests.x64.bc x64_hazard_test.x64.bc states.x64.bc catch.o memory.x64.bc x64_host_x64_client.x64.bc x64_host_amdgcn_client.x64.bc x64_host_amdgcn_client_api.x64.bc $LDFLAGS -o states.exe
-
-llvm-extract server.x64.bc -func server_instance_indirect | opt -strip-debug -S -o indir.ll
-llvm-extract server.x64.bc -func server_instance_direct | opt -strip-debug -S -o dir.ll
-llc indir.ll
-llc dir.ll
+$CXX tests.x64.bc x64_hazard_test.x64.bc states.x64.bc catch.o memory.x64.bc x64_host_x64_client.x64.bc  $LDFLAGS -o states.exe
 
 time ./states.exe hazard
 

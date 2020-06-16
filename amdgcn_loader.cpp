@@ -5,7 +5,7 @@
 
 #include <unistd.h>
 
-#include "x64_host_amdgcn_client_api.hpp"
+#include "hostcall.hpp"
 
 size_t bytes_for_argv_strtab(int argc, char **argv)
 {

@@ -1,4 +1,4 @@
-#include "x64_host_amdgcn_client_api.hpp"
+#include "hostcall.hpp"
 #include "base_types.hpp"
 #include "interface.hpp"
 #include "platform.hpp"
@@ -9,55 +9,6 @@
 #include <vector>
 #endif
 
-// Implementations currently tested against, will move out of this file
-namespace hostcall_ops
-{
-#if defined(__x86_64__)
-void operate(hostrpc::page_t *page)
-{
-  for (unsigned c = 0; c < 64; c++)
-    {
-      hostrpc::cacheline_t &line = page->cacheline[c];
-      for (unsigned i = 0; i < 8; i++)
-        {
-          line.element[i] = 2 * (line.element[i] + 1);
-        }
-    }
-}
-#endif
-
-#if defined __AMDGCN__
-void pass_arguments(hostrpc::page_t *page, uint64_t d[8])
-{
-  if (0)
-    {
-      // Will want to set inactive lanes to nop here, once there are some
-      if (platform::is_master_lane())
-        {
-          for (unsigned i = 0; i < 64; i++)
-            {
-              page->cacheline[i].element[0] = 0;
-            }
-        }
-    }
-
-  hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
-  for (unsigned i = 0; i < 8; i++)
-    {
-      line->element[i] = d[i];
-    }
-}
-void use_result(hostrpc::page_t *page, uint64_t d[8])
-{
-  hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
-  for (unsigned i = 0; i < 8; i++)
-    {
-      d[i] = line->element[i];
-    }
-}
-#endif
-
-}  // namespace hostcall_ops
 
 static const constexpr uint32_t MAX_NUM_DOORBELLS = 0x400;
 
