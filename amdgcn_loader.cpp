@@ -263,32 +263,23 @@ int main2(int argc, char **argv)
     kernarg += extra_implicit_size;
   }
 
-  std::vector<hsa_queue_t *> queues;
-  for (uint64_t i = 0; i < 200; i++)
-    {
-      hsa_queue_t *queue;
+  hsa_queue_t *queue;
+  {
+    hsa_status_t rc = hsa_queue_create(
+        kernel_agent /* make the queue on this agent */,
+        131072 /* todo: size it, this hardcodes max size for vega20 */,
+        HSA_QUEUE_TYPE_SINGLE /* baseline */,
+        NULL /* called on every async event? */,
+        NULL /* data passed to previous */,
+        // If sizes exceed these values, things are supposed to work slowly
+        UINT32_MAX /* private_segment_size, 32_MAX is unknown */,
+        UINT32_MAX /* group segment size, as above */, &queue);
+    if (rc != HSA_STATUS_SUCCESS)
       {
-        hsa_status_t rc = hsa_queue_create(
-            kernel_agent /* make the queue on this agent */,
-            131072 /* todo: size it, this hardcodes max size for vega20 */,
-            HSA_QUEUE_TYPE_SINGLE /* baseline */,
-            NULL /* called on every async event? */,
-            NULL /* data passed to previous */,
-            // If sizes exceed these values, things are supposed to work slowly
-            UINT32_MAX /* private_segment_size, 32_MAX is unknown */,
-            UINT32_MAX /* group segment size, as above */, &queue);
-        if (rc != HSA_STATUS_SUCCESS)
-          {
-            fprintf(stderr, "Failed to create queue %lu\n", i);
-            break;
-          }
-        else
-          {
-            // printf("Created queue %lu, id %lu\n", i, queue->id);
-            queues.push_back(queue);
-          }
+        fprintf(stderr, "Failed to create queue\n");
+        exit(1);
       }
-    }
+  }
 
   uint64_t client_addr = find_symbol_address(ex, hostcall_client_symbol());
 
@@ -297,97 +288,62 @@ int main2(int argc, char **argv)
       fine_grained_region, faster ? coarse_grained_region : fine_grained_region,
       reinterpret_cast<void *>(client_addr));
 
-  for (size_t i = 0; i < queues.size(); i++)
+  // Claim a packet
+  uint64_t packet_id = hsa_queue_add_write_index_relaxed(queue, 1);
+  bool full = true;
+  while (full)
     {
-      hsa_queue_t *queue = queues[i];
-
-      for (unsigned r = 0; r < 3; r++)
-        {
-          // Claim a packet
-          uint64_t packet_id = hsa_queue_add_write_index_relaxed(queue, 1);
-          bool full = true;
-          while (full)
-            {
-              full = packet_id >=
-                     (queue->size + hsa_queue_load_read_index_acquire(queue));
-            }
-
-          const uint32_t mask = queue->size - 1;  // %
-          hsa_kernel_dispatch_packet_t *packet =
-              (hsa_kernel_dispatch_packet_t *)queue->base_address +
-              (packet_id & mask);
-
-          initialize_packet_defaults(packet);
-
-          auto rc = hsa_signal_create(1, 0, NULL, &packet->completion_signal);
-          if (rc != HSA_STATUS_SUCCESS)
-            {
-              printf("Can't make signal\n");
-              exit(1);
-            }
-
-          uint64_t kernel_address = find_entry_address(ex);
-          packet->kernel_object = kernel_address;
-
-          {
-            void *raw_kernarg_alloc = kernarg_alloc.get();
-            memcpy(&packet->kernarg_address, &raw_kernarg_alloc, 8);
-          }
-
-          packet_store_release((uint32_t *)packet,
-                               header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
-                               kernel_dispatch_setup());
-
-          hsa_signal_store_release(queue->doorbell_signal, packet_id);
-
-          do
-            {
-              // TODO: Polling is better than waiting here as it lets the
-              // initial dispatch spawn a graph
-              while (hostcall_server_handle_one_packet(server_state))
-                {
-                  break;
-                }
-            }
-          while (hsa_signal_wait_acquire(
-                     packet->completion_signal, HSA_SIGNAL_CONDITION_EQ, 0,
-                     5000 /*000000*/, HSA_WAIT_STATE_ACTIVE) != 0);
-
-          int result[number_return_values];
-          memcpy(&result, result_location, sizeof(int) * number_return_values);
-
-          auto whoami = [](hsa_queue_t *q) {
-            char *p = (char *)q->doorbell_signal.handle;
-            p += 8;
-            uint64_t ptr;
-            memcpy(&ptr, p, 8);
-            ptr >>= 3;
-            ptr %= 1024;
-            return ptr;
-          };
-
-          char *sig = reinterpret_cast<char *>(queue->doorbell_signal.handle);
-          int64_t kind;
-          memcpy(&kind, sig, 8);
-          assert(kind == -1);
-          sig += 8;
-
-          uint64_t *ptr;
-          memcpy(&ptr, sig, 8);
-
-          // haven't seen a 0 from this, and can't seem to allocate all 1024
-          // queues from one process.
-          printf("Queue id %lu, ret %d, value %lu\n", queue->id, result[0],
-                 whoami(queue));
-
-          hsa_signal_destroy(packet->completion_signal);
-        }
-      hsa_queue_destroy(queue);
+      full =
+          packet_id >= (queue->size + hsa_queue_load_read_index_acquire(queue));
     }
+
+  const uint32_t mask = queue->size - 1;  // %
+  hsa_kernel_dispatch_packet_t *packet =
+      (hsa_kernel_dispatch_packet_t *)queue->base_address + (packet_id & mask);
+
+  initialize_packet_defaults(packet);
+
+  uint64_t kernel_address = find_entry_address(ex);
+  packet->kernel_object = kernel_address;
+
+  {
+    void *raw_kernarg_alloc = kernarg_alloc.get();
+    memcpy(&packet->kernarg_address, &raw_kernarg_alloc, 8);
+  }
+
+  auto rc = hsa_signal_create(1, 0, NULL, &packet->completion_signal);
+  if (rc != HSA_STATUS_SUCCESS)
+    {
+      printf("Can't make signal\n");
+      exit(1);
+    }
+
+  packet_store_release((uint32_t *)packet,
+                       header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
+                       kernel_dispatch_setup());
+
+  hsa_signal_store_release(queue->doorbell_signal, packet_id);
+
+  do
+    {
+      // TODO: Polling is better than waiting here as it lets the initial
+      // dispatch spawn a graph
+      while (hostcall_server_handle_one_packet(server_state))
+        {
+        }
+    }
+  while (hsa_signal_wait_acquire(packet->completion_signal,
+                                 HSA_SIGNAL_CONDITION_EQ, 0, 5000 /*000000*/,
+                                 HSA_WAIT_STATE_ACTIVE) != 0);
+
+  int result[number_return_values];
+  memcpy(&result, result_location, sizeof(int) * number_return_values);
 
   hostcall_server_dtor(server_state);
 
-#if 0
+  hsa_signal_destroy(packet->completion_signal);
+  hsa_queue_destroy(queue);
+
   bool results_match = true;
   {
     int res = result[0];
@@ -410,9 +366,6 @@ int main2(int argc, char **argv)
     }
 
   return result[0];
-#else
-  return 0;
-#endif
 }
 
 int main(int argc, char **argv)

@@ -6,6 +6,8 @@
 #include <array>
 #include <cstdio>
 
+#include <cassert>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -484,6 +486,27 @@ hsa_agent_t find_a_gpu_or_exit()
       exit(1);
     }
   return kernel_agent;
+}
+
+// Maps a queue to an integer in [0, 1023] which survives CWSR, so can be used
+// to index into device local structures. Inspired by the rocr.
+uint16_t queue_to_index(hsa_queue_t* q)
+{
+  char* sig = reinterpret_cast<char*>(q->doorbell_signal.handle);
+  int64_t kind;
+  memcpy(&kind, sig, 8);
+  // TODO: Work out if any hardware that works for openmp uses legacy doorbell
+  assert(kind == -1);
+  sig += 8;
+
+  const uint64_t MAX_NUM_DOORBELLS = 0x400;
+
+  uint64_t ptr;
+  memcpy(&ptr, sig, 8);
+  ptr >>= 3;
+  ptr %= MAX_NUM_DOORBELLS;
+
+  return static_cast<uint16_t>(ptr);
 }
 
 }  // namespace hsa

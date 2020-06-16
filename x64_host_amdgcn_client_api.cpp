@@ -62,6 +62,34 @@ using SZ = hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
 __attribute__((visibility("default")))
 hostrpc::x64_amdgcn_t::client_t client_singleton;
 
+uint16_t get_queue_index()
+{
+  const constexpr uint32_t MAX_NUM_DOORBELLS = 0x400;
+  static_assert(MAX_NUM_DOORBELLS < UINT16_MAX, "");
+  uint32_t tmp0, tmp1;
+
+  // Derived from mGetDoorbellId in amd_gpu_shaders.h, rocr
+  // Using similar naming, exactly the same control flow.
+  // This may be expensive enough to be worth caching or precomputing.
+  uint32_t res;
+  asm("s_mov_b32 %[tmp0], exec_lo\n\t"
+      "s_mov_b32 %[tmp1], exec_hi\n\t"
+      "s_mov_b32 exec_lo, 0x80000000\n\t"
+      "s_sendmsg sendmsg(MSG_GET_DOORBELL)\n\t"
+      "%=:\n\t"
+      "s_nop 7\n\t"
+      "s_bitcmp0_b32 exec_lo, 0x1F\n\t"
+      "s_cbranch_scc0 %=b\n\t"
+      "s_mov_b32 %[ret], exec_lo\n\t"
+      "s_mov_b32 exec_lo, %[tmp0]\n\t"
+      "s_mov_b32 exec_hi, %[tmp1]\n\t"
+      : [ tmp0 ] "=&r"(tmp0), [ tmp1 ] "=&r"(tmp1), [ ret ] "=r"(res));
+
+  res %= MAX_NUM_DOORBELLS;
+
+  return static_cast<uint16_t>(res);
+}
+
 void hostcall_client(uint64_t data[8])
 {
   bool success = false;
