@@ -51,21 +51,4 @@ void use_result(hostrpc::page_t *page, uint64_t data[8]);
 #endif
 }  // namespace hostcall_ops
 
-#if 1
-namespace hostrpc
-{
-namespace x64_host_amdgcn_client_api
-{
-#if defined(__AMDGCN__)
-void fill(hostrpc::page_t *, void *);
-void use(hostrpc::page_t *, void *);
-
-#endif
-#if defined(__x86_64__)
-void operate(hostrpc::page_t *, void *);
-#endif
-}  // namespace x64_host_amdgcn_client_api
-}  // namespace hostrpc
-#endif
-
 #endif

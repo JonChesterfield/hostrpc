@@ -20,7 +20,8 @@ struct fill
   static void call(hostrpc::page_t *page, void *dv)
   {
 #if defined(__AMDGCN__)
-    hostrpc::x64_host_amdgcn_client_api::fill(page, dv);
+    uint64_t *d = static_cast<uint64_t *>(dv);
+    hostcall_ops::pass_arguments(page, d);
 #else
     (void)page;
     (void)dv;
@@ -33,7 +34,8 @@ struct use
   static void call(hostrpc::page_t *page, void *dv)
   {
 #if defined(__AMDGCN__)
-    hostrpc::x64_host_amdgcn_client_api::use(page, dv);
+    uint64_t *d = static_cast<uint64_t *>(dv);
+    hostcall_ops::use_result(page, d);
 #else
     (void)page;
     (void)dv;
@@ -43,13 +45,12 @@ struct use
 
 struct operate
 {
-  static void call(hostrpc::page_t *page, void *dv)
+  static void call(hostrpc::page_t *page, void *)
   {
 #if defined(__x86_64__)
-    hostrpc::x64_host_amdgcn_client_api::operate(page, dv);
+    hostcall_ops::operate(page);
 #else
     (void)page;
-    (void)dv;
 #endif
   }
 };
