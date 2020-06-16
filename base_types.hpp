@@ -54,6 +54,7 @@ struct storage
     return __builtin_launder(reinterpret_cast<T*>(data));
   }
 
+  // TODO: Allow move construct into storage
   template <typename T>
   T* construct(T t)
   {

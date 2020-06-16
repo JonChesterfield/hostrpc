@@ -6,6 +6,7 @@
 #if defined(__x86_64__)
 #include "hsa.hpp"
 #include <thread>
+#include <vector>
 #endif
 
 static const constexpr uint32_t MAX_NUM_DOORBELLS = 0x400;
@@ -153,9 +154,28 @@ hostrpc::x64_amdgcn_t *stored_pairs[MAX_NUM_DOORBELLS] = {0};
 
 #if defined(__x86_64__)
 
-class hostcall
+class hostcall_impl
 {
-  hostcall(hsa_executable_t executable, hsa_agent_t kernel_agent);
+ public:
+  hostcall_impl(hsa_executable_t executable, hsa_agent_t kernel_agent);
+
+  hostcall_impl(hostcall_impl &&o)
+      : clients(std::move(o.clients)),
+        servers(std::move(o.servers)),
+        stored_pairs(std::move(o.stored_pairs)),
+        queue_loc(std::move(o.queue_loc)),
+        threads(std::move(o.threads)),
+        fine_grained_region(std::move(o.fine_grained_region)),
+        coarse_grained_region(std::move(o.coarse_grained_region))
+  {
+    clients = 0;
+    servers = {};
+    stored_pairs = {};
+    queue_loc = {};
+    // threads = {};
+  }
+
+  hostcall_impl(const hostcall_impl &) = delete;
 
   static uint64_t find_symbol_address(hsa_executable_t &ex,
                                       hsa_agent_t kernel_agent,
@@ -180,37 +200,20 @@ class hostcall
 
     stored_pairs[queue_id] = res;
 
-    return spawn(queue_id, &thread_killer);
+    return 0;
   }
 
-  int spawn(uint16_t queue_id, _Atomic uint32_t *thread_killer)
-  {
-    // TODO. Can't actually use std::thread because the constructor throws.
-    threads.emplace_back([=]() {
-      for (;;)
-        {
-          while (servers[queue_id].handle(nullptr, &queue_loc[queue_id]))
-            {
-            }
-
-          if (*thread_killer != 0)
-            {
-              return;
-            }
-
-          // yield
-        }
-    });
-    return 0;  // can't detect errors from std::thread
-  }
-
-  bool handle_one_packet(hsa_queue_t *queue)
+  int spawn_worker(hsa_queue_t *queue)
   {
     uint16_t queue_id = queue_to_index(queue);
-    return servers[queue_id].handle(nullptr, &queue_loc[queue_id]);
+    if (stored_pairs[queue_id] == 0)
+      {
+        return 1;
+      }
+    return spawn_worker(queue_id);
   }
 
-  ~hostcall()
+  ~hostcall_impl()
   {
     for (size_t i = 0; i < MAX_NUM_DOORBELLS; i++)
       {
@@ -222,6 +225,32 @@ class hostcall
         threads[i].join();
       }
   }
+
+ private:
+  int spawn_worker(uint16_t queue_id)
+  {
+    _Atomic uint32_t *control = &thread_killer;
+    hostrpc::x64_amdgcn_t::server_t *server = &servers[queue_id];
+    uint64_t *ql = &queue_loc[queue_id];
+    // TODO. Can't actually use std::thread because the constructor throws.
+    threads.emplace_back([control, server, ql]() {
+      for (;;)
+        {
+          while (server->handle(nullptr, ql))
+            {
+            }
+
+          if (*control != 0)
+            {
+              return;
+            }
+
+          // yield
+        }
+    });
+    return 0;  // can't detect errors from std::thread
+  }
+
   // Going to need these to be opaque
   hostrpc::x64_amdgcn_t::client_t *clients;  // statically allocated
 
@@ -238,7 +267,8 @@ class hostcall
 
 // todo: port to hsa.h api
 
-hostcall::hostcall(hsa_executable_t executable, hsa_agent_t kernel_agent)
+hostcall_impl::hostcall_impl(hsa_executable_t executable,
+                             hsa_agent_t kernel_agent)
 {
   // The client_t array is per-gpu-image. Find it.
   uint64_t client_addr =
@@ -258,9 +288,9 @@ hostcall::hostcall(hsa_executable_t executable, hsa_agent_t kernel_agent)
   queue_loc.resize(MAX_NUM_DOORBELLS);
 }
 
-uint64_t hostcall::find_symbol_address(hsa_executable_t &ex,
-                                       hsa_agent_t kernel_agent,
-                                       const char *sym)
+uint64_t hostcall_impl::find_symbol_address(hsa_executable_t &ex,
+                                            hsa_agent_t kernel_agent,
+                                            const char *sym)
 {
   // TODO: This was copied from the loader, sort out the error handling
   hsa_executable_symbol_t symbol;
@@ -284,47 +314,31 @@ uint64_t hostcall::find_symbol_address(hsa_executable_t &ex,
   return hsa::symbol_get_info_variable_address(symbol);
 }
 
+template <size_t expect, size_t actual>
+static void assert_size_t_equal()
+{
+  static_assert(expect == actual, "");
+}
+
+hostcall::hostcall(hsa_executable_t executable, hsa_agent_t kernel_agent)
+{
+  assert_size_t_equal<hostcall::state_t::align(), alignof(hostcall_impl)>();
+  assert_size_t_equal<hostcall::state_t::size(), sizeof(hostcall_impl)>();
+  new (reinterpret_cast<hostcall_impl *>(state.data))
+      hostcall_impl(hostcall_impl(executable, kernel_agent));
+}
+
+bool hostcall::valid() { return true; }
+
+int hostcall::enable_queue(hsa_queue_t *queue)
+{
+  return state.open<hostcall_impl>()->enable_queue(queue);
+}
+int hostcall::spawn_worker(hsa_queue_t *queue)
+{
+  return state.open<hostcall_impl>()->spawn_worker(queue);
+}
+
 #endif
-
-int hostcall_server_init(hsa_queue_t *queue, hsa_region_t fine,
-                         hsa_region_t gpu_coarse, void *client_address)
-{
-  // Creates one of these heap types per call (roughly, per queue)
-
-  uint16_t queue_id = queue_to_index(queue);
-  assert(stored_pairs[queue_id] == 0);
-
-  // TODO: Avoid this heap alloc
-  hostrpc::x64_amdgcn_t *res =
-      new hostrpc::x64_amdgcn_t(fine.handle, gpu_coarse.handle);
-  if (!res)
-    {
-      return 1;
-    }
-
-  hostrpc::x64_amdgcn_t::client_t *clients =
-      static_cast<hostrpc::x64_amdgcn_t::client_t *>(client_address);
-
-  clients[queue_id] = res->client();
-
-  server_singleton[queue_id] = res->server();
-
-  stored_pairs[queue_id] = res;
-  return 0;
-}
-
-void hostcall_server_dtor(hsa_queue_t *queue)
-{
-  uint16_t queue_id = queue_to_index(queue);
-  assert(stored_pairs[queue_id] != 0);
-  delete stored_pairs[queue_id];
-}
-
-bool hostcall_server_handle_one_packet(hsa_queue_t *queue)
-{
-  uint16_t queue_id = queue_to_index(queue);
-  static thread_local uint64_t loc;  // this needs to be per-queue really
-  return server_singleton[queue_id].handle(nullptr, &loc);
-}
 
 #endif

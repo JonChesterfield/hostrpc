@@ -281,18 +281,26 @@ int main2(int argc, char **argv)
       }
   }
 
-  uint64_t client_addr = find_symbol_address(ex, hostcall_client_symbol());
-
-  bool faster = false;  // coarse grain on locks isn't helping at present
-  int ok =
-      hostcall_server_init(queue, fine_grained_region,
-                           faster ? coarse_grained_region : fine_grained_region,
-                           reinterpret_cast<void *>(client_addr));
-  if (ok != 0)
+  hostcall hc(ex, kernel_agent);
+  if (!hc.valid())
     {
-      fprintf(stderr, "Failed to create hostcall server\n");
+      fprintf(stderr, "Failed to create hostcall\n");
       exit(1);
     }
+  if (hc.enable_queue(queue) != 0)
+    {
+      fprintf(stderr, "Failed to enable queue\n");
+      exit(1);
+    }
+  for (unsigned r = 0; r < 2; r++)
+    {
+      if (hc.spawn_worker(queue) != 0)
+        {
+          fprintf(stderr, "Failed to spawn worker\n");
+          exit(1);
+        }
+    }
+
   // Claim a packet
   uint64_t packet_id = hsa_queue_add_write_index_relaxed(queue, 1);
   bool full = true;
@@ -333,9 +341,6 @@ int main2(int argc, char **argv)
     {
       // TODO: Polling is better than waiting here as it lets the initial
       // dispatch spawn a graph
-      while (hostcall_server_handle_one_packet(queue))
-        {
-        }
     }
   while (hsa_signal_wait_acquire(packet->completion_signal,
                                  HSA_SIGNAL_CONDITION_EQ, 0, 5000 /*000000*/,
@@ -343,8 +348,6 @@ int main2(int argc, char **argv)
 
   int result[number_return_values];
   memcpy(&result, result_location, sizeof(int) * number_return_values);
-
-  hostcall_server_dtor(queue);
 
   hsa_signal_destroy(packet->completion_signal);
   hsa_queue_destroy(queue);

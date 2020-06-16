@@ -21,19 +21,26 @@ void hostcall_client_async(uint64_t data[8]);
 #if defined(__x86_64__)
 
 #include "hsa.h"
-#include <vector>
 
 const char *hostcall_client_symbol();
-int hostcall_server_init(hsa_queue_t *queue, hsa_region_t fine,
-                         hsa_region_t gpu_coarse, void *client_address);
-void hostcall_server_dtor(hsa_queue_t *queue);
-bool hostcall_server_handle_one_packet(
-    hsa_queue_t *queue);  // return true for did work
+
+class hostcall
+{
+ public:
+  hostcall(hsa_executable_t executable, hsa_agent_t kernel_agent);
+  bool valid();
+  int enable_queue(hsa_queue_t *queue);
+  int spawn_worker(hsa_queue_t *queue);
+
+ private:
+  using state_t = hostrpc::storage<128, 8>;
+  state_t state;
+};
 
 #endif
 
 // x64 uses inlined function pointers to provide a cleaner interface
-// That's not working on amdgcn with clang-10 or tot at present. Workaround.
+// That's not working on amdgcn with clang-10 or tot at present.
 
 namespace hostrpc
 {
