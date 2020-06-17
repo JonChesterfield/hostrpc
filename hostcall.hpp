@@ -38,7 +38,6 @@ class hostcall
 };
 #endif
 
-
 // Functions implemented by the user of the library
 namespace hostcall_ops
 {

@@ -8,7 +8,6 @@
 #include <vector>
 #endif
 
-
 static const constexpr uint32_t MAX_NUM_DOORBELLS = 0x400;
 
 using SZ = hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>;

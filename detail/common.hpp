@@ -152,7 +152,6 @@ struct cache
   }
 };
 
-
 template <size_t scope>
 struct slot_bitmap;
 

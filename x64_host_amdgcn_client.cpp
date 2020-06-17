@@ -1,8 +1,8 @@
-#include "interface.hpp"
 #include "detail/client_impl.hpp"
-#include "detail/server_impl.hpp"
 #include "detail/platform.hpp"
-#include "hostcall.hpp" // hostcall_ops prototypes
+#include "detail/server_impl.hpp"
+#include "hostcall.hpp"  // hostcall_ops prototypes
+#include "interface.hpp"
 #include "memory.hpp"
 
 // hsa uses freestanding C headers, unlike hsa.hpp

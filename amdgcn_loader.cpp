@@ -7,17 +7,8 @@
 
 #include "hostcall.hpp"
 
-size_t bytes_for_argv_strtab(int argc, char **argv)
+namespace
 {
-  size_t count = 0;
-  for (int i = 0; i < argc; i++)
-    {
-      char *arg = argv[i];
-      count += strlen(arg) + 1;
-    }
-  return count;
-}
-
 std::vector<size_t> offsets_into_strtab(int argc, char **argv)
 {
   std::vector<size_t> res;
@@ -53,25 +44,6 @@ uint64_t find_entry_address(hsa::executable &ex)
     }
 
   return hsa::symbol_get_info_kernel_object(symbol);
-}
-
-uint64_t find_symbol_address(hsa::executable &ex, const char *sym)
-{
-  hsa_executable_symbol_t symbol = ex.get_symbol_by_name(sym);
-  if (symbol.handle == hsa::sentinel())
-    {
-      fprintf(stderr, "HSA failed to find symbol %s\n", sym);
-      exit(1);
-    }
-
-  hsa_symbol_kind_t kind = hsa::symbol_get_info_type(symbol);
-  if (kind != HSA_SYMBOL_KIND_VARIABLE)
-    {
-      fprintf(stderr, "Symbol %s is not a variable\n", sym);
-      exit(1);
-    }
-
-  return hsa::symbol_get_info_variable_address(symbol);
 }
 
 void initialize_packet_defaults(hsa_kernel_dispatch_packet_t *packet)
@@ -110,8 +82,9 @@ uint16_t kernel_dispatch_setup()
 {
   return 1 << HSA_KERNEL_DISPATCH_PACKET_SETUP_DIMENSIONS;
 }
+}  // namespace
 
-int main2(int argc, char **argv)
+static int main_with_hsa(int argc, char **argv)
 {
   if (argc < 2)
     {
@@ -376,9 +349,14 @@ int main2(int argc, char **argv)
   return result[0];
 }
 
-int main(int argc, char **argv)
+extern "C" int amdgcn_loader_main(int argc, char **argv)
 {
   // valgrind thinks this is leaking slightly
   hsa::init hsa_state;  // Need to destroy this last
-  return main2(argc, argv);
+  return main_with_hsa(argc, argv);
+}
+
+__attribute__((weak)) extern "C" int main(int argc, char **argv)
+{
+  return amdgcn_loader_main(argc, argv);
 }

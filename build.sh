@@ -35,6 +35,7 @@ for dir in "." loader codegen; do
     rm -rf $dir/*.s $dir/*.ll $dir/*.bc $dir/*.exe $dir/*device.o $dir/a.out
 done
 
+
 $CXX $X64FLAGS states.cpp -c -o states.x64.bc
 
 # TODO: Drop hsainc from x64 code

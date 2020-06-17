@@ -1,9 +1,9 @@
 #ifndef INTERFACE_HPP_INCLUDED
 #define INTERFACE_HPP_INCLUDED
 
+#include "base_types.hpp"
 #include <stddef.h>
 #include <stdint.h>
-#include "base_types.hpp"
 
 namespace hostrpc
 {

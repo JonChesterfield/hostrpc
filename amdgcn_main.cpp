@@ -38,7 +38,6 @@ void use_result(hostrpc::page_t *page, uint64_t d[8])
 
 }  // namespace hostcall_ops
 
-
 #if defined __AMDGCN__
 extern "C" __attribute__((visibility("default"))) int main(int argc,
                                                            char **argv)

@@ -21,13 +21,13 @@ using x64_x64_server =
                                   hostrpc::nop_stepper>;
 
 static _Atomic uint64_t *x64_allocate_atomic_uint64_array(size_t size)
-  {
+{
   assert(size % 64 == 0 && "Size must be a multiple of 64");
   constexpr const static size_t align = 64;
   void *memory = hostrpc::x64_native::allocate(align, size);
   return hostrpc::careful_array_cast<_Atomic uint64_t>(memory, size);
 }
-  
+
 // This doesn't especially care about fill/use/operate/step
 // It needs new, probably shouldn't try to compile it on non-x64
 template <typename SZ>
@@ -52,7 +52,7 @@ struct x64_x64_pair
 
     assert(client_buffer != server_buffer);
 
-    auto *send_data = x64_allocate_atomic_uint64_array(N);    
+    auto *send_data = x64_allocate_atomic_uint64_array(N);
     auto *recv_data = x64_allocate_atomic_uint64_array(N);
     auto *client_locks_data = x64_allocate_atomic_uint64_array(N);
     auto *server_locks_data = x64_allocate_atomic_uint64_array(N);
@@ -76,7 +76,7 @@ struct x64_x64_pair
     hostrpc::x64_native::deallocate(server.inbox.data());
     hostrpc::x64_native::deallocate(client.active.data());
     hostrpc::x64_native::deallocate(server.active.data());
-    
+
     assert(client.local_buffer != server.local_buffer);
 
     for (size_t i = 0; i < N; i++)

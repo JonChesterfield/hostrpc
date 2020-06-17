@@ -3,8 +3,8 @@
 #include "detail/client_impl.hpp"
 #include "detail/server_impl.hpp"
 #include "interface.hpp"
-#include "tests.hpp"
 #include "memory.hpp"
+#include "tests.hpp"
 
 #include <thread>
 #include <unistd.h>
@@ -108,20 +108,19 @@ TEST_CASE("Bitmap")
 }
 #endif
 
-
-static  _Atomic uint64_t *x64_allocate_slot_bitmap_data(size_t size)
+static _Atomic uint64_t* x64_allocate_slot_bitmap_data(size_t size)
 {
   assert(size % 64 == 0 && "Size must be a multiple of 64");
   constexpr const static size_t align = 64;
-  void *memory = hostrpc::x64_native::allocate(align, size);
+  void* memory = hostrpc::x64_native::allocate(align, size);
   return hostrpc::careful_array_cast<_Atomic uint64_t>(memory, size);
 }
 
 struct x64_allocate_slot_bitmap_data_deleter
 {
-  void operator()(_Atomic uint64_t *d)
+  void operator()(_Atomic uint64_t* d)
   {
-    hostrpc::x64_native::deallocate(static_cast<void *>(d));
+    hostrpc::x64_native::deallocate(static_cast<void*>(d));
   }
 };
 
