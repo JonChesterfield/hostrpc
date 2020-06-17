@@ -1,5 +1,4 @@
-#include "common.hpp"
-#include "platform.hpp"
+#include "detail/platform.hpp"
 #include "hostcall.hpp"
 
 namespace hostcall_ops

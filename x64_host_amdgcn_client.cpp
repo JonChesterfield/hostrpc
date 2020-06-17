@@ -1,7 +1,7 @@
-#include "client_impl.hpp"
 #include "interface.hpp"
-#include "platform.hpp"
-#include "server_impl.hpp"
+#include "detail/client_impl.hpp"
+#include "detail/server_impl.hpp"
+#include "detail/platform.hpp"
 #include "hostcall.hpp" // hostcall_ops prototypes
 #include "memory.hpp"
 

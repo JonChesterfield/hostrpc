@@ -1,8 +1,8 @@
 #include "catch.hpp"
 
-#include "client_impl.hpp"
+#include "detail/client_impl.hpp"
+#include "detail/server_impl.hpp"
 #include "interface.hpp"
-#include "server_impl.hpp"
 #include "tests.hpp"
 #include "memory.hpp"
 

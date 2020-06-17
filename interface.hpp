@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "base_types.hpp"
 
 namespace hostrpc
 {

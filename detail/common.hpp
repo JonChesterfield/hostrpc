@@ -4,7 +4,7 @@
 #include <stdatomic.h>
 #include <stdint.h>
 
-#include "base_types.hpp"
+#include "../base_types.hpp"
 #include "platform.hpp"
 
 namespace hostrpc

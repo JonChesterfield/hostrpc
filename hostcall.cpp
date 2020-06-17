@@ -1,7 +1,6 @@
 #include "hostcall.hpp"
 #include "base_types.hpp"
 #include "interface.hpp"
-#include "platform.hpp"
 
 #if defined(__x86_64__)
 #include "hsa.hpp"

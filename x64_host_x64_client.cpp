@@ -1,7 +1,8 @@
-#include "client_impl.hpp"
+#include "detail/client_impl.hpp"
+#include "detail/server_impl.hpp"
+
 #include "interface.hpp"
 #include "memory.hpp"
-#include "server_impl.hpp"
 
 #include <string.h>
 

@@ -1,6 +1,8 @@
 #ifndef PLATFORM_HPP_INCLUDED
 #define PLATFORM_HPP_INCLUDED
 
+#include <stdint.h>
+
 namespace platform
 {
 void sleep_briefly(void);
