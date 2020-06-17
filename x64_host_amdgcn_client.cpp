@@ -3,6 +3,7 @@
 #include "platform.hpp"
 #include "server_impl.hpp"
 #include "hostcall.hpp" // hostcall_ops prototypes
+#include "memory.hpp"
 
 // hsa uses freestanding C headers, unlike hsa.hpp
 #if defined(__x86_64__)

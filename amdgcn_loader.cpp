@@ -37,7 +37,7 @@ std::vector<size_t> offsets_into_strtab(int argc, char **argv)
 
 uint64_t find_entry_address(hsa::executable &ex)
 {
-  const char *kernel_entry = "device_entry.kd";
+  const char *kernel_entry = "__device_start.kd";
   hsa_executable_symbol_t symbol = ex.get_symbol_by_name(kernel_entry);
   if (symbol.handle == hsa::sentinel())
     {

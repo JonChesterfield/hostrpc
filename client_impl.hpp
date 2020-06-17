@@ -2,7 +2,6 @@
 #define HOSTRPC_CLIENT_HPP_INCLUDED
 
 #include "common.hpp"
-#include "memory.hpp"
 // Intend to have call and service working across gcn and x86
 // The normal terminology is:
 // Client makes a call to the server, which does some work and sends back a

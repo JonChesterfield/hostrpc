@@ -1,4 +1,4 @@
-#include "client_impl.hpp"
+#include "../client_impl.hpp"
 
 using SZ = hostrpc::size_compiletime<128>;
 

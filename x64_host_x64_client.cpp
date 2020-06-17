@@ -19,6 +19,14 @@ using x64_x64_server =
     hostrpc::server_indirect_impl<SZ, hostrpc::copy_functor_memcpy_pull,
                                   hostrpc::nop_stepper>;
 
+static _Atomic uint64_t *x64_allocate_atomic_uint64_array(size_t size)
+  {
+  assert(size % 64 == 0 && "Size must be a multiple of 64");
+  constexpr const static size_t align = 64;
+  void *memory = hostrpc::x64_native::allocate(align, size);
+  return hostrpc::careful_array_cast<_Atomic uint64_t>(memory, size);
+}
+  
 // This doesn't especially care about fill/use/operate/step
 // It needs new, probably shouldn't try to compile it on non-x64
 template <typename SZ>
@@ -43,10 +51,10 @@ struct x64_x64_pair
 
     assert(client_buffer != server_buffer);
 
-    auto *send_data = x64_allocate_slot_bitmap_data(N);
-    auto *recv_data = x64_allocate_slot_bitmap_data(N);
-    auto *client_locks_data = x64_allocate_slot_bitmap_data(N);
-    auto *server_locks_data = x64_allocate_slot_bitmap_data(N);
+    auto *send_data = x64_allocate_atomic_uint64_array(N);    
+    auto *recv_data = x64_allocate_atomic_uint64_array(N);
+    auto *client_locks_data = x64_allocate_atomic_uint64_array(N);
+    auto *server_locks_data = x64_allocate_atomic_uint64_array(N);
 
     slot_bitmap_all_svm send(N, send_data);
     slot_bitmap_all_svm recv(N, recv_data);
@@ -63,12 +71,11 @@ struct x64_x64_pair
     assert(client.inbox.data() == server.outbox.data());
     assert(client.outbox.data() == server.inbox.data());
 
-    hostrpc::x64_allocate_slot_bitmap_data_deleter del;
-    del(client.inbox.data());
-    del(server.inbox.data());
-    del(client.active.data());
-    del(server.active.data());
-
+    hostrpc::x64_native::deallocate(client.inbox.data());
+    hostrpc::x64_native::deallocate(server.inbox.data());
+    hostrpc::x64_native::deallocate(client.active.data());
+    hostrpc::x64_native::deallocate(server.active.data());
+    
     assert(client.local_buffer != server.local_buffer);
 
     for (size_t i = 0; i < N; i++)

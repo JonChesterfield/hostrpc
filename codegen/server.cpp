@@ -1,5 +1,4 @@
-#include "memory.hpp"
-#include "server_impl.hpp"
+#include "../server_impl.hpp"
 
 using SZ = hostrpc::size_compiletime<128>;
 

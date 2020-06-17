@@ -30,22 +30,27 @@ NVPTXFLAGS="-g -O2 -emit-llvm -ffreestanding -fno-exceptions -Wno-atomic-alignme
 CXXCL="clang++ -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 $AMDGPU"
 
 # time $CXX -O3 catch.cpp -c -o catch.o
-rm -rf *.s *.ll *.bc *.exe *device.o
+
+for dir in "." loader codegen; do 
+    rm -rf $dir/*.s $dir/*.ll $dir/*.bc $dir/*.exe $dir/*device.o $dir/a.out
+done
 
 $CXX $X64FLAGS states.cpp -c -o states.x64.bc
 
 # TODO: Drop hsainc from x64 code
 
-$CXX $X64FLAGS -I$HSAINC client.cpp -c -o client.x64.bc
-$CXX $X64FLAGS -I$HSAINC server.cpp -c -o server.x64.bc
+$CXX $X64FLAGS -I$HSAINC codegen/client.cpp -c -o codegen/client.x64.bc
+$CXX $X64FLAGS -I$HSAINC codegen/server.cpp -c -o codegen/server.x64.bc
+$CXX $AMDGCNFLAGS codegen/client.cpp -c -o codegen/client.gcn.bc
+$CXX $AMDGCNFLAGS codegen/server.cpp -c -o codegen/server.gcn.bc
+
+
 $CXX $X64FLAGS -I$HSAINC memory.cpp -c -o memory.x64.bc
 $CXX $X64FLAGS -I$HSAINC x64_host_x64_client.cpp -c -o x64_host_x64_client.x64.bc
 $CXX $X64FLAGS -I$HSAINC tests.cpp -c -o tests.x64.bc
 $CXX $X64FLAGS -I$HSAINC x64_hazard_test.cpp -c -o x64_hazard_test.x64.bc
 
 
-$CXX $AMDGCNFLAGS client.cpp -c -o client.gcn.bc
-$CXX $AMDGCNFLAGS server.cpp -c -o server.gcn.bc
 
 # $CXX $NVPTXFLAGS client.cpp -c -o client.ptx.bc
 
@@ -56,19 +61,22 @@ $CXX $AMDGCNFLAGS hostcall.cpp -c -o hostcall.gcn.bc
 $CXX $X64FLAGS -I$HSAINC hostcall.cpp -c -o hostcall.x64.bc
 
 
-# Build the device loader that assumes the device library is linked into the application
-# TODO: Embed it directly in the loader by patching call to main, as the loader doesn't do it
-$CXX $X64FLAGS -I$HSAINC amdgcn_loader.cpp -c -o amdgcn_loader.x64.bc
-$CXX $LDFLAGS amdgcn_loader.x64.bc memory.x64.bc x64_host_amdgcn_client.x64.bc hostcall.x64.bc amdgcn_main.gcn.bc -o amdgcn_loader.exe
-
-# Build the device library that calls into main()
-$CXXCL amdgcn_loader_entry.cl -emit-llvm -c -o amdgcn_loader_entry.gcn.bc
-$CXX $AMDGCNFLAGS amdgcn_loader_cast.cpp -c -o amdgcn_loader_cast.gcn.bc
-$LINK amdgcn_loader_entry.gcn.bc amdgcn_loader_cast.gcn.bc | opt -always-inline -O2 -o amdgcn_loader_device.gcn.bc
-
 # Build the device code that uses said library
 $CXX $X64FLAGS -I$HSAINC amdgcn_main.cpp -emit-llvm -c -o amdgcn_main.x64.bc
 $CXX $AMDGCNFLAGS amdgcn_main.cpp -emit-llvm -c -o amdgcn_main.gcn.bc
+
+
+# Build the device loader that assumes the device library is linked into the application
+# TODO: Embed it directly in the loader by patching call to main, as the loader doesn't do it
+$CXX $X64FLAGS -I$HSAINC amdgcn_loader.cpp -c -o amdgcn_loader.x64.bc
+$CXX $LDFLAGS amdgcn_loader.x64.bc memory.x64.bc x64_host_amdgcn_client.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o amdgcn_loader.exe
+
+# Build the device library that calls into main()
+$CXXCL loader/amdgcn_loader_entry.cl -emit-llvm -c -o loader/amdgcn_loader_entry.gcn.bc
+$CXX $AMDGCNFLAGS loader/amdgcn_loader_cast.cpp -c -o loader/amdgcn_loader_cast.gcn.bc
+
+$LINK loader/amdgcn_loader_entry.gcn.bc loader/amdgcn_loader_cast.gcn.bc | opt -O2 -o amdgcn_loader_device.gcn.bc
+
 
 
 llvm-link amdgcn_main.gcn.bc amdgcn_loader_device.gcn.bc x64_host_amdgcn_client.gcn.bc hostcall.gcn.bc  -o executable_device.gcn.bc
@@ -86,13 +94,14 @@ $CXX $AMDGPU executable_device.gcn.bc -o a.out
 
 
 # llc seems to need to be told what architecture it's disassembling
-for bc in *.x64.bc ; do
+
+for bc in `find . -type f -iname '*.x64.bc'` ; do
     ll=`echo $bc | sed 's_.bc_.ll_g'`
     opt -strip-debug $bc -S -o $ll
     llc $ll
 done
 
-for bc in *.gcn.bc ; do
+for bc in `find . -type f -iname '*.gcn.bc'` ; do
     ll=`echo $bc | sed 's_.bc_.ll_g'`
     opt -strip-debug $bc -S -o $ll
     llc --mcpu=gfx906 $ll

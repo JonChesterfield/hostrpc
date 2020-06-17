@@ -5,7 +5,6 @@
 #include <stdint.h>
 
 #include "base_types.hpp"
-#include "memory.hpp"
 #include "platform.hpp"
 
 namespace hostrpc
@@ -153,24 +152,6 @@ struct cache
   }
 };
 
-#if defined(__x86_64__)
-
-inline _Atomic uint64_t *x64_allocate_slot_bitmap_data(size_t size)
-{
-  assert(size % 64 == 0 && "Size must be a multiple of 64");
-  constexpr const static size_t align = 64;
-  void *memory = hostrpc::x64_native::allocate(align, size);
-  return hostrpc::careful_array_cast<_Atomic uint64_t>(memory, size);
-}
-
-struct x64_allocate_slot_bitmap_data_deleter
-{
-  void operator()(_Atomic uint64_t *d)
-  {
-    hostrpc::x64_native::deallocate(static_cast<void *>(d));
-  }
-};
-#endif
 
 template <size_t scope>
 struct slot_bitmap;
@@ -547,74 +528,12 @@ inline slot_owner tracker()
   return t;
 }
 
-template <bool enable>
-struct malloc_lock
-{
-  malloc_lock() { init(); }
-
-  void init()
-  {
-    if (!enable)
-      {
-        return;
-      }
-    held = 0;
-    for (unsigned i = 0; i < 64; i++)
-      {
-        data[i] = nullptr;
-      }
-  }
-
-  void lock(uint64_t x)
-  {
-    if (!enable)
-      {
-        return;
-      }
-    assert(held == 0);
-    init();
-    for (uint64_t i = 0; i < 64; i++)
-      {
-        data[i] = detail::nthbitset64(x, i)
-                      ? hostrpc::x64_native::allocate(1, 1)
-                      : nullptr;
-      }
-    held = x;
-  }
-
-  void unlock(uint64_t x)
-  {
-    if (!enable)
-      {
-        return;
-      }
-    if (x != held)
-      {
-        printf("locked %lx but unlocking %lx\n", held, x);
-      }
-    assert(x == held);
-    for (uint64_t i = 0; i < 64; i++)
-      {
-        if (detail::nthbitset64(x, i))
-          {
-            hostrpc::x64_native::deallocate(data[i]);
-          }
-      }
-    init();
-    assert(held == 0);
-  }
-
-  uint64_t held;
-  void *data[64];
-};
-
 template <typename G>
 void try_garbage_collect_word(size_t size, G garbage_bits,
                               slot_bitmap_all_svm inbox,
                               slot_bitmap_all_svm outbox,
                               slot_bitmap_device active, uint64_t w)
 {
-  malloc_lock<true> lk;
   if (platform::is_master_lane())
     {
       uint64_t i = inbox.load_word(size, w);
