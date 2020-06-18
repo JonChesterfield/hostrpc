@@ -14,8 +14,30 @@ using SZ = hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
 
 #if defined(__AMDGCN__)
 
+// it's more convenient to embed this structure in the image, but that's
+// tricky to tie up with the current API layout in atmi
+#ifndef HOSTCALL_EMBEDDED_CLIENT_SINGLETON
+#define HOSTCALL_EMBEDDED_CLIENT_SINGLETON 0
+#endif
+
+#if HOSTCALL_EMBEDDED_CLIENT_SINGLETON
 __attribute__((visibility("default")))
 hostrpc::hostcall_interface_t::client_t client_singleton[MAX_NUM_DOORBELLS];
+
+hostrpc::hostcall_interface_t::client_t *get_client_singleton()
+{
+  return &client_singleton[0];
+}
+#else
+__attribute__((visibility("default")))
+hostrpc::hostcall_interface_t::client_t *client_singleton = 0;
+
+hostrpc::hostcall_interface_t::client_t *get_client_singleton()
+{
+  size_t *argptr = (size_t *)__builtin_amdgcn_implicitarg_ptr();
+  return reinterpret_cast<hostrpc::hostcall_interface_t::client_t *>(argptr[3]);
+}
+#endif
 
 // Also in hsa.hpp
 static uint16_t get_queue_index()
@@ -48,7 +70,7 @@ static uint16_t get_queue_index()
 void hostcall_client(uint64_t data[8])
 {
   hostrpc::hostcall_interface_t::client_t &c =
-      client_singleton[get_queue_index()];
+      get_client_singleton()[get_queue_index()];
 
   bool success = false;
 
@@ -62,7 +84,7 @@ void hostcall_client(uint64_t data[8])
 void hostcall_client_async(uint64_t data[8])
 {
   hostrpc::hostcall_interface_t::client_t &c =
-      client_singleton[get_queue_index()];
+      get_client_singleton()[get_queue_index()];
   bool success = false;
 
   while (!success)
