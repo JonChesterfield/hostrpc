@@ -3,6 +3,7 @@
 #include "hostcall_interface.hpp"
 
 #if defined(__x86_64__)
+#include "hostcall.h"
 #include "hsa.hpp"
 #include <thread>
 #include <vector>
@@ -13,31 +14,13 @@ static const constexpr uint32_t MAX_NUM_DOORBELLS = 0x400;
 using SZ = hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
 
 #if defined(__AMDGCN__)
-
-// it's more convenient to embed this structure in the image, but that's
-// tricky to tie up with the current API layout in atmi
-#ifndef HOSTCALL_EMBEDDED_CLIENT_SINGLETON
-#define HOSTCALL_EMBEDDED_CLIENT_SINGLETON 0
-#endif
-
-#if HOSTCALL_EMBEDDED_CLIENT_SINGLETON
 __attribute__((visibility("default")))
 hostrpc::hostcall_interface_t::client_t client_singleton[MAX_NUM_DOORBELLS];
 
-hostrpc::hostcall_interface_t::client_t *get_client_singleton()
+hostrpc::hostcall_interface_t::client_t *get_client_singleton(size_t i)
 {
-  return &client_singleton[0];
+  return &client_singleton[i];
 }
-#else
-__attribute__((visibility("default")))
-hostrpc::hostcall_interface_t::client_t *client_singleton = 0;
-
-hostrpc::hostcall_interface_t::client_t *get_client_singleton()
-{
-  size_t *argptr = (size_t *)__builtin_amdgcn_implicitarg_ptr();
-  return reinterpret_cast<hostrpc::hostcall_interface_t::client_t *>(argptr[3]);
-}
-#endif
 
 // Also in hsa.hpp
 static uint16_t get_queue_index()
@@ -69,28 +52,28 @@ static uint16_t get_queue_index()
 
 void hostcall_client(uint64_t data[8])
 {
-  hostrpc::hostcall_interface_t::client_t &c =
-      get_client_singleton()[get_queue_index()];
+  hostrpc::hostcall_interface_t::client_t *c =
+      get_client_singleton(get_queue_index());
 
   bool success = false;
 
   while (!success)
     {
       void *d = static_cast<void *>(&data[0]);
-      success = c.invoke(d, d);
+      success = c->invoke(d, d);
     }
 }
 
 void hostcall_client_async(uint64_t data[8])
 {
-  hostrpc::hostcall_interface_t::client_t &c =
-      get_client_singleton()[get_queue_index()];
+  hostrpc::hostcall_interface_t::client_t *c =
+      get_client_singleton(get_queue_index());
   bool success = false;
 
   while (!success)
     {
       void *d = static_cast<void *>(&data[0]);
-      success = c.invoke_async(d, d);
+      success = c->invoke_async(d, d);
     }
 }
 
@@ -155,7 +138,11 @@ class hostcall_impl
   int enable_queue(hsa_queue_t *queue)
   {
     uint16_t queue_id = queue_to_index(queue);
-    assert(stored_pairs[queue_id] == 0);
+    if (stored_pairs[queue_id] != 0)
+      {
+        // already enabled
+        return 0;
+      }
 
     // TODO: Avoid this heap alloc
     hostrpc::hostcall_interface_t *res = new hostrpc::hostcall_interface_t(
@@ -327,4 +314,43 @@ int hostcall::spawn_worker(hsa_queue_t *queue)
 
 #endif
 
+#if defined(__x86_64__)
+
+static std::vector<std::unique_ptr<hostcall> > state;
+
+void spawn_hostcall_for_queue(uint32_t device_id, hsa_agent_t agent,
+                              hsa_queue_t *queue, void *client_symbol_address)
+{
+  if (device_id > state.size())
+    {
+      state.resize(device_id + 1);
+    }
+
+  // make an instance for this device if there isn't already one
+  if (state[device_id] == nullptr)
+    {
+      std::unique_ptr<hostcall> r(new hostcall(client_symbol_address, agent));
+      if (r && r->valid())
+        {
+          state[device_id] = std::move(r);
+        }
+    }
+
+  assert(state[device_id] != nullptr);
+  // enabling it for a queue repeatedly is a no-op
+  if (state[device_id]->enable_queue(queue) == 0)
+    {
+      // spawn an additional thread
+      if (state[device_id]->spawn_worker(queue) == 0)
+        {
+          // all good
+        }
+    }
+
+  // TODO: Indicate failure
+}
+
+void free_hostcall_instance() { state.clear(); }
+
+#endif
 #endif

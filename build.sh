@@ -67,8 +67,8 @@ $CXX_X64 -I$HSAINC x64_host_gcn_client.cpp -c -o x64_host_gcn_client.x64.bc
 $CXX_GCN hostcall_interface.cpp -c -o hostcall_interface.gcn.bc
 $CXX_X64 -I$HSAINC hostcall_interface.cpp -c -o hostcall_interface.x64.bc
 
-$CXX_GCN -DHOSTCALL_EMBEDDED_CLIENT_SINGLETON=1 hostcall.cpp -c -o hostcall.gcn.bc
-$CXX_X64 -DHOSTCALL_EMBEDDED_CLIENT_SINGLETON=1 -I$HSAINC hostcall.cpp -c -o hostcall.x64.bc
+$CXX_GCN hostcall.cpp -c -o hostcall.gcn.bc
+$CXX_X64 -I$HSAINC hostcall.cpp -c -o hostcall.x64.bc
 
 
 # Build the device code that uses said library
