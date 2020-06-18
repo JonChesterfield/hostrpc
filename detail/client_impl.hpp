@@ -134,6 +134,7 @@ struct client_impl : public SZ
   }
 
   // true if did work
+  // If there's no continuation, shouldn't require a use_application_state
   template <bool have_continuation>
   __attribute__((noinline)) bool rpc_invoke_given_slot(
       void* fill_application_state, void* use_application_state,

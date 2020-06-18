@@ -47,7 +47,8 @@ static uint16_t get_queue_index()
 
 void hostcall_client(uint64_t data[8])
 {
-  hostrpc::hostcall_interface_t::client_t &c = client_singleton[get_queue_index()];
+  hostrpc::hostcall_interface_t::client_t &c =
+      client_singleton[get_queue_index()];
 
   bool success = false;
 
@@ -60,7 +61,8 @@ void hostcall_client(uint64_t data[8])
 
 void hostcall_client_async(uint64_t data[8])
 {
-  hostrpc::hostcall_interface_t::client_t &c = client_singleton[get_queue_index()];
+  hostrpc::hostcall_interface_t::client_t &c =
+      client_singleton[get_queue_index()];
   bool success = false;
 
   while (!success)
@@ -219,7 +221,8 @@ hostcall_impl::hostcall_impl(hsa_executable_t executable,
   // The client_t array is per-gpu-image. Find it.
   uint64_t client_addr =
       find_symbol_address(executable, kernel_agent, hostcall_client_symbol());
-  clients = reinterpret_cast<hostrpc::hostcall_interface_t::client_t *>(client_addr);
+  clients =
+      reinterpret_cast<hostrpc::hostcall_interface_t::client_t *>(client_addr);
 
   // todo: error checks here
   fine_grained_region = hsa::region_fine_grained(kernel_agent);

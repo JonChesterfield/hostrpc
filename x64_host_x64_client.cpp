@@ -126,62 +126,37 @@ bool x64_x64_t::valid() { return state != nullptr; }
 
 x64_x64_t::client_t x64_x64_t::client()
 {
-  // Construct an opaque client_t into the aligned state field
-  using res_t = x64_x64_t::client_t;
-  static_assert(res_t::state_t::size() == sizeof(ty::client_type), "");
-  static_assert(res_t::state_t::align() == alignof(ty::client_type), "");
-
   ty *s = static_cast<ty *>(state);
   assert(s);
-  res_t res;
-  auto *cl = res.state.construct<ty::client_type>(s->client);
-  assert(cl == res.state.open<ty::client_type>());
-  return res;
+  ty::client_type ct = s->client;
+  return {ct};
 }
 
 x64_x64_t::server_t x64_x64_t::server()
 {
-  // Construct an opaque server_t into the aligned state field
-  using res_t = x64_x64_t::server_t;
-  static_assert(res_t::state_t::size() == sizeof(ty::server_type), "");
-  static_assert(res_t::state_t::align() == alignof(ty::server_type), "");
-
   ty *s = static_cast<ty *>(state);
   assert(s);
-  res_t res;
-  auto *sv = res.state.construct<ty::server_type>(s->server);
-  assert(sv == res.state.open<ty::server_type>());
-  return res;
+  ty::server_type st = s->server;
+  return {st};
 }
 
 bool x64_x64_t::client_t::invoke(hostrpc::closure_func_t fill, void *fill_state,
                                  hostrpc::closure_func_t use, void *use_state)
 {
-  hostrpc::closure_pair fill_arg = {.func = fill, .state = fill_state};
-  hostrpc::closure_pair use_arg = {.func = use, .state = use_state};
-  auto *cl = state.open<ty::client_type>();
-  return cl->rpc_invoke<true>(static_cast<void *>(&fill_arg),
-                              static_cast<void *>(&use_arg));
+  return invoke<ty::client_type>(fill, fill_state, use, use_state);
 }
 
 bool x64_x64_t::client_t::invoke_async(hostrpc::closure_func_t fill,
                                        void *fill_state, closure_func_t use,
                                        void *use_state)
 {
-  hostrpc::closure_pair fill_arg = {.func = fill, .state = fill_state};
-  hostrpc::closure_pair use_arg = {.func = use, .state = use_state};
-  auto *cl = state.open<ty::client_type>();
-  return cl->rpc_invoke<false>(static_cast<void *>(&fill_arg),
-                               static_cast<void *>(&use_arg));
+  return invoke_async<ty::client_type>(fill, fill_state, use, use_state);
 }
 
 bool x64_x64_t::server_t::handle(hostrpc::closure_func_t func,
                                  void *application_state, uint64_t *l)
 {
-  hostrpc::closure_pair arg = {.func = func, .state = application_state};
-
-  auto *se = state.open<ty::server_type>();
-  return se->rpc_handle(static_cast<void *>(&arg), l);
+  return handle<ty::server_type>(func, application_state, l);
 }
 
 }  // namespace hostrpc

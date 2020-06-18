@@ -1,8 +1,8 @@
+#include "hostcall_interface.hpp"
 #include "detail/client_impl.hpp"
 #include "detail/platform.hpp"
 #include "detail/server_impl.hpp"
 #include "hostcall.hpp"  // hostcall_ops prototypes
-#include "hostcall_interface.hpp"
 #include "memory.hpp"
 
 // Glue the opaque hostcall_interface class onto the freestanding implementation
@@ -163,7 +163,7 @@ using SZ = hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
 using ty = x64_amdgcn_pair<SZ>;
 
 hostcall_interface_t::hostcall_interface_t(uint64_t hsa_region_t_fine_handle,
-                           uint64_t hsa_region_t_coarse_handle)
+                                           uint64_t hsa_region_t_coarse_handle)
 {
   state = nullptr;
 #if defined(__x86_64__)
@@ -207,6 +207,7 @@ hostcall_interface_t::client_t hostcall_interface_t::client()
 
 hostcall_interface_t::server_t hostcall_interface_t::server()
 {
+  // Construct an opaque server_t into the aligned state field
   using res_t = hostcall_interface_t::server_t;
   static_assert(res_t::state_t::size() == sizeof(ty::server_type), "");
   static_assert(res_t::state_t::align() == alignof(ty::server_type), "");
@@ -243,7 +244,8 @@ bool hostcall_interface_t::client_t::invoke_async_impl(void *f, void *u)
 #endif
 }
 
-bool hostcall_interface_t::server_t::handle_impl(void *application_state, uint64_t *l)
+bool hostcall_interface_t::server_t::handle_impl(void *application_state,
+                                                 uint64_t *l)
 {
 #if defined(__x86_64__)
   auto *se = state.open<ty::server_type>();

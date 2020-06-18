@@ -24,6 +24,92 @@ namespace hostrpc
 // std::launder'ed reinterpret cast, but as one can't assume C++17 and doesn't
 // have <new> for amdgcn, this uses __builtin_launder.
 
+template <typename T>
+struct client_invoke_overloads
+{
+  template <typename Fill, typename Use>
+  bool invoke(Fill f, Use u)
+  {
+    auto cbf = [](hostrpc::page_t *page, void *vf) {
+      Fill *f = static_cast<Fill *>(vf);
+      (*f)(page);
+    };
+    auto cbu = [](hostrpc::page_t *page, void *vf) {
+      Use *f = static_cast<Use *>(vf);
+      (*f)(page);
+    };
+    return derived().invoke(cbf, static_cast<void *>(&f), cbu,
+                            static_cast<void *>(&u));
+  }
+
+  template <typename Fill, typename Use>
+  bool invoke_async(Fill f, Use u)
+  {
+    auto cbf = [](hostrpc::page_t *page, void *vf) {
+      Fill *f = static_cast<Fill *>(vf);
+      (*f)(page);
+    };
+    auto cbu = [](hostrpc::page_t *page, void *vf) {
+      Use *f = static_cast<Use *>(vf);
+      (*f)(page);
+    };
+    return derived().invoke_async(cbf, static_cast<void *>(&f), cbu,
+                                  static_cast<void *>(&u));
+  }
+
+ private:
+  friend T;
+  T &derived() { return *static_cast<T *>(this); }
+
+  template <typename ClientType>
+  bool invoke(closure_func_t fill, void *fill_state, closure_func_t use,
+              void *use_state)
+  {
+    hostrpc::closure_pair fill_arg = {.func = fill, .state = fill_state};
+    hostrpc::closure_pair use_arg = {.func = use, .state = use_state};
+    auto *cl = derived().state.template open<ClientType>();
+    return cl->template rpc_invoke<true>(static_cast<void *>(&fill_arg),
+                                         static_cast<void *>(&use_arg));
+  }
+
+  template <typename ClientType>
+  bool invoke_async(closure_func_t fill, void *fill_state, closure_func_t use,
+                    void *use_state)
+  {
+    hostrpc::closure_pair fill_arg = {.func = fill, .state = fill_state};
+    hostrpc::closure_pair use_arg = {.func = use, .state = use_state};
+    auto *cl = derived().state.template open<ClientType>();
+    return cl->template rpc_invoke<false>(static_cast<void *>(&fill_arg),
+                                          static_cast<void *>(&use_arg));
+  }
+};
+
+template <typename T>
+struct server_handle_overloads
+{
+  template <typename Func>
+  bool handle(Func f, uint64_t *loc)
+  {
+    auto cb = [](hostrpc::page_t *page, void *vf) {
+      Func *f = static_cast<Func *>(vf);
+      (*f)(page);
+    };
+    return derived().handle(cb, static_cast<void *>(&f), loc);
+  }
+
+ private:
+  friend T;
+  T &derived() { return *static_cast<T *>(this); }
+
+  template <typename ServerType>
+  bool handle(closure_func_t func, void *application_state, uint64_t *l)
+  {
+    hostrpc::closure_pair arg = {.func = func, .state = application_state};
+    auto *se = derived().state.template open<ServerType>();
+    return se->rpc_handle(static_cast<void *>(&arg), l);
+  }
+};
+
 struct x64_x64_t
 {
   // This probably can't be copied, but could be movable
@@ -32,70 +118,52 @@ struct x64_x64_t
   x64_x64_t(const x64_x64_t &) = delete;
   bool valid();  // true if construction succeeded
 
-  struct client_t
+  struct client_t : public client_invoke_overloads<client_t>
   {
     friend struct x64_x64_t;
+    friend client_invoke_overloads<client_t>;
     client_t() {}  // would like this to be private
-    using state_t = hostrpc::storage<48, 8>;
 
+    using state_t = hostrpc::storage<48, 8>;
+    using client_invoke_overloads::invoke;
+    using client_invoke_overloads::invoke_async;
+
+   private:
+    template <typename ClientType>
+    client_t(ClientType ct)
+    {
+      static_assert(state_t::size() == sizeof(ClientType), "");
+      static_assert(state_t::align() == alignof(ClientType), "");
+      auto *cv = state.construct<ClientType>(ct);
+      assert(cv == state.open<ClientType>());
+    }
     bool invoke(closure_func_t fill, void *fill_state, closure_func_t use,
                 void *use_state);
     bool invoke_async(closure_func_t fill, void *fill_state, closure_func_t use,
                       void *use_state);
-
-    template <typename Fill, typename Use>
-    bool invoke(Fill f, Use u)
-    {
-      auto cbf = [](hostrpc::page_t *page, void *vf) {
-        Fill *f = static_cast<Fill *>(vf);
-        (*f)(page);
-      };
-      auto cbu = [](hostrpc::page_t *page, void *vf) {
-        Use *f = static_cast<Use *>(vf);
-        (*f)(page);
-      };
-      return invoke(cbf, static_cast<void *>(&f), cbu, static_cast<void *>(&u));
-    }
-
-    template <typename Fill, typename Use>
-    bool invoke_async(Fill f, Use u)
-    {
-      auto cbf = [](hostrpc::page_t *page, void *vf) {
-        Fill *f = static_cast<Fill *>(vf);
-        (*f)(page);
-      };
-      auto cbu = [](hostrpc::page_t *page, void *vf) {
-        Use *f = static_cast<Use *>(vf);
-        (*f)(page);
-      };
-      return invoke_async(cbf, static_cast<void *>(&f), cbu,
-                          static_cast<void *>(&u));
-    }
-
-   private:
     state_t state;
   };
 
-  struct server_t
+  struct server_t : public server_handle_overloads<server_t>
   {
     friend struct x64_x64_t;
+    friend server_handle_overloads<server_t>;
     server_t() {}
+
     using state_t = hostrpc::storage<48, 8>;
-
-    bool handle(closure_func_t operate, void *state, uint64_t *loc);
-
-    template <typename Func>
-    bool handle(Func f, uint64_t *loc)
-    {
-      auto cb = [](hostrpc::page_t *page, void *vf) {
-        Func *f = static_cast<Func *>(vf);
-        (*f)(page);
-      };
-      return handle(cb, static_cast<void *>(&f), loc);
-    }
+    using server_handle_overloads::handle;
 
    private:
+    template <typename ServerType>
+    server_t(ServerType st)
+    {
+      static_assert(state_t::size() == sizeof(ServerType), "");
+      static_assert(state_t::align() == alignof(ServerType), "");
+      auto *sv = state.construct<ServerType>(st);
+      assert(sv == state.open<ServerType>());
+    }
     state_t state;
+    bool handle(closure_func_t operate, void *state, uint64_t *loc);
   };
 
   client_t client();
@@ -104,7 +172,6 @@ struct x64_x64_t
  private:
   void *state;
 };
-
 
 }  // namespace hostrpc
 

@@ -2,9 +2,9 @@
 #define HOSTCALL_INTERFACE_HPP_INCLUDED
 
 #include "base_types.hpp"
+#include "interface.hpp"
 #include <stddef.h>
 #include <stdint.h>
-#include "interface.hpp"
 namespace hostrpc
 {
 namespace client
@@ -56,12 +56,10 @@ struct interface
 };
 }  // namespace server
 
-
-  
 struct hostcall_interface_t
 {
   hostcall_interface_t(uint64_t hsa_region_t_fine_handle,
-               uint64_t hsa_region_t_coarse_handle);
+                       uint64_t hsa_region_t_coarse_handle);
   ~hostcall_interface_t();
   hostcall_interface_t(const hostcall_interface_t &) = delete;
   bool valid();
@@ -98,6 +96,6 @@ struct hostcall_interface_t
   void *state;
 };
 
-}
+}  // namespace hostrpc
 
 #endif
