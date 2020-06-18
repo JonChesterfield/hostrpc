@@ -1,4 +1,5 @@
 #include "../../../src/hostrpc_service_id.h"
+#include "detail/common.hpp"
 #include "detail/platform.hpp"
 #include "hostcall.hpp"
 
@@ -50,30 +51,28 @@ void use_result(hostrpc::page_t *page, uint64_t d[8])
 
 typedef struct
 {
-  long arg0;
-  long arg1;
-  long arg2;
-  long arg3;
-  long arg4;
-  long arg5;
-  long arg6;
-  long arg7;
+  uint64_t arg0;
+  uint64_t arg1;
+  uint64_t arg2;
+  uint64_t arg3;
+  uint64_t arg4;
+  uint64_t arg5;
+  uint64_t arg6;
+  uint64_t arg7;
 } __ockl_hostcall_result_t;
 
-extern "C" __ockl_hostcall_result_t hostcall_invoke(uint service_id, ulong arg0,
-                                                    ulong arg1, ulong arg2,
-                                                    ulong arg3, ulong arg4,
-                                                    ulong arg5, ulong arg6,
-                                                    ulong arg7)
+extern "C" __ockl_hostcall_result_t hostcall_invoke(
+    uint32_t service_id, uint64_t arg0, uint64_t arg1, uint64_t arg2,
+    uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6, uint64_t arg7)
 {
   uint64_t buf[8] = {service_id, arg0, arg1, arg2, arg3, arg4, arg5, arg6};
   uint64_t activemask = __builtin_amdgcn_read_exec();
-  if (detail::is_master_lane())
+  if (platform::is_master_lane())
     {
       // TODO: manipulate exec mask directly instead of looping
       for (uint64_t i = 0; i < 64; i++)
         {
-          if (!detail::nthbitset64(activemask, i))
+          if (!hostrpc::detail::nthbitset64(activemask, i))
             {
               buf[0] = HOSTCALL_SERVICE_NO_OPERATION;
             }
@@ -82,7 +81,7 @@ extern "C" __ockl_hostcall_result_t hostcall_invoke(uint service_id, ulong arg0,
 
   hostcall_client(buf);
 
-  return = {buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], UINT64_MAX};
+  return {buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], UINT64_MAX};
 }
 
 #endif

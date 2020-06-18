@@ -41,7 +41,7 @@ void deallocate(void* d) { hsa_memory_free(d); }
 
 namespace x64_native
 {
-void* allocate(size_t, size_t) {}
+void* allocate(size_t, size_t) { return nullptr; }
 void deallocate(void*) {}
 }  // namespace x64_native
 
