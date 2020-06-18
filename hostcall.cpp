@@ -1,6 +1,6 @@
 #include "hostcall.hpp"
 #include "base_types.hpp"
-#include "interface.hpp"
+#include "hostcall_interface.hpp"
 
 #if defined(__x86_64__)
 #include "hsa.hpp"
@@ -15,7 +15,7 @@ using SZ = hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
 #if defined(__AMDGCN__)
 
 __attribute__((visibility("default")))
-hostrpc::x64_amdgcn_t::client_t client_singleton[MAX_NUM_DOORBELLS];
+hostrpc::hostcall_interface_t::client_t client_singleton[MAX_NUM_DOORBELLS];
 
 // Also in hsa.hpp
 static uint16_t get_queue_index()
@@ -47,7 +47,7 @@ static uint16_t get_queue_index()
 
 void hostcall_client(uint64_t data[8])
 {
-  hostrpc::x64_amdgcn_t::client_t &c = client_singleton[get_queue_index()];
+  hostrpc::hostcall_interface_t::client_t &c = client_singleton[get_queue_index()];
 
   bool success = false;
 
@@ -60,7 +60,7 @@ void hostcall_client(uint64_t data[8])
 
 void hostcall_client_async(uint64_t data[8])
 {
-  hostrpc::x64_amdgcn_t::client_t &c = client_singleton[get_queue_index()];
+  hostrpc::hostcall_interface_t::client_t &c = client_singleton[get_queue_index()];
   bool success = false;
 
   while (!success)
@@ -75,7 +75,7 @@ void hostcall_client_async(uint64_t data[8])
 // Get the start of the array
 const char *hostcall_client_symbol() { return "client_singleton"; }
 
-hostrpc::x64_amdgcn_t::server_t server_singleton[MAX_NUM_DOORBELLS];
+hostrpc::hostcall_interface_t::server_t server_singleton[MAX_NUM_DOORBELLS];
 
 uint16_t queue_to_index(hsa_queue_t *q)
 {
@@ -96,7 +96,7 @@ uint16_t queue_to_index(hsa_queue_t *q)
   return static_cast<uint16_t>(ptr);
 }
 
-hostrpc::x64_amdgcn_t *stored_pairs[MAX_NUM_DOORBELLS] = {0};
+hostrpc::hostcall_interface_t *stored_pairs[MAX_NUM_DOORBELLS] = {0};
 
 #if defined(__x86_64__)
 
@@ -133,7 +133,7 @@ class hostcall_impl
     assert(stored_pairs[queue_id] == 0);
 
     // TODO: Avoid this heap alloc
-    hostrpc::x64_amdgcn_t *res = new hostrpc::x64_amdgcn_t(
+    hostrpc::hostcall_interface_t *res = new hostrpc::hostcall_interface_t(
         fine_grained_region.handle, coarse_grained_region.handle);
     if (!res)
       {
@@ -176,7 +176,7 @@ class hostcall_impl
   int spawn_worker(uint16_t queue_id)
   {
     _Atomic uint32_t *control = &thread_killer;
-    hostrpc::x64_amdgcn_t::server_t *server = &servers[queue_id];
+    hostrpc::hostcall_interface_t::server_t *server = &servers[queue_id];
     uint64_t *ql = &queue_loc[queue_id];
     // TODO. Can't actually use std::thread because the constructor throws.
     threads.emplace_back([control, server, ql]() {
@@ -198,11 +198,11 @@ class hostcall_impl
   }
 
   // Going to need these to be opaque
-  hostrpc::x64_amdgcn_t::client_t *clients;  // statically allocated
+  hostrpc::hostcall_interface_t::client_t *clients;  // statically allocated
 
   // heap allocated, may not need the servers() instance
-  std::vector<hostrpc::x64_amdgcn_t::server_t> servers;
-  std::vector<hostrpc::x64_amdgcn_t *> stored_pairs;
+  std::vector<hostrpc::hostcall_interface_t::server_t> servers;
+  std::vector<hostrpc::hostcall_interface_t *> stored_pairs;
   std::vector<uint64_t> queue_loc;
 
   _Atomic uint32_t thread_killer = 0;
@@ -219,7 +219,7 @@ hostcall_impl::hostcall_impl(hsa_executable_t executable,
   // The client_t array is per-gpu-image. Find it.
   uint64_t client_addr =
       find_symbol_address(executable, kernel_agent, hostcall_client_symbol());
-  clients = reinterpret_cast<hostrpc::x64_amdgcn_t::client_t *>(client_addr);
+  clients = reinterpret_cast<hostrpc::hostcall_interface_t::client_t *>(client_addr);
 
   // todo: error checks here
   fine_grained_region = hsa::region_fine_grained(kernel_agent);

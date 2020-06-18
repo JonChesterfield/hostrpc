@@ -2,8 +2,10 @@
 #include "detail/platform.hpp"
 #include "detail/server_impl.hpp"
 #include "hostcall.hpp"  // hostcall_ops prototypes
-#include "interface.hpp"
+#include "hostcall_interface.hpp"
 #include "memory.hpp"
+
+// Glue the opaque hostcall_interface class onto the freestanding implementation
 
 // hsa uses freestanding C headers, unlike hsa.hpp
 #if defined(__x86_64__)
@@ -160,7 +162,7 @@ struct x64_amdgcn_pair
 using SZ = hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
 using ty = x64_amdgcn_pair<SZ>;
 
-x64_amdgcn_t::x64_amdgcn_t(uint64_t hsa_region_t_fine_handle,
+hostcall_interface_t::hostcall_interface_t(uint64_t hsa_region_t_fine_handle,
                            uint64_t hsa_region_t_coarse_handle)
 {
   state = nullptr;
@@ -175,7 +177,7 @@ x64_amdgcn_t::x64_amdgcn_t(uint64_t hsa_region_t_fine_handle,
 #endif
 }
 
-x64_amdgcn_t::~x64_amdgcn_t()
+hostcall_interface_t::~hostcall_interface_t()
 {
 #if defined(__x86_64__)
   ty *s = static_cast<ty *>(state);
@@ -187,11 +189,11 @@ x64_amdgcn_t::~x64_amdgcn_t()
 #endif
 }
 
-bool x64_amdgcn_t::valid() { return state != nullptr; }
+bool hostcall_interface_t::valid() { return state != nullptr; }
 
-x64_amdgcn_t::client_t x64_amdgcn_t::client()
+hostcall_interface_t::client_t hostcall_interface_t::client()
 {
-  using res_t = x64_amdgcn_t::client_t;
+  using res_t = hostcall_interface_t::client_t;
   static_assert(res_t::state_t::size() == sizeof(ty::client_type), "");
   static_assert(res_t::state_t::align() == alignof(ty::client_type), "");
 
@@ -203,9 +205,9 @@ x64_amdgcn_t::client_t x64_amdgcn_t::client()
   return res;
 }
 
-x64_amdgcn_t::server_t x64_amdgcn_t::server()
+hostcall_interface_t::server_t hostcall_interface_t::server()
 {
-  using res_t = x64_amdgcn_t::server_t;
+  using res_t = hostcall_interface_t::server_t;
   static_assert(res_t::state_t::size() == sizeof(ty::server_type), "");
   static_assert(res_t::state_t::align() == alignof(ty::server_type), "");
 
@@ -217,7 +219,7 @@ x64_amdgcn_t::server_t x64_amdgcn_t::server()
   return res;
 }
 
-bool x64_amdgcn_t::client_t::invoke_impl(void *f, void *u)
+bool hostcall_interface_t::client_t::invoke_impl(void *f, void *u)
 {
 #if defined(__AMDGCN__)
   auto *cl = state.open<ty::client_type>();
@@ -229,7 +231,7 @@ bool x64_amdgcn_t::client_t::invoke_impl(void *f, void *u)
 #endif
 }
 
-bool x64_amdgcn_t::client_t::invoke_async_impl(void *f, void *u)
+bool hostcall_interface_t::client_t::invoke_async_impl(void *f, void *u)
 {
 #if defined(__AMDGCN__)
   auto *cl = state.open<ty::client_type>();
@@ -241,7 +243,7 @@ bool x64_amdgcn_t::client_t::invoke_async_impl(void *f, void *u)
 #endif
 }
 
-bool x64_amdgcn_t::server_t::handle_impl(void *application_state, uint64_t *l)
+bool hostcall_interface_t::server_t::handle_impl(void *application_state, uint64_t *l)
 {
 #if defined(__x86_64__)
   auto *se = state.open<ty::server_type>();
