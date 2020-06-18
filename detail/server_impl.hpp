@@ -62,6 +62,7 @@ struct server_impl : public SZ
     uint64_t i = inbox.load_word(size, word);
     uint64_t o = outbox.load_word(size, word);
     uint64_t a = active.load_word(size, word);
+    (void)(i + o + a);
     printf("%lu %lu %lu\n", i, o, a);
   }
 

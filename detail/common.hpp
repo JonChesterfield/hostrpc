@@ -488,6 +488,7 @@ struct slot_owner_t<true>
       {
         uint32_t v = __c11_atomic_load(&slots[i], __ATOMIC_SEQ_CST);
         printf("slot[%u] owned by %u\n", i, v);
+        (void)v;
       }
   }
   static const bool verbose = false;
@@ -655,6 +656,7 @@ struct default_stepper
       {
         printf("%s:%d: step\n", state->name, line);
       }
+    (void)line;
     step(state->val);
   }
 };

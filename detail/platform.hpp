@@ -67,7 +67,11 @@ __attribute__((always_inline)) inline void __assert_fail(const char *str,
 }
 
 // stub printf for now
-__attribute__((always_inline)) inline int printf(const char *, ...)
+// aomp clang currently rewrites any variadic function to a pair of
+// allocate/execute functions, which don't necessarily exist.
+// Clobber it with the preprocessor as a workaround.
+#define printf(...) __inline_printf()
+__attribute__((always_inline)) inline int __inline_printf()
 {
   // printf is implement with hostcall, so going to have to do without
   return 0;
