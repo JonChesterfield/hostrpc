@@ -22,7 +22,7 @@ OPT="$RDIR/bin/opt"
 CXX="$CLANG -std=c++11 -Wall -Wextra " # -DNDEBUG"
 LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR"
 
-AMDGPU="--target=amdgcn-amd-amdhsa -march=gfx906 -mcpu=gfx906 "
+AMDGPU="--target=amdgcn-amd-amdhsa -march=gfx906 -mcpu=gfx906 -mllvm -amdgpu-fixed-function-abi"
 
 # Not sure why CUDACC isn't being set by clang here, probably a bad sign
 NVGPU="--target=nvptx64-nvidia-cuda -march=sm_50 --cuda-gpu-arch=sm_50 -D__CUDACC__"
@@ -59,6 +59,8 @@ $CXX_X64 -I$HSAINC tests.cpp -c -o tests.x64.bc
 $CXX_X64 -I$HSAINC x64_hazard_test.cpp -c -o x64_hazard_test.x64.bc
 
 
+$CXX_GCN x64_host_gcn_client.cpp -c -o x64_host_gcn_client.gcn.bc
+$CXX_X64 -I$HSAINC x64_host_gcn_client.cpp -c -o x64_host_gcn_client.x64.bc
 
 # $CXX $NVPTXFLAGS client.cpp -c -o client.ptx.bc
 
@@ -112,7 +114,7 @@ done
 for bc in `find . -type f -iname '*.gcn.bc'` ; do
     ll=`echo $bc | sed 's_.bc_.ll_g'`
     $OPT -strip-debug $bc -S -o $ll
-    $LLC --mcpu=gfx906 $ll
+    $LLC --mcpu=gfx906 -amdgpu-fixed-function-abi $ll
 done
 
 $CXX_X64_LD tests.x64.bc x64_hazard_test.x64.bc states.x64.bc catch.o memory.x64.bc x64_host_x64_client.x64.bc $LDFLAGS -o states.exe

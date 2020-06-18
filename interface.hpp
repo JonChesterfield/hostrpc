@@ -173,6 +173,70 @@ struct x64_x64_t
   void *state;
 };
 
+struct x64_gcn_t
+{
+  x64_gcn_t(uint64_t hsa_region_t_fine_handle,
+            uint64_t hsa_region_t_coarse_handle);
+
+  ~x64_gcn_t();
+  x64_gcn_t(const x64_gcn_t &) = delete;
+  bool valid();  // true if construction succeeded
+
+  struct client_t : public client_invoke_overloads<client_t>
+  {
+    friend struct x64_gcn_t;
+    friend client_invoke_overloads<client_t>;
+    client_t() {}  // would like this to be private
+
+    using state_t = hostrpc::storage<40, 8>;
+    using client_invoke_overloads::invoke;
+    using client_invoke_overloads::invoke_async;
+
+   private:
+    template <typename ClientType>
+    client_t(ClientType ct)
+    {
+      static_assert(state_t::size() == sizeof(ClientType), "");
+      static_assert(state_t::align() == alignof(ClientType), "");
+      auto *cv = state.construct<ClientType>(ct);
+      assert(cv == state.open<ClientType>());
+    }
+    bool invoke(closure_func_t fill, void *fill_state, closure_func_t use,
+                void *use_state);
+    bool invoke_async(closure_func_t fill, void *fill_state, closure_func_t use,
+                      void *use_state);
+    state_t state;
+  };
+
+  struct server_t : public server_handle_overloads<server_t>
+  {
+    friend struct x64_gcn_t;
+    friend server_handle_overloads<server_t>;
+    server_t() {}
+
+    using state_t = hostrpc::storage<40, 8>;
+    using server_handle_overloads::handle;
+
+   private:
+    template <typename ServerType>
+    server_t(ServerType st)
+    {
+      static_assert(state_t::size() == sizeof(ServerType), "");
+      static_assert(state_t::align() == alignof(ServerType), "");
+      auto *sv = state.construct<ServerType>(st);
+      assert(sv == state.open<ServerType>());
+    }
+    state_t state;
+    bool handle(closure_func_t operate, void *state, uint64_t *loc);
+  };
+
+  client_t client();
+  server_t server();
+
+ private:
+  void *state;
+};
+
 }  // namespace hostrpc
 
 #endif
