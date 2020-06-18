@@ -105,6 +105,7 @@ hostrpc::hostcall_interface_t *stored_pairs[MAX_NUM_DOORBELLS] = {0};
 class hostcall_impl
 {
  public:
+  hostcall_impl(void *client_symbol_address, hsa_agent_t kernel_agent);
   hostcall_impl(hsa_executable_t executable, hsa_agent_t kernel_agent);
 
   hostcall_impl(hostcall_impl &&o)
@@ -215,12 +216,9 @@ class hostcall_impl
 
 // todo: port to hsa.h api
 
-hostcall_impl::hostcall_impl(hsa_executable_t executable,
-                             hsa_agent_t kernel_agent)
+hostcall_impl::hostcall_impl(void *client_addr, hsa_agent_t kernel_agent)
 {
   // The client_t array is per-gpu-image. Find it.
-  uint64_t client_addr =
-      find_symbol_address(executable, kernel_agent, hostcall_client_symbol());
   clients =
       reinterpret_cast<hostrpc::hostcall_interface_t::client_t *>(client_addr);
 
@@ -235,6 +233,15 @@ hostcall_impl::hostcall_impl(hsa_executable_t executable,
   servers.resize(MAX_NUM_DOORBELLS);
   stored_pairs.resize(MAX_NUM_DOORBELLS);
   queue_loc.resize(MAX_NUM_DOORBELLS);
+}
+
+hostcall_impl::hostcall_impl(hsa_executable_t executable,
+                             hsa_agent_t kernel_agent)
+
+    : hostcall_impl(reinterpret_cast<void *>(find_symbol_address(
+                        executable, kernel_agent, hostcall_client_symbol())),
+                    kernel_agent)
+{
 }
 
 uint64_t hostcall_impl::find_symbol_address(hsa_executable_t &ex,
@@ -275,6 +282,14 @@ hostcall::hostcall(hsa_executable_t executable, hsa_agent_t kernel_agent)
   assert_size_t_equal<hostcall::state_t::size(), sizeof(hostcall_impl)>();
   new (reinterpret_cast<hostcall_impl *>(state.data))
       hostcall_impl(hostcall_impl(executable, kernel_agent));
+}
+
+hostcall::hostcall(void *client_symbol_address, hsa_agent_t kernel_agent)
+{
+  assert_size_t_equal<hostcall::state_t::align(), alignof(hostcall_impl)>();
+  assert_size_t_equal<hostcall::state_t::size(), sizeof(hostcall_impl)>();
+  new (reinterpret_cast<hostcall_impl *>(state.data))
+      hostcall_impl(hostcall_impl(client_symbol_address, kernel_agent));
 }
 
 bool hostcall::valid() { return true; }
