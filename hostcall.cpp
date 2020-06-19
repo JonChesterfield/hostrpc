@@ -321,7 +321,9 @@ static std::vector<std::unique_ptr<hostcall> > state;
 void spawn_hostcall_for_queue(uint32_t device_id, hsa_agent_t agent,
                               hsa_queue_t *queue, void *client_symbol_address)
 {
-  if (device_id > state.size())
+  printf("Setting up hostcall on id %u, queue %lx\n", device_id,
+         (uint64_t)queue);
+  if (device_id >= state.size())
     {
       state.resize(device_id + 1);
     }
@@ -334,23 +336,32 @@ void spawn_hostcall_for_queue(uint32_t device_id, hsa_agent_t agent,
         {
           state[device_id] = std::move(r);
         }
+      else
+        {
+          printf("Failed to construct a hostcall, going to assert\n");
+        }
     }
 
   assert(state[device_id] != nullptr);
   // enabling it for a queue repeatedly is a no-op
+  printf("enable on queue\n");
   if (state[device_id]->enable_queue(queue) == 0)
     {
       // spawn an additional thread
+      printf("spawn thread\n");
       if (state[device_id]->spawn_worker(queue) == 0)
         {
+          printf("Success for setup on id %u, queue %lx, ptr %lx\n", device_id,
+                 (uint64_t)queue, client_symbol_address);
           // all good
         }
     }
 
+  printf("leaving %s\n", __func__);
   // TODO: Indicate failure
 }
 
-void free_hostcall_instance() { state.clear(); }
+void free_hostcall_state() { state.clear(); }
 
 #endif
 #endif

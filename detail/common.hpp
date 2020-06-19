@@ -45,7 +45,7 @@ inline uint64_t round_up_to_multiple_of_64(uint64_t x)
 
 inline bool nthbitset64(uint64_t x, uint64_t n)
 {
-  assert(n < 64);
+  // assert(n < 64);
   return x & (1ull << n);
 }
 

@@ -20,7 +20,7 @@ void operate(hostrpc::page_t *page)
       uint64_t service_id = line.element[0];
       uint64_t *payload = &line.element[1];
 
-      service_id = (service_id << 16u) >> 16u;
+      service_id = ((uint32_t)service_id << 16u) >> 16u;
       assert(service_id <= UINT32_MAX);
 
       // A bit dubious in that the existing code expects payload to have
@@ -61,25 +61,48 @@ typedef struct
   uint64_t arg7;
 } __ockl_hostcall_result_t;
 
-extern "C" __ockl_hostcall_result_t hostcall_invoke(
-    uint32_t service_id, uint64_t arg0, uint64_t arg1, uint64_t arg2,
-    uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6, uint64_t arg7)
+extern "C" uint64_t __amdgcn_set_inactive_u64(uint64_t, uint64_t);
+
+extern "C" __ockl_hostcall_result_t
+#if 0
+old_hostcall_invoke
+#else
+    __attribute__((used)) hostcall_invoke
+#endif
+    (uint32_t service_id, uint64_t arg0, uint64_t arg1, uint64_t arg2,
+     uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6, uint64_t arg7)
 {
-  uint64_t buf[8] = {service_id, arg0, arg1, arg2, arg3, arg4, arg5, arg6};
-  uint64_t activemask = __builtin_amdgcn_read_exec();
-  if (platform::is_master_lane())
-    {
-      // TODO: manipulate exec mask directly instead of looping
-      for (uint64_t i = 0; i < 64; i++)
-        {
-          if (!hostrpc::detail::nthbitset64(activemask, i))
-            {
-              buf[0] = HOSTCALL_SERVICE_NO_OPERATION;
-            }
-        }
-    }
+  __asm__(
+      "; hostcall_invoke: record need for hostcall support\n\t"
+      ".type needs_hostcall_buffer,@object\n\t"
+      ".global needs_hostcall_buffer\n\t"
+      ".comm needs_hostcall_buffer,4" ::
+          :);
+
+  uint32_t tmp0, tmp1;
+  asm volatile(
+      "s_mov_b32 %[tmp0], exec_lo\n\t"
+      "s_mov_b32 %[tmp1], exec_hi\n\t"
+      "s_mov_b32 exec_lo, 0xFFFFFFFF\n\t"
+      "s_mov_b32 exec_hi, 0xFFFFFFFF\n\t"
+      : [ tmp0 ] "=r"(tmp0), [ tmp1 ] "=r"(tmp1)::"memory");
+
+  uint64_t activemask = ((uint64_t)tmp1 << 32u) | tmp0;
+  uint64_t buf[8] = {UINT64_MAX, arg0, arg1, arg2, arg3, arg4, arg5, arg6};
+
+  uint32_t id = platform::get_lane_id();
+  uint64_t b0 = hostrpc::detail::nthbitset64(activemask, id)
+                    ? service_id
+                    : HOSTCALL_SERVICE_NO_OPERATION;
+  buf[0] = b0;
 
   hostcall_client(buf);
+
+  asm volatile(
+      "s_mov_b32 exec_lo, %[tmp0]\n\t"
+      "s_mov_b32 exec_hi, %[tmp1]\n\t" ::[tmp0] "r"(tmp0),
+      [ tmp1 ] "r"(tmp1)
+      : "memory");
 
   return {buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], UINT64_MAX};
 }
