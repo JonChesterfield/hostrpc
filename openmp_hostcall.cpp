@@ -14,6 +14,7 @@ namespace hostcall_ops
 #if defined(__x86_64__)
 void operate(hostrpc::page_t *page)
 {
+  printf("Got to operate\n");
   for (unsigned c = 0; c < 64; c++)
     {
       hostrpc::cacheline_t &line = page->cacheline[c];
@@ -34,11 +35,36 @@ void operate(hostrpc::page_t *page)
 #if defined __AMDGCN__
 void pass_arguments(hostrpc::page_t *page, uint64_t d[8])
 {
+  {
+  uint32_t tmp0, tmp1;
+  asm volatile(
+      "s_mov_b32 %[tmp0], exec_lo\n\t"
+      "s_mov_b32 %[tmp1], exec_hi\n\t"
+      "s_mov_b32 exec_lo, 0xFFFFFFFF\n\t"
+      "s_mov_b32 exec_hi, 0xFFFFFFFF\n\t"
+      : [ tmp0 ] "=r"(tmp0), [ tmp1 ] "=r"(tmp1)::"memory");
+
+  // everyone writes UINTMAX
+  hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
+  for (unsigned i = 0; i < 8; i++)
+    {
+      line->element[i] = UINT64_MAX;
+    }
+
+  asm volatile(
+      "s_mov_b32 exec_lo, %[tmp0]\n\t"
+      "s_mov_b32 exec_hi, %[tmp1]\n\t" ::[tmp0] "r"(tmp0),
+      [ tmp1 ] "r"(tmp1)
+      : "memory");
+  }
+  
   hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
   for (unsigned i = 0; i < 8; i++)
     {
       line->element[i] = d[i];
     }
+
+  
 }
 void use_result(hostrpc::page_t *page, uint64_t d[8])
 {
@@ -79,31 +105,26 @@ old_hostcall_invoke
       ".comm needs_hostcall_buffer,4" ::
           :);
 
-  uint32_t tmp0, tmp1;
-  asm volatile(
-      "s_mov_b32 %[tmp0], exec_lo\n\t"
-      "s_mov_b32 %[tmp1], exec_hi\n\t"
-      "s_mov_b32 exec_lo, 0xFFFFFFFF\n\t"
-      "s_mov_b32 exec_hi, 0xFFFFFFFF\n\t"
-      : [ tmp0 ] "=r"(tmp0), [ tmp1 ] "=r"(tmp1)::"memory");
+  uint64_t buf[8] = {service_id, arg0, arg1, arg2, arg3, arg4, arg5, arg6};
 
+#if 0
   uint64_t activemask = ((uint64_t)tmp1 << 32u) | tmp0;
-  uint64_t buf[8] = {UINT64_MAX, arg0, arg1, arg2, arg3, arg4, arg5, arg6};
 
   uint32_t id = platform::get_lane_id();
   uint64_t b0 = hostrpc::detail::nthbitset64(activemask, id)
                     ? service_id
                     : HOSTCALL_SERVICE_NO_OPERATION;
   buf[0] = b0;
-
+#endif
+  
   hostcall_client(buf);
-
+#if 0
   asm volatile(
       "s_mov_b32 exec_lo, %[tmp0]\n\t"
       "s_mov_b32 exec_hi, %[tmp1]\n\t" ::[tmp0] "r"(tmp0),
       [ tmp1 ] "r"(tmp1)
       : "memory");
-
+#endif
   return {buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], UINT64_MAX};
 }
 

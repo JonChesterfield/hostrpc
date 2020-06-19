@@ -352,7 +352,7 @@ void spawn_hostcall_for_queue(uint32_t device_id, hsa_agent_t agent,
       if (state[device_id]->spawn_worker(queue) == 0)
         {
           printf("Success for setup on id %u, queue %lx, ptr %lx\n", device_id,
-                 (uint64_t)queue, client_symbol_address);
+                 (uint64_t)queue, (uint64_t)client_symbol_address);
           // all good
         }
     }

@@ -201,6 +201,7 @@ hostcall_interface_t::client_t hostcall_interface_t::client()
   assert(s);
   res_t res;
   auto *cl = res.state.construct<ty::client_type>(s->client);
+  (void)cl;
   assert(cl == res.state.open<ty::client_type>());
   return res;
 }
@@ -216,6 +217,7 @@ hostcall_interface_t::server_t hostcall_interface_t::server()
   assert(s);
   res_t res;
   auto *sv = res.state.construct<ty::server_type>(s->server);
+  (void)sv;
   assert(sv == res.state.open<ty::server_type>());
   return res;
 }
