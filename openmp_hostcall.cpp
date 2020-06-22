@@ -14,7 +14,6 @@ namespace hostcall_ops
 #if defined(__x86_64__)
 void operate(hostrpc::page_t *page)
 {
-  printf("Got to operate\n");
   for (unsigned c = 0; c < 64; c++)
     {
       hostrpc::cacheline_t &line = page->cacheline[c];
@@ -35,28 +34,7 @@ void operate(hostrpc::page_t *page)
 #if defined __AMDGCN__
 void pass_arguments(hostrpc::page_t *page, uint64_t d[8])
 {
-  {
-    uint32_t tmp0, tmp1;
-    asm volatile(
-        "s_mov_b32 %[tmp0], exec_lo\n\t"
-        "s_mov_b32 %[tmp1], exec_hi\n\t"
-        "s_mov_b32 exec_lo, 0xFFFFFFFF\n\t"
-        "s_mov_b32 exec_hi, 0xFFFFFFFF\n\t"
-        : [ tmp0 ] "=r"(tmp0), [ tmp1 ] "=r"(tmp1)::"memory");
-
-    // everyone writes UINTMAX
-    hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
-    for (unsigned i = 0; i < 8; i++)
-      {
-        line->element[i] = UINT64_MAX;
-      }
-
-    asm volatile(
-        "s_mov_b32 exec_lo, %[tmp0]\n\t"
-        "s_mov_b32 exec_hi, %[tmp1]\n\t" ::[tmp0] "r"(tmp0),
-        [ tmp1 ] "r"(tmp1)
-        : "memory");
-  }
+  platform::init_inactive_lanes(page, HOSTCALL_SERVICE_NO_OPERATION);
 
   hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
   for (unsigned i = 0; i < 8; i++)
