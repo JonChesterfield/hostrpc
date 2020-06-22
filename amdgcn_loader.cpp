@@ -53,10 +53,11 @@ void initialize_packet_defaults(hsa_kernel_dispatch_packet_t *packet)
   memset(((uint8_t *)packet) + 4, 0, sizeof(hsa_kernel_dispatch_packet_t) - 4);
   // These values should probably be read from the kernel
   // Currently they're copied from documentation
-  packet->workgroup_size_x = 256;
+  // Launching a single wavefront makes for easier debugging
+  packet->workgroup_size_x = 64;
   packet->workgroup_size_y = 1;
   packet->workgroup_size_z = 1;
-  packet->grid_size_x = 256;
+  packet->grid_size_x = 64;
   packet->grid_size_y = 1;
   packet->grid_size_z = 1;
 
@@ -340,9 +341,14 @@ static int main_with_hsa(int argc, char **argv)
   if (!results_match)
     {
       fprintf(stderr, "Warning: Non-uniform return values\n");
+
+      printf("Queue in x64: %lx\n", (uint64_t)queue);
+      uint64_t v = ((uint64_t)result[0] & 0x00000000FFFFFFFFull) |
+                   (((uint64_t)result[1] & 0x00000000FFFFFFFFull) << 32u);
+      printf("Queue: %lx\n", v);
       for (size_t i = 0; i < number_return_values; i++)
         {
-          fprintf(stderr, "rc[%zu] = %d\n", i, result[i]);
+          fprintf(stderr, "rc[%zu] = %x\n", i, result[i]);
         }
     }
 

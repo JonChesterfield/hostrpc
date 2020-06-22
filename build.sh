@@ -119,10 +119,10 @@ done
 
 $CXX_X64_LD tests.x64.bc x64_hazard_test.x64.bc states.x64.bc catch.o memory.x64.bc x64_host_x64_client.x64.bc $LDFLAGS -o states.exe
 
+# time ./states.exe hazard
+
 echo "Call executable"
 time ./a.out ; echo $?
-
-time ./states.exe hazard
 
 # time valgrind --leak-check=full --fair-sched=yes ./states.exe hazard
 

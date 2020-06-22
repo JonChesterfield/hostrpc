@@ -36,35 +36,33 @@ void operate(hostrpc::page_t *page)
 void pass_arguments(hostrpc::page_t *page, uint64_t d[8])
 {
   {
-  uint32_t tmp0, tmp1;
-  asm volatile(
-      "s_mov_b32 %[tmp0], exec_lo\n\t"
-      "s_mov_b32 %[tmp1], exec_hi\n\t"
-      "s_mov_b32 exec_lo, 0xFFFFFFFF\n\t"
-      "s_mov_b32 exec_hi, 0xFFFFFFFF\n\t"
-      : [ tmp0 ] "=r"(tmp0), [ tmp1 ] "=r"(tmp1)::"memory");
+    uint32_t tmp0, tmp1;
+    asm volatile(
+        "s_mov_b32 %[tmp0], exec_lo\n\t"
+        "s_mov_b32 %[tmp1], exec_hi\n\t"
+        "s_mov_b32 exec_lo, 0xFFFFFFFF\n\t"
+        "s_mov_b32 exec_hi, 0xFFFFFFFF\n\t"
+        : [ tmp0 ] "=r"(tmp0), [ tmp1 ] "=r"(tmp1)::"memory");
 
-  // everyone writes UINTMAX
-  hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
-  for (unsigned i = 0; i < 8; i++)
-    {
-      line->element[i] = UINT64_MAX;
-    }
+    // everyone writes UINTMAX
+    hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
+    for (unsigned i = 0; i < 8; i++)
+      {
+        line->element[i] = UINT64_MAX;
+      }
 
-  asm volatile(
-      "s_mov_b32 exec_lo, %[tmp0]\n\t"
-      "s_mov_b32 exec_hi, %[tmp1]\n\t" ::[tmp0] "r"(tmp0),
-      [ tmp1 ] "r"(tmp1)
-      : "memory");
+    asm volatile(
+        "s_mov_b32 exec_lo, %[tmp0]\n\t"
+        "s_mov_b32 exec_hi, %[tmp1]\n\t" ::[tmp0] "r"(tmp0),
+        [ tmp1 ] "r"(tmp1)
+        : "memory");
   }
-  
+
   hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
   for (unsigned i = 0; i < 8; i++)
     {
       line->element[i] = d[i];
     }
-
-  
 }
 void use_result(hostrpc::page_t *page, uint64_t d[8])
 {
@@ -116,7 +114,7 @@ old_hostcall_invoke
                     : HOSTCALL_SERVICE_NO_OPERATION;
   buf[0] = b0;
 #endif
-  
+
   hostcall_client(buf);
 #if 0
   asm volatile(
