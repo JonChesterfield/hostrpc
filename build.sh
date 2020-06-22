@@ -54,7 +54,7 @@ $CXX_GCN codegen/server.cpp -c -o codegen/server.gcn.bc
 $CXX_X64 -I$HSAINC memory.cpp -c -o memory.x64.bc
 $CXX_X64 -I$HSAINC x64_host_x64_client.cpp -c -o x64_host_x64_client.x64.bc
 $CXX_X64 -I$HSAINC tests.cpp -c -o tests.x64.bc
-$CXX_X64 -I$HSAINC x64_hazard_test.cpp -c -o x64_hazard_test.x64.bc
+$CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc
 
 
 $CXX_GCN x64_host_gcn_client.cpp -c -o x64_host_gcn_client.gcn.bc
@@ -115,7 +115,7 @@ for bc in `find . -type f -iname '*.gcn.bc'` ; do
     $LLC --mcpu=gfx906 -amdgpu-fixed-function-abi $ll
 done
 
-$CXX_X64_LD tests.x64.bc x64_hazard_test.x64.bc states.x64.bc catch.o memory.x64.bc x64_host_x64_client.x64.bc $LDFLAGS -o states.exe
+$CXX_X64_LD tests.x64.bc x64_x64_stress.x64.bc states.x64.bc catch.o memory.x64.bc x64_host_x64_client.x64.bc $LDFLAGS -o states.exe
 
 # time ./states.exe hazard
 

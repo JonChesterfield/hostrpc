@@ -21,7 +21,7 @@ namespace hostrpc
 thread_local unsigned my_id = 0;
 }  // namespace hostrpc
 
-TEST_CASE("hazard")
+TEST_CASE("x64_x64_stress")
 {
   using namespace hostrpc;
   hostrpc::x64_x64_t p(100);
@@ -68,15 +68,11 @@ TEST_CASE("hazard")
       }
   };
 
-  unsigned nservers = 64;
-  unsigned nclients = 64;
-
   auto client_worker = [&](unsigned id, unsigned reps) {
     my_id = id;
     page_t scratch;
     page_t expect;
     unsigned count = 0;
-    unsigned since_work = 0;
     for (unsigned r = 0; r < reps; r++)
       {
         init_page(&scratch, id);
@@ -99,21 +95,16 @@ TEST_CASE("hazard")
                 return;
               }
           }
-        else
-          {
-            since_work++;
-          }
 
-        if (since_work == 10000)
-          {
-            since_work = 0;
-            printf("client %u stalled\n", id);
-          }
+
       }
 
     printf("client %u ran %u / %u reps\n", id, count, reps);
   };
 
+  unsigned nservers = 64;
+  unsigned nclients = 64;
+  
   std::vector<std::thread> server_store;
   for (unsigned i = 0; i < nservers; i++)
     {
