@@ -1,9 +1,7 @@
 #!/bin/bash
 set -x
 
-for dir in "." loader codegen; do 
-    rm -rf $dir/*.s $dir/*.ll $dir/*.bc $dir/*.exe $dir/*device.o $dir/a.out
-done
+./clean.sh
 
 RDIR=$HOME/rocm/aomp
 
