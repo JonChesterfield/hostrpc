@@ -16,8 +16,4 @@ static void init_page(hostrpc::page_t *page, uint64_t v)
     }
 }
 
-TEST_CASE("x64_gcn_stress")
-{
-  using namespace hostrpc;
-  hostrpc::x64_gcn_t p(2048);
-}
+TEST_CASE("x64_gcn_stress") { using namespace hostrpc; }
