@@ -117,7 +117,13 @@ done
 
 $CXX_X64_LD tests.x64.bc x64_x64_stress.x64.bc states.x64.bc catch.o memory.x64.bc x64_host_x64_client.x64.bc $LDFLAGS -o states.exe
 
-# time ./states.exe hazard
+$CXX_X64_LD x64_x64_stress.x64.bc catch.o memory.x64.bc x64_host_x64_client.x64.bc $LDFLAGS -o x64_x64_stress.exe
+
+$CXX_X64_LD tests.x64.bc catch.o x64_host_x64_client.x64.bc memory.x64.bc  $LDFLAGS -o tests.exe
+
+time ./tests.exe
+time ./x64_x64_stress.exe
+
 
 echo "Call executable"
 time ./a.out ; echo $?

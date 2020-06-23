@@ -89,29 +89,18 @@ struct client_impl : public SZ
 
   size_t find_candidate_client_slot(uint64_t w)
   {
-    // find a slot which is currently available
-
-    // active must be clear (no other thread using it)
-    // outbox must be clear (no data in use)
-    // server must also be clear (otherwise waiting on GC)
-    // previous sketch featured inbox and outbox clear if active is clear,
-    // as a thread waits on the gpu. Going to require all clear here:
-    // Checking inbox means we can miss garbage collection at the end of a
-    // synchronous task
-    // Checking outbox opens the door to async launch
-
-    // choosing to ignore inbox here - if inbox is set there's garbage to
-    // collect
+    uint64_t i = inbox.load_word(size(), w);
     uint64_t o = outbox.load_word(size(), w);
     uint64_t a = active.load_word(size(), w);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
-    uint64_t some_use = o | a;
+    uint64_t available = ~o & ~a;
+    uint64_t garbage = i & o & ~a;
 
-    uint64_t available = ~some_use;
-    if (available != 0)
+    uint64_t candidate = available | garbage;
+    if (candidate != 0)
       {
-        return 64 * w + detail::ctz64(available);
+        return 64 * w + detail::ctz64(candidate);
       }
 
     return SIZE_MAX;

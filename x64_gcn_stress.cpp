@@ -20,5 +20,4 @@ TEST_CASE("x64_gcn_stress")
 {
   using namespace hostrpc;
   hostrpc::x64_gcn_t p(2048);
-
 }

@@ -95,8 +95,6 @@ TEST_CASE("x64_x64_stress")
                 return;
               }
           }
-
-
       }
 
     printf("client %u ran %u / %u reps\n", id, count, reps);
@@ -104,7 +102,7 @@ TEST_CASE("x64_x64_stress")
 
   unsigned nservers = 64;
   unsigned nclients = 64;
-  
+
   std::vector<std::thread> server_store;
   for (unsigned i = 0; i < nservers; i++)
     {

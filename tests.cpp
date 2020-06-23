@@ -14,14 +14,8 @@ TEST_CASE("instantiate")
   hostrpc::x64_x64_t foo(64);
   CHECK(foo.valid());
 
-  auto client = foo.client();
-  auto server = foo.server();
-
-  auto v = [](hostrpc::page_t*) -> void {};
-  client.invoke(v, v);
-
-  uint64_t loc = 0;
-  server.handle(v, &loc);
+  foo.client();
+  foo.server();
 }
 
 #if 0
@@ -233,11 +227,15 @@ TEST_CASE("set up single word system")
             {
               calls_launched++;
             }
-          if (cl.rpc_invoke<true>(application_state_ptr, application_state_ptr))
+          if (false &&
+              cl.rpc_invoke<true>(application_state_ptr, application_state_ptr))
             {
               calls_launched++;
             }
         }
+
+      // printf("client done, launched %lu / %lu\n", calls_launched,
+      // calls_planned);
     });
 
     safe_thread sv_thrd([&]() {
@@ -255,21 +253,23 @@ TEST_CASE("set up single word system")
                         &server_buffer[0]};
 
       void* application_state = static_cast<void*>(&stepper_state);
-
+      uint64_t loc_arg = 0;
+      (void)loc_arg;
       for (;;)
         {
-          if (sv.rpc_handle(application_state))
+          if (sv.rpc_handle(application_state, &loc_arg))
+
             {
               calls_handled++;
             }
           if (calls_handled >= calls_planned)
             {
+              // printf("server done, handled %lu / %lu\n", calls_handled,
+              // calls_planned);
               return;
             }
         }
     });
-
-    // printf("Threads spawned and running\n");
 
     if (1)
       {
@@ -296,15 +296,21 @@ TEST_CASE("set up single word system")
 
           if (nl != l || nh != h)
             {
-              // printf("%lu launched, %lu handled\n", nl, nh);
+              printf("%lu launched, %lu handled\n", nl, nh);
               l = nl;
               h = nh;
             }
+          else
+            {
+              break;
+            }
 
-          usleep(100000);
+          usleep(10000);
         }
       while ((calls_launched != calls_handled) ||
              (calls_launched != calls_planned));
     }
+
+    printf("Done, now just waiting on threads\n");
   }
 }
