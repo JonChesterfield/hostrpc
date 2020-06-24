@@ -392,6 +392,28 @@ struct executable
     return res;
   }
 
+  uint64_t get_symbol_address_by_name(const char* symbol_name)
+  {
+    hsa_executable_symbol_t symbol = get_symbol_by_name(symbol_name);
+    if (symbol.handle == sentinel())
+      {
+        return 0;
+      }
+
+    hsa_symbol_kind_t kind = hsa::symbol_get_info_type(symbol);
+    if (kind == HSA_SYMBOL_KIND_VARIABLE)
+      {
+        return hsa::symbol_get_info_variable_address(symbol);
+      }
+
+    if (kind == HSA_SYMBOL_KIND_KERNEL)
+      {
+        return hsa::symbol_get_info_kernel_object(symbol);
+      }
+
+    return 0;
+  }
+
  private:
   hsa_status_t init_state()
   {

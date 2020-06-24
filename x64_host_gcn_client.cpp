@@ -112,13 +112,12 @@ static constexpr size_t round(size_t x) { return 64u * ((x + 63u) / 64u); }
 
 using ty = x64_amdgcn_pair<hostrpc::size_runtime>;
 
-  x64_gcn_t::x64_gcn_t(size_t N,
-                       uint64_t hsa_region_t_fine_handle,
-                       uint64_t hsa_region_t_coarse_handle)
+x64_gcn_t::x64_gcn_t(size_t N, uint64_t hsa_region_t_fine_handle,
+                     uint64_t hsa_region_t_coarse_handle)
 {
   // for gfx906, probably want N = 2048
   N = round(N);
-  
+
   state = nullptr;
 #if defined(__x86_64__)
   hostrpc::size_runtime sz(N);

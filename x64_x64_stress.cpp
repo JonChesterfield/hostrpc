@@ -63,7 +63,7 @@ TEST_CASE("x64_x64_stress")
       }
   };
 
-  auto client_worker = [&](unsigned id, unsigned reps) -> unsigned{
+  auto client_worker = [&](unsigned id, unsigned reps) -> unsigned {
     my_id = id;
     page_t scratch;
     page_t expect;
@@ -82,7 +82,8 @@ TEST_CASE("x64_x64_stress")
                 }))
           {
             count++;
-            if (__builtin_memcmp(&scratch, &expect, sizeof(hostrpc::page_t)) != 0)
+            if (__builtin_memcmp(&scratch, &expect, sizeof(hostrpc::page_t)) !=
+                0)
               {
                 failures++;
                 printf("client %u error: ", id);
@@ -92,7 +93,8 @@ TEST_CASE("x64_x64_stress")
           }
       }
 
-    printf("client %u ran %u / %u reps with %u failures\n", id, count, reps, failures);
+    printf("client %u ran %u / %u reps with %u failures\n", id, count, reps,
+           failures);
     return failures;
   };
 

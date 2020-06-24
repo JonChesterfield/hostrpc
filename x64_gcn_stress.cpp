@@ -1,3 +1,5 @@
+#define VISIBLE __attribute__((visibility("default")))
+
 // Kernel entry
 #if defined __OPENCL__
 void __device_start_cast(__global void *asargs);
@@ -11,8 +13,10 @@ kernel void __device_start(__global void *args) { __device_start_cast(args); }
 #include "interface.hpp"
 
 #if defined(__AMDGCN__)
-
 #include <stdint.h>
+#else
+#include <cstdint>
+#endif
 
 struct kernel_args
 {
@@ -20,6 +24,8 @@ struct kernel_args
   uint32_t reps;
   uint32_t result;
 };
+
+#if defined(__AMDGCN__)
 
 // Wire opencl kernel up to c++ implementation
 
@@ -36,6 +42,16 @@ extern "C" void __device_start_cast(
   __device_start_main(args);
 }
 
+// memcmp from musl, with type casts for c++
+static int memcmp(const void *vl, const void *vr, size_t n)
+{
+  const unsigned char *l = static_cast<const unsigned char *>(vl);
+  const unsigned char *r = static_cast<const unsigned char *>(vr);
+  for (; n && *l == *r; n--, l++, r++)
+    ;
+  return n ? *l - *r : 0;
+}
+
 static void init_page(hostrpc::page_t *page, uint64_t v)
 {
   platform::init_inactive_lanes(page, v);
@@ -46,8 +62,9 @@ static void init_page(hostrpc::page_t *page, uint64_t v)
     }
 }
 
-extern hostrpc::x64_gcn_t *hostrpc_pair;
-extern "C" uint32_t gpu_call(uint32_t id, uint32_t reps)
+VISIBLE
+hostrpc::x64_gcn_t::client_t hostrpc_pair_client;
+uint32_t gpu_call(uint32_t id, uint32_t reps)
 {
   // unsigned reps = 1000;
   // unsigned id = 42;
@@ -58,7 +75,7 @@ extern "C" uint32_t gpu_call(uint32_t id, uint32_t reps)
     {
       init_page(&scratch, id);
       init_page(&expect, id + 1);
-      if (hostrpc_pair->client().invoke(
+      if (hostrpc_pair_client.invoke(
               [&](hostrpc::page_t *page) {
                 __builtin_memcpy(page, &scratch, sizeof(hostrpc::page_t));
               },
@@ -66,8 +83,7 @@ extern "C" uint32_t gpu_call(uint32_t id, uint32_t reps)
                 __builtin_memcpy(&scratch, page, sizeof(hostrpc::page_t));
               }))
         {
-          // need to provide an implementation of memcmp
-          if (__builtin_memcmp(&scratch, &expect, sizeof(hostrpc::page_t)) != 0)
+          if (memcmp(&scratch, &expect, sizeof(hostrpc::page_t)) != 0)
             {
               failures++;
             }
@@ -87,7 +103,7 @@ extern "C" uint32_t gpu_call(uint32_t id, uint32_t reps)
 template <typename T>
 struct launch_t
 {
-  launch_t(hsa_queue_t *queue, const char *kernel, T arg)
+  launch_t(hsa_agent_t, hsa_queue_t *, const char *, T)
   {
     ready = false;
     state = nullptr;
@@ -120,25 +136,51 @@ struct launch_t
   T *state;
 };
 template <typename T>
-launch_t<T> launch(hsa_queue_t *queue, const char *kernel, T arg)
+launch_t<T> launch(hsa_agent_t kernel_agent, hsa_queue_t *queue,
+                   const char *kernel, T arg)
 {
-  return {queue, kernel, arg};
+  return {kernel_agent, queue, kernel, arg};
 }
+
+// executable is named x64_gcn_stress.gcn.so
+
+#include "incbin.h"
+
+INCBIN(x64_gcn_stress_so, "x64_gcn_stress.gcn.so");
 
 TEST_CASE("x64_gcn_stress")
 {
   hsa::init hsa;
   {
-    int life = 42;
-    auto v = launch(0, 0, life)();
-
     using namespace hostrpc;
 
     hsa_agent_t kernel_agent = hsa::find_a_gpu_or_exit();
+    auto ex = hsa::executable(kernel_agent, x64_gcn_stress_so_data,
+                              x64_gcn_stress_so_size);
+    CHECK(ex.valid());
 
+    uint64_t entry = ex.get_symbol_address_by_name("__device_start.kd");
+    uint64_t client = ex.get_symbol_address_by_name("hostrpc_pair_client");
+
+    printf("gcn stress: kernel at %lu, client at %lu\n", entry, client);
+
+    int life = 42;
+    auto v = launch(kernel_agent, 0, 0, life);
+    (void)v;
+
+    hsa_region_t kernarg_region = hsa::region_kernarg(kernel_agent);
     hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
     hsa_region_t coarse_grained_region =
         hsa::region_coarse_grained(kernel_agent);
+    {
+      uint64_t fail = reinterpret_cast<uint64_t>(nullptr);
+      if (kernarg_region.handle == fail || fine_grained_region.handle == fail ||
+          coarse_grained_region.handle == fail)
+        {
+          fprintf(stderr, "Failed to find allocation region on kernel agent\n");
+          exit(1);
+        }
+    }
 
     _Atomic bool server_live(true);
     size_t N = 1920;
