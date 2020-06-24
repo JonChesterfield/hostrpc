@@ -137,6 +137,7 @@ struct x64_x64_t
       auto *cv = state.construct<ClientType>(ct);
       assert(cv == state.open<ClientType>());
     }
+
     bool invoke(closure_func_t fill, void *fill_state, closure_func_t use,
                 void *use_state);
     bool invoke_async(closure_func_t fill, void *fill_state, closure_func_t use,
@@ -201,6 +202,8 @@ struct x64_gcn_t
       auto *cv = state.construct<ClientType>(ct);
       assert(cv == state.open<ClientType>());
     }
+
+  public:
     bool invoke(closure_func_t fill, void *fill_state, closure_func_t use,
                 void *use_state);
     bool invoke_async(closure_func_t fill, void *fill_state, closure_func_t use,

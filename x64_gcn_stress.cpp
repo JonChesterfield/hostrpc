@@ -22,17 +22,21 @@ struct kernel_args
 {
   uint32_t id;
   uint32_t reps;
-  uint32_t result;
+  uint64_t result;
 };
 
 #if defined(__AMDGCN__)
 
 // Wire opencl kernel up to c++ implementation
 
-static uint32_t gpu_call(uint32_t id, uint32_t reps);
+VISIBLE
+hostrpc::x64_gcn_t::client_t hostrpc_pair_client[1];
+
+static uint64_t gpu_call(hostrpc::x64_gcn_t::client_t *client, uint32_t id,
+                         uint32_t reps);
 extern "C" void __device_start_main(kernel_args *args)
 {
-  uint32_t r = gpu_call(args->id, args->reps);
+  uint64_t r = gpu_call(hostrpc_pair_client, args->id, args->reps);
   args->result = r;
 }
 extern "C" void __device_start_cast(
@@ -62,27 +66,25 @@ static void init_page(hostrpc::page_t *page, uint64_t v)
     }
 }
 
-VISIBLE
-hostrpc::x64_gcn_t::client_t hostrpc_pair_client;
-uint32_t gpu_call(uint32_t id, uint32_t reps)
+uint64_t gpu_call(hostrpc::x64_gcn_t::client_t *client, uint32_t id,
+                  uint32_t reps)
 {
-  // unsigned reps = 1000;
-  // unsigned id = 42;
   hostrpc::page_t scratch;
   hostrpc::page_t expect;
-  unsigned failures = 42;
-  for (unsigned r = 0; r < reps; r++)
+  uint64_t failures = 0;
+  for (unsigned r = 0; r < reps;)
     {
       init_page(&scratch, id);
       init_page(&expect, id + 1);
-      if (hostrpc_pair_client.invoke(
-              [&](hostrpc::page_t *page) {
-                __builtin_memcpy(page, &scratch, sizeof(hostrpc::page_t));
+      if (client->invoke(
+              [](hostrpc::page_t *page) {
+                //__builtin_memcpy(page, &scratch, sizeof(hostrpc::page_t));
               },
-              [&](hostrpc::page_t *page) {
-                __builtin_memcpy(&scratch, page, sizeof(hostrpc::page_t));
+              [](hostrpc::page_t *page) {
+                //__builtin_memcpy(&scratch, page, sizeof(hostrpc::page_t));
               }))
         {
+          r++;  // Invoke exactly reps times
           if (memcmp(&scratch, &expect, sizeof(hostrpc::page_t)) != 0)
             {
               failures++;
@@ -139,6 +141,27 @@ uint16_t kernel_dispatch_setup()
 template <typename T>
 struct launch_t
 {
+  launch_t(const launch_t &) = delete;
+  launch_t(launch_t &&o)
+      : ready(o.ready),
+        state(o.state),
+        mutable_arg(o.mutable_arg),
+        packet(o.packet)
+  {
+    o.ready = true;
+    o.state = nullptr;
+    o.mutable_arg = nullptr;
+    o.packet = nullptr;
+  }
+
+  launch_t &operator=(const launch_t &) = delete;
+  launch_t &operator=(launch_t &&o) = delete;
+
+  launch_t()
+      : ready(true), state(nullptr), mutable_arg(nullptr), packet(nullptr)
+  {
+  }
+
   launch_t(hsa_agent_t kernel_agent, hsa_queue_t *queue,
            uint64_t kernel_address, T args)
   {
@@ -190,12 +213,12 @@ struct launch_t
         exit(1);
       }
 
-    printf("Pushing packet onto queue\n");
     packet_store_release((uint32_t *)packet,
                          header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
                          kernel_dispatch_setup());
     hsa_signal_store_release(queue->doorbell_signal, packet_id);
 
+    printf("Constructed launch_t instance\n");
     ready = false;
   }
 
@@ -210,6 +233,7 @@ struct launch_t
   {
     if (state)
       {
+        printf("Tear down packet\n");
         wait();
         state->~with_implicit_args<T *>();
         hsa_memory_free(static_cast<void *>(state));
@@ -227,19 +251,20 @@ struct launch_t
         return;
       }
 
+    printf("Waiting for packet\n");
     do
       {
       }
     while (hsa_signal_wait_acquire(packet->completion_signal,
                                    HSA_SIGNAL_CONDITION_EQ, 0, 5000 /*000000*/,
                                    HSA_WAIT_STATE_ACTIVE) != 0);
-    printf("Got completion signal\n");
+    printf("Packet completed\n");
     ready = true;
   }
+
   bool ready;
   with_implicit_args<T *> *state;
   T *mutable_arg;
-
   hsa_kernel_dispatch_packet_t *packet;
 };
 
@@ -249,8 +274,6 @@ launch_t<T> launch(hsa_agent_t kernel_agent, hsa_queue_t *queue,
 {
   return {kernel_agent, queue, kernel_address, arg};
 }
-
-// executable is named x64_gcn_stress.gcn.so
 
 #include "incbin.h"
 
@@ -269,10 +292,11 @@ TEST_CASE("x64_gcn_stress")
 
     uint64_t kernel_address =
         ex.get_symbol_address_by_name("__device_start.kd");
-    uint64_t client = ex.get_symbol_address_by_name("hostrpc_pair_client");
+    uint64_t client_address =
+        ex.get_symbol_address_by_name("hostrpc_pair_client");
 
-    printf("gcn stress: kernel at %lu, client at %lu\n", kernel_address,
-           client);
+    printf("gcn stress: kernel at %lu, client at %lu (%lx)\n", kernel_address,
+           client_address, client_address);
 
     hsa_queue_t *queue;
     {
@@ -311,8 +335,23 @@ TEST_CASE("x64_gcn_stress")
     hostrpc::x64_gcn_t p(N, fine_grained_region.handle,
                          coarse_grained_region.handle);
 
+    hostrpc::x64_gcn_t::client_t *client =
+        reinterpret_cast<hostrpc::x64_gcn_t::client_t *>(client_address);
+    client[0] = p.client();
+    printf("Initialized gpu client state\n");
+
     auto op_func = [](hostrpc::page_t *page) {
       printf("gcn stress hit server function\n");
+      for (unsigned c = 0; c < 3; c++)
+        {
+          hostrpc::cacheline_t &line = page->cacheline[c];
+          printf("got values %lu %lu %lu...\n",
+                 line.element[0],
+                                  line.element[1],
+                 line.element[2]);
+                 
+        }
+      return;
       for (unsigned c = 0; c < 64; c++)
         {
           hostrpc::cacheline_t &line = page->cacheline[c];
@@ -331,6 +370,7 @@ TEST_CASE("x64_gcn_stress")
       unsigned count = 0;
 
       uint64_t server_location = 0;
+      hostrpc::x64_gcn_t::server_t s = p.server();
       for (;;)
         {
           if (!server_live)
@@ -338,17 +378,29 @@ TEST_CASE("x64_gcn_stress")
               printf("server %u did %u tasks\n", id, count);
               break;
             }
-          bool did_work = p.server().handle(op_func, &server_location);
+          bool did_work = s.handle(op_func, &server_location);
           if (did_work)
             {
+              printf("Server did work\n");
               count++;
             }
         }
     };
 
-    unsigned nservers = 8;
+    unsigned nservers = 1;
+    unsigned nclients = 1;
+    printf("x64-gcn spawning %u x64 servers, %u gcn clients\n", nservers,
+           nclients);
 
-    printf("x64-gcn spawning %u x64 servers\n", nservers);
+    std::vector<launch_t<kernel_args> > client_store;
+    for (unsigned i = 0; i < nclients; i++)
+      {
+        kernel_args example = {.id = i, .reps = 2, .result = UINT64_MAX};
+        launch_t<kernel_args> tmp(kernel_agent, queue, kernel_address, example);
+        client_store.emplace_back(std::move(tmp));
+      }
+
+    printf("Spawn server workers\n");
 
     std::vector<std::thread> server_store;
     for (unsigned i = 0; i < nservers; i++)
@@ -356,10 +408,15 @@ TEST_CASE("x64_gcn_stress")
         server_store.emplace_back(std::thread(server_worker, i));
       }
 
+    printf("Servers running\n");
+
     // make sure there's a server running before we wait for the result
-    kernel_args example = {.id = 10, .reps = 2, .result = UINT32_MAX};
-    auto v = launch(kernel_agent, queue, kernel_address, example);
-    printf("v got: %u\n", v().result);
+    for (unsigned i = 0; i < nclients; i++)
+      {
+        kernel_args res = client_store[i]();
+        printf("res = %lu (%lx)\n", res.result, res.result);
+        CHECK(res.result == 0);
+      }
 
     server_live = false;
     for (auto &i : server_store)

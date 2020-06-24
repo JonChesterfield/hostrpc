@@ -135,6 +135,9 @@ $CXX_X64_LD x64_gcn_stress.x64.bc catch.o memory.x64.bc x64_host_gcn_client.x64.
 $CXX_X64_LD tests.x64.bc catch.o x64_host_x64_client.x64.bc memory.x64.bc  $LDFLAGS -o tests.exe
 
 
+time ./x64_gcn_stress.exe
+exit 0
+
 time ./tests.exe
 time ./x64_x64_stress.exe
 
