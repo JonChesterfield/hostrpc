@@ -108,17 +108,20 @@ struct x64_amdgcn_pair
   }
 };
 
-// Probably want this to be runtime here
-static const constexpr size_t x64_host_amdgcn_array_size = 2048;
-using SZ = hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
-using ty = x64_amdgcn_pair<SZ>;
+static constexpr size_t round(size_t x) { return 64u * ((x + 63u) / 64u); }
 
-x64_gcn_t::x64_gcn_t(uint64_t hsa_region_t_fine_handle,
-                     uint64_t hsa_region_t_coarse_handle)
+using ty = x64_amdgcn_pair<hostrpc::size_runtime>;
+
+  x64_gcn_t::x64_gcn_t(size_t N,
+                       uint64_t hsa_region_t_fine_handle,
+                       uint64_t hsa_region_t_coarse_handle)
 {
+  // for gfx906, probably want N = 2048
+  N = round(N);
+  
   state = nullptr;
 #if defined(__x86_64__)
-  SZ sz;
+  hostrpc::size_runtime sz(N);
   ty *s = new (std::nothrow)
       ty(sz, hsa_region_t_fine_handle, hsa_region_t_coarse_handle);
   state = static_cast<void *>(s);

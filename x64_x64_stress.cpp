@@ -26,8 +26,6 @@ TEST_CASE("x64_x64_stress")
   using namespace hostrpc;
   hostrpc::x64_x64_t p(100);
 
-  _Atomic bool server_live(true);
-
   auto op_func = [](hostrpc::page_t *page) {
     for (unsigned c = 0; c < 64; c++)
       {
@@ -43,10 +41,11 @@ TEST_CASE("x64_x64_stress")
       }
   };
 
+  _Atomic bool server_live(true);
+
   auto server_worker = [&](unsigned id) {
     my_id = id;
     unsigned count = 0;
-    unsigned since_work = 0;
 
     uint64_t server_location = 0;
     for (;;)
@@ -61,18 +60,15 @@ TEST_CASE("x64_x64_stress")
           {
             count++;
           }
-        else
-          {
-            since_work++;
-          }
       }
   };
 
-  auto client_worker = [&](unsigned id, unsigned reps) {
+  auto client_worker = [&](unsigned id, unsigned reps) -> unsigned{
     my_id = id;
     page_t scratch;
     page_t expect;
     unsigned count = 0;
+    unsigned failures = 0;
     for (unsigned r = 0; r < reps; r++)
       {
         init_page(&scratch, id);
@@ -86,18 +82,18 @@ TEST_CASE("x64_x64_stress")
                 }))
           {
             count++;
-            if (memcmp(&scratch, &expect, sizeof(page_t)) != 0)
+            if (__builtin_memcmp(&scratch, &expect, sizeof(hostrpc::page_t)) != 0)
               {
+                failures++;
                 printf("client %u error: ", id);
                 printf("%lu vs %lu\n", scratch.cacheline[0].element[0],
                        expect.cacheline[0].element[0]);
-
-                return;
               }
           }
       }
 
-    printf("client %u ran %u / %u reps\n", id, count, reps);
+    printf("client %u ran %u / %u reps with %u failures\n", id, count, reps, failures);
+    return failures;
   };
 
   unsigned nservers = 64;

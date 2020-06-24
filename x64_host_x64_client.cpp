@@ -92,7 +92,7 @@ struct x64_x64_pair
 // TODO: Handle N variable w/out loss efficiency
 using ty = x64_x64_pair<hostrpc::size_runtime>;
 
-constexpr size_t round(size_t x) { return 64u * ((x + 63u) / 64u); }
+static constexpr size_t round(size_t x) { return 64u * ((x + 63u) / 64u); }
 
 static_assert(0 == round(0), "");
 static_assert(64 == round(1), "");

@@ -37,7 +37,8 @@ CXX_GCN="$CLANG -std=c++11 $COMMONFLAGS $GCNFLAGS"
 CXX_X64_LD="$CXX"
 CXX_GCN_LD="$CXX $GCNFLAGS"
 
-CXXCL="$CLANG -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 $AMDGPU"
+CXXCL="$CLANG -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 -emit-llvm -D__OPENCL__ $AMDGPU"
+
 
 # time $CXX -O3 catch.cpp -c -o catch.o
 
@@ -57,7 +58,9 @@ $CXX_X64 -I$HSAINC tests.cpp -c -o tests.x64.bc
 $CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc
 
 $CXX_X64 -I$HSAINC x64_gcn_stress.cpp -c -o x64_gcn_stress.x64.bc
-
+$CXX_GCN x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.code.bc
+$CXXCL x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.kern.bc
+$LINK x64_gcn_stress.gcn.code.bc x64_gcn_stress.gcn.kern.bc -o x64_gcn_stress.gcn.bc
 
 $CXX_GCN x64_host_gcn_client.cpp -c -o x64_host_gcn_client.gcn.bc
 $CXX_X64 -I$HSAINC x64_host_gcn_client.cpp -c -o x64_host_gcn_client.x64.bc
@@ -72,8 +75,8 @@ $CXX_X64 -I$HSAINC hostcall.cpp -c -o hostcall.x64.bc
 
 
 # Build the device code that uses said library
-$CXX_X64 -I$HSAINC amdgcn_main.cpp -emit-llvm -c -o amdgcn_main.x64.bc
-$CXX_GCN amdgcn_main.cpp -emit-llvm -c -o amdgcn_main.gcn.bc
+$CXX_X64 -I$HSAINC amdgcn_main.cpp -c -o amdgcn_main.x64.bc
+$CXX_GCN amdgcn_main.cpp -c -o amdgcn_main.gcn.bc
 
 
 # Build the device loader that assumes the device library is linked into the application
@@ -83,7 +86,7 @@ $CXX_X64 -I$HSAINC amdgcn_loader.cpp -c -o amdgcn_loader.x64.bc
 $CXX_X64_LD $LDFLAGS amdgcn_loader.x64.bc memory.x64.bc hostcall_interface.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o amdgcn_loader.exe
 
 # Build the device library that calls into main()
-$CXXCL loader/amdgcn_loader_entry.cl -emit-llvm -c -o loader/amdgcn_loader_entry.gcn.bc
+$CXXCL loader/amdgcn_loader_entry.cl -c -o loader/amdgcn_loader_entry.gcn.bc
 $CXX_GCN loader/amdgcn_loader_cast.cpp -c -o loader/amdgcn_loader_cast.gcn.bc
 
 $LINK loader/amdgcn_loader_entry.gcn.bc loader/amdgcn_loader_cast.gcn.bc | $OPT -O2 -o amdgcn_loader_device.gcn.bc
@@ -121,7 +124,10 @@ $CXX_X64_LD tests.x64.bc x64_x64_stress.x64.bc states.x64.bc catch.o memory.x64.
 
 $CXX_X64_LD x64_x64_stress.x64.bc catch.o memory.x64.bc x64_host_x64_client.x64.bc $LDFLAGS -o x64_x64_stress.exe
 
+$CXX_X64_LD x64_gcn_stress.x64.bc catch.o memory.x64.bc x64_host_gcn_client.x64.bc $LDFLAGS -o x64_gcn_stress.exe
+
 $CXX_X64_LD tests.x64.bc catch.o x64_host_x64_client.x64.bc memory.x64.bc  $LDFLAGS -o tests.exe
+
 
 time ./tests.exe
 time ./x64_x64_stress.exe
@@ -132,3 +138,4 @@ time ./a.out ; echo $?
 
 # time valgrind --leak-check=full --fair-sched=yes ./states.exe hazard
 
+time ./x64_gcn_stress.exe

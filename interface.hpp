@@ -175,7 +175,8 @@ struct x64_x64_t
 
 struct x64_gcn_t
 {
-  x64_gcn_t(uint64_t hsa_region_t_fine_handle,
+  x64_gcn_t(size_t minimum_number_slots,
+            uint64_t hsa_region_t_fine_handle,
             uint64_t hsa_region_t_coarse_handle);
 
   ~x64_gcn_t();
@@ -188,7 +189,7 @@ struct x64_gcn_t
     friend client_invoke_overloads<client_t>;
     client_t() {}  // would like this to be private
 
-    using state_t = hostrpc::storage<40, 8>;
+    using state_t = hostrpc::storage<48, 8>;
     using client_invoke_overloads::invoke;
     using client_invoke_overloads::invoke_async;
 
@@ -214,7 +215,7 @@ struct x64_gcn_t
     friend server_handle_overloads<server_t>;
     server_t() {}
 
-    using state_t = hostrpc::storage<40, 8>;
+    using state_t = hostrpc::storage<48, 8>;
     using server_handle_overloads::handle;
 
    private:
