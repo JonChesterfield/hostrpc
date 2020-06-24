@@ -70,7 +70,7 @@ uint32_t gpu_call(uint32_t id, uint32_t reps)
   // unsigned id = 42;
   hostrpc::page_t scratch;
   hostrpc::page_t expect;
-  unsigned failures = 0;
+  unsigned failures = 42;
   for (unsigned r = 0; r < reps; r++)
     {
       init_page(&scratch, id);
@@ -101,45 +101,153 @@ uint32_t gpu_call(uint32_t id, uint32_t reps)
 #include <thread>
 
 template <typename T>
+struct with_implicit_args
+{
+  with_implicit_args(T s)
+      : state(s), offset_x{0}, offset_y{0}, offset_z{0}, remainder{0}
+  {
+  }
+  T state;
+  uint64_t offset_x;
+  uint64_t offset_y;
+  uint64_t offset_z;
+  char remainder[80 - 24];
+};
+
+namespace
+{
+void packet_store_release(uint32_t *packet, uint16_t header, uint16_t rest)
+{
+  __atomic_store_n(packet, header | (rest << 16), __ATOMIC_RELEASE);
+}
+
+uint16_t header(hsa_packet_type_t type)
+{
+  uint16_t header = type << HSA_PACKET_HEADER_TYPE;
+  header |= HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_ACQUIRE_FENCE_SCOPE;
+  header |= HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_RELEASE_FENCE_SCOPE;
+  return header;
+}
+
+uint16_t kernel_dispatch_setup()
+{
+  return 1 << HSA_KERNEL_DISPATCH_PACKET_SETUP_DIMENSIONS;
+}
+
+}  // namespace
+
+template <typename T>
 struct launch_t
 {
-  launch_t(hsa_agent_t, hsa_queue_t *, const char *, T)
+  launch_t(hsa_agent_t kernel_agent, hsa_queue_t *queue,
+           uint64_t kernel_address, T args)
   {
-    ready = false;
     state = nullptr;
+
+    hsa_region_t kernarg_region = hsa::region_kernarg(kernel_agent);
+    hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
+    // hsa_region_t coarse_grained_region =
+    // hsa::region_coarse_grained(kernel_agent);
+
+    // Copy args to fine grained memory
+    auto mutable_arg_state = hsa::allocate(fine_grained_region, sizeof(T));
+    if (!mutable_arg_state)
+      {
+        return;
+      }
+
+    T *mutable_arg =
+        new (reinterpret_cast<T *>(mutable_arg_state.get())) T(args);
+
+    // Allocate kernarg memory, including implicit args
+    void *kernarg_state =
+        hsa::allocate(kernarg_region, sizeof(with_implicit_args<T *>))
+            .release();
+    if (!kernarg_state)
+      {
+        return;
+      }
+
+    state = new (reinterpret_cast<with_implicit_args<T *> *>(kernarg_state))
+        with_implicit_args<T *>(mutable_arg);
+
+    mutable_arg_state.release();
+
+    uint64_t packet_id = hsa::acquire_available_packet_id(queue);
+
+    const uint32_t mask = queue->size - 1;
+    packet = (hsa_kernel_dispatch_packet_t *)queue->base_address +
+             (packet_id & mask);
+
+    hsa::initialize_packet_defaults(packet);
+
+    packet->kernel_object = kernel_address;
+    memcpy(&packet->kernarg_address, &state, 8);
+
+    auto rc = hsa_signal_create(1, 0, NULL, &packet->completion_signal);
+    if (rc != HSA_STATUS_SUCCESS)
+      {
+        exit(1);
+      }
+
+    printf("Pushing packet onto queue\n");
+    packet_store_release((uint32_t *)packet,
+                         header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
+                         kernel_dispatch_setup());
+    hsa_signal_store_release(queue->doorbell_signal, packet_id);
+
+    ready = false;
   }
 
   T operator()()
   {
     assert(state);
     wait();
-    return *state;
+    return *(state->state);
   }
+
   ~launch_t()
   {
     if (state)
       {
         wait();
-        state->~T();
-        // free
+        state->~with_implicit_args<T *>();
+        hsa_memory_free(static_cast<void *>(state));
+        hsa_memory_free(static_cast<void *>(mutable_arg));
+        hsa_signal_destroy(packet->completion_signal);
+        state = nullptr;
       }
   }
 
  private:
   void wait()
   {
-    while (!ready)
+    if (ready)
+      {
+        return;
+      }
+
+    do
       {
       }
+    while (hsa_signal_wait_acquire(packet->completion_signal,
+                                   HSA_SIGNAL_CONDITION_EQ, 0, 5000 /*000000*/,
+                                   HSA_WAIT_STATE_ACTIVE) != 0);
+    printf("Got completion signal\n");
+    ready = true;
   }
   bool ready;
-  T *state;
+  with_implicit_args<T *> *state;
+  T *mutable_arg;
+
+  hsa_kernel_dispatch_packet_t *packet;
 };
+
 template <typename T>
 launch_t<T> launch(hsa_agent_t kernel_agent, hsa_queue_t *queue,
-                   const char *kernel, T arg)
+                   uint64_t kernel_address, T arg)
 {
-  return {kernel_agent, queue, kernel, arg};
+  return {kernel_agent, queue, kernel_address, arg};
 }
 
 // executable is named x64_gcn_stress.gcn.so
@@ -159,14 +267,30 @@ TEST_CASE("x64_gcn_stress")
                               x64_gcn_stress_so_size);
     CHECK(ex.valid());
 
-    uint64_t entry = ex.get_symbol_address_by_name("__device_start.kd");
+    uint64_t kernel_address =
+        ex.get_symbol_address_by_name("__device_start.kd");
     uint64_t client = ex.get_symbol_address_by_name("hostrpc_pair_client");
 
-    printf("gcn stress: kernel at %lu, client at %lu\n", entry, client);
+    printf("gcn stress: kernel at %lu, client at %lu\n", kernel_address,
+           client);
 
-    int life = 42;
-    auto v = launch(kernel_agent, 0, 0, life);
-    (void)v;
+    hsa_queue_t *queue;
+    {
+      hsa_status_t rc = hsa_queue_create(
+          kernel_agent /* make the queue on this agent */,
+          131072 /* todo: size it, this hardcodes max size for vega20 */,
+          HSA_QUEUE_TYPE_SINGLE /* baseline */,
+          NULL /* called on every async event? */,
+          NULL /* data passed to previous */,
+          // If sizes exceed these values, things are supposed to work slowly
+          UINT32_MAX /* private_segment_size, 32_MAX is unknown */,
+          UINT32_MAX /* group segment size, as above */, &queue);
+      if (rc != HSA_STATUS_SUCCESS)
+        {
+          fprintf(stderr, "Failed to create queue\n");
+          exit(1);
+        }
+    }
 
     hsa_region_t kernarg_region = hsa::region_kernarg(kernel_agent);
     hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
@@ -188,6 +312,7 @@ TEST_CASE("x64_gcn_stress")
                          coarse_grained_region.handle);
 
     auto op_func = [](hostrpc::page_t *page) {
+      printf("gcn stress hit server function\n");
       for (unsigned c = 0; c < 64; c++)
         {
           hostrpc::cacheline_t &line = page->cacheline[c];
@@ -230,6 +355,11 @@ TEST_CASE("x64_gcn_stress")
       {
         server_store.emplace_back(std::thread(server_worker, i));
       }
+
+    // make sure there's a server running before we wait for the result
+    kernel_args example = {.id = 10, .reps = 2, .result = UINT32_MAX};
+    auto v = launch(kernel_agent, queue, kernel_address, example);
+    printf("v got: %u\n", v().result);
 
     server_live = false;
     for (auto &i : server_store)

@@ -510,6 +510,38 @@ inline hsa_agent_t find_a_gpu_or_exit()
   return kernel_agent;
 }
 
+inline uint64_t acquire_available_packet_id(hsa_queue_t* queue)
+{
+  uint64_t packet_id = hsa_queue_add_write_index_relaxed(queue, 1);
+  bool full = true;
+  while (full)
+    {
+      full =
+          packet_id >= (queue->size + hsa_queue_load_read_index_acquire(queue));
+    }
+  return packet_id;
+}
+
+inline void initialize_packet_defaults(hsa_kernel_dispatch_packet_t* packet)
+{
+  // Reserved fields, private and group memory, and completion signal are all
+  // set to 0.
+  memset(((uint8_t*)packet) + 4, 0, sizeof(hsa_kernel_dispatch_packet_t) - 4);
+  // These values should probably be read from the kernel
+  // Currently they're copied from documentation
+  // Launching a single wavefront makes for easier debugging
+  packet->workgroup_size_x = 64;
+  packet->workgroup_size_y = 1;
+  packet->workgroup_size_z = 1;
+  packet->grid_size_x = 64;
+  packet->grid_size_y = 1;
+  packet->grid_size_z = 1;
+
+  // These definitely get overwritten by the caller
+  packet->kernel_object = 0;  //  KERNEL_OBJECT;
+  packet->kernarg_address = NULL;
+}
+
 // Maps a queue to an integer in [0, 1023] which survives CWSR, so can be used
 // to index into device local structures. Inspired by the rocr.
 inline uint16_t queue_to_index(hsa_queue_t* q)

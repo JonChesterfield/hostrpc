@@ -46,26 +46,6 @@ uint64_t find_entry_address(hsa::executable &ex)
   return hsa::symbol_get_info_kernel_object(symbol);
 }
 
-void initialize_packet_defaults(hsa_kernel_dispatch_packet_t *packet)
-{
-  // Reserved fields, private and group memory, and completion signal are all
-  // set to 0.
-  memset(((uint8_t *)packet) + 4, 0, sizeof(hsa_kernel_dispatch_packet_t) - 4);
-  // These values should probably be read from the kernel
-  // Currently they're copied from documentation
-  // Launching a single wavefront makes for easier debugging
-  packet->workgroup_size_x = 64;
-  packet->workgroup_size_y = 1;
-  packet->workgroup_size_z = 1;
-  packet->grid_size_x = 64;
-  packet->grid_size_y = 1;
-  packet->grid_size_z = 1;
-
-  // These definitely get overwritten by the caller
-  packet->kernel_object = 0;  //  KERNEL_OBJECT;
-  packet->kernarg_address = NULL;
-}
-
 void packet_store_release(uint32_t *packet, uint16_t header, uint16_t rest)
 {
   __atomic_store_n(packet, header | (rest << 16), __ATOMIC_RELEASE);
@@ -276,19 +256,13 @@ static int main_with_hsa(int argc, char **argv)
     }
 
   // Claim a packet
-  uint64_t packet_id = hsa_queue_add_write_index_relaxed(queue, 1);
-  bool full = true;
-  while (full)
-    {
-      full =
-          packet_id >= (queue->size + hsa_queue_load_read_index_acquire(queue));
-    }
+  uint64_t packet_id = hsa::acquire_available_packet_id(queue);
 
   const uint32_t mask = queue->size - 1;  // %
   hsa_kernel_dispatch_packet_t *packet =
       (hsa_kernel_dispatch_packet_t *)queue->base_address + (packet_id & mask);
 
-  initialize_packet_defaults(packet);
+  hsa::initialize_packet_defaults(packet);
 
   uint64_t kernel_address = find_entry_address(ex);
   packet->kernel_object = kernel_address;
