@@ -7,12 +7,60 @@
 #include "hsa.h"
 #endif
 
+#if defined(__AMDGCN__)
+static void copy_page(hostrpc::page_t *dst, hostrpc::page_t *src)
+{
+  if (true)
+    {
+      __builtin_memcpy(dst, src, sizeof(hostrpc::page_t));
+    }
+  else
+    {
+      for (unsigned i = 0; i < 64; i++)
+        {
+          for (unsigned e = 0; e < 8; e++)
+            {
+              dst->cacheline[i].element[e] = src->cacheline[i].element[e];
+            }
+        }
+    }
+}
+#endif
+
+struct fill
+{
+  static void call(hostrpc::page_t *page, void *dv)
+  {
+#if defined(__AMDGCN__)
+    hostrpc::page_t *d = static_cast<hostrpc::page_t *>(dv);
+    copy_page(page, d);
+#else
+    (void)page;
+    (void)dv;
+#endif
+  };
+};
+
+struct use
+{
+  static void call(hostrpc::page_t *page, void *dv)
+  {
+#if defined(__AMDGCN__)
+    hostrpc::page_t *d = static_cast<hostrpc::page_t *>(dv);
+    copy_page(d, page);
+#else
+    (void)page;
+    (void)dv;
+#endif
+  };
+};
+
 namespace hostrpc
 {
 template <typename SZ>
 using x64_gcn_client =
-    hostrpc::client_indirect_impl<SZ, hostrpc::copy_functor_given_alias,
-                                  hostrpc::nop_stepper>;
+    hostrpc::client_impl<SZ, hostrpc::copy_functor_given_alias, fill, use,
+                         hostrpc::nop_stepper>;
 
 template <typename SZ>
 using x64_gcn_server =
@@ -160,17 +208,16 @@ x64_gcn_t::server_t x64_gcn_t::server()
   return {st};
 }
 
-bool x64_gcn_t::client_t::invoke(hostrpc::closure_func_t fill, void *fill_state,
-                                 hostrpc::closure_func_t use, void *use_state)
+bool x64_gcn_t::client_t::invoke(hostrpc::page_t *page)
 {
-  return invoke<ty::client_type>(fill, fill_state, use, use_state);
+  void *vp = static_cast<void *>(page);
+  return state.open<ty::client_type>()->rpc_invoke<true>(vp, vp);
 }
 
-bool x64_gcn_t::client_t::invoke_async(hostrpc::closure_func_t fill,
-                                       void *fill_state, closure_func_t use,
-                                       void *use_state)
+bool x64_gcn_t::client_t::invoke_async(hostrpc::page_t *page)
 {
-  return invoke_async<ty::client_type>(fill, fill_state, use, use_state);
+  void *vp = static_cast<void *>(page);
+  return state.open<ty::client_type>()->rpc_invoke<false>(vp, vp);
 }
 
 bool x64_gcn_t::server_t::handle(hostrpc::closure_func_t func,

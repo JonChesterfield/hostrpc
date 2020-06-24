@@ -183,15 +183,17 @@ struct x64_gcn_t
   x64_gcn_t(const x64_gcn_t &) = delete;
   bool valid();  // true if construction succeeded
 
-  struct client_t : public client_invoke_overloads<client_t>
+  struct client_t
   {
     friend struct x64_gcn_t;
-    friend client_invoke_overloads<client_t>;
     client_t() {}  // would like this to be private
 
     using state_t = hostrpc::storage<48, 8>;
-    using client_invoke_overloads::invoke;
-    using client_invoke_overloads::invoke_async;
+
+    // Lost the friendly interface in favour of hard coding memcpy
+    // as part of debugging nullptr deref, hope to reinstate.
+    bool invoke(hostrpc::page_t *);
+    bool invoke_async(hostrpc::page_t *);
 
    private:
     template <typename ClientType>
@@ -203,11 +205,7 @@ struct x64_gcn_t
       assert(cv == state.open<ClientType>());
     }
 
-  public:
-    bool invoke(closure_func_t fill, void *fill_state, closure_func_t use,
-                void *use_state);
-    bool invoke_async(closure_func_t fill, void *fill_state, closure_func_t use,
-                      void *use_state);
+   public:
     state_t state;
   };
 

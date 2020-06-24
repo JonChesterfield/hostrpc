@@ -58,11 +58,26 @@ static int memcmp(const void *vl, const void *vr, size_t n)
 
 static void init_page(hostrpc::page_t *page, uint64_t v)
 {
-  platform::init_inactive_lanes(page, v);
-  hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
-  for (unsigned e = 0; e < 8; e++)
+  // threaded == true doesn't work here, need to debug why not
+  bool threaded = false;
+  if (!threaded)
     {
-      line->element[e] = v;
+      for (unsigned i = 0; i < 64; i++)
+        {
+          for (unsigned e = 0; e < 8; e++)
+            {
+              page->cacheline[i].element[e] = v;
+            }
+        }
+    }
+  else
+    {
+      platform::init_inactive_lanes(page, v);
+      hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
+      for (unsigned e = 0; e < 8; e++)
+        {
+          line->element[e] = v;
+        }
     }
 }
 
@@ -76,13 +91,7 @@ uint64_t gpu_call(hostrpc::x64_gcn_t::client_t *client, uint32_t id,
     {
       init_page(&scratch, id);
       init_page(&expect, id + 1);
-      if (client->invoke(
-              [](hostrpc::page_t *page) {
-                //__builtin_memcpy(page, &scratch, sizeof(hostrpc::page_t));
-              },
-              [](hostrpc::page_t *page) {
-                //__builtin_memcpy(&scratch, page, sizeof(hostrpc::page_t));
-              }))
+      if (client->invoke(&scratch))
         {
           r++;  // Invoke exactly reps times
           if (memcmp(&scratch, &expect, sizeof(hostrpc::page_t)) != 0)
@@ -218,7 +227,6 @@ struct launch_t
                          kernel_dispatch_setup());
     hsa_signal_store_release(queue->doorbell_signal, packet_id);
 
-    printf("Constructed launch_t instance\n");
     ready = false;
   }
 
@@ -233,7 +241,6 @@ struct launch_t
   {
     if (state)
       {
-        printf("Tear down packet\n");
         wait();
         state->~with_implicit_args<T *>();
         hsa_memory_free(static_cast<void *>(state));
@@ -251,14 +258,12 @@ struct launch_t
         return;
       }
 
-    printf("Waiting for packet\n");
     do
       {
       }
     while (hsa_signal_wait_acquire(packet->completion_signal,
                                    HSA_SIGNAL_CONDITION_EQ, 0, 5000 /*000000*/,
                                    HSA_WAIT_STATE_ACTIVE) != 0);
-    printf("Packet completed\n");
     ready = true;
   }
 
@@ -294,9 +299,6 @@ TEST_CASE("x64_gcn_stress")
         ex.get_symbol_address_by_name("__device_start.kd");
     uint64_t client_address =
         ex.get_symbol_address_by_name("hostrpc_pair_client");
-
-    printf("gcn stress: kernel at %lu, client at %lu (%lx)\n", kernel_address,
-           client_address, client_address);
 
     hsa_queue_t *queue;
     {
@@ -341,24 +343,22 @@ TEST_CASE("x64_gcn_stress")
     printf("Initialized gpu client state\n");
 
     auto op_func = [](hostrpc::page_t *page) {
-      printf("gcn stress hit server function\n");
-      for (unsigned c = 0; c < 3; c++)
-        {
-          hostrpc::cacheline_t &line = page->cacheline[c];
-          printf("got values %lu %lu %lu...\n",
-                 line.element[0],
-                                  line.element[1],
-                 line.element[2]);
-                 
-        }
-      return;
+#if 0
+                     printf("gcn stress hit server function\n");
+      printf("first values %lu/%lu/%lu\n",
+             page->cacheline[0].element[0],
+             page->cacheline[0].element[1],
+             page->cacheline[1].element[0]);
+#endif
       for (unsigned c = 0; c < 64; c++)
         {
           hostrpc::cacheline_t &line = page->cacheline[c];
+#if 0
           std::swap(line.element[0], line.element[7]);
           std::swap(line.element[1], line.element[6]);
           std::swap(line.element[2], line.element[5]);
           std::swap(line.element[3], line.element[4]);
+#endif
           for (unsigned i = 0; i < 8; i++)
             {
               line.element[i]++;
@@ -381,21 +381,20 @@ TEST_CASE("x64_gcn_stress")
           bool did_work = s.handle(op_func, &server_location);
           if (did_work)
             {
-              printf("Server did work\n");
               count++;
             }
         }
     };
 
-    unsigned nservers = 1;
-    unsigned nclients = 1;
+    unsigned nservers = 4;
+    unsigned nclients = 1024;
     printf("x64-gcn spawning %u x64 servers, %u gcn clients\n", nservers,
            nclients);
 
     std::vector<launch_t<kernel_args> > client_store;
     for (unsigned i = 0; i < nclients; i++)
       {
-        kernel_args example = {.id = i, .reps = 2, .result = UINT64_MAX};
+        kernel_args example = {.id = i, .reps = 4, .result = UINT64_MAX};
         launch_t<kernel_args> tmp(kernel_agent, queue, kernel_address, example);
         client_store.emplace_back(std::move(tmp));
       }
@@ -414,7 +413,6 @@ TEST_CASE("x64_gcn_stress")
     for (unsigned i = 0; i < nclients; i++)
       {
         kernel_args res = client_store[i]();
-        printf("res = %lu (%lx)\n", res.result, res.result);
         CHECK(res.result == 0);
       }
 
