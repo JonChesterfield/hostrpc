@@ -352,12 +352,6 @@ struct fill
 {
   static void call(hostrpc::page_t* page, void* pv)
   {
-    hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
-    for (unsigned e = 0; e < 8; e++)
-    {
-      line->element[e] = 42;
-    }
-    return;
     hostrpc::closure_pair* p = static_cast<hostrpc::closure_pair*>(pv);
     p->func(page, p->state);
   };
@@ -367,7 +361,6 @@ struct use
 {
   static void call(hostrpc::page_t* page, void* pv)
   {
-    return;
     hostrpc::closure_pair* p = static_cast<hostrpc::closure_pair*>(pv);
     p->func(page, p->state);
   };

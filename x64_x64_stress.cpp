@@ -30,12 +30,12 @@ TEST_CASE("x64_x64_stress")
     for (unsigned c = 0; c < 64; c++)
       {
         hostrpc::cacheline_t &line = page->cacheline[c];
-        #if 0
+#if 0
         std::swap(line.element[0], line.element[7]);
         std::swap(line.element[1], line.element[6]);
         std::swap(line.element[2], line.element[5]);
         std::swap(line.element[3], line.element[4]);
-        #endif
+#endif
         for (unsigned i = 0; i < 8; i++)
           {
             line.element[i]++;
