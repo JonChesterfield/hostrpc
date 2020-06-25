@@ -62,14 +62,12 @@ $CXX_GCN x64_host_gcn_client.cpp -c -o x64_host_gcn_client.gcn.bc
 $CXX_X64 -I$HSAINC x64_host_gcn_client.cpp -c -o x64_host_gcn_client.x64.bc
 
 
-$CXX_X64 -I$HSAINC x64_gcn_stress.cpp -c -o x64_gcn_stress.x64.bc
 $CXX_GCN x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.code.bc
 $CXXCL x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.kern.bc
 $LINK x64_gcn_stress.gcn.code.bc x64_gcn_stress.gcn.kern.bc -o x64_gcn_stress.gcn.bc
-
-
 $CXX_GCN_LD x64_gcn_stress.gcn.bc x64_host_gcn_client.gcn.bc -o x64_gcn_stress.gcn.so
 
+$CXX_X64 -I$HSAINC x64_gcn_stress.cpp -c -o x64_gcn_stress.x64.bc
 
 # $CXX $NVPTXFLAGS client.cpp -c -o client.ptx.bc
 
