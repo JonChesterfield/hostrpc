@@ -121,17 +121,25 @@ struct cache
 
   bool is(uint8_t s)
   {
+#ifndef NDEBUG
     assert(s < 8);
     bool r = s == concat();
     if (!r) dump();
     return r;
+#else
+    return true;
+#endif
   }
 
   void init(uint64_t s)
   {
+#ifndef NDEBUG
     slot = s;
     word = index_to_element(s);
     subindex = index_to_subindex(s);
+#else
+    (void)s;
+#endif
   }
 
   uint64_t i = 0;

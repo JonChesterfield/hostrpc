@@ -208,16 +208,28 @@ x64_gcn_t::server_t x64_gcn_t::server()
   return {st};
 }
 
-bool x64_gcn_t::client_t::invoke(hostrpc::page_t *page)
+// The boolean is uniform, but seem to be seeing some control flow problems
+// in the caller. Forcing to a scalar with broadcast_master is ineffective.
+// Simplifying by doing the loop-until-available here
+void x64_gcn_t::client_t::invoke(hostrpc::page_t *page)
 {
   void *vp = static_cast<void *>(page);
-  return state.open<ty::client_type>()->rpc_invoke<true>(vp, vp);
+
+  bool r = false;
+  do {
+   r = state.open<ty::client_type>()->rpc_invoke<true>(vp, vp);
+  } while (r == false);
 }
 
-bool x64_gcn_t::client_t::invoke_async(hostrpc::page_t *page)
+void x64_gcn_t::client_t::invoke_async(hostrpc::page_t *page)
 {
   void *vp = static_cast<void *>(page);
-  return state.open<ty::client_type>()->rpc_invoke<false>(vp, vp);
+
+  bool r = false;
+  do {
+   r = state.open<ty::client_type>()->rpc_invoke<false>(vp, vp);
+  } while (r == false);
+  
 }
 
 bool x64_gcn_t::server_t::handle(hostrpc::closure_func_t func,

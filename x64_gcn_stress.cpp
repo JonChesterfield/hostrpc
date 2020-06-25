@@ -73,7 +73,7 @@ static void init_page(hostrpc::page_t *page, uint64_t v)
     }
   else
     {
-      platform::init_inactive_lanes(page, v);
+      // platform::init_inactive_lanes(page, v);
       hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
       for (unsigned e = 0; e < 8; e++)
         {
@@ -82,24 +82,45 @@ static void init_page(hostrpc::page_t *page, uint64_t v)
     }
 }
 
+static bool equal_page(hostrpc::page_t *lhs, hostrpc::page_t *rhs)
+{
+  bool eq = true;
+  for (unsigned i = 0; i < 64; i++)
+    {
+      for (unsigned e = 0; e < 8; e++)
+        {
+          eq &= (lhs->cacheline[i].element[e] == rhs->cacheline[i].element[e]);
+        }
+    }
+  return eq;
+}
+
 uint64_t gpu_call(hostrpc::x64_gcn_t::client_t *client, uint32_t id,
                   uint32_t reps)
 {
+  (void)memcmp;
+  (void)equal_page;
   hostrpc::page_t scratch;
   hostrpc::page_t expect;
   uint64_t failures = 0;
-  for (unsigned r = 0; r < reps;)
+  for (unsigned r = 0; r < reps; r++)
     {
-      init_page(&scratch, id);
-      init_page(&expect, id + 1);
-      if (client->invoke(&scratch))
+      init_page(&scratch, id + r);
+      init_page(&expect, id + r + 1);
+      client->invoke(&scratch);
+      // Seeing various problems if this memcmp is skipped
+      // Infinite loops, invalid memory access
+#if 0
+      if (!equal_page(&scratch, &expect))
         {
-          r++;  // Invoke exactly reps times
-          if (memcmp(&scratch, &expect, sizeof(hostrpc::page_t)) != 0)
-            {
-              failures++;
-            }
+          failures++;
         }
+#else
+      if (memcmp(&scratch, &expect, sizeof(hostrpc::page_t)) != 0)
+        {
+          failures++;
+        }
+#endif
     }
 
   return failures;
@@ -345,7 +366,7 @@ TEST_CASE("x64_gcn_stress")
 
     auto op_func = [](hostrpc::page_t *page) {
 #if 0
-                     printf("gcn stress hit server function\n");
+      printf("gcn stress hit server function\n");
       printf("first values %lu/%lu/%lu\n",
              page->cacheline[0].element[0],
              page->cacheline[0].element[1],
@@ -391,7 +412,7 @@ TEST_CASE("x64_gcn_stress")
     unsigned nclients = 1;
     unsigned per_client = 4096;
 
-    unsigned derive = 9;
+    unsigned derive = 4;
     for (unsigned i = 0; i < derive; i++)
       {
         nclients *= 2;

@@ -192,8 +192,8 @@ struct x64_gcn_t
 
     // Lost the friendly interface in favour of hard coding memcpy
     // as part of debugging nullptr deref, hope to reinstate.
-    bool invoke(hostrpc::page_t *);
-    bool invoke_async(hostrpc::page_t *);
+    void invoke(hostrpc::page_t *);
+    void invoke_async(hostrpc::page_t *);
 
    private:
     template <typename ClientType>
