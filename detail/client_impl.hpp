@@ -309,8 +309,23 @@ struct client_impl : public SZ
     // tries each word in sequnce. A cas failing suggests contention, in which
     // case try the next word instead of the next slot
     // may be worth supporting non-zero starting word for cache locality effects
+
+    // the array is somewhat contended - attempt to spread out the load by
+    // starting clients off at different points in the array. Doesn't make an
+    // observable difference in the current benchmark.
+#define CLIENT_OFFSET 0
+
+#if CLIENT_OFFSET
+    const uint32_t wstart = platform::client_start_slot();
+    const uint32_t wend = wstart + words;
+    for (uint64_t wi = wstart; wi != wend; wi++)
+      {
+        uint64_t w =
+            wi % words;  // modulo may hurt here, and probably want 32 bit iv
+#else
     for (uint64_t w = 0; w < words; w++)
       {
+#endif
         uint64_t active_word;
         slot = find_candidate_client_slot(w);
         if (slot != SIZE_MAX)

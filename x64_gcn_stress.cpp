@@ -391,7 +391,7 @@ TEST_CASE("x64_gcn_stress")
     unsigned nclients = 1;
     unsigned per_client = 4096;
 
-    unsigned derive = 12;
+    unsigned derive = 9;
     for (unsigned i = 0; i < derive; i++)
       {
         nclients *= 2;

@@ -40,6 +40,7 @@ inline uint32_t get_lane_id(void) { return 0; }
 inline uint32_t broadcast_master(uint32_t x) { return x; }
 inline uint64_t broadcast_master(uint64_t x) { return x; }
 inline void init_inactive_lanes(hostrpc::page_t *, uint64_t) {}
+inline uint32_t client_start_slot() { return 0; }
 }  // namespace platform
 #endif
 
@@ -183,6 +184,30 @@ inline void init_inactive_lanes(hostrpc::page_t *page, uint64_t v)
       : [ loclo ] "s"(loclo), [ lochi ] "s"(lochi), [ vallo ] "s"(scalar_lo),
         [ valhi ] "s"(scalar_hi)
       : "v2", "v3", "v4", "v5", "v6", "v7", "vcc", "memory");
+}
+
+inline uint32_t client_start_slot()
+{
+  // Ideally would return something < size
+  // Attempt to distibute clients roughly across the array
+  // compute unit currently executing the wave is a version of that
+  enum
+  {
+    HW_ID = 4,  // specify that the hardware register to read is HW_ID
+
+    HW_ID_CU_ID_SIZE = 4,    // size of CU_ID field in bits
+    HW_ID_CU_ID_OFFSET = 8,  // offset of CU_ID from start of register
+
+    HW_ID_SE_ID_SIZE = 2,     // sizeof SE_ID field in bits
+    HW_ID_SE_ID_OFFSET = 13,  // offset of SE_ID from start of register
+  };
+#define ENCODE_HWREG(WIDTH, OFF, REG) (REG | (OFF << 6) | ((WIDTH - 1) << 11))
+  uint32_t cu_id = __builtin_amdgcn_s_getreg(
+      ENCODE_HWREG(HW_ID_CU_ID_SIZE, HW_ID_CU_ID_OFFSET, HW_ID));
+  uint32_t se_id = __builtin_amdgcn_s_getreg(
+      ENCODE_HWREG(HW_ID_SE_ID_SIZE, HW_ID_SE_ID_OFFSET, HW_ID));
+  return (se_id << HW_ID_CU_ID_SIZE) + cu_id;
+#undef ENCODE_HWREG
 }
 
 }  // namespace platform
