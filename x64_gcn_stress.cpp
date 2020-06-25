@@ -11,6 +11,7 @@ kernel void __device_start(__global void *args) { __device_start_cast(args); }
 #include "base_types.hpp"
 #include "detail/platform.hpp"
 #include "interface.hpp"
+#include "timer.hpp"
 
 #if defined(__AMDGCN__)
 #include <stdint.h>
@@ -387,35 +388,68 @@ TEST_CASE("x64_gcn_stress")
     };
 
     unsigned nservers = 4;
-    unsigned nclients = 1024;
+    unsigned nclients = 1;
+    unsigned per_client = 4096;
+
+    unsigned derive = 12;
+    for (unsigned i = 0; i < derive; i++)
+      {
+        nclients *= 2;
+        per_client /= 2;
+      }
+
+    // Looks like contention.
+    // derive clock clients per-client
+    //  0     4111     1    4096
+    //  1     4148     2    2048
+    //  2     4189     4    1024
+    //  3     4211     8     512
+    //  4     4293    16     256
+    //  5     4462    32     128
+    //  6     4810    64      64
+    //  7     5492   128      32
+    //  8     6889   256      16
+    //  9     9702   512       8
+    // 10    15174  1024       4
+    // 11    26427  2048       2
+    // 12    47647  4098       1
+
     printf("x64-gcn spawning %u x64 servers, %u gcn clients\n", nservers,
            nclients);
 
     std::vector<launch_t<kernel_args> > client_store;
-    for (unsigned i = 0; i < nclients; i++)
-      {
-        kernel_args example = {.id = i, .reps = 4, .result = UINT64_MAX};
-        launch_t<kernel_args> tmp(kernel_agent, queue, kernel_address, example);
-        client_store.emplace_back(std::move(tmp));
-      }
-
+    {
+      timer t("Launching clients");
+      for (unsigned i = 0; i < nclients; i++)
+        {
+          kernel_args example = {
+              .id = i, .reps = per_client, .result = UINT64_MAX};
+          launch_t<kernel_args> tmp(kernel_agent, queue, kernel_address,
+                                    example);
+          client_store.emplace_back(std::move(tmp));
+        }
+    }
     printf("Spawn server workers\n");
 
     std::vector<std::thread> server_store;
-    for (unsigned i = 0; i < nservers; i++)
-      {
-        server_store.emplace_back(std::thread(server_worker, i));
-      }
-
+    {
+      timer t("Launching servers");
+      for (unsigned i = 0; i < nservers; i++)
+        {
+          server_store.emplace_back(std::thread(server_worker, i));
+        }
+    }
     printf("Servers running\n");
 
     // make sure there's a server running before we wait for the result
-    for (unsigned i = 0; i < nclients; i++)
-      {
-        kernel_args res = client_store[i]();
-        CHECK(res.result == 0);
-      }
-
+    {
+      timer t("Collect results");
+      for (unsigned i = 0; i < nclients; i++)
+        {
+          kernel_args res = client_store[i]();
+          CHECK(res.result == 0);
+        }
+    }
     server_live = false;
     for (auto &i : server_store)
       {
