@@ -29,14 +29,15 @@ void operate(hostrpc::page_t *page)
       handlePayload(static_cast<uint32_t>(service_id), payload);
     }
 }
-void clear(hostrpc::page_t *page) {
+void clear(hostrpc::page_t *page)
+{
   for (unsigned c = 0; c < 64; c++)
     {
       hostrpc::cacheline_t &line = page->cacheline[c];
       for (unsigned i = 0; i < 8; i++)
         {
           line.element[i] = HOSTRPC_SERVICE_NO_OPERATION;
-       }      
+        }
     }
 }
 #endif
@@ -59,14 +60,10 @@ void use_result(hostrpc::page_t *page, uint64_t d[8])
     }
 }
 
-typedef struct hostrpc_result_s {
-  uint64_t arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7;
-} hostrpc_result_t;
-
-extern "C" hostrpc_result_t
-__attribute__((used)) hostrpc_invoke
-    (uint32_t service_id, uint64_t arg0, uint64_t arg1, uint64_t arg2,
-     uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6, uint64_t arg7)
+extern "C" hostrpc_result_t __attribute__((used))
+hostrpc_invoke(uint32_t service_id, uint64_t arg0, uint64_t arg1, uint64_t arg2,
+               uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6,
+               uint64_t arg7)
 {
   // changes the control flow in hsa/impl
   __asm__(

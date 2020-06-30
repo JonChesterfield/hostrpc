@@ -126,6 +126,12 @@ struct x64_amdgcn_pair
 
     hostrpc::page_t *server_buffer = client_buffer;
 
+    // Put the buffer in a known-good state to begin with
+    for (size_t i = 0; i < N; i++)
+      {
+        x64_host_amdgcn_client::clear::call(&client_buffer[i], nullptr);
+      }
+
     auto *send_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
     auto *recv_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
     auto *client_active_data = hsa_allocate_slot_bitmap_data_alloc(coarse, N);

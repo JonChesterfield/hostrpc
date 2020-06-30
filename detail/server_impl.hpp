@@ -160,7 +160,7 @@ struct server_impl : public SZ
         Copy::push_from_server_to_client((void*)&remote_buffer[slot],
                                          (void*)&local_buffer[slot],
                                          sizeof(page_t));
-        
+
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
         uint64_t updated_out = platform::critical<uint64_t>([&]() {
           return outbox.release_slot_returning_updated_word(size, slot);
