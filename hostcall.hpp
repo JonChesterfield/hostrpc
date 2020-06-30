@@ -44,6 +44,7 @@ namespace hostcall_ops
 {
 #if defined(__x86_64__)
 void operate(hostrpc::page_t *page);
+void clear(hostrpc::page_t *page);
 #endif
 #if defined __AMDGCN__
 void pass_arguments(hostrpc::page_t *page, uint64_t data[8]);

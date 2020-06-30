@@ -177,6 +177,11 @@ TEST_CASE("set up single word system")
     }
   };
 
+  struct clear
+  {
+    static void call(page_t*, void*) {}
+  };
+
   struct use
   {
     static void call(page_t* p, void*) { (void)p; }
@@ -242,8 +247,8 @@ TEST_CASE("set up single word system")
       auto stepper_state =
           hostrpc::default_stepper_state(&server_steps, show_step);
 
-      using server_type =
-          server_impl<SZ, decltype(cp), operate, hostrpc::default_stepper>;
+      using server_type = server_impl<SZ, decltype(cp), operate, clear,
+                                      hostrpc::default_stepper>;
 
       server_type sv = {SZ{},
                         send,

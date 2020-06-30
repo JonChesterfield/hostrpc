@@ -57,6 +57,18 @@ struct operate
 #endif
   }
 };
+
+struct clear
+{
+  static void call(hostrpc::page_t *page, void *)
+  {
+#if defined(__x86_64__)
+    hostcall_ops::clear(page);
+#else
+    (void)page;
+#endif
+  }
+};
 }  // namespace x64_host_amdgcn_client
 
 template <typename SZ>
@@ -68,7 +80,8 @@ using x64_amdgcn_client =
 template <typename SZ>
 using x64_amdgcn_server =
     hostrpc::server_impl<SZ, hostrpc::copy_functor_given_alias,
-                         x64_host_amdgcn_client::operate, hostrpc::nop_stepper>;
+                         x64_host_amdgcn_client::operate,
+                         x64_host_amdgcn_client::clear, hostrpc::nop_stepper>;
 
 #if defined(__x86_64__)
 namespace

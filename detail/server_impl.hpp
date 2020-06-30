@@ -9,6 +9,10 @@ struct operate_nop
 {
   static void call(page_t*, void*) {}
 };
+struct clear_nop
+{
+  static void call(page_t*, void*) {}
+};
 
 enum class server_state : uint8_t
 {
@@ -23,7 +27,8 @@ enum class server_state : uint8_t
   result_with_thread = 0b111,
 };
 
-template <typename SZ, typename Copy, typename Op, typename Step>
+template <typename SZ, typename Copy, typename Op, typename Clear,
+          typename Step>
 struct server_impl : public SZ
 {
   using inbox_t = slot_bitmap_all_svm;
@@ -146,13 +151,13 @@ struct server_impl : public SZ
         assert((o & this_slot) != 0);
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
 
-        if (platform::is_master_lane())
-          {
-            uint64_t updated_out =
-                outbox.release_slot_returning_updated_word(size, slot);
-            assert((updated_out & this_slot) == 0);
-            (void)updated_out;
-          }
+        uint64_t updated_out = platform::critical<uint64_t>([&]() {
+          return outbox.release_slot_returning_updated_word(size, slot);
+        });
+
+        assert((updated_out & this_slot) == 0);
+        (void)updated_out;
+
         assert(lock_held());
         return false;
       }
@@ -173,10 +178,8 @@ struct server_impl : public SZ
                                      (void*)&remote_buffer[slot],
                                      sizeof(page_t));
     step(__LINE__, application_state);
-
     Op::call(&local_buffer[slot], application_state);
     step(__LINE__, application_state);
-
     Copy::push_from_server_to_client((void*)&remote_buffer[slot],
                                      (void*)&local_buffer[slot],
                                      sizeof(page_t));
@@ -254,13 +257,11 @@ struct server_impl : public SZ
 
                 step(__LINE__, application_state);
 
-                if (platform::is_master_lane())
-                  {
-                    uint64_t a =
-                        active.release_slot_returning_updated_word(size, slot);
-                    assert(!detail::nthbitset64(a, index_to_subindex(slot)));
-                    (void)a;
-                  }
+                uint64_t a = platform::critical<uint64_t>([&]() {
+                  return active.release_slot_returning_updated_word(size, slot);
+                });
+                assert(!detail::nthbitset64(a, index_to_subindex(slot)));
+                (void)a;
 
                 return r;
               }
@@ -294,10 +295,19 @@ struct operate
     p->func(page, p->state);
   }
 };
+struct clear
+{
+  static void call(hostrpc::page_t* page, void* pv)
+  {
+    hostrpc::closure_pair* p = static_cast<hostrpc::closure_pair*>(pv);
+    p->func(page, p->state);
+  }
+};
 }  // namespace indirect
 
 template <typename SZ, typename Copy, typename Step>
-using server_indirect_impl = server_impl<SZ, Copy, indirect::operate, Step>;
+using server_indirect_impl =
+    server_impl<SZ, Copy, indirect::operate, indirect::clear, Step>;
 
 }  // namespace hostrpc
 #endif

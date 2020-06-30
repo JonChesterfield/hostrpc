@@ -23,7 +23,7 @@ struct timer
         auto duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(td - tc)
                 .count();
-        std::cout << n << ": " <<  duration << "ms\n";
+        std::cout << n << ": " << duration << "ms\n";
       }
     catch (...)
       {

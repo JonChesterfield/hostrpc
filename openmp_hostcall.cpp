@@ -29,6 +29,8 @@ void operate(hostrpc::page_t *page)
       handlePayload(static_cast<uint32_t>(service_id), payload);
     }
 }
+void clear(hostrpc::page_t *page) { (void)page; }
+
 #endif
 
 #if defined __AMDGCN__

@@ -112,6 +112,8 @@ struct x64_amdgcn_pair
 
     auto *send_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
     auto *recv_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
+    // allocating in coarse is probably not sufficient, likely to need to mark
+    // the pointer with an address space
     auto *client_active_data = hsa_allocate_slot_bitmap_data_alloc(coarse, N);
     auto *server_active_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
 
@@ -216,9 +218,11 @@ void x64_gcn_t::client_t::invoke(hostrpc::page_t *page)
   void *vp = static_cast<void *>(page);
 
   bool r = false;
-  do {
-   r = state.open<ty::client_type>()->rpc_invoke<true>(vp, vp);
-  } while (r == false);
+  do
+    {
+      r = state.open<ty::client_type>()->rpc_invoke<true>(vp, vp);
+    }
+  while (r == false);
 }
 
 void x64_gcn_t::client_t::invoke_async(hostrpc::page_t *page)
@@ -226,10 +230,11 @@ void x64_gcn_t::client_t::invoke_async(hostrpc::page_t *page)
   void *vp = static_cast<void *>(page);
 
   bool r = false;
-  do {
-   r = state.open<ty::client_type>()->rpc_invoke<false>(vp, vp);
-  } while (r == false);
-  
+  do
+    {
+      r = state.open<ty::client_type>()->rpc_invoke<false>(vp, vp);
+    }
+  while (r == false);
 }
 
 bool x64_gcn_t::server_t::handle(hostrpc::closure_func_t func,

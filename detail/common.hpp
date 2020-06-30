@@ -730,7 +730,17 @@ struct copy_functor_given_alias
 {
   friend struct copy_functor_interface<copy_functor_given_alias>;
 
+  static void push_from_client_to_server_impl(void *dst, const void *src,
+                                              size_t)
+  {
+    assert(src == dst);
+  }
   static void pull_to_client_from_server_impl(void *dst, const void *src,
+                                              size_t)
+  {
+    assert(src == dst);
+  }
+  static void push_from_server_to_client_impl(void *dst, const void *src,
                                               size_t)
   {
     assert(src == dst);
