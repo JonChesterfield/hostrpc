@@ -29,15 +29,21 @@ void operate(hostrpc::page_t *page)
       handlePayload(static_cast<uint32_t>(service_id), payload);
     }
 }
-void clear(hostrpc::page_t *page) { (void)page; }
-
+void clear(hostrpc::page_t *page) {
+  for (unsigned c = 0; c < 64; c++)
+    {
+      hostrpc::cacheline_t &line = page->cacheline[c];
+      for (unsigned i = 0; i < 8; i++)
+        {
+          line.element[i] = HOSTCALL_SERVICE_NO_OPERATION;
+       }      
+    }
+}
 #endif
 
 #if defined __AMDGCN__
 void pass_arguments(hostrpc::page_t *page, uint64_t d[8])
 {
-  platform::init_inactive_lanes(page, HOSTCALL_SERVICE_NO_OPERATION);
-
   hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
   for (unsigned i = 0; i < 8; i++)
     {
@@ -65,8 +71,6 @@ typedef struct
   uint64_t arg7;
 } __ockl_hostcall_result_t;
 
-extern "C" uint64_t __amdgcn_set_inactive_u64(uint64_t, uint64_t);
-
 extern "C" __ockl_hostcall_result_t
 #if 0
 old_hostcall_invoke
@@ -85,24 +89,8 @@ old_hostcall_invoke
 
   uint64_t buf[8] = {service_id, arg0, arg1, arg2, arg3, arg4, arg5, arg6};
 
-#if 0
-  uint64_t activemask = ((uint64_t)tmp1 << 32u) | tmp0;
-
-  uint32_t id = platform::get_lane_id();
-  uint64_t b0 = hostrpc::detail::nthbitset64(activemask, id)
-                    ? service_id
-                    : HOSTCALL_SERVICE_NO_OPERATION;
-  buf[0] = b0;
-#endif
-
   hostcall_client(buf);
-#if 0
-  asm volatile(
-      "s_mov_b32 exec_lo, %[tmp0]\n\t"
-      "s_mov_b32 exec_hi, %[tmp1]\n\t" ::[tmp0] "r"(tmp0),
-      [ tmp1 ] "r"(tmp1)
-      : "memory");
-#endif
+
   return {buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], UINT64_MAX};
 }
 
