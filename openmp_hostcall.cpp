@@ -1,4 +1,4 @@
-#include "../../../src/hostrpc_service_id.h"
+#include "../../../hostrpc/src/hostrpc.h"
 #include "detail/common.hpp"
 #include "detail/platform.hpp"
 #include "hostcall.hpp"
@@ -35,7 +35,7 @@ void clear(hostrpc::page_t *page) {
       hostrpc::cacheline_t &line = page->cacheline[c];
       for (unsigned i = 0; i < 8; i++)
         {
-          line.element[i] = HOSTCALL_SERVICE_NO_OPERATION;
+          line.element[i] = HOSTRPC_SERVICE_NO_OPERATION;
        }      
     }
 }
@@ -59,27 +59,16 @@ void use_result(hostrpc::page_t *page, uint64_t d[8])
     }
 }
 
-typedef struct
-{
-  uint64_t arg0;
-  uint64_t arg1;
-  uint64_t arg2;
-  uint64_t arg3;
-  uint64_t arg4;
-  uint64_t arg5;
-  uint64_t arg6;
-  uint64_t arg7;
-} __ockl_hostcall_result_t;
+typedef struct hostrpc_result_s {
+  uint64_t arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7;
+} hostrpc_result_t;
 
-extern "C" __ockl_hostcall_result_t
-#if 0
-old_hostcall_invoke
-#else
-    __attribute__((used)) hostcall_invoke
-#endif
+extern "C" hostrpc_result_t
+__attribute__((used)) hostrpc_invoke
     (uint32_t service_id, uint64_t arg0, uint64_t arg1, uint64_t arg2,
      uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6, uint64_t arg7)
 {
+  // changes the control flow in hsa/impl
   __asm__(
       "; hostcall_invoke: record need for hostcall support\n\t"
       ".type needs_hostcall_buffer,@object\n\t"
