@@ -196,7 +196,10 @@ struct launch_t
   launch_t(hsa_agent_t kernel_agent, hsa_queue_t *queue,
            uint64_t kernel_address, T args)
   {
+    ready = false;
     state = nullptr;
+    mutable_arg = nullptr;
+    packet = nullptr;
 
     hsa_region_t kernarg_region = hsa::region_kernarg(kernel_agent);
     hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
@@ -207,6 +210,7 @@ struct launch_t
     auto mutable_arg_state = hsa::allocate(fine_grained_region, sizeof(T));
     if (!mutable_arg_state)
       {
+        printf("Warning: allocate failed: %d\n",__LINE__);
         return;
       }
 
@@ -219,6 +223,7 @@ struct launch_t
             .release();
     if (!kernarg_state)
       {
+        printf("Warning: allocate failed: %d\n",__LINE__);
         return;
       }
 
