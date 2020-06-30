@@ -24,6 +24,9 @@ void operate(hostrpc::page_t *page)
         }
     }
 }
+
+void clear(hostrpc::page_t *) { printf("Called clear\n"); }
+
 #endif
 
 #if defined __AMDGCN__

@@ -149,8 +149,19 @@ struct server_impl : public SZ
     if (garbage_todo)
       {
         assert((o & this_slot) != 0);
-        __c11_atomic_thread_fence(__ATOMIC_RELEASE);
 
+        // Move data and clear. TODO: Elide the copy for nop clear
+        Copy::pull_to_server_from_client((void*)&local_buffer[slot],
+                                         (void*)&remote_buffer[slot],
+                                         sizeof(page_t));
+        step(__LINE__, application_state);
+        Clear::call(&local_buffer[slot], application_state);
+        step(__LINE__, application_state);
+        Copy::push_from_server_to_client((void*)&remote_buffer[slot],
+                                         (void*)&local_buffer[slot],
+                                         sizeof(page_t));
+        
+        __c11_atomic_thread_fence(__ATOMIC_RELEASE);
         uint64_t updated_out = platform::critical<uint64_t>([&]() {
           return outbox.release_slot_returning_updated_word(size, slot);
         });
