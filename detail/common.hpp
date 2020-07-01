@@ -160,36 +160,48 @@ struct cache
   }
 };
 
-template <size_t scope, typename Ty>
+namespace properties
+{
+// atomic operations on fine grained memory are limited to those that the
+// pci-e bus supports. There is no cache involved to mask this - fetch_and on
+// the gpu will silently do the wrong thing if the pci-e bus doesn't support
+// it. That means using cas (or swap, or faa) to communicate or buffering. The
+// fetch_and works fine on coarse grained memory, but multiple waves will
+// clobber each other, leaving the flag flickering from the other device
+// perspective. Can downgrade to swap fairly easily, which will be roughly as
+// expensive as a load & store.
+
+template <bool HasFetchOpArg>
+struct base
+{
+  static constexpr bool hasFetchOp() { return HasFetchOpArg; }
+};
+
+struct fine_grain : public base<false>
+{
+};
+}  // namespace properties
+
+template <size_t scope, typename Prop>
 struct slot_bitmap;
 
 using slot_bitmap_all_svm =
-    slot_bitmap<__OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, _Atomic uint64_t *>;
+    slot_bitmap<__OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, properties::fine_grain>;
 
-// This seems sensible, but isn't showing up at runtime yet
-#if 0
-#if defined(__AMDGCN__)
 using slot_bitmap_device =
-    slot_bitmap<__OPENCL_MEMORY_SCOPE_DEVICE,
-                _Atomic uint64_t __attribute__((address_space(1))) *>;
-#else
-using slot_bitmap_device = slot_bitmap<__OPENCL_MEMORY_SCOPE_DEVICE, _Atomic uint64_t *>;
-#endif
-#else
-using slot_bitmap_device =
-    slot_bitmap<__OPENCL_MEMORY_SCOPE_DEVICE, _Atomic uint64_t *>;
-#endif
+    slot_bitmap<__OPENCL_MEMORY_SCOPE_DEVICE, properties::fine_grain>;
 
-template <size_t scope, typename Ty>
+template <size_t scope, typename Prop>
 struct slot_bitmap
 {
+  using Ty = _Atomic uint64_t *;  // Will want an address space for some bitmaps
   static_assert(sizeof(uint64_t) == sizeof(_Atomic uint64_t), "");
   static_assert(sizeof(_Atomic uint64_t *) == 8, "");
 
   bool valid(uint64_t N)
   {
     // Notably, default constructed instance isn't valid
-    static_assert(sizeof(slot_bitmap<scope, Ty>) == 8, "");
+    static_assert(sizeof(slot_bitmap<scope, Prop>) == 8, "");
     return (a != nullptr) && (N != 0) && (N != SIZE_MAX) && (N % 64 == 0);
   }
   Ty a;
@@ -205,23 +217,9 @@ struct slot_bitmap
       }
   }
 
-  slot_bitmap(size_t size, void *d) : a(static_cast<Ty>(d))
-  {
-    // this is intended for converting back from a cast bitmap, but it's
-    // error prone given then size/uint64_t* constructor that zero initializes
-    assert(valid(size));
-  }
-
   Ty data() { return a; }
 
   ~slot_bitmap() {}
-
-  bool operator()(size_t size, size_t i) const
-  {
-    size_t w = index_to_element(i);
-    uint64_t d = load_word(size, w);
-    return detail::nthbitset64(d, index_to_subindex(i));
-  }
 
   bool operator()(size_t size, size_t i, uint64_t *loaded) const
   {
@@ -297,12 +295,6 @@ struct slot_bitmap
 #endif
   }
 
-  bool cas(uint64_t element, uint64_t expect, uint64_t replace)
-  {
-    uint64_t loaded;
-    return cas(element, expect, replace, &loaded);
-  }
-
   bool cas(uint64_t element, uint64_t expect, uint64_t replace,
            uint64_t *loaded)
   {
@@ -327,72 +319,64 @@ struct slot_bitmap
   // returns value from before the and/or
   // these are used on memory visible fromi all svm devices
 
-  // atomic operations on fine grained memory are limited to those that the
-  // pci-e bus supports. There is no cache involved to mask this - fetch_and on
-  // the gpu will silently do the wrong thing if the pci-e bus doesn't support
-  // it. That means using cas (or swap, or faa) to communicate or buffering. The
-  // fetch_and works fine on coarse grained memory, but multiple waves will
-  // clobber each other, leaving the flag flickering from the other device
-  // perspective. Can downgrade to swap fairly easily, which will be roughly as
-  // expensive as a load & store.
-
-#ifndef USE_FETCH_OP
-#define USE_FETCH_OP 0
-#endif
-
   __attribute__((used)) uint64_t fetch_and(uint64_t element, uint64_t mask)
   {
     Ty addr = &a[element];
 
-#if USE_FETCH_OP
-    // This seems to work on amdgcn, but only with acquire. acq/rel fails
-    return __opencl_atomic_fetch_and(addr, mask,
-                                     __ATOMIC_ACQUIRE,  // __ATOMIC_ACQ_REL,
-                                     __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-#else
-    uint64_t current = __opencl_atomic_load(
-        addr, __ATOMIC_RELAXED, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-    while (1)
+    if (Prop::hasFetchOp())
       {
-        uint64_t replace = current & mask;
-
-        bool r = __opencl_atomic_compare_exchange_weak(
-            addr, &current, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED,
-            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-
-        if (r)
+        // This seems to work on amdgcn, but only with acquire. acq/rel fails
+        return __opencl_atomic_fetch_and(addr, mask,
+                                         __ATOMIC_ACQUIRE,  // __ATOMIC_ACQ_REL,
+                                         __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+      }
+    else
+      {
+        uint64_t current = __opencl_atomic_load(
+            addr, __ATOMIC_RELAXED, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+        while (1)
           {
-            return current;
+            uint64_t replace = current & mask;
+
+            bool r = __opencl_atomic_compare_exchange_weak(
+                addr, &current, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED,
+                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+
+            if (r)
+              {
+                return current;
+              }
           }
       }
-
-#endif
   }
 
   __attribute__((used)) uint64_t fetch_or(uint64_t element, uint64_t mask)
   {
     Ty addr = &a[element];
 
-#if USE_FETCH_OP
-    // the host never sees the value set here
-    return __opencl_atomic_fetch_or(addr, mask, __ATOMIC_ACQ_REL,
-                                    __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-#else
-    uint64_t current = __opencl_atomic_load(
-        addr, __ATOMIC_RELAXED, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-    while (1)
+    if (Prop::hasFetchOp())
       {
-        uint64_t replace = current | mask;
-
-        bool r = __opencl_atomic_compare_exchange_weak(
-            addr, &current, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED,
-            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-        if (r)
+        // the host never sees the value set here
+        return __opencl_atomic_fetch_or(addr, mask, __ATOMIC_ACQ_REL,
+                                        __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+      }
+    else
+      {
+        uint64_t current = __opencl_atomic_load(
+            addr, __ATOMIC_RELAXED, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+        while (1)
           {
-            return current;
+            uint64_t replace = current | mask;
+
+            bool r = __opencl_atomic_compare_exchange_weak(
+                addr, &current, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED,
+                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+            if (r)
+              {
+                return current;
+              }
           }
       }
-#endif
   }
 
  private:
@@ -429,9 +413,9 @@ struct slot_bitmap
 };
 
 // on return true, loaded contains active[w]
-template <size_t scope, typename Ty>
-bool slot_bitmap<scope, Ty>::try_claim_empty_slot(size_t size, size_t i,
-                                                  uint64_t *loaded)
+template <size_t scope, typename Prop>
+bool slot_bitmap<scope, Prop>::try_claim_empty_slot(size_t size, size_t i,
+                                                    uint64_t *loaded)
 {
   assert(i < size);
   size_t w = index_to_element(i);
