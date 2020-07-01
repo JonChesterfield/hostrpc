@@ -13,7 +13,7 @@ kernel void __device_start(__global void *args) { __device_start_cast(args); }
 #include "interface.hpp"
 #include "timer.hpp"
 
-#define MAXCLIENT 1024 // lazy memory management, could malloc it
+#define MAXCLIENT 1024  // lazy memory management, could malloc it
 
 #if defined(__AMDGCN__)
 #include <stdint.h>
@@ -50,8 +50,8 @@ extern "C" void __device_start_cast(
 }
 
 // memcmp from musl, with type casts for c++
-__attribute__((used))
-static int memcmp(const void *vl, const void *vr, size_t n)
+__attribute__((used)) static int memcmp(const void *vl, const void *vr,
+                                        size_t n)
 {
   const unsigned char *l = static_cast<const unsigned char *>(vl);
   const unsigned char *r = static_cast<const unsigned char *>(vr);
@@ -60,8 +60,7 @@ static int memcmp(const void *vl, const void *vr, size_t n)
   return n ? *l - *r : 0;
 }
 
-__attribute__((used))
-static void init_page(hostrpc::page_t *page, uint64_t v)
+__attribute__((used)) static void init_page(hostrpc::page_t *page, uint64_t v)
 {
   // threaded == true doesn't work here, need to debug why not
   bool threaded = false;
@@ -86,8 +85,8 @@ static void init_page(hostrpc::page_t *page, uint64_t v)
     }
 }
 
-__attribute__((used))
-static bool equal_page(hostrpc::page_t *lhs, hostrpc::page_t *rhs)
+__attribute__((used)) static bool equal_page(hostrpc::page_t *lhs,
+                                             hostrpc::page_t *rhs)
 {
   bool eq = true;
   for (unsigned i = 0; i < 64; i++)
@@ -108,10 +107,10 @@ uint64_t gpu_call(hostrpc::x64_gcn_t::client_t *client, uint32_t id,
 {
   (void)memcmp;
   (void)equal_page;
-  // I think this tries to allocate 8k per thread, so 512k. That might be too much
-  // hostrpc::page_t scratch;
-  hostrpc::page_t * scratch = &scratch_store[id];
-  hostrpc::page_t * expect = &expect_store[id];
+  // I think this tries to allocate 8k per thread, so 512k. That might be too
+  // much hostrpc::page_t scratch;
+  hostrpc::page_t *scratch = &scratch_store[id];
+  hostrpc::page_t *expect = &expect_store[id];
   uint64_t failures = 0;
   for (unsigned r = 0; r < reps; r++)
     {
@@ -221,7 +220,7 @@ struct launch_t
     auto mutable_arg_state = hsa::allocate(fine_grained_region, sizeof(T));
     if (!mutable_arg_state)
       {
-        printf("Warning: allocate failed: %d\n",__LINE__);
+        printf("Warning: allocate failed: %d\n", __LINE__);
         return;
       }
 
@@ -234,7 +233,7 @@ struct launch_t
             .release();
     if (!kernarg_state)
       {
-        printf("Warning: allocate failed: %d\n",__LINE__);
+        printf("Warning: allocate failed: %d\n", __LINE__);
         return;
       }
 
@@ -436,7 +435,7 @@ TEST_CASE("x64_gcn_stress")
       }
 
     assert(nclients <= MAXCLIENT);
-    
+
     // Looks like contention.
     // derive clock clients per-client
     //  0     4111     1    4096

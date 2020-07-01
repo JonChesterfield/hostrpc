@@ -160,14 +160,27 @@ struct cache
   }
 };
 
-template <size_t scope>
+template <size_t scope, typename Ty>
 struct slot_bitmap;
 
-using slot_bitmap_all_svm = slot_bitmap<__OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>;
+using slot_bitmap_all_svm =
+    slot_bitmap<__OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, _Atomic uint64_t *>;
 
-using slot_bitmap_device = slot_bitmap<__OPENCL_MEMORY_SCOPE_DEVICE>;
+// This seems sensible, but isn't showing up at runtime yet
+#if 0
+#if defined(__AMDGCN__)
+using slot_bitmap_device =
+    slot_bitmap<__OPENCL_MEMORY_SCOPE_DEVICE,
+                _Atomic uint64_t __attribute__((address_space(1))) *>;
+#else
+using slot_bitmap_device = slot_bitmap<__OPENCL_MEMORY_SCOPE_DEVICE, _Atomic uint64_t *>;
+#endif
+#else
+using slot_bitmap_device =
+    slot_bitmap<__OPENCL_MEMORY_SCOPE_DEVICE, _Atomic uint64_t *>;
+#endif
 
-template <size_t scope>
+template <size_t scope, typename Ty>
 struct slot_bitmap
 {
   static_assert(sizeof(uint64_t) == sizeof(_Atomic uint64_t), "");
@@ -176,14 +189,14 @@ struct slot_bitmap
   bool valid(uint64_t N)
   {
     // Notably, default constructed instance isn't valid
-    static_assert(sizeof(slot_bitmap<scope>) == 8, "");
+    static_assert(sizeof(slot_bitmap<scope, Ty>) == 8, "");
     return (a != nullptr) && (N != 0) && (N != SIZE_MAX) && (N % 64 == 0);
   }
-  _Atomic uint64_t *a;
+  Ty a;
 
   slot_bitmap() : a(nullptr) {}
 
-  slot_bitmap(size_t size, _Atomic uint64_t *d) : a(d)
+  slot_bitmap(size_t size, Ty d) : a(d)
   {
     assert(valid(size));
     for (size_t i = 0; i < size / 64; i++)
@@ -192,14 +205,14 @@ struct slot_bitmap
       }
   }
 
-  slot_bitmap(size_t size, void *d) : a(static_cast<_Atomic uint64_t *>(d))
+  slot_bitmap(size_t size, void *d) : a(static_cast<Ty>(d))
   {
     // this is intended for converting back from a cast bitmap, but it's
     // error prone given then size/uint64_t* constructor that zero initializes
     assert(valid(size));
   }
 
-  _Atomic uint64_t *data() { return a; }
+  Ty data() { return a; }
 
   ~slot_bitmap() {}
 
@@ -293,7 +306,7 @@ struct slot_bitmap
   bool cas(uint64_t element, uint64_t expect, uint64_t replace,
            uint64_t *loaded)
   {
-    _Atomic uint64_t *addr = &a[element];
+    Ty addr = &a[element];
 
     // cas is not used across devices by this library
     bool r = __opencl_atomic_compare_exchange_weak(
@@ -329,7 +342,7 @@ struct slot_bitmap
 
   __attribute__((used)) uint64_t fetch_and(uint64_t element, uint64_t mask)
   {
-    _Atomic uint64_t *addr = &a[element];
+    Ty addr = &a[element];
 
 #if USE_FETCH_OP
     // This seems to work on amdgcn, but only with acquire. acq/rel fails
@@ -358,7 +371,7 @@ struct slot_bitmap
 
   __attribute__((used)) uint64_t fetch_or(uint64_t element, uint64_t mask)
   {
-    _Atomic uint64_t *addr = &a[element];
+    Ty addr = &a[element];
 
 #if USE_FETCH_OP
     // the host never sees the value set here
@@ -416,9 +429,9 @@ struct slot_bitmap
 };
 
 // on return true, loaded contains active[w]
-template <size_t scope>
-bool slot_bitmap<scope>::try_claim_empty_slot(size_t size, size_t i,
-                                              uint64_t *loaded)
+template <size_t scope, typename Ty>
+bool slot_bitmap<scope, Ty>::try_claim_empty_slot(size_t size, size_t i,
+                                                  uint64_t *loaded)
 {
   assert(i < size);
   size_t w = index_to_element(i);
