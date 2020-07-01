@@ -252,23 +252,36 @@ struct slot_bitmap
   bool try_claim_empty_slot(size_t size, size_t i, uint64_t *);
 
   // assumes slot available
-  void claim_slot(size_t size, size_t i)
-  {
-    set_slot_given_already_clear(size, i);
-  }
   uint64_t claim_slot_returning_updated_word(size_t size, size_t i)
   {
-    return set_slot_given_already_clear(size, i);
+    assert(i < size);
+    size_t w = index_to_element(i);
+    uint64_t subindex = index_to_subindex(i);
+    assert(!detail::nthbitset64(load_word(size, w), subindex));
+
+    // or with only the slot set
+    uint64_t mask = detail::setnthbit64(0, subindex);
+
+    uint64_t before = fetch_or(w, mask);
+    assert(!detail::nthbitset64(before, subindex));
+    return before | mask;
   }
 
   // assumes slot taken
-  void release_slot(size_t size, size_t i)
-  {
-    clear_slot_given_already_set(size, i);
-  }
   uint64_t release_slot_returning_updated_word(size_t size, size_t i)
   {
-    return clear_slot_given_already_set(size, i);
+    assert(i < size);
+    size_t w = index_to_element(i);
+    uint64_t subindex = index_to_subindex(i);
+    assert(detail::nthbitset64(load_word(size, w), subindex));
+
+    // and with everything other than the slot set
+    uint64_t mask = ~detail::setnthbit64(0, subindex);
+
+    uint64_t before = fetch_and(w, mask);
+    // assert(detail::nthbitset64(before, subindex)); // this is firing on the
+    // gpu
+    return before & mask;
   }
 
   uint64_t load_word(size_t size, size_t i) const
@@ -377,38 +390,6 @@ struct slot_bitmap
               }
           }
       }
-  }
-
- private:
-  uint64_t clear_slot_given_already_set(size_t size, size_t i)
-  {
-    assert(i < size);
-    size_t w = index_to_element(i);
-    uint64_t subindex = index_to_subindex(i);
-    assert(detail::nthbitset64(load_word(size, w), subindex));
-
-    // and with everything other than the slot set
-    uint64_t mask = ~detail::setnthbit64(0, subindex);
-
-    uint64_t before = fetch_and(w, mask);
-    // assert(detail::nthbitset64(before, subindex)); // this is firing on the
-    // gpu
-    return before & mask;
-  }
-
-  uint64_t set_slot_given_already_clear(size_t size, size_t i)
-  {
-    assert(i < size);
-    size_t w = index_to_element(i);
-    uint64_t subindex = index_to_subindex(i);
-    assert(!detail::nthbitset64(load_word(size, w), subindex));
-
-    // or with only the slot set
-    uint64_t mask = detail::setnthbit64(0, subindex);
-
-    uint64_t before = fetch_or(w, mask);
-    assert(!detail::nthbitset64(before, subindex));
-    return before | mask;
   }
 };
 
