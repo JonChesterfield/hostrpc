@@ -13,6 +13,8 @@ kernel void __device_start(__global void *args) { __device_start_cast(args); }
 #include "interface.hpp"
 #include "timer.hpp"
 
+#define MAXCLIENT 1024 // lazy memory management, could malloc it
+
 #if defined(__AMDGCN__)
 #include <stdint.h>
 #else
@@ -48,6 +50,7 @@ extern "C" void __device_start_cast(
 }
 
 // memcmp from musl, with type casts for c++
+__attribute__((used))
 static int memcmp(const void *vl, const void *vr, size_t n)
 {
   const unsigned char *l = static_cast<const unsigned char *>(vl);
@@ -57,6 +60,7 @@ static int memcmp(const void *vl, const void *vr, size_t n)
   return n ? *l - *r : 0;
 }
 
+__attribute__((used))
 static void init_page(hostrpc::page_t *page, uint64_t v)
 {
   // threaded == true doesn't work here, need to debug why not
@@ -82,6 +86,7 @@ static void init_page(hostrpc::page_t *page, uint64_t v)
     }
 }
 
+__attribute__((used))
 static bool equal_page(hostrpc::page_t *lhs, hostrpc::page_t *rhs)
 {
   bool eq = true;
@@ -95,28 +100,34 @@ static bool equal_page(hostrpc::page_t *lhs, hostrpc::page_t *rhs)
   return eq;
 }
 
+hostrpc::page_t scratch_store[MAXCLIENT];
+hostrpc::page_t expect_store[MAXCLIENT];
+
 uint64_t gpu_call(hostrpc::x64_gcn_t::client_t *client, uint32_t id,
                   uint32_t reps)
 {
   (void)memcmp;
   (void)equal_page;
-  hostrpc::page_t scratch;
-  hostrpc::page_t expect;
+  // I think this tries to allocate 8k per thread, so 512k. That might be too much
+  // hostrpc::page_t scratch;
+  hostrpc::page_t * scratch = &scratch_store[id];
+  hostrpc::page_t * expect = &expect_store[id];
   uint64_t failures = 0;
   for (unsigned r = 0; r < reps; r++)
     {
-      init_page(&scratch, id + r);
-      init_page(&expect, id + r + 1);
-      client->invoke(&scratch);
+      init_page(scratch, id + r);
+      init_page(expect, id + r + 1);
+      client->invoke(scratch);
       // Seeing various problems if this memcmp is skipped
       // Infinite loops, invalid memory access
-#if 0
-      if (!equal_page(&scratch, &expect))
+
+#if 1
+      if (!equal_page(scratch, expect))
         {
           failures++;
         }
 #else
-      if (memcmp(&scratch, &expect, sizeof(hostrpc::page_t)) != 0)
+      if (memcmp(scratch, expect, sizeof(hostrpc::page_t)) != 0)
         {
           failures++;
         }
@@ -424,6 +435,8 @@ TEST_CASE("x64_gcn_stress")
         per_client /= 2;
       }
 
+    assert(nclients <= MAXCLIENT);
+    
     // Looks like contention.
     // derive clock clients per-client
     //  0     4111     1    4096
