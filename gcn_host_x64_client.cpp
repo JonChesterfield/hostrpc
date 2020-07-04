@@ -6,25 +6,9 @@
 
 #if defined(__x86_64__)
 #include "hsa.h"
-#endif
-
-#if defined(__AMDGCN__)
 static void copy_page(hostrpc::page_t *dst, hostrpc::page_t *src)
 {
-  if (true)
-    {
-      __builtin_memcpy(dst, src, sizeof(hostrpc::page_t));
-    }
-  else
-    {
-      for (unsigned i = 0; i < 64; i++)
-        {
-          for (unsigned e = 0; e < 8; e++)
-            {
-              dst->cacheline[i].element[e] = src->cacheline[i].element[e];
-            }
-        }
-    }
+  __builtin_memcpy(dst, src, sizeof(hostrpc::page_t));
 }
 #endif
 
@@ -32,7 +16,7 @@ struct fill
 {
   static void call(hostrpc::page_t *page, void *dv)
   {
-#if defined(__AMDGCN__)
+#if defined(__x86_64__)
     hostrpc::page_t *d = static_cast<hostrpc::page_t *>(dv);
     copy_page(page, d);
 #else
@@ -46,7 +30,7 @@ struct use
 {
   static void call(hostrpc::page_t *page, void *dv)
   {
-#if defined(__AMDGCN__)
+#if defined(__x86_64__)
     hostrpc::page_t *d = static_cast<hostrpc::page_t *>(dv);
     copy_page(d, page);
 #else
@@ -56,29 +40,58 @@ struct use
   };
 };
 
+#if defined(__AMDGCN__)
+static void gcn_server_callback(hostrpc::cacheline_t *)
+{
+  // not yet implemented, maybe take a function pointer out of [0]
+}
+#endif
+
+struct operate
+{
+  static void call(hostrpc::page_t *page, void *)
+  {
+#if defined(__AMDGCN__)
+    // Call through to a specific handler, one cache line per lane
+    hostrpc::cacheline_t *l = &page->cacheline[platform::get_lane_id()];
+    gcn_server_callback(l);
+#else
+    (void)page;
+#endif
+  };
+};
+
+struct clear
+{
+  static void call(hostrpc::page_t *, void *) {}
+};
+
 namespace hostrpc
 {
 template <typename SZ>
-using x64_gcn_client =
+using gcn_x64_client =
     hostrpc::client_impl<SZ, hostrpc::copy_functor_given_alias, fill, use,
                          hostrpc::nop_stepper>;
 
 template <typename SZ>
-using x64_gcn_server =
-    hostrpc::server_indirect_impl<SZ, hostrpc::copy_functor_given_alias,
-                                  hostrpc::nop_stepper>;
+using gcn_x64_server =
+    hostrpc::server_impl<SZ, hostrpc::copy_functor_given_alias, operate, clear,
+                         hostrpc::nop_stepper>;
 
 template <typename SZ>
-struct x64_gcn_pair
+struct gcn_x64_pair
 {
-  using client_type = hostrpc::x64_gcn_client<SZ>;
-  using server_type = hostrpc::x64_gcn_server<SZ>;
+  using client_type = hostrpc::gcn_x64_client<SZ>;
+  using server_type = hostrpc::gcn_x64_server<SZ>;
   client_type client;
   server_type server;
   SZ sz;
 
-  x64_gcn_pair(SZ sz, uint64_t fine_handle, uint64_t coarse_handle) : sz(sz)
+  gcn_x64_pair(SZ sz, uint64_t fine_handle, uint64_t coarse_handle) : sz(sz)
   {
+    // TODO: This is very similar to x64_host_gcn_client
+    // Should be able to abstract over the allocation location
+
 #if defined(__x86_64__)
     size_t N = sz.N();
     hsa_region_t fine = {.handle = fine_handle};
@@ -93,12 +106,11 @@ struct x64_gcn_pair
 
     auto *send_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
     auto *recv_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
-    // allocating in coarse is probably not sufficient, likely to need to mark
-    // the pointer with an address space
-    auto *client_active_data = hsa_allocate_slot_bitmap_data_alloc(coarse, N);
 
-    // server_active could be 'malloc', gcn can't access it
-    auto *server_active_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
+    // could be malloc here, gpu can't see the client locks
+    auto *client_active_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
+
+    auto *server_active_data = hsa_allocate_slot_bitmap_data_alloc(coarse, N);
 
     slot_bitmap_all_svm send = {N, send_data};
     slot_bitmap_all_svm recv = {N, recv_data};
@@ -106,7 +118,6 @@ struct x64_gcn_pair
     slot_bitmap_device server_active = {N, server_active_data};
 
     client = {sz, recv, send, client_active, server_buffer, client_buffer};
-
     server = {sz, send, recv, server_active, client_buffer, server_buffer};
 #else
     (void)fine_handle;
@@ -114,7 +125,7 @@ struct x64_gcn_pair
 #endif
   }
 
-  ~x64_gcn_pair()
+  ~gcn_x64_pair()
   {
 #if defined(__x86_64__)
     assert(client.inbox.data() == server.outbox.data());
@@ -136,10 +147,11 @@ struct x64_gcn_pair
   }
 };
 
-using ty = x64_gcn_pair<hostrpc::size_runtime>;
+using ty = gcn_x64_pair<hostrpc::size_runtime>;
 
-x64_gcn_t::x64_gcn_t(size_t N, uint64_t hsa_region_t_fine_handle,
+gcn_x64_t::gcn_x64_t(size_t N, uint64_t hsa_region_t_fine_handle,
                      uint64_t hsa_region_t_coarse_handle)
+
 {
   // for gfx906, probably want N = 2048
   N = hostrpc::round(N);
@@ -156,7 +168,7 @@ x64_gcn_t::x64_gcn_t(size_t N, uint64_t hsa_region_t_fine_handle,
 #endif
 }
 
-x64_gcn_t::~x64_gcn_t()
+gcn_x64_t::~gcn_x64_t()
 {
 #if defined(__x86_64__)
   ty *s = static_cast<ty *>(state);
@@ -168,9 +180,9 @@ x64_gcn_t::~x64_gcn_t()
 #endif
 }
 
-bool x64_gcn_t::valid() { return state != nullptr; }
+bool gcn_x64_t::valid() { return state != nullptr; }
 
-x64_gcn_t::client_t x64_gcn_t::client()
+gcn_x64_t::client_t gcn_x64_t::client()
 {
   ty *s = static_cast<ty *>(state);
   assert(s);
@@ -178,7 +190,7 @@ x64_gcn_t::client_t x64_gcn_t::client()
   return {ct};
 }
 
-x64_gcn_t::server_t x64_gcn_t::server()
+gcn_x64_t::server_t gcn_x64_t::server()
 {
   ty *s = static_cast<ty *>(state);
   assert(s);
@@ -186,10 +198,7 @@ x64_gcn_t::server_t x64_gcn_t::server()
   return {st};
 }
 
-// The boolean is uniform, but seem to be seeing some control flow problems
-// in the caller. Forcing to a scalar with broadcast_master is ineffective.
-// Simplifying by doing the loop-until-available here
-void x64_gcn_t::client_t::invoke(hostrpc::page_t *page)
+void gcn_x64_t::client_t::invoke(hostrpc::page_t *page)
 {
   void *vp = static_cast<void *>(page);
   bool r = false;
@@ -200,7 +209,7 @@ void x64_gcn_t::client_t::invoke(hostrpc::page_t *page)
   while (r == false);
 }
 
-void x64_gcn_t::client_t::invoke_async(hostrpc::page_t *page)
+void gcn_x64_t::client_t::invoke_async(hostrpc::page_t *page)
 {
   void *vp = static_cast<void *>(page);
   bool r = false;
@@ -211,10 +220,11 @@ void x64_gcn_t::client_t::invoke_async(hostrpc::page_t *page)
   while (r == false);
 }
 
-bool x64_gcn_t::server_t::handle(hostrpc::closure_func_t func,
-                                 void *application_state, uint64_t *l)
+bool gcn_x64_t::server_t::handle()
 {
-  return handle<ty::server_type>(func, application_state, l);
+  // Server needs to be passed a uint64_t to keep track of position
+  // Need to decide where to store that to avoid using zero each call
+  return state.open<ty::server_type>()->rpc_handle(nullptr);
 }
 
 }  // namespace hostrpc

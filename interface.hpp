@@ -238,6 +238,64 @@ struct x64_gcn_t
   void *state;
 };
 
+struct gcn_x64_t
+{
+  gcn_x64_t(size_t minimum_number_slots, uint64_t hsa_region_t_fine_handle,
+            uint64_t hsa_region_t_coarse_handle);
+
+  ~gcn_x64_t();
+  gcn_x64_t(const gcn_x64_t &) = delete;
+  bool valid();
+
+  struct client_t
+  {
+    friend struct gcn_x64_t;
+    client_t() {}
+
+    using state_t = hostrpc::storage<48, 8>;
+
+    void invoke(hostrpc::page_t *);
+    void invoke_async(hostrpc::page_t *);
+
+   private:
+    template <typename ClientType>
+    client_t(ClientType ct)
+    {
+      static_assert(state_t::size() == sizeof(ClientType), "");
+      static_assert(state_t::align() == alignof(ClientType), "");
+      auto *cv = state.construct<ClientType>(ct);
+      assert(cv == state.open<ClientType>());
+    }
+    state_t state;
+  };
+
+  struct server_t
+  {
+    friend struct gcn_x64_t;
+    server_t() {}
+    using state_t = hostrpc::storage<48, 8>;
+
+    bool handle();
+
+   private:
+    template <typename ServerType>
+    server_t(ServerType st)
+    {
+      static_assert(state_t::size() == sizeof(ServerType), "");
+      static_assert(state_t::align() == alignof(ServerType), "");
+      auto *sv = state.construct<ServerType>(st);
+      assert(sv == state.open<ServerType>());
+    }
+    state_t state;
+  };
+
+  client_t client();
+  server_t server();
+
+ private:
+  void *state;
+};
+
 }  // namespace hostrpc
 
 #endif
