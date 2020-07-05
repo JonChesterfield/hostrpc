@@ -18,7 +18,7 @@ LINK="$RDIR/bin/llvm-link"
 OPT="$RDIR/bin/opt"
 
 CXX="$CLANG -std=c++11 -Wall -Wextra " # -DNDEBUG"
-LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR"
+LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR hsa_support.bc -lelf"
 
 AMDGPU="--target=amdgcn-amd-amdhsa -march=gfx906 -mcpu=gfx906 -mllvm -amdgpu-fixed-function-abi"
 
@@ -39,6 +39,11 @@ CXX_GCN_LD="$CXX $GCNFLAGS"
 
 CXXCL="$CLANG -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 -emit-llvm -D__OPENCL__ $AMDGPU"
 
+
+# msgpack, assumed to be checked out ../ from here
+$CXX_X64 ../msgpack/msgpack.cpp -c -o msgpack.bc
+$CXX_X64 find_metadata.cpp -c -o find_metadata.bc
+$LINK msgpack.bc find_metadata.bc -o hsa_support.bc
 
 # time $CXX -O3 catch.cpp -c -o catch.o
 

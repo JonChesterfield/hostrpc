@@ -12,6 +12,9 @@
 #include <string>
 #include <type_traits>
 
+#include "../msgpack/msgpack.h"
+#include "find_metadata.hpp"
+
 namespace hsa
 {
 inline const char* status_string(hsa_status_t status)
