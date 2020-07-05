@@ -119,12 +119,11 @@ struct client_impl : public SZ
     printf("%lu %lu %lu\n", i, o, a);
   }
 
-  // true if did work
+  // true if it successfully made a call, false if no work to do or only gc
   // If there's no continuation, shouldn't require a use_application_state
   template <bool have_continuation>
-  __attribute__((noinline)) bool rpc_invoke_given_slot(
-      void* fill_application_state, void* use_application_state,
-      size_t slot) noexcept
+  bool rpc_invoke_given_slot(void* fill_application_state,
+                             void* use_application_state, size_t slot) noexcept
   {
     assert(slot != SIZE_MAX);
     const uint64_t element = index_to_element(slot);
@@ -300,6 +299,8 @@ struct client_impl : public SZ
 
   // Returns true if it successfully launched the task
   template <bool have_continuation>
+  // dropping noinline here makes tests at least very slow and
+  // possibly non-terminating.
   __attribute__((noinline)) bool rpc_invoke(
       void* fill_application_state, void* use_application_state) noexcept
   {
@@ -322,6 +323,10 @@ struct client_impl : public SZ
     // the array is somewhat contended - attempt to spread out the load by
     // starting clients off at different points in the array. Doesn't make an
     // observable difference in the current benchmark.
+
+    // if the invoke call performed garbage collection, the word is not
+    // known to be contended so it may be worth trying a different slot
+    // before trying a different word
 #define CLIENT_OFFSET 0
 
 #if CLIENT_OFFSET
@@ -353,7 +358,20 @@ struct client_impl : public SZ
                   {
                     active.release_slot_returning_updated_word(size, slot);
                   }
+                  // returning if the invoke garbage collected is inefficient
+                  // as the caller will need to try again, better to keep the
+                  // position in the loop. This raises a memory access error
+                  // however HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION: The
+                  // agent attempted to access memory beyond the largest legal
+                  // address.
+#if 0
+                if (r)
+                  {
+                    return true;
+                  }
+#else
                 return r;
+#endif
               }
           }
       }

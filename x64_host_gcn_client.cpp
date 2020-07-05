@@ -11,18 +11,18 @@
 #if defined(__AMDGCN__)
 static void copy_page(hostrpc::page_t *dst, hostrpc::page_t *src)
 {
-  if (true)
+  if (false)
     {
       __builtin_memcpy(dst, src, sizeof(hostrpc::page_t));
     }
   else
     {
-      for (unsigned i = 0; i < 64; i++)
+      unsigned id = platform::get_lane_id();
+      hostrpc::cacheline_t *dline = &dst->cacheline[id];
+      hostrpc::cacheline_t *sline = &src->cacheline[id];      
+      for (unsigned e = 0; e < 8; e++)
         {
-          for (unsigned e = 0; e < 8; e++)
-            {
-              dst->cacheline[i].element[e] = src->cacheline[i].element[e];
-            }
+          dline->element[e] = sline->element[e];
         }
     }
 }
