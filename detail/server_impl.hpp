@@ -67,7 +67,7 @@ struct server_impl : public SZ
   void dump_word(size_t size, uint64_t word)
   {
     uint64_t i = inbox.load_word(size, word);
-    uint64_t o = outbox.load_word(size, word);
+    uint64_t o = outbox_staging.load_word(size, word);
     uint64_t a = active.load_word(size, word);
     (void)(i + o + a);
     printf("%lu %lu %lu\n", i, o, a);
@@ -77,7 +77,7 @@ struct server_impl : public SZ
   {
     const size_t size = this->size();
     uint64_t i = inbox.load_word(size, w);
-    uint64_t o = outbox.load_word(size, w);
+    uint64_t o = outbox_staging.load_word(size, w);
     uint64_t a = active.load_word(size, w);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
@@ -120,7 +120,7 @@ struct server_impl : public SZ
     c.init(slot);
 
     uint64_t i = inbox.load_word(size, element);
-    uint64_t o = outbox.load_word(size, element);
+    uint64_t o = outbox_staging.load_word(size, element);
     uint64_t a = active.load_word(size, element);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
     c.i = i;
@@ -158,7 +158,9 @@ struct server_impl : public SZ
 
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
         uint64_t updated_out = platform::critical<uint64_t>([&]() {
-          return outbox.release_slot_returning_updated_word(size, slot);
+          return staged_release_slot_returning_updated_word(
+              size, slot, &outbox_staging, &outbox);
+          // return outbox.release_slot_returning_updated_word(size, slot);
         });
 
         assert((updated_out & this_slot) == 0);
@@ -199,7 +201,10 @@ struct server_impl : public SZ
     {
       __c11_atomic_thread_fence(__ATOMIC_RELEASE);
       uint64_t o = platform::critical<uint64_t>([&]() {
-        return outbox.claim_slot_returning_updated_word(size, slot);
+        return staged_claim_slot_returning_updated_word(
+            size, slot, &outbox_staging, &outbox);
+
+        // return outbox.claim_slot_returning_updated_word(size, slot);
       });
       c.o = o;
     }
