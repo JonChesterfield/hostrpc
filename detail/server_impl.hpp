@@ -96,13 +96,6 @@ struct server_impl : public SZ
     return SIZE_MAX;
   }
 
-  // return true if no garbage (briefly) during call
-  void try_garbage_collect_word_server(size_t size, uint64_t w)
-  {
-    auto c = [](uint64_t i, uint64_t o) -> uint64_t { return ~i & o; };
-    try_garbage_collect_word<decltype(c)>(size, c, inbox, outbox, active, w);
-  }
-
   size_t words() { return size() / 64; }
 
   // may want to rename this, number-slots?
@@ -230,12 +223,6 @@ struct server_impl : public SZ
     step(__LINE__, application_state);
     const size_t size = this->size();
     const size_t words = size / 64;
-    // garbage collection should be fairly cheap when there is none,
-    // and the presence of any occupied slots can starve the client
-    for (uint64_t w = 0; w < words; w++)
-      {
-        // try_garbage_collect_word_server(size, w);
-      }
 
     step(__LINE__, application_state);
 

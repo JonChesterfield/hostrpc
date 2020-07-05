@@ -13,7 +13,7 @@ kernel void __device_start(__global void *args) { __device_start_cast(args); }
 #include "interface.hpp"
 #include "timer.hpp"
 
-#define MAXCLIENT (4*1024)  // lazy memory management, could malloc it
+#define MAXCLIENT (4 * 1024)  // lazy memory management, could malloc it
 
 #if defined(__AMDGCN__)
 #include <stdint.h>
@@ -269,12 +269,12 @@ TEST_CASE("x64_gcn_stress")
     //  4        16     256   4293   2549
     //  5        32     128   4462   3835
     //  6        64      64   4810   6427
-    //  7       128      32   5492  11592 
+    //  7       128      32   5492  11592
     //  8       256      16   6889  21974
     //  9       512       8   9702  42725
-    // 10      1024       4  15174 
-    // 11      2048       2  26427 
-    // 12      4098       1  47647 
+    // 10      1024       4  15174
+    // 11      2048       2  26427
+    // 12      4098       1  47647
 
     printf("x64-gcn spawning %u x64 servers, %u gcn clients\n", nservers,
            nclients);

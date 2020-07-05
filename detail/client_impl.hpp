@@ -110,14 +110,6 @@ struct client_impl : public SZ
     return SIZE_MAX;
   }
 
-  // return true if no garbage (briefly) during call
-  void try_garbage_collect_word_client(size_t size, uint64_t w)
-  {
-    auto c = [](uint64_t i, uint64_t) -> uint64_t { return i; };
-    try_garbage_collect_word<decltype(c)>(size, c, inbox, outbox_staging,
-                                          active, w);
-  }
-
   void dump_word(size_t size, uint64_t word)
   {
     uint64_t i = inbox.load_word(size, word);
@@ -231,9 +223,8 @@ struct client_impl : public SZ
 
         while (true)
           {
-            uint32_t got = platform::critical<uint32_t>([&]() {
-              return inbox(size, slot, &loaded);
-            });
+            uint32_t got = platform::critical<uint32_t>(
+                [&]() { return inbox(size, slot, &loaded); });
 
             loaded = platform::broadcast_master(loaded);
 
@@ -320,10 +311,6 @@ struct client_impl : public SZ
     // 0b110 is posted request, nothing waited, got one
     // 0b101 is got a result, don't need it, only spun up a thread for cleanup
     // 0b100 is got a result, don't need it
-    for (uint64_t w = 0; w < words; w++)
-      {
-        // try_garbage_collect_word_client(size, w);
-      }
 
     step(__LINE__, fill_application_state, use_application_state);
 
