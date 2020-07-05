@@ -109,15 +109,24 @@ struct gcn_x64_pair
 
     // could be malloc here, gpu can't see the client locks
     auto *client_active_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
+    auto *client_outbox_staging_data =
+        hsa_allocate_slot_bitmap_data_alloc(fine, N);
 
     auto *server_active_data = hsa_allocate_slot_bitmap_data_alloc(coarse, N);
 
     slot_bitmap_all_svm send = {N, send_data};
     slot_bitmap_all_svm recv = {N, recv_data};
     slot_bitmap_device client_active = {N, client_active_data};
+    slot_bitmap_device client_outbox_staging = {N, client_outbox_staging_data};
     slot_bitmap_device server_active = {N, server_active_data};
 
-    client = {sz, recv, send, client_active, server_buffer, client_buffer};
+    client = {sz,
+              recv,
+              send,
+              client_active,
+              client_outbox_staging,
+              server_buffer,
+              client_buffer};
     server = {sz, send, recv, server_active, client_buffer, server_buffer};
 #else
     (void)fine_handle;
@@ -134,6 +143,7 @@ struct gcn_x64_pair
     hsa_allocate_slot_bitmap_data_free(client.inbox.data());
     hsa_allocate_slot_bitmap_data_free(client.outbox.data());
     hsa_allocate_slot_bitmap_data_free(client.active.data());
+    hsa_allocate_slot_bitmap_data_free(client.outbox_staging.data());
     hsa_allocate_slot_bitmap_data_free(server.active.data());
 
     // precondition of structure

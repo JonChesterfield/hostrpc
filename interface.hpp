@@ -124,7 +124,7 @@ struct x64_x64_t
     friend client_invoke_overloads<client_t>;
     client_t() {}  // would like this to be private
 
-    using state_t = hostrpc::storage<48, 8>;
+    using state_t = hostrpc::storage<56, 8>;
     using client_invoke_overloads::invoke;
     using client_invoke_overloads::invoke_async;
 
@@ -188,7 +188,7 @@ struct x64_gcn_t
     friend struct x64_gcn_t;
     client_t() {}  // would like this to be private
 
-    using state_t = hostrpc::storage<48, 8>;
+    using state_t = hostrpc::storage<56, 8>;
 
     // Lost the friendly interface in favour of hard coding memcpy
     // as part of debugging nullptr deref, hope to reinstate.
@@ -252,7 +252,7 @@ struct gcn_x64_t
     friend struct gcn_x64_t;
     client_t() {}
 
-    using state_t = hostrpc::storage<48, 8>;
+    using state_t = hostrpc::storage<56, 8>;
 
     void invoke(hostrpc::page_t *);
     void invoke_async(hostrpc::page_t *);

@@ -45,16 +45,19 @@ struct client_impl : public SZ
   using inbox_t = slot_bitmap_all_svm;
   using outbox_t = slot_bitmap_all_svm;
   using locks_t = slot_bitmap_device;
+  using outbox_staging_t = slot_bitmap_device;
 
   client_impl(SZ sz, inbox_t inbox, outbox_t outbox, locks_t active,
-              page_t* remote_buffer, page_t* local_buffer)
+              outbox_staging_t outbox_staging, page_t* remote_buffer,
+              page_t* local_buffer)
 
       : SZ{sz},
         remote_buffer(remote_buffer),
         local_buffer(local_buffer),
         inbox(inbox),
         outbox(outbox),
-        active(active)
+        active(active),
+        outbox_staging(outbox_staging)
   {
     // SZ is expected to be zero bytes or a uint64_t
     struct local : public SZ
@@ -62,7 +65,7 @@ struct client_impl : public SZ
       float x;
     };
     constexpr bool sz_empty = sizeof(local) == sizeof(float);
-    static_assert(sizeof(client_impl) == (sz_empty ? 40 : 48), "");
+    static_assert(sizeof(client_impl) == (sz_empty ? 48 : 56), "");
     static_assert(alignof(client_impl) == 8, "");
   }
 
@@ -72,7 +75,8 @@ struct client_impl : public SZ
         local_buffer(nullptr),
         inbox{},
         outbox{},
-        active{}
+        active{},
+        outbox_staging{}
   {
   }
 
@@ -372,6 +376,7 @@ struct client_impl : public SZ
   inbox_t inbox;
   outbox_t outbox;
   locks_t active;
+  outbox_staging_t outbox_staging;
 };
 
 namespace indirect

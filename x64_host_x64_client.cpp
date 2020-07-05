@@ -54,14 +54,22 @@ struct x64_x64_pair
     auto *send_data = x64_allocate_atomic_uint64_array(N);
     auto *recv_data = x64_allocate_atomic_uint64_array(N);
     auto *client_locks_data = x64_allocate_atomic_uint64_array(N);
+    auto *client_outbox_staging_data = x64_allocate_atomic_uint64_array(N);
     auto *server_locks_data = x64_allocate_atomic_uint64_array(N);
 
     slot_bitmap_all_svm send(N, send_data);
     slot_bitmap_all_svm recv(N, recv_data);
     slot_bitmap_device client_locks(N, client_locks_data);
+    slot_bitmap_device client_outbox_staging(N, client_outbox_staging_data);
     slot_bitmap_device server_locks(N, server_locks_data);
 
-    client = {sz, recv, send, client_locks, server_buffer, client_buffer};
+    client = {sz,
+              recv,
+              send,
+              client_locks,
+              client_outbox_staging,
+              server_buffer,
+              client_buffer};
     server = {sz, send, recv, server_locks, client_buffer, server_buffer};
   }
   ~x64_x64_pair()
@@ -75,6 +83,8 @@ struct x64_x64_pair
     hostrpc::x64_native::deallocate(server.inbox.data());
     hostrpc::x64_native::deallocate(client.active.data());
     hostrpc::x64_native::deallocate(server.active.data());
+
+    hostrpc::x64_native::deallocate(client.outbox_staging.data());
 
     assert(client.local_buffer != server.local_buffer);
 
