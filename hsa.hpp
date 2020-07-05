@@ -5,6 +5,7 @@
 #include "hsa.h"
 #include <array>
 #include <cstdio>
+#include <unordered_map>
 
 #include <cassert>
 #include <cstring>
@@ -330,6 +331,70 @@ inline std::unique_ptr<void, detail::memory_deleter> allocate(
 
 inline uint64_t sentinel() { return reinterpret_cast<uint64_t>(nullptr); }
 
+struct kernel_info
+{
+  uint64_t private_segment_fixed_size = 0;
+  uint64_t group_segment_fixed_size = 0;
+};
+
+inline std::unordered_map<std::string, kernel_info> parse_metadata(
+    const void* binary, size_t binSize)
+{
+  // safely, if slowly, work around elf.h expecting mutable chars
+  void* copy = malloc(binSize);
+  assert(copy);
+  memcpy(copy, binary, binSize);
+  std::pair<unsigned char*, unsigned char*> metadata =
+      find_metadata(copy, binSize);
+
+  if (!metadata.first)
+    {
+      fprintf(stderr, "Failed to find metadata\n");
+      exit(1);
+    }
+
+  msgpack::byte_range src{metadata.first, metadata.second};
+
+  std::unordered_map<std::string, kernel_info> v;
+  using namespace msgpack;
+  foreach_map(src, [&](byte_range key, byte_range value) {
+    if (!message_is_string(key, "amdhsa.kernels"))
+      {
+        return;
+      }
+    foreach_array(value, [&](byte_range element) {
+      std::string symbol;
+      kernel_info info;
+      foreach_map(element, [&](byte_range key, byte_range value) {
+        // msgpack doesn't mandate unique keys, could handle duplicates here
+        if (message_is_string(key, ".symbol"))
+          {
+            foronly_string(value, [&](size_t N, const unsigned char* str) {
+              symbol = std::string(str, str + N);
+            });
+          }
+        else if (message_is_string(key, ".private_segment_fixed_size"))
+          {
+            foronly_unsigned(value, [&](uint64_t v) {
+              info.private_segment_fixed_size = v;
+            });
+          }
+        else if (message_is_string(key, ".group_segment_fixed_size"))
+          {
+            foronly_unsigned(
+                value, [&](uint64_t v) { info.group_segment_fixed_size = v; });
+          }
+      });
+
+      v[symbol] = info;
+    });
+  });
+
+  free(copy);
+
+  return v;
+}
+
 struct executable
 {
   // hsa expects executable management to be quite dynamic
@@ -350,8 +415,10 @@ struct executable
   }
 
   executable(hsa_agent_t agent, hsa_file_t file)
-      : agent(agent), state({sentinel()})
+      : agent(agent), state({sentinel()}), info{}
   {
+    // This needs to be converted to mmap the file and delegate
+    // in order to populate the kernel info table
     if (HSA_STATUS_SUCCESS == init_state())
       {
         if (HSA_STATUS_SUCCESS == load_from_file(file))
@@ -367,7 +434,7 @@ struct executable
   }
 
   executable(hsa_agent_t agent, const void* bytes, size_t size)
-      : agent(agent), state({sentinel()})
+      : agent(agent), state({sentinel()}), info{parse_metadata(bytes, size)}
   {
     if (HSA_STATUS_SUCCESS == init_state())
       {
@@ -415,6 +482,11 @@ struct executable
       }
 
     return 0;
+  }
+
+  const std::unordered_map<std::string, kernel_info>& get_kernel_info()
+  {
+    return info;
   }
 
  private:
@@ -490,6 +562,7 @@ struct executable
 
   hsa_agent_t agent;
   hsa_executable_t state;
+  std::unordered_map<std::string, kernel_info> info;
   hsa_code_object_reader_t reader;
 };
 

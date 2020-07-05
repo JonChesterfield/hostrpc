@@ -137,7 +137,8 @@ struct launch_t
   }
 
   launch_t(hsa_agent_t kernel_agent, hsa_queue_t *queue,
-           uint64_t kernel_address, T args)
+           uint64_t kernel_address, uint32_t private_segment_fixed_size,
+           uint32_t group_segment_fixed_size, T args)
 
   {
     uint64_t packet_id;
@@ -153,6 +154,9 @@ struct launch_t
 
     packet->kernel_object = kernel_address;
     memcpy(&packet->kernarg_address, &state, 8);
+
+    packet->private_segment_size = private_segment_fixed_size;
+    packet->group_segment_size = group_segment_fixed_size;
 
     auto rc = hsa_signal_create(1, 0, NULL, &packet->completion_signal);
     if (rc != HSA_STATUS_SUCCESS)

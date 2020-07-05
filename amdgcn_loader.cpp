@@ -26,9 +26,10 @@ std::vector<size_t> offsets_into_strtab(int argc, char **argv)
   return res;
 }
 
+static const char *const kernel_entry = "__device_start.kd";
+
 uint64_t find_entry_address(hsa::executable &ex)
 {
-  const char *kernel_entry = "__device_start.kd";
   hsa_executable_symbol_t symbol = ex.get_symbol_by_name(kernel_entry);
   if (symbol.handle == hsa::sentinel())
     {
@@ -277,6 +278,21 @@ static int main_with_hsa(int argc, char **argv)
     {
       printf("Can't make signal\n");
       exit(1);
+    }
+
+  auto m = ex.get_kernel_info();
+
+  auto it = m.find(std::string(kernel_entry));
+  if (it != m.end())
+    {
+      packet->private_segment_size = it->second.private_segment_fixed_size;
+      packet->group_segment_size = it->second.group_segment_fixed_size;
+    }
+  else
+    {
+      // Expected to fail at present because get_info isn't implemented for
+      // loading from file
+      printf("Warning: get_kernel_info failed\n");
     }
 
   packet_store_release((uint32_t *)packet,

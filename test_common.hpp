@@ -42,5 +42,4 @@ inline void hsa_allocate_slot_bitmap_data_free(_Atomic uint64_t *d)
 
 }  // namespace hostrpc
 
-
 #endif

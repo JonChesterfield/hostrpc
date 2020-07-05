@@ -324,15 +324,33 @@ TEST_CASE("persistent_kernel")
                               persistent_kernel_so_size);
     CHECK(ex.valid());
 
-    uint64_t kernel_address =
-        ex.get_symbol_address_by_name("__device_persistent_kernel.kd");
+    const char *kernel_entry = "__device_persistent_kernel.kd";
+    uint64_t kernel_address = ex.get_symbol_address_by_name(kernel_entry);
 
+    uint32_t kernel_private_segment_fixed_size = 0;
+    uint32_t kernel_group_segment_fixed_size = 0;
+
+    {
+      auto m = ex.get_kernel_info();
+      auto it = m.find(std::string(kernel_entry));
+      if (it != m.end())
+        {
+          kernel_private_segment_fixed_size =
+              it->second.private_segment_fixed_size;
+          kernel_group_segment_fixed_size = it->second.group_segment_fixed_size;
+        }
+      else
+        {
+          printf("fatal: get_kernel_info failed\n");
+          exit(1);
+        }
+    }
 
     printf("Kernel address %lx\n", kernel_address);
 
     // Following needs more work
     return;
-    
+
     hsa_queue_t *queue;
     {
       hsa_status_t rc = hsa_queue_create(
@@ -395,8 +413,9 @@ TEST_CASE("persistent_kernel")
       auto heap =
           hsa::allocate(fine_grained_region, sizeof(dispatch_packet)).release();
       dispatch_packet *typed_heap =
-          new (reinterpret_cast<dispatch_packet *>(heap))
-              dispatch_packet(0, 0, kernel_address, kernarg_address);
+          new (reinterpret_cast<dispatch_packet *>(heap)) dispatch_packet(
+              kernel_private_segment_fixed_size,
+              kernel_group_segment_fixed_size, kernel_address, kernarg_address);
 
       state->state->self = typed_heap;
       state->state->my_queue = queue;

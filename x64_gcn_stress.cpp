@@ -18,8 +18,8 @@ kernel void __device_start(__global void *args) { __device_start_cast(args); }
 #if defined(__AMDGCN__)
 #include <stdint.h>
 #else
-#include <cstdint>
 #include "launch.hpp"
+#include <cstdint>
 #endif
 
 struct kernel_args
@@ -159,10 +159,29 @@ TEST_CASE("x64_gcn_stress")
                               x64_gcn_stress_so_size);
     CHECK(ex.valid());
 
-    uint64_t kernel_address =
-        ex.get_symbol_address_by_name("__device_start.kd");
+    const char *kernel_entry = "__device_start.kd";
+    uint64_t kernel_address = ex.get_symbol_address_by_name(kernel_entry);
     uint64_t client_address =
         ex.get_symbol_address_by_name("hostrpc_pair_client");
+
+    uint32_t kernel_private_segment_fixed_size = 0;
+    uint32_t kernel_group_segment_fixed_size = 0;
+
+    {
+      auto m = ex.get_kernel_info();
+      auto it = m.find(std::string(kernel_entry));
+      if (it != m.end())
+        {
+          kernel_private_segment_fixed_size =
+              it->second.private_segment_fixed_size;
+          kernel_group_segment_fixed_size = it->second.group_segment_fixed_size;
+        }
+      else
+        {
+          printf("fatal: get_kernel_info failed\n");
+          exit(1);
+        }
+    }
 
     hsa_queue_t *queue;
     {
@@ -290,7 +309,8 @@ TEST_CASE("x64_gcn_stress")
           kernel_args example = {
               .id = i, .reps = per_client, .result = UINT64_MAX};
           launch_t<kernel_args> tmp(kernel_agent, queue, kernel_address,
-                                    example);
+                                    kernel_private_segment_fixed_size,
+                                    kernel_group_segment_fixed_size, example);
           client_store.emplace_back(std::move(tmp));
         }
     }
