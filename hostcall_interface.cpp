@@ -138,12 +138,15 @@ struct x64_amdgcn_pair
     auto *client_outbox_staging_data =
         hsa_allocate_slot_bitmap_data_alloc(coarse, N);
     auto *server_active_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
+    auto *server_outbox_staging_data =
+        hsa_allocate_slot_bitmap_data_alloc(fine, N);
 
     slot_bitmap_all_svm send = {N, send_data};
     slot_bitmap_all_svm recv = {N, recv_data};
     slot_bitmap_device client_active = {N, client_active_data};
     slot_bitmap_coarse client_outbox_staging = {N, client_outbox_staging_data};
     slot_bitmap_device server_active = {N, server_active_data};
+    slot_bitmap_coarse server_outbox_staging = {N, server_outbox_staging_data};
 
     client = {sz,
               recv,
@@ -153,7 +156,13 @@ struct x64_amdgcn_pair
               server_buffer,
               client_buffer};
 
-    server = {sz, send, recv, server_active, client_buffer, server_buffer};
+    server = {sz,
+              send,
+              recv,
+              server_active,
+              server_outbox_staging,
+              client_buffer,
+              server_buffer};
 #else
     (void)fine_handle;
     (void)coarse_handle;
@@ -171,6 +180,7 @@ struct x64_amdgcn_pair
     hsa_allocate_slot_bitmap_data_free(client.active.data());
     hsa_allocate_slot_bitmap_data_free(client.outbox_staging.data());
     hsa_allocate_slot_bitmap_data_free(server.active.data());
+    hsa_allocate_slot_bitmap_data_free(server.outbox_staging.data());
 
     assert(client.local_buffer == server.remote_buffer);
     assert(client.remote_buffer == server.local_buffer);

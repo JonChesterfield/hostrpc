@@ -34,17 +34,18 @@ struct server_impl : public SZ
   using inbox_t = slot_bitmap_all_svm;
   using outbox_t = slot_bitmap_all_svm;
   using locks_t = slot_bitmap_device;
+  using outbox_staging_t = slot_bitmap_coarse;
 
   server_impl(SZ sz, inbox_t inbox, outbox_t outbox, locks_t active,
-              page_t* remote_buffer, page_t* local_buffer)
+              outbox_staging_t outbox_staging, page_t* remote_buffer,
+              page_t* local_buffer)
       : SZ{sz},
-
         remote_buffer(remote_buffer),
         local_buffer(local_buffer),
-
         inbox(inbox),
         outbox(outbox),
-        active(active)
+        active(active),
+        outbox_staging(outbox_staging)
   {
   }
 
@@ -54,7 +55,8 @@ struct server_impl : public SZ
         local_buffer(nullptr),
         inbox{},
         outbox{},
-        active{}
+        active{},
+        outbox_staging{}
   {
   }
 
@@ -281,6 +283,7 @@ struct server_impl : public SZ
   inbox_t inbox;
   outbox_t outbox;
   locks_t active;
+  outbox_staging_t outbox_staging;
 };
 
 namespace indirect

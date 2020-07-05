@@ -151,7 +151,7 @@ struct x64_x64_t
     friend server_handle_overloads<server_t>;
     server_t() {}
 
-    using state_t = hostrpc::storage<48, 8>;
+    using state_t = hostrpc::storage<56, 8>;
     using server_handle_overloads::handle;
 
    private:
@@ -215,7 +215,7 @@ struct x64_gcn_t
     friend server_handle_overloads<server_t>;
     server_t() {}
 
-    using state_t = hostrpc::storage<48, 8>;
+    using state_t = hostrpc::storage<56, 8>;
     using server_handle_overloads::handle;
 
    private:
@@ -273,7 +273,7 @@ struct gcn_x64_t
   {
     friend struct gcn_x64_t;
     server_t() {}
-    using state_t = hostrpc::storage<48, 8>;
+    using state_t = hostrpc::storage<56, 8>;
 
     bool handle();
 
