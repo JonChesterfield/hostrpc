@@ -275,7 +275,7 @@ struct gcn_x64_t
     server_t() {}
     using state_t = hostrpc::storage<56, 8>;
 
-    bool handle();
+    bool handle(uint64_t *loc);
 
    private:
     template <typename ServerType>

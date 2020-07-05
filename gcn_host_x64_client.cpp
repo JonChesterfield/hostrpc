@@ -239,11 +239,9 @@ void gcn_x64_t::client_t::invoke_async(hostrpc::page_t *page)
   while (r == false);
 }
 
-bool gcn_x64_t::server_t::handle()
+bool gcn_x64_t::server_t::handle(uint64_t *loc)
 {
-  // Server needs to be passed a uint64_t to keep track of position
-  // Need to decide where to store that to avoid using zero each call
-  return state.open<ty::server_type>()->rpc_handle(nullptr);
+  return state.open<ty::server_type>()->rpc_handle(loc);
 }
 
 }  // namespace hostrpc
