@@ -50,44 +50,17 @@ extern "C" void __device_start_cast(
   __device_start_main(args);
 }
 
-// memcmp from musl, with type casts for c++
-__attribute__((used)) static int memcmp(const void *vl, const void *vr,
-                                        size_t n)
+static void init_page(hostrpc::page_t *page, uint64_t v)
 {
-  const unsigned char *l = static_cast<const unsigned char *>(vl);
-  const unsigned char *r = static_cast<const unsigned char *>(vr);
-  for (; n && *l == *r; n--, l++, r++)
-    ;
-  return n ? *l - *r : 0;
-}
-
-__attribute__((used)) static void init_page(hostrpc::page_t *page, uint64_t v)
-{
-  // threaded == true doesn't work here, need to debug why not
-  bool threaded = false;
-  if (!threaded)
+  platform::init_inactive_lanes(page, v);
+  hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
+  for (unsigned e = 0; e < 8; e++)
     {
-      for (unsigned i = 0; i < 64; i++)
-        {
-          for (unsigned e = 0; e < 8; e++)
-            {
-              page->cacheline[i].element[e] = v;
-            }
-        }
-    }
-  else
-    {
-      // platform::init_inactive_lanes(page, v);
-      hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
-      for (unsigned e = 0; e < 8; e++)
-        {
-          line->element[e] = v;
-        }
+      line->element[e] = v;
     }
 }
 
-__attribute__((used)) static bool equal_page(hostrpc::page_t *lhs,
-                                             hostrpc::page_t *rhs)
+static bool equal_page(hostrpc::page_t *lhs, hostrpc::page_t *rhs)
 {
   bool eq = true;
   for (unsigned i = 0; i < 64; i++)
@@ -106,32 +79,37 @@ hostrpc::page_t expect_store[MAXCLIENT];
 uint64_t gpu_call(hostrpc::x64_gcn_t::client_t *client, uint32_t id,
                   uint32_t reps)
 {
-  (void)memcmp;
-  (void)equal_page;
-  // I think this tries to allocate 8k per thread, so 512k. That might be too
-  // much hostrpc::page_t scratch;
+  const bool check_result = true;  // false => memory access fault?
+
+#if 1
   hostrpc::page_t *scratch = &scratch_store[id];
   hostrpc::page_t *expect = &expect_store[id];
+#else
+  // This is associated with memory corruption. 8k per thread may be too much.
+  hostrpc::page_t stack_scratch;
+  hostrpc::page_t stack_expect;
+  hostrpc::page_t *scratch = &stack_scratch;
+  hostrpc::page_t *expect = &stack_expect;
+#endif
+
   uint64_t failures = 0;
   for (unsigned r = 0; r < reps; r++)
     {
-      init_page(scratch, id + r);
-      init_page(expect, id + r + 1);
-      client->invoke(scratch);
-      // Seeing various problems if this memcmp is skipped
-      // Infinite loops, invalid memory access
+      if (check_result)
+        {
+          init_page(scratch, id + r);
+          init_page(expect, id + r + 1);
+        }
 
-#if 1
-      if (!equal_page(scratch, expect))
+      client->invoke(scratch);
+
+      if (check_result)
         {
-          failures++;
+          if (!equal_page(scratch, expect))
+            {
+              failures++;
+            }
         }
-#else
-      if (memcmp(scratch, expect, sizeof(hostrpc::page_t)) != 0)
-        {
-          failures++;
-        }
-#endif
     }
 
   return failures;
