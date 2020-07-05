@@ -530,6 +530,7 @@ inline void initialize_packet_defaults(hsa_kernel_dispatch_packet_t* packet)
   // These values should probably be read from the kernel
   // Currently they're copied from documentation
   // Launching a single wavefront makes for easier debugging
+  // This doesn't set gridsize, maybe it should be 1?
   packet->workgroup_size_x = 64;
   packet->workgroup_size_y = 1;
   packet->workgroup_size_z = 1;

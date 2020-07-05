@@ -65,13 +65,18 @@ $CXX_GCN x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.code.bc
 $CXXCL x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.kern.bc
 $LINK x64_gcn_stress.gcn.code.bc x64_gcn_stress.gcn.kern.bc -o x64_gcn_stress.gcn.bc
 $CXX_GCN_LD x64_gcn_stress.gcn.bc x64_host_gcn_client.gcn.bc -o x64_gcn_stress.gcn.so
-
 $CXX_X64 -I$HSAINC x64_gcn_stress.cpp -c -o x64_gcn_stress.x64.bc
 
 
 $CXX_GCN gcn_host_x64_client.cpp -c -o gcn_host_x64_client.gcn.bc
 $CXX_X64 -I$HSAINC gcn_host_x64_client.cpp -c -o gcn_host_x64_client.x64.bc
 
+
+$CXX_GCN persistent_kernel.cpp -c -o persistent_kernel.gcn.code.bc
+$CXXCL persistent_kernel.cpp -c -o persistent_kernel.gcn.kern.bc
+$LINK persistent_kernel.gcn.code.bc persistent_kernel.gcn.kern.bc -o persistent_kernel.gcn.bc
+$CXX_GCN_LD persistent_kernel.gcn.bc x64_host_gcn_client.gcn.bc -o persistent_kernel.gcn.so
+$CXX_X64 -I$HSAINC persistent_kernel.cpp -c -o persistent_kernel.x64.bc
 
 # $CXX $NVPTXFLAGS client.cpp -c -o client.ptx.bc
 
@@ -135,6 +140,11 @@ $CXX_X64_LD x64_x64_stress.x64.bc catch.o memory.x64.bc x64_host_x64_client.x64.
 $CXX_X64_LD x64_gcn_stress.x64.bc catch.o memory.x64.bc x64_host_gcn_client.x64.bc $LDFLAGS -o x64_gcn_stress.exe
 
 $CXX_X64_LD tests.x64.bc catch.o x64_host_x64_client.x64.bc memory.x64.bc  $LDFLAGS -o tests.exe
+
+
+$CXX_X64_LD persistent_kernel.x64.bc catch.o memory.x64.bc gcn_host_x64_client.x64.bc $LDFLAGS -o persistent_kernel.exe
+
+time ./persistent_kernel.exe
 
 time ./tests.exe
 time ./x64_x64_stress.exe
