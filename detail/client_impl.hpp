@@ -45,7 +45,7 @@ struct client_impl : public SZ
   using inbox_t = slot_bitmap_all_svm;
   using outbox_t = slot_bitmap_all_svm;
   using locks_t = slot_bitmap_device;
-  using outbox_staging_t = slot_bitmap_device;
+  using outbox_staging_t = slot_bitmap_coarse;
 
   client_impl(SZ sz, inbox_t inbox, outbox_t outbox, locks_t active,
               outbox_staging_t outbox_staging, page_t* remote_buffer,
@@ -94,7 +94,7 @@ struct client_impl : public SZ
   size_t find_candidate_client_slot(uint64_t w)
   {
     uint64_t i = inbox.load_word(size(), w);
-    uint64_t o = outbox.load_word(size(), w);
+    uint64_t o = outbox_staging.load_word(size(), w);
     uint64_t a = active.load_word(size(), w);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
@@ -114,13 +114,14 @@ struct client_impl : public SZ
   void try_garbage_collect_word_client(size_t size, uint64_t w)
   {
     auto c = [](uint64_t i, uint64_t) -> uint64_t { return i; };
-    try_garbage_collect_word<decltype(c)>(size, c, inbox, outbox, active, w);
+    try_garbage_collect_word<decltype(c)>(size, c, inbox, outbox_staging,
+                                          active, w);
   }
 
   void dump_word(size_t size, uint64_t word)
   {
     uint64_t i = inbox.load_word(size, word);
-    uint64_t o = outbox.load_word(size, word);
+    uint64_t o = outbox_staging.load_word(size, word);
     uint64_t a = active.load_word(size, word);
     (void)(i + o + a);
     printf("%lu %lu %lu\n", i, o, a);
@@ -141,7 +142,7 @@ struct client_impl : public SZ
     c.init(slot);
     const size_t size = this->size();
     uint64_t i = inbox.load_word(size, element);
-    uint64_t o = outbox.load_word(size, element);
+    uint64_t o = outbox_staging.load_word(size, element);
     uint64_t a = active.load_word(size, element);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
     c.i = i;
@@ -168,7 +169,10 @@ struct client_impl : public SZ
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
         if (platform::is_master_lane())
           {
-            outbox.release_slot_returning_updated_word(size, slot);
+            staged_release_slot_returning_updated_word(
+                size, slot, &outbox_staging, &outbox);
+
+            // outbox.release_slot_returning_updated_word(size, slot);
           }
         return false;
       }
@@ -203,7 +207,9 @@ struct client_impl : public SZ
     {
       __c11_atomic_thread_fence(__ATOMIC_RELEASE);
       uint64_t o = platform::critical<uint64_t>([&]() {
-        return outbox.claim_slot_returning_updated_word(size, slot);
+        return staged_claim_slot_returning_updated_word(
+            size, slot, &outbox_staging, &outbox);
+        // return outbox.claim_slot_returning_updated_word(size, slot);
       });
       c.o = o;
       assert(detail::nthbitset64(o, subindex));
@@ -226,17 +232,13 @@ struct client_impl : public SZ
         while (true)
           {
             uint32_t got = platform::critical<uint32_t>([&]() {
-              // I think this should be relaxed, existing hostcall uses
-              // acquire
               return inbox(size, slot, &loaded);
             });
 
             loaded = platform::broadcast_master(loaded);
 
             c.i = loaded;
-
             assert(got == 1 ? c.is(0b111) : c.is(0b011));
-
             if (got == 1)
               {
                 break;
@@ -278,7 +280,10 @@ struct client_impl : public SZ
 
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
         uint64_t o = platform::critical<uint64_t>([&]() {
-          return outbox.release_slot_returning_updated_word(size, slot);
+          return staged_release_slot_returning_updated_word(
+              size, slot, &outbox_staging, &outbox);
+
+          // return outbox.release_slot_returning_updated_word(size, slot);
         });
 
         c.o = o;

@@ -26,6 +26,7 @@ void* allocate(uint64_t hsa_region_t_handle, size_t align, size_t bytes)
   void* memory;
   if (HSA_STATUS_SUCCESS == hsa_memory_allocate(region, bytes, &memory))
     {
+      // May want to explicitly zero it here
       return memory;
     }
   else

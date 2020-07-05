@@ -119,7 +119,7 @@ TEST_CASE("set up single word system")
   slot_bitmap_all_svm send(N, send_data.get());
   slot_bitmap_all_svm recv(N, recv_data.get());
   slot_bitmap_device client_active(N, client_active_data.get());
-  slot_bitmap_device client_outbox_staging(N, client_outbox_staging_data.get());
+  slot_bitmap_coarse client_outbox_staging(N, client_outbox_staging_data.get());
   slot_bitmap_device server_active(N, server_active_data.get());
   const uint64_t calls_planned = 1024;
   _Atomic(uint64_t) calls_launched(0);

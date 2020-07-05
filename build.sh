@@ -154,10 +154,10 @@ time ./persistent_kernel.exe
 time ./tests.exe
 time ./x64_x64_stress.exe
 
-
-echo "Call executable"
+echo "Call hostcall/loader executable"
 time ./a.out ; echo $?
 
-# time valgrind --leak-check=full --fair-sched=yes ./states.exe hazard
-
+echo "Call x64_gcn_stress"
 time ./x64_gcn_stress.exe
+
+# time valgrind --leak-check=full --fair-sched=yes ./states.exe hazard

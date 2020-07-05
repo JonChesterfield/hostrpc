@@ -179,7 +179,18 @@ struct base
 
 struct fine_grain : public base<false>
 {
+  using Ty = _Atomic uint64_t *;
 };
+
+struct coarse_grain : public base<true>
+{
+#if defined(__AMDGCN__)
+  using Ty = __attribute__((address_space(1))) _Atomic uint64_t *;
+#else
+  using Ty = _Atomic uint64_t *;
+#endif
+};
+
 }  // namespace properties
 
 template <size_t scope, typename Prop>
@@ -191,10 +202,14 @@ using slot_bitmap_all_svm =
 using slot_bitmap_device =
     slot_bitmap<__OPENCL_MEMORY_SCOPE_DEVICE, properties::fine_grain>;
 
+// coarse grain here raises a HSAIL hardware exception
+using slot_bitmap_coarse =
+    slot_bitmap<__OPENCL_MEMORY_SCOPE_DEVICE, properties::coarse_grain>;
+
 template <size_t scope, typename Prop>
 struct slot_bitmap
 {
-  using Ty = _Atomic uint64_t *;  // Will want an address space for some bitmaps
+  using Ty = typename Prop::Ty;
   static_assert(sizeof(uint64_t) == sizeof(_Atomic uint64_t), "");
   static_assert(sizeof(_Atomic uint64_t *) == 8, "");
 
@@ -313,12 +328,10 @@ struct slot_bitmap
   {
     Ty addr = &a[element];
 
-    // cas is not used across devices by this library
+    // this cas function is not used across devices by this library
     bool r = __opencl_atomic_compare_exchange_weak(
         addr, &expect, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED,
-        __OPENCL_MEMORY_SCOPE_DEVICE
-
-    );
+        __OPENCL_MEMORY_SCOPE_DEVICE);
 
     // on success, bits in memory have been set to replace
     // on failure, value found is now in expect
@@ -339,12 +352,22 @@ struct slot_bitmap
     if (Prop::hasFetchOp())
       {
         // This seems to work on amdgcn, but only with acquire. acq/rel fails
-        return __opencl_atomic_fetch_and(addr, mask,
-                                         __ATOMIC_ACQUIRE,  // __ATOMIC_ACQ_REL,
-                                         __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+        if (scope == __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES)
+          {
+            return __opencl_atomic_fetch_and(
+                addr, mask, __ATOMIC_ACQ_REL,
+                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+          }
+        else
+          {
+            return __opencl_atomic_fetch_and(addr, mask, __ATOMIC_ACQ_REL,
+                                             __OPENCL_MEMORY_SCOPE_DEVICE);
+          }
       }
     else
       {
+        // load and atomic cas have similar cost across pcie, may be faster to
+        // use a (usually wrong) initial guess instead of a load
         uint64_t current = __opencl_atomic_load(
             addr, __ATOMIC_RELAXED, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
         while (1)
@@ -369,9 +392,17 @@ struct slot_bitmap
 
     if (Prop::hasFetchOp())
       {
-        // the host never sees the value set here
-        return __opencl_atomic_fetch_or(addr, mask, __ATOMIC_ACQ_REL,
-                                        __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+        if (scope == __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES)
+          {
+            return __opencl_atomic_fetch_or(
+                addr, mask, __ATOMIC_ACQ_REL,
+                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+          }
+        else
+          {
+            return __opencl_atomic_fetch_or(addr, mask, __ATOMIC_ACQ_REL,
+                                            __OPENCL_MEMORY_SCOPE_DEVICE);
+          }
       }
     else
       {
@@ -392,6 +423,97 @@ struct slot_bitmap
       }
   }
 };
+
+template <size_t Sscope, typename SProp, size_t Vscope, typename VProp>
+uint64_t staged_claim_slot_returning_updated_word(
+    size_t size, size_t i, slot_bitmap<Sscope, SProp> *staging,
+    slot_bitmap<Vscope, VProp> *visible)
+{
+  // claim slot in staging (efficiently) then propagage change to visible
+  assert((void *)visible != (void *)staging);
+  assert(i < size);
+  const size_t w = index_to_element(i);
+  const uint64_t subindex = index_to_subindex(i);
+
+  // slot is known clear as lock is held
+  assert(!detail::nthbitset64(staging->load_word(size, w), subindex));
+  assert(!detail::nthbitset64(visible->load_word(size, w), subindex));
+
+  // fetch_or to update staging
+  uint64_t staged_result = staging->claim_slot_returning_updated_word(size, i);
+  assert(detail::nthbitset64(staged_result, subindex));
+
+  // propose a value that could plausibly be in visible
+  // this was returned by fetch_or, can refactor to drop the arithmetic
+  uint64_t guess = detail::clearnthbit64(staged_result, subindex);
+
+  // initialise the value with the latest view of staging that is already
+  // available
+  uint64_t proposed = staged_result;
+
+  while (!visible->cas(w, guess, proposed, &guess))
+    {
+      if (detail::nthbitset64(guess, subindex))
+        {
+          // Cas failed, but another thread has done our work
+          proposed = guess;
+          break;
+        }
+
+      // Update our view of proposed and try again
+      proposed = staging->load_word(size, w);
+      assert(detail::nthbitset64(proposed, subindex));
+    }
+
+  assert(detail::nthbitset64(visible->load_word(size, w), subindex));
+  return proposed;
+}
+
+template <size_t Sscope, typename SProp, size_t Vscope, typename VProp>
+uint64_t staged_release_slot_returning_updated_word(
+    size_t size, size_t i, slot_bitmap<Sscope, SProp> *staging,
+    slot_bitmap<Vscope, VProp> *visible)
+{
+  // claim slot in staging (efficiently) then propagage change to visible
+  assert((void *)visible != (void *)staging);
+  assert(i < size);
+  const size_t w = index_to_element(i);
+  const uint64_t subindex = index_to_subindex(i);
+
+  // slot is known set as lock is held
+  assert(detail::nthbitset64(staging->load_word(size, w), subindex));
+  assert(detail::nthbitset64(visible->load_word(size, w), subindex));
+
+  // fetch_and to update staging
+  uint64_t staged_result =
+      staging->release_slot_returning_updated_word(size, i);
+  assert(!detail::nthbitset64(staged_result, subindex));
+
+  // propose a value that could plausibly be in visible
+  // this was returned by fetch_or, can refactor to drop the arithmetic
+  uint64_t guess = detail::setnthbit64(staged_result, subindex);
+
+  // initialise the value with the latest view of staging that is already
+  // available
+  uint64_t proposed = staged_result;
+
+  while (!visible->cas(w, guess, proposed, &guess))
+    {
+      if (!detail::nthbitset64(guess, subindex))
+        {
+          // Cas failed, but another thread has done our work
+          proposed = guess;
+          break;
+        }
+
+      // Update our view of proposed and try again
+      proposed = staging->load_word(size, w);
+      assert(!detail::nthbitset64(proposed, subindex));
+    }
+
+  assert(!detail::nthbitset64(visible->load_word(size, w), subindex));
+  return proposed;
+}
 
 // on return true, loaded contains active[w]
 template <size_t scope, typename Prop>

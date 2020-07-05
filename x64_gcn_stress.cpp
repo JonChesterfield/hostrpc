@@ -13,7 +13,7 @@ kernel void __device_start(__global void *args) { __device_start_cast(args); }
 #include "interface.hpp"
 #include "timer.hpp"
 
-#define MAXCLIENT 1024  // lazy memory management, could malloc it
+#define MAXCLIENT (4*1024)  // lazy memory management, could malloc it
 
 #if defined(__AMDGCN__)
 #include <stdint.h>
@@ -103,7 +103,7 @@ uint64_t gpu_call(hostrpc::x64_gcn_t::client_t *client, uint32_t id,
 
       client->invoke(scratch);
 
-      if (check_result)
+      if (0 && check_result)
         {
           if (!equal_page(scratch, expect))
             {
@@ -251,7 +251,7 @@ TEST_CASE("x64_gcn_stress")
     unsigned nclients = 1;
     unsigned per_client = 4096;
 
-    unsigned derive = 4;
+    unsigned derive = 5;
     for (unsigned i = 0; i < derive; i++)
       {
         nclients *= 2;
@@ -261,20 +261,20 @@ TEST_CASE("x64_gcn_stress")
     assert(nclients <= MAXCLIENT);
 
     // Looks like contention.
-    // derive clock clients per-client
-    //  0     4111     1    4096
-    //  1     4148     2    2048
-    //  2     4189     4    1024
-    //  3     4211     8     512
-    //  4     4293    16     256
-    //  5     4462    32     128
-    //  6     4810    64      64
-    //  7     5492   128      32
-    //  8     6889   256      16
-    //  9     9702   512       8
-    // 10    15174  1024       4
-    // 11    26427  2048       2
-    // 12    47647  4098       1
+    // derive clients per-cl clock   run2
+    //  0         1    4096   4111   1420
+    //  1         2    2048   4148   1416
+    //  2         4    1024   4189   1571
+    //  3         8     512   4211   1899
+    //  4        16     256   4293   2549
+    //  5        32     128   4462   3835
+    //  6        64      64   4810   6427
+    //  7       128      32   5492  11592 
+    //  8       256      16   6889  21974
+    //  9       512       8   9702  42725
+    // 10      1024       4  15174 
+    // 11      2048       2  26427 
+    // 12      4098       1  47647 
 
     printf("x64-gcn spawning %u x64 servers, %u gcn clients\n", nservers,
            nclients);

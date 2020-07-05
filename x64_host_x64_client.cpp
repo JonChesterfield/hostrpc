@@ -60,7 +60,7 @@ struct x64_x64_pair
     slot_bitmap_all_svm send(N, send_data);
     slot_bitmap_all_svm recv(N, recv_data);
     slot_bitmap_device client_locks(N, client_locks_data);
-    slot_bitmap_device client_outbox_staging(N, client_outbox_staging_data);
+    slot_bitmap_coarse client_outbox_staging(N, client_outbox_staging_data);
     slot_bitmap_device server_locks(N, server_locks_data);
 
     client = {sz,
