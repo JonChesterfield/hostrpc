@@ -13,6 +13,11 @@
 #include <string>
 #include <type_traits>
 
+#include <sys/mman.h>  // mmap and fstat
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+
 #include "../msgpack/msgpack.h"
 #include "find_metadata.hpp"
 
@@ -412,16 +417,32 @@ struct executable
     hsa_executable_destroy(state);
     // reader needs to be destroyed after the executable
     hsa_code_object_reader_destroy(reader);
+
+    if (mmapped_bytes != nullptr)
+      {
+        munmap(mmapped_bytes, mmapped_length);
+      }
   }
 
   executable(hsa_agent_t agent, hsa_file_t file)
-      : agent(agent), state({sentinel()}), info{}
+      : agent(agent), state({sentinel()})
   {
+    // hsa_file_t is a POSIX file descriptor
+    try_init_mmapped_bytes(file);
+    if (mmapped_bytes == nullptr)
+      {
+        printf("mmap failed on file %d, aborting\n", file);
+        exit(1);
+      }
+
+    info = parse_metadata(mmapped_bytes, mmapped_length);
+
     // This needs to be converted to mmap the file and delegate
     // in order to populate the kernel info table
     if (HSA_STATUS_SUCCESS == init_state())
       {
-        if (HSA_STATUS_SUCCESS == load_from_file(file))
+        if (HSA_STATUS_SUCCESS ==
+            load_from_memory(mmapped_bytes, mmapped_length))
           {
             if (HSA_STATUS_SUCCESS == freeze_and_validate())
               {
@@ -429,6 +450,7 @@ struct executable
               }
           }
       }
+
     hsa_executable_destroy(state);
     state = {sentinel()};
   }
@@ -507,17 +529,23 @@ struct executable
     return rc;
   }
 
-  hsa_status_t load_from_file(hsa_file_t file)
+  void try_init_mmapped_bytes(hsa_file_t file)
   {
-    hsa_status_t rc = hsa_code_object_reader_create_from_file(file, &reader);
-    if (rc != HSA_STATUS_SUCCESS)
-      {
-        return rc;
-      }
-
-    hsa_loaded_code_object_t code;
-    return hsa_executable_load_agent_code_object(state, agent, reader, NULL,
-                                                 &code);
+    mmapped_bytes = nullptr;
+    {
+      struct stat buf;
+      int rc = fstat(file, &buf);
+      if (rc == 0)
+        {
+          size_t l = buf.st_size;
+          void* m = mmap(NULL, l, PROT_READ, MAP_PRIVATE, file, 0);
+          if (m != MAP_FAILED)
+            {
+              mmapped_bytes = m;
+              mmapped_length = l;
+            }
+        }
+    }
   }
 
   hsa_status_t load_from_memory(const void* bytes, size_t size)
@@ -559,6 +587,10 @@ struct executable
     }
     return HSA_STATUS_SUCCESS;
   }
+
+  // mmapped_bytes != nullptr iff using a mmap of a hsa_file_t
+  void* mmapped_bytes = nullptr;
+  size_t mmapped_length = 0;
 
   hsa_agent_t agent;
   hsa_executable_t state;

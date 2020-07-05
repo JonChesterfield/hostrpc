@@ -290,9 +290,8 @@ static int main_with_hsa(int argc, char **argv)
     }
   else
     {
-      // Expected to fail at present because get_info isn't implemented for
-      // loading from file
-      printf("Warning: get_kernel_info failed\n");
+      printf("Error: get_kernel_info failed\n");
+      exit(1);
     }
 
   packet_store_release((uint32_t *)packet,
