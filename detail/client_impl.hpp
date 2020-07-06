@@ -230,10 +230,18 @@ struct client_impl : public SZ, public Counter
     uint64_t a = active.load_word(size(), w);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
-    uint64_t available = ~o & ~a;
-    uint64_t garbage = i & o & ~a;
+    // inbox == outbox == 0 => available for use
+    uint64_t available = ~i & ~o & ~a;
 
-    uint64_t candidate = available | garbage;
+    // 1 0 => garbage waiting on server
+    // 1 1 => garbage that client can act on
+    // Take those that client can act on and are not locked
+    uint64_t garbage_todo = i & o & ~a;
+
+    // could also let through inbox == 1 on the basis that
+    // the client may have
+
+    uint64_t candidate = available | garbage_todo;
     if (candidate != 0)
       {
         return 64 * w + detail::ctz64(candidate);
@@ -307,7 +315,6 @@ struct client_impl : public SZ, public Counter
 
     if (!available)
       {
-        // TODO: this hit x64_x64_stress, nservers=1,nclients=1
         Counter::got_lock_after_work_done();
         step(__LINE__, fill_application_state, use_application_state);
         return false;
@@ -460,8 +467,8 @@ struct client_impl : public SZ, public Counter
 
   // Returns true if it successfully launched the task
   template <bool have_continuation>
-  bool rpc_invoke(
-      void* fill_application_state, void* use_application_state) noexcept
+  bool rpc_invoke(void* fill_application_state,
+                  void* use_application_state) noexcept
   {
     step(__LINE__, fill_application_state, use_application_state);
 
