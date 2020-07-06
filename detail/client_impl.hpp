@@ -460,9 +460,7 @@ struct client_impl : public SZ, public Counter
 
   // Returns true if it successfully launched the task
   template <bool have_continuation>
-  // dropping noinline here makes tests at least very slow and
-  // possibly non-terminating.
-  __attribute__((noinline)) bool rpc_invoke(
+  bool rpc_invoke(
       void* fill_application_state, void* use_application_state) noexcept
   {
     step(__LINE__, fill_application_state, use_application_state);
