@@ -81,10 +81,8 @@ struct client
   }
   void finished_cas_fail(uint64_t c)
   {
-#if !defined(__AMDGCN__)
-    // triggers an infinite loop on amdgcn
+    // triggers an infinite loop on amdgcn trunk but not amd-stg-open
     add(&state[client_counters::cc_finished_cas_fail], c);
-#endif
   }
 
   // client_counters contains non-atomic, const version of this state

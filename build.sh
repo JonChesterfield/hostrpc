@@ -3,10 +3,19 @@ set -x
 
 ./clean.sh
 
+# Aomp
 RDIR=$HOME/rocm/aomp
 
-HSAINC="$(readlink -f ~/aomp/rocr-runtime/src/inc/)"
-HSALIBDIR="$(readlink -f ~/rocm/aomp/hsa/lib/)"
+# A poorly named amd-stg-open, does not hang
+# RDIR=$HOME/rocm-3.5-llvm-install
+
+# Trunk, hangs
+# RDIR=$HOME/llvm-install
+
+HSAINC="$HOME/aomp/rocr-runtime/src/inc/"
+
+
+HSALIBDIR="$HOME/rocm/aomp/hsa/lib/"
 HSALIB="$HSALIBDIR/libhsa-runtime64.so" # $RDIR/lib/libomptarget.rtl.hsa.so"
 
 # Shouldn't need these, but copying across from initial for reference 
@@ -20,7 +29,7 @@ OPT="$RDIR/bin/opt"
 CXX="$CLANG -std=c++11 -Wall -Wextra"
 LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR hsa_support.bc -lelf"
 
-AMDGPU="--target=amdgcn-amd-amdhsa -march=gfx906 -mcpu=gfx906 -mllvm -amdgpu-fixed-function-abi"
+AMDGPU="--target=amdgcn-amd-amdhsa -march=gfx906 -mcpu=gfx906 -mllvm -amdgpu-fixed-function-abi -nogpulib"
 
 # Not sure why CUDACC isn't being set by clang here, probably a bad sign
 NVGPU="--target=nvptx64-nvidia-cuda -march=sm_50 --cuda-gpu-arch=sm_50 -D__CUDACC__"
