@@ -87,6 +87,10 @@ struct client_counters
     cc_publish_cas_fail = 6,
     cc_finished_cas_fail = 7,
 
+    cc_garbage_cas_help = 8,
+    cc_publish_cas_help = 9,
+    cc_finished_cas_help = 10,
+
     cc_total_count,
 
   };
@@ -111,8 +115,11 @@ struct client_counters
     printf("waiting_for_result: %lu\n", state[cc_waiting_for_result]);
     printf("cas_lock_fail: %lu\n", state[cc_cas_lock_fail]);
     printf("garbage_cas_fail: %lu\n", state[cc_garbage_cas_fail]);
+    printf("garbage_cas_help: %lu\n", state[cc_garbage_cas_help]);
     printf("publish_fail: %lu\n", state[cc_publish_cas_fail]);
+    printf("publish_help: %lu\n", state[cc_publish_cas_help]);
     printf("finished_fail: %lu\n", state[cc_finished_cas_fail]);
+    printf("finished_help: %lu\n", state[cc_finished_cas_help]);
   }
 #endif
 };

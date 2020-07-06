@@ -322,6 +322,8 @@ TEST_CASE("x64_gcn_stress")
       {
         i.join();
       }
+
+    client->get_counters().dump();
   }
 }
 

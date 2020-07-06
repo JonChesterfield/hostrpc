@@ -85,6 +85,19 @@ struct client
     add(&state[client_counters::cc_finished_cas_fail], c);
   }
 
+  void garbage_cas_help(uint64_t c)
+  {
+    add(&state[client_counters::cc_garbage_cas_help], c);
+  }
+  void publish_cas_help(uint64_t c)
+  {
+    add(&state[client_counters::cc_publish_cas_help], c);
+  }
+  void finished_cas_help(uint64_t c)
+  {
+    add(&state[client_counters::cc_finished_cas_help], c);
+  }
+
   // client_counters contains non-atomic, const version of this state
   // defined in base_types
   client_counters get()
@@ -131,6 +144,9 @@ struct client_nop
   void garbage_cas_fail(uint64_t) {}
   void publish_cas_fail(uint64_t) {}
   void finished_cas_fail(uint64_t) {}
+  void garbage_cas_help(uint64_t) {}
+  void publish_cas_help(uint64_t) {}
+  void finished_cas_help(uint64_t) {}
 };
 
 }  // namespace counters
@@ -275,13 +291,17 @@ struct client_impl : public SZ, public Counter
       {
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
         uint64_t cas_fail_count = 0;
+        uint64_t cas_help_count = 0;
         platform::critical<uint64_t>([&]() {
           return staged_release_slot_returning_updated_word(
-              size, slot, &outbox_staging, &outbox, &cas_fail_count);
+              size, slot, &outbox_staging, &outbox, &cas_fail_count,
+              &cas_help_count);
           // outbox.release_slot_returning_updated_word(size, slot);
         });
         cas_fail_count = platform::broadcast_master(cas_fail_count);
+        cas_help_count = platform::broadcast_master(cas_help_count);
         Counter::garbage_cas_fail(cas_fail_count);
+        Counter::garbage_cas_help(cas_help_count);
         return false;
       }
 
@@ -317,13 +337,17 @@ struct client_impl : public SZ, public Counter
     {
       __c11_atomic_thread_fence(__ATOMIC_RELEASE);
       uint64_t cas_fail_count = 0;
+      uint64_t cas_help_count = 0;
       uint64_t o = platform::critical<uint64_t>([&]() {
         return staged_claim_slot_returning_updated_word(
-            size, slot, &outbox_staging, &outbox, &cas_fail_count);
+            size, slot, &outbox_staging, &outbox, &cas_fail_count,
+            &cas_help_count);
         // return outbox.claim_slot_returning_updated_word(size, slot);
       });
       cas_fail_count = platform::broadcast_master(cas_fail_count);
+      cas_help_count = platform::broadcast_master(cas_help_count);
       Counter::publish_cas_fail(cas_fail_count);
+      Counter::publish_cas_help(cas_help_count);
       c.o(o);
       assert(detail::nthbitset64(o, subindex));
       assert(c.is(0b011));
@@ -402,13 +426,17 @@ struct client_impl : public SZ, public Counter
         // won't realise the slot is no longer in use
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
         uint64_t cas_fail_count = 0;
+        uint64_t cas_help_count = 0;
         uint64_t o = platform::critical<uint64_t>([&]() {
           return staged_release_slot_returning_updated_word(
-              size, slot, &outbox_staging, &outbox, &cas_fail_count);
+              size, slot, &outbox_staging, &outbox, &cas_fail_count,
+              &cas_help_count);
           // return outbox.release_slot_returning_updated_word(size, slot);
         });
         cas_fail_count = platform::broadcast_master(cas_fail_count);
+        cas_help_count = platform::broadcast_master(cas_help_count);
         Counter::finished_cas_fail(cas_fail_count);
+        Counter::finished_cas_help(cas_help_count);
         c.o(o);
         assert(c.is(0b101));
 

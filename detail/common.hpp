@@ -449,7 +449,8 @@ struct slot_bitmap
 template <size_t Sscope, typename SProp, size_t Vscope, typename VProp>
 uint64_t staged_claim_slot_returning_updated_word(
     size_t size, size_t i, slot_bitmap<Sscope, SProp> *staging,
-    slot_bitmap<Vscope, VProp> *visible, uint64_t *cas_fail_count)
+    slot_bitmap<Vscope, VProp> *visible, uint64_t *cas_fail_count,
+    uint64_t *cas_help_count)
 {
   // claim slot in staging (efficiently) then propagage change to visible
   assert((void *)visible != (void *)staging);
@@ -474,12 +475,14 @@ uint64_t staged_claim_slot_returning_updated_word(
   uint64_t proposed = staged_result;
 
   uint64_t local_fail_count = 0;
+  uint64_t local_help_count = 0;
   while (!visible->cas(w, guess, proposed, &guess))
     {
       local_fail_count++;
       if (detail::nthbitset64(guess, subindex))
         {
           // Cas failed, but another thread has done our work
+          local_help_count++;
           proposed = guess;
           break;
         }
@@ -489,7 +492,7 @@ uint64_t staged_claim_slot_returning_updated_word(
       assert(detail::nthbitset64(proposed, subindex));
     }
   *cas_fail_count = *cas_fail_count + local_fail_count;
-
+  *cas_help_count = *cas_help_count + local_help_count;
   assert(detail::nthbitset64(visible->load_word(size, w), subindex));
   return proposed;
 }
@@ -497,7 +500,8 @@ uint64_t staged_claim_slot_returning_updated_word(
 template <size_t Sscope, typename SProp, size_t Vscope, typename VProp>
 uint64_t staged_release_slot_returning_updated_word(
     size_t size, size_t i, slot_bitmap<Sscope, SProp> *staging,
-    slot_bitmap<Vscope, VProp> *visible, uint64_t *cas_fail_count)
+    slot_bitmap<Vscope, VProp> *visible, uint64_t *cas_fail_count,
+    uint64_t *cas_help_count)
 {
   // claim slot in staging (efficiently) then propagage change to visible
   assert((void *)visible != (void *)staging);
@@ -523,12 +527,14 @@ uint64_t staged_release_slot_returning_updated_word(
   uint64_t proposed = staged_result;
 
   uint64_t local_fail_count = 0;
+  uint64_t local_help_count = 0;
   while (!visible->cas(w, guess, proposed, &guess))
     {
       local_fail_count++;
       if (!detail::nthbitset64(guess, subindex))
         {
           // Cas failed, but another thread has done our work
+          local_help_count++;
           proposed = guess;
           break;
         }
@@ -538,6 +544,7 @@ uint64_t staged_release_slot_returning_updated_word(
       assert(!detail::nthbitset64(proposed, subindex));
     }
   *cas_fail_count = *cas_fail_count + local_fail_count;
+  *cas_help_count = *cas_help_count + local_help_count;
 
   assert(!detail::nthbitset64(visible->load_word(size, w), subindex));
   return proposed;

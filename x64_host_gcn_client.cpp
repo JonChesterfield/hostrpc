@@ -231,6 +231,11 @@ void x64_gcn_t::client_t::invoke_async(hostrpc::page_t *page)
   while (r == false);
 }
 
+hostrpc::client_counters x64_gcn_t::client_t::get_counters()
+{
+  return state.open<ty::client_type>()->get_counters();
+}
+
 bool x64_gcn_t::server_t::handle(hostrpc::closure_func_t func,
                                  void *application_state, uint64_t *l)
 {

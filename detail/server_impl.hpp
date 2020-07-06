@@ -160,8 +160,10 @@ struct server_impl : public SZ
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
         uint64_t updated_out = platform::critical<uint64_t>([&]() {
           uint64_t cas_fail_count;
+          uint64_t cas_help_count;
           return staged_release_slot_returning_updated_word(
-              size, slot, &outbox_staging, &outbox, &cas_fail_count);
+              size, slot, &outbox_staging, &outbox, &cas_fail_count,
+              &cas_help_count);
           // return outbox.release_slot_returning_updated_word(size, slot);
         });
 
@@ -204,8 +206,10 @@ struct server_impl : public SZ
       __c11_atomic_thread_fence(__ATOMIC_RELEASE);
       uint64_t o = platform::critical<uint64_t>([&]() {
         uint64_t cas_fail_count = 0;
+        uint64_t cas_help_count = 0;
         return staged_claim_slot_returning_updated_word(
-            size, slot, &outbox_staging, &outbox, &cas_fail_count);
+            size, slot, &outbox_staging, &outbox, &cas_fail_count,
+            &cas_help_count);
 
         // return outbox.claim_slot_returning_updated_word(size, slot);
       });

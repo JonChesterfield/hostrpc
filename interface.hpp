@@ -204,6 +204,8 @@ struct x64_gcn_t
     void invoke(hostrpc::page_t *);
     void invoke_async(hostrpc::page_t *);
 
+    client_counters get_counters();
+
    private:
     template <typename ClientType>
     client_t(ClientType ct)
