@@ -38,9 +38,109 @@ enum class client_state : uint8_t
 // garbage that is, can't claim the slot for a new thread is that a sufficient
 // criteria for the slot to be awaiting gc?
 
+namespace counters
+{
+// client_nop compiles to no code
+// both are default-constructed
+
+struct client
+{
+  // Probably want this in the interface, partly to keep size
+  // lined up (this will be multiple words)
+  client() = default;
+  client(const client& o) = default;
+  client& operator=(const client& o) = default;
+
+  void no_candidate_slot()
+  {
+    inc(&state[client_counters::cc_no_candidate_slot]);
+  }
+  void missed_lock_on_candidate_slot()
+  {
+    inc(&state[client_counters::cc_missed_lock_on_candidate_slot]);
+  }
+  void got_lock_after_work_done()
+  {
+    inc(&state[client_counters::cc_got_lock_after_work_done]);
+  }
+  void waiting_for_result()
+  {
+    inc(&state[client_counters::cc_waiting_for_result]);
+  }
+  void cas_lock_fail(uint64_t c)
+  {
+    add(&state[client_counters::cc_cas_lock_fail], c);
+  }
+  void garbage_cas_fail(uint64_t c)
+  {
+    add(&state[client_counters::cc_garbage_cas_fail], c);
+  }
+  void publish_cas_fail(uint64_t c)
+  {
+    add(&state[client_counters::cc_publish_cas_fail], c);
+  }
+  void finished_cas_fail(uint64_t c)
+  {
+#if !defined(__AMDGCN__)
+    // triggers an infinite loop on amdgcn
+    add(&state[client_counters::cc_finished_cas_fail], c);
+#endif
+  }
+
+  // client_counters contains non-atomic, const version of this state
+  // defined in base_types
+  client_counters get()
+  {
+    __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+    client_counters res;
+    for (unsigned i = 0; i < client_counters::cc_total_count; i++)
+      {
+        res.state[i] = state[i];
+      }
+    return res;
+  }
+
+ private:
+  _Atomic uint64_t state[client_counters::cc_total_count] = {0u};
+
+  static void add(_Atomic uint64_t* addr, uint64_t v)
+  {
+    if (platform::is_master_lane())
+      {
+        __opencl_atomic_fetch_add(addr, v, __ATOMIC_RELAXED,
+                                  __OPENCL_MEMORY_SCOPE_DEVICE);
+      }
+  }
+
+  static void inc(_Atomic uint64_t* addr)
+  {
+    uint64_t v = 1;
+    add(addr, v);
+  }
+};
+
+struct client_nop
+{
+  client_nop() {}
+  client_counters get() { return {}; }
+
+  void no_candidate_slot() {}
+  void missed_lock_on_candidate_slot() {}
+  void got_lock_after_work_done() {}
+  void waiting_for_result() {}
+  void cas_lock_fail(uint64_t) {}
+
+  void garbage_cas_fail(uint64_t) {}
+  void publish_cas_fail(uint64_t) {}
+  void finished_cas_fail(uint64_t) {}
+};
+
+}  // namespace counters
+
+// enabling counters breaks codegen for amdgcn,
 template <typename SZ, typename Copy, typename Fill, typename Use,
-          typename Step>
-struct client_impl : public SZ
+          typename Step, typename Counter = counters::client>
+struct client_impl : public SZ, public Counter
 {
   using inbox_t = slot_bitmap_all_svm;
   using outbox_t = slot_bitmap_all_svm;
@@ -52,6 +152,7 @@ struct client_impl : public SZ
               page_t* local_buffer)
 
       : SZ{sz},
+        Counter{},
         remote_buffer(remote_buffer),
         local_buffer(local_buffer),
         inbox(inbox),
@@ -59,18 +160,33 @@ struct client_impl : public SZ
         active(active),
         outbox_staging(outbox_staging)
   {
+    constexpr size_t client_size = 48;
+
     // SZ is expected to be zero bytes or a uint64_t
-    struct local : public SZ
+    struct SZ_local : public SZ
     {
       float x;
     };
-    constexpr bool sz_empty = sizeof(local) == sizeof(float);
-    static_assert(sizeof(client_impl) == (sz_empty ? 48 : 56), "");
+    // Counter is zero bytes for nop or potentially many
+    struct Counter_local : public Counter
+    {
+      float x;
+    };
+    constexpr bool SZ_empty = sizeof(SZ_local) == sizeof(float);
+    constexpr bool Counter_empty = sizeof(Counter_local) == sizeof(float);
+
+    constexpr size_t SZ_size = SZ_empty ? 0 : sizeof(SZ);
+    constexpr size_t Counter_size = Counter_empty ? 0 : sizeof(Counter);
+
+    constexpr size_t total_size = client_size + SZ_size + Counter_size;
+
+    static_assert(sizeof(client_impl) == total_size, "");
     static_assert(alignof(client_impl) == 8, "");
   }
 
   client_impl()
       : SZ{0},
+        Counter{},
         remote_buffer(nullptr),
         local_buffer(nullptr),
         inbox{},
@@ -87,6 +203,8 @@ struct client_impl : public SZ
     Step::call(x, y);
     Step::call(x, z);
   }
+
+  client_counters get_counters() { return Counter::get(); }
 
   size_t size() { return SZ::N(); }
   size_t words() { return size() / 64; }
@@ -158,17 +276,21 @@ struct client_impl : public SZ
     if (garbage_todo)
       {
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+        uint64_t cas_fail_count = 0;
         platform::critical<uint64_t>([&]() {
           return staged_release_slot_returning_updated_word(
-              size, slot, &outbox_staging, &outbox);
+              size, slot, &outbox_staging, &outbox, &cas_fail_count);
           // outbox.release_slot_returning_updated_word(size, slot);
         });
-
+        cas_fail_count = platform::broadcast_master(cas_fail_count);
+        Counter::garbage_cas_fail(cas_fail_count);
         return false;
       }
 
     if (!available)
       {
+        // TODO: this hit x64_x64_stress, nservers=1,nclients=1
+        Counter::got_lock_after_work_done();
         step(__LINE__, fill_application_state, use_application_state);
         return false;
       }
@@ -196,11 +318,14 @@ struct client_impl : public SZ
     // wave_publish work
     {
       __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+      uint64_t cas_fail_count = 0;
       uint64_t o = platform::critical<uint64_t>([&]() {
         return staged_claim_slot_returning_updated_word(
-            size, slot, &outbox_staging, &outbox);
+            size, slot, &outbox_staging, &outbox, &cas_fail_count);
         // return outbox.claim_slot_returning_updated_word(size, slot);
       });
+      cas_fail_count = platform::broadcast_master(cas_fail_count);
+      Counter::publish_cas_fail(cas_fail_count);
       c.o(o);
       assert(detail::nthbitset64(o, subindex));
       assert(c.is(0b011));
@@ -232,6 +357,8 @@ struct client_impl : public SZ
               {
                 break;
               }
+
+            Counter::waiting_for_result();
 
             // make this spin slightly cheaper
             // todo: can the client do useful work while it waits? e.g. gc?
@@ -276,12 +403,14 @@ struct client_impl : public SZ
         // for free, or it may never become visible in which case the server
         // won't realise the slot is no longer in use
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+        uint64_t cas_fail_count = 0;
         uint64_t o = platform::critical<uint64_t>([&]() {
           return staged_release_slot_returning_updated_word(
-              size, slot, &outbox_staging, &outbox);
-
+              size, slot, &outbox_staging, &outbox, &cas_fail_count);
           // return outbox.release_slot_returning_updated_word(size, slot);
         });
+        cas_fail_count = platform::broadcast_master(cas_fail_count);
+        Counter::finished_cas_fail(cas_fail_count);
         c.o(o);
         assert(c.is(0b101));
 
@@ -348,13 +477,20 @@ struct client_impl : public SZ
 #endif
         uint64_t active_word;
         slot = find_candidate_client_slot(w);
-        if (slot != SIZE_MAX)
+        if (slot == SIZE_MAX)
           {
-            if (active.try_claim_empty_slot(size, slot, &active_word))
+            // no slot
+            Counter::no_candidate_slot();
+          }
+        else
+          {
+            uint64_t cas_fail_count = 0;
+            if (active.try_claim_empty_slot(size, slot, &active_word,
+                                            &cas_fail_count))
               {
                 // Success, got the lock.
                 assert(active_word != 0);
-
+                Counter::cas_lock_fail(cas_fail_count);
                 bool r = rpc_invoke_given_slot<have_continuation>(
                     fill_application_state, use_application_state, slot);
 
@@ -377,6 +513,10 @@ struct client_impl : public SZ
 #else
                 return r;
 #endif
+              }
+            else
+              {
+                Counter::missed_lock_on_candidate_slot();
               }
           }
       }

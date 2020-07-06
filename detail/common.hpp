@@ -283,7 +283,8 @@ struct slot_bitmap
   }
 
   // cas, true on success
-  bool try_claim_empty_slot(size_t size, size_t i, uint64_t *);
+  bool try_claim_empty_slot(size_t size, size_t i, uint64_t *,
+                            uint64_t *cas_fail_count);
 
   // assumes slot available
   uint64_t claim_slot_returning_updated_word(size_t size, size_t i)
@@ -448,7 +449,7 @@ struct slot_bitmap
 template <size_t Sscope, typename SProp, size_t Vscope, typename VProp>
 uint64_t staged_claim_slot_returning_updated_word(
     size_t size, size_t i, slot_bitmap<Sscope, SProp> *staging,
-    slot_bitmap<Vscope, VProp> *visible)
+    slot_bitmap<Vscope, VProp> *visible, uint64_t *cas_fail_count)
 {
   // claim slot in staging (efficiently) then propagage change to visible
   assert((void *)visible != (void *)staging);
@@ -472,8 +473,10 @@ uint64_t staged_claim_slot_returning_updated_word(
   // available
   uint64_t proposed = staged_result;
 
+  uint64_t local_fail_count = 0;
   while (!visible->cas(w, guess, proposed, &guess))
     {
+      local_fail_count++;
       if (detail::nthbitset64(guess, subindex))
         {
           // Cas failed, but another thread has done our work
@@ -485,6 +488,7 @@ uint64_t staged_claim_slot_returning_updated_word(
       proposed = staging->load_word(size, w);
       assert(detail::nthbitset64(proposed, subindex));
     }
+  *cas_fail_count = *cas_fail_count + local_fail_count;
 
   assert(detail::nthbitset64(visible->load_word(size, w), subindex));
   return proposed;
@@ -493,7 +497,7 @@ uint64_t staged_claim_slot_returning_updated_word(
 template <size_t Sscope, typename SProp, size_t Vscope, typename VProp>
 uint64_t staged_release_slot_returning_updated_word(
     size_t size, size_t i, slot_bitmap<Sscope, SProp> *staging,
-    slot_bitmap<Vscope, VProp> *visible)
+    slot_bitmap<Vscope, VProp> *visible, uint64_t *cas_fail_count)
 {
   // claim slot in staging (efficiently) then propagage change to visible
   assert((void *)visible != (void *)staging);
@@ -518,8 +522,10 @@ uint64_t staged_release_slot_returning_updated_word(
   // available
   uint64_t proposed = staged_result;
 
+  uint64_t local_fail_count = 0;
   while (!visible->cas(w, guess, proposed, &guess))
     {
+      local_fail_count++;
       if (!detail::nthbitset64(guess, subindex))
         {
           // Cas failed, but another thread has done our work
@@ -531,6 +537,7 @@ uint64_t staged_release_slot_returning_updated_word(
       proposed = staging->load_word(size, w);
       assert(!detail::nthbitset64(proposed, subindex));
     }
+  *cas_fail_count = *cas_fail_count + local_fail_count;
 
   assert(!detail::nthbitset64(visible->load_word(size, w), subindex));
   return proposed;
@@ -539,7 +546,8 @@ uint64_t staged_release_slot_returning_updated_word(
 // on return true, loaded contains active[w]
 template <size_t scope, typename Prop>
 bool slot_bitmap<scope, Prop>::try_claim_empty_slot(size_t size, size_t i,
-                                                    uint64_t *loaded)
+                                                    uint64_t *loaded,
+                                                    uint64_t *cas_fail_count)
 {
   assert(i < size);
   size_t w = index_to_element(i);
@@ -548,7 +556,7 @@ bool slot_bitmap<scope, Prop>::try_claim_empty_slot(size_t size, size_t i,
   uint64_t d = load_word(size, w);
 
   // printf("Slot %lu, w %lu, subindex %lu, d %lu\n", i, w, subindex, d);
-
+  uint64_t local_fail_count = 0;
   for (;;)
     {
       // if the bit was already set then we've lost the race
@@ -558,6 +566,7 @@ bool slot_bitmap<scope, Prop>::try_claim_empty_slot(size_t size, size_t i,
       uint64_t proposed = detail::setnthbit64(d, subindex);
       if (proposed == d)
         {
+          *cas_fail_count = *cas_fail_count + local_fail_count;
           return false;
         }
 
@@ -574,9 +583,11 @@ bool slot_bitmap<scope, Prop>::try_claim_empty_slot(size_t size, size_t i,
         {
           // success, got the lock, and active word was set to proposed
           *loaded = proposed;
+          *cas_fail_count = *cas_fail_count + local_fail_count;
           return true;
         }
 
+      local_fail_count++;
       // cas failed. reasons:
       // we lost the slot
       // another slot in the same word changed

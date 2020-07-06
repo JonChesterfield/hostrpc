@@ -135,7 +135,7 @@ x64_x64_t::client_t x64_x64_t::client()
 {
   ty *s = static_cast<ty *>(state);
   assert(s);
-  ty::client_type ct = s->client;
+  ty::client_type &ct = s->client;
   return {ct};
 }
 
@@ -143,7 +143,7 @@ x64_x64_t::server_t x64_x64_t::server()
 {
   ty *s = static_cast<ty *>(state);
   assert(s);
-  ty::server_type st = s->server;
+  ty::server_type &st = s->server;
   return {st};
 }
 
@@ -158,6 +158,11 @@ bool x64_x64_t::client_t::invoke_async(hostrpc::closure_func_t fill,
                                        void *use_state)
 {
   return invoke_async<ty::client_type>(fill, fill_state, use, use_state);
+}
+
+hostrpc::client_counters x64_x64_t::client_t::get_counters()
+{
+  return state.open<ty::client_type>()->get_counters();
 }
 
 bool x64_x64_t::server_t::handle(hostrpc::closure_func_t func,

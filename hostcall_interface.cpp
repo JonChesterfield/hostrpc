@@ -75,7 +75,8 @@ template <typename SZ>
 using x64_amdgcn_client =
     hostrpc::client_impl<SZ, hostrpc::copy_functor_given_alias,
                          x64_host_amdgcn_client::fill,
-                         x64_host_amdgcn_client::use, hostrpc::nop_stepper>;
+                         x64_host_amdgcn_client::use, hostrpc::nop_stepper,
+                         hostrpc::counters::client_nop>;
 
 template <typename SZ>
 using x64_amdgcn_server =

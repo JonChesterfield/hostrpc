@@ -6,8 +6,11 @@ namespace hostcall_ops
 #if defined(__x86_64__)
 void operate(hostrpc::page_t *page)
 {
-  printf("Called operate\n");
-  const bool verbose = true;
+  const bool verbose = false;
+  if (verbose)
+    {
+      printf("Called operate\n");
+    }
   for (unsigned c = 0; c < 64; c++)
     {
       hostrpc::cacheline_t &line = page->cacheline[c];

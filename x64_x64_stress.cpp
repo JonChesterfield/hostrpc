@@ -65,6 +65,11 @@ TEST_CASE("x64_x64_stress")
       }
   };
 
+  // makes a copy, which is cheap but not free
+  // when using counters, the copy means all the clients use their
+  // own counter - which is good for efficiency but complicates reporting
+
+  auto cl = p.client();
   auto client_worker = [&](unsigned id, unsigned reps) -> unsigned {
     my_id = id;
     page_t scratch;
@@ -75,7 +80,7 @@ TEST_CASE("x64_x64_stress")
       {
         init_page(&scratch, id);
         init_page(&expect, id + 1);
-        if (p.client().invoke(
+        if (cl.invoke(
                 [&](hostrpc::page_t *page) {
                   __builtin_memcpy(page, &scratch, sizeof(hostrpc::page_t));
                 },
@@ -101,8 +106,8 @@ TEST_CASE("x64_x64_stress")
     return failures;
   };
 
-  unsigned nservers = 64;
-  unsigned nclients = 64;
+  unsigned nservers = 1;
+  unsigned nclients = 128;
 
   std::vector<std::thread> server_store;
   for (unsigned i = 0; i < nservers; i++)
@@ -128,4 +133,7 @@ TEST_CASE("x64_x64_stress")
     {
       i.join();
     }
+
+  printf("x64_x64_stress counters:\n");
+  cl.get_counters().dump();
 }

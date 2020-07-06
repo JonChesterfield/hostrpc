@@ -159,8 +159,9 @@ struct server_impl : public SZ
 
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
         uint64_t updated_out = platform::critical<uint64_t>([&]() {
+          uint64_t cas_fail_count;
           return staged_release_slot_returning_updated_word(
-              size, slot, &outbox_staging, &outbox);
+              size, slot, &outbox_staging, &outbox, &cas_fail_count);
           // return outbox.release_slot_returning_updated_word(size, slot);
         });
 
@@ -202,8 +203,9 @@ struct server_impl : public SZ
     {
       __c11_atomic_thread_fence(__ATOMIC_RELEASE);
       uint64_t o = platform::critical<uint64_t>([&]() {
+        uint64_t cas_fail_count = 0;
         return staged_claim_slot_returning_updated_word(
-            size, slot, &outbox_staging, &outbox);
+            size, slot, &outbox_staging, &outbox, &cas_fail_count);
 
         // return outbox.claim_slot_returning_updated_word(size, slot);
       });
@@ -253,7 +255,9 @@ struct server_impl : public SZ
             assert(detail::nthbitset64(available, idx));
             uint64_t slot = 64 * w + idx;
             uint64_t active_word;
-            if (active.try_claim_empty_slot(size, slot, &active_word))
+            uint64_t cas_fail_count = 0;
+            if (active.try_claim_empty_slot(size, slot, &active_word,
+                                            &cas_fail_count))
               {
                 // Success, got the lock. Aim location_arg at next slot
                 assert(active_word != 0);
