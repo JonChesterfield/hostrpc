@@ -136,9 +136,9 @@ struct client_impl : public SZ
     uint64_t o = outbox_staging.load_word(size, element);
     uint64_t a = active.load_word(size, element);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
-    c.i = i;
-    c.o = o;
-    c.a = a;
+    c.i(i);
+    c.o(o);
+    c.a(a);
 
     // Called with a lock. The corresponding slot can be:
     //  inbox outbox    state  action
@@ -158,13 +158,12 @@ struct client_impl : public SZ
     if (garbage_todo)
       {
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-        if (platform::is_master_lane())
-          {
-            staged_release_slot_returning_updated_word(
-                size, slot, &outbox_staging, &outbox);
+        platform::critical<uint64_t>([&]() {
+          return staged_release_slot_returning_updated_word(
+              size, slot, &outbox_staging, &outbox);
+          // outbox.release_slot_returning_updated_word(size, slot);
+        });
 
-            // outbox.release_slot_returning_updated_word(size, slot);
-          }
         return false;
       }
 
@@ -202,7 +201,7 @@ struct client_impl : public SZ
             size, slot, &outbox_staging, &outbox);
         // return outbox.claim_slot_returning_updated_word(size, slot);
       });
-      c.o = o;
+      c.o(o);
       assert(detail::nthbitset64(o, subindex));
       assert(c.is(0b011));
     }
@@ -213,7 +212,7 @@ struct client_impl : public SZ
     // server to confirm, then drop local thread
 
     // with a continuation, outbox is cleared before this thread returns
-    // otherwise, garbage collection eneds to clear that outbox
+    // otherwise, garbage collection needed to clear that outbox
 
     if (have_continuation)
       {
@@ -227,7 +226,7 @@ struct client_impl : public SZ
 
             loaded = platform::broadcast_master(loaded);
 
-            c.i = loaded;
+            c.i(loaded);
             assert(got == 1 ? c.is(0b111) : c.is(0b011));
             if (got == 1)
               {
@@ -236,6 +235,11 @@ struct client_impl : public SZ
 
             // make this spin slightly cheaper
             // todo: can the client do useful work while it waits? e.g. gc?
+            // need to avoid taking too many locks at a time given forward
+            // progress which makes gc tricky
+            // could attempt to propagate the current word from staging to
+            // outbox - that's safe because a lock is held, maintaining linear
+            // time - but may conflict with other clients trying to do the same
             platform::sleep();
           }
 
@@ -267,7 +271,10 @@ struct client_impl : public SZ
 
         // mark the work as no longer in use
         // todo: is it better to leave this for the GC?
-
+        // can free slots more lazily by updating the staging outbox and
+        // leaving the visible one. In that case the update may be transfered
+        // for free, or it may never become visible in which case the server
+        // won't realise the slot is no longer in use
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
         uint64_t o = platform::critical<uint64_t>([&]() {
           return staged_release_slot_returning_updated_word(
@@ -275,8 +282,7 @@ struct client_impl : public SZ
 
           // return outbox.release_slot_returning_updated_word(size, slot);
         });
-
-        c.o = o;
+        c.o(o);
         assert(c.is(0b101));
 
         step(__LINE__, fill_application_state, use_application_state);
@@ -354,16 +360,15 @@ struct client_impl : public SZ
 
                 // wave release slot
                 step(__LINE__, fill_application_state, use_application_state);
-                if (platform::is_master_lane())
-                  {
-                    active.release_slot_returning_updated_word(size, slot);
-                  }
-                  // returning if the invoke garbage collected is inefficient
-                  // as the caller will need to try again, better to keep the
-                  // position in the loop. This raises a memory access error
-                  // however HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION: The
-                  // agent attempted to access memory beyond the largest legal
-                  // address.
+                platform::critical<uint64_t>([&]() {
+                  return active.release_slot_returning_updated_word(size, slot);
+                });
+                // returning if the invoke garbage collected is inefficient
+                // as the caller will need to try again, better to keep the
+                // position in the loop. This raises a memory access error
+                // however HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION: The
+                // agent attempted to access memory beyond the largest legal
+                // address.
 #if 0
                 if (r)
                   {

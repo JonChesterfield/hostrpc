@@ -136,6 +136,7 @@ struct x64_x64_t
       static_assert(state_t::align() == alignof(ClientType), "");
       auto *cv = state.construct<ClientType>(ct);
       assert(cv == state.open<ClientType>());
+      (void)cv;
     }
 
     bool invoke(closure_func_t fill, void *fill_state, closure_func_t use,
@@ -162,6 +163,7 @@ struct x64_x64_t
       static_assert(state_t::align() == alignof(ServerType), "");
       auto *sv = state.construct<ServerType>(st);
       assert(sv == state.open<ServerType>());
+      (void)sv;
     }
     state_t state;
     bool handle(closure_func_t operate, void *state, uint64_t *loc);
@@ -203,6 +205,7 @@ struct x64_gcn_t
       static_assert(state_t::align() == alignof(ClientType), "");
       auto *cv = state.construct<ClientType>(ct);
       assert(cv == state.open<ClientType>());
+      (void)cv;
     }
 
    public:
@@ -226,6 +229,7 @@ struct x64_gcn_t
       static_assert(state_t::align() == alignof(ServerType), "");
       auto *sv = state.construct<ServerType>(st);
       assert(sv == state.open<ServerType>());
+      (void)sv;
     }
     state_t state;
     bool handle(closure_func_t operate, void *state, uint64_t *loc);
@@ -265,6 +269,7 @@ struct gcn_x64_t
       static_assert(state_t::align() == alignof(ClientType), "");
       auto *cv = state.construct<ClientType>(ct);
       assert(cv == state.open<ClientType>());
+      (void)cv;
     }
     state_t state;
   };
@@ -285,6 +290,7 @@ struct gcn_x64_t
       static_assert(state_t::align() == alignof(ServerType), "");
       auto *sv = state.construct<ServerType>(st);
       assert(sv == state.open<ServerType>());
+      (void)sv;
     }
     state_t state;
   };

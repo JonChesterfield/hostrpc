@@ -102,6 +102,7 @@ struct server_impl : public SZ
 
   // may want to rename this, number-slots?
   size_t size() { return SZ::N(); }
+
   __attribute__((always_inline)) bool rpc_handle_given_slot(
       void* application_state, size_t slot)
   {
@@ -123,9 +124,9 @@ struct server_impl : public SZ
     uint64_t o = outbox_staging.load_word(size, element);
     uint64_t a = active.load_word(size, element);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
-    c.i = i;
-    c.o = o;
-    c.a = a;
+    c.i(i);
+    c.o(o);
+    c.a(a);
 
     // Called with a lock. The corresponding slot can be:
     //  inbox outbox    state  action
@@ -206,7 +207,7 @@ struct server_impl : public SZ
 
         // return outbox.claim_slot_returning_updated_word(size, slot);
       });
-      c.o = o;
+      c.o(o);
     }
     assert(c.is(0b111));
     // leaves outbox live

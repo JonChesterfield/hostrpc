@@ -17,7 +17,7 @@ LLC="$RDIR/bin/llc"
 LINK="$RDIR/bin/llvm-link"
 OPT="$RDIR/bin/opt"
 
-CXX="$CLANG -std=c++11 -Wall -Wextra " # -DNDEBUG"
+CXX="$CLANG -std=c++11 -Wall -Wextra"
 LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR hsa_support.bc -lelf"
 
 AMDGPU="--target=amdgcn-amd-amdhsa -march=gfx906 -mcpu=gfx906 -mllvm -amdgpu-fixed-function-abi"
@@ -25,8 +25,8 @@ AMDGPU="--target=amdgcn-amd-amdhsa -march=gfx906 -mcpu=gfx906 -mllvm -amdgpu-fix
 # Not sure why CUDACC isn't being set by clang here, probably a bad sign
 NVGPU="--target=nvptx64-nvidia-cuda -march=sm_50 --cuda-gpu-arch=sm_50 -D__CUDACC__"
 
-COMMONFLAGS="-Wall -Wextra -emit-llvm"
-X64FLAGS=" -O2 -pthread"
+COMMONFLAGS="-Wall -Wextra -emit-llvm " # -DNDEBUG"
+X64FLAGS=" -O2 -pthread -g"
 GCNFLAGS=" -O2 -ffreestanding -fno-exceptions $AMDGPU"
 # atomic alignment objection seems reasonable - may want 32 wide atomics on nvptx
 NVPTXFLAGS="-g -O2 -emit-llvm -ffreestanding -fno-exceptions -Wno-atomic-alignment $NVGPU"

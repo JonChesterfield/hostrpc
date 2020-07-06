@@ -115,6 +115,7 @@ x64_x64_t::x64_x64_t(size_t N) : state(nullptr)
 {
   N = hostrpc::round(N);
   hostrpc::size_runtime sz(N);
+  assert(sz.N() != 0);
   ty *s = new (std::nothrow) ty(sz);
   state = static_cast<void *>(s);
 }

@@ -19,7 +19,7 @@ static void copy_page(hostrpc::page_t *dst, hostrpc::page_t *src)
     {
       unsigned id = platform::get_lane_id();
       hostrpc::cacheline_t *dline = &dst->cacheline[id];
-      hostrpc::cacheline_t *sline = &src->cacheline[id];      
+      hostrpc::cacheline_t *sline = &src->cacheline[id];
       for (unsigned e = 0; e < 8; e++)
         {
           dline->element[e] = sline->element[e];

@@ -117,7 +117,14 @@ struct cache
 {
   cache() = default;
 
-  void dump() { printf("[%lu] %lu/%lu/%lu\n", slot, i, o, a); }
+  void dump()
+  {
+#ifndef NDEBUG
+    printf("[%lu] %lu/%lu/%lu\n", slot, i_, o_, a_);
+#else
+    printf("cache dump requires assertions enabled\n");
+#endif
+  }
 
   bool is(uint8_t s)
   {
@@ -127,6 +134,7 @@ struct cache
     if (!r) dump();
     return r;
 #else
+    (void)s;
     return true;
 #endif
   }
@@ -142,22 +150,33 @@ struct cache
 #endif
   }
 
-  uint64_t i = 0;
-  uint64_t o = 0;
-  uint64_t a = 0;
+#ifndef NDEBUG
+  void i(uint64_t x) { i_ = x; }
+  void o(uint64_t x) { o_ = x; }
+  void a(uint64_t x) { a_ = x; }
+#else
+  void i(uint64_t) {}
+  void o(uint64_t) {}
+  void a(uint64_t) {}
+#endif
 
+#ifndef NDEBUG
+ private:
+  uint64_t i_ = 0;
+  uint64_t o_ = 0;
+  uint64_t a_ = 0;
   uint64_t slot = UINT64_MAX;
   uint64_t word = UINT64_MAX;
   uint64_t subindex = UINT64_MAX;
 
- private:
   uint8_t concat()
   {
-    unsigned r = detail::nthbitset64(i, subindex) << 2 |
-                 detail::nthbitset64(o, subindex) << 1 |
-                 detail::nthbitset64(a, subindex) << 0;
+    unsigned r = detail::nthbitset64(i_, subindex) << 2 |
+                 detail::nthbitset64(o_, subindex) << 1 |
+                 detail::nthbitset64(a_, subindex) << 0;
     return static_cast<uint8_t>(r);
   }
+#endif
 };
 
 namespace properties
@@ -269,6 +288,7 @@ struct slot_bitmap
   // assumes slot available
   uint64_t claim_slot_returning_updated_word(size_t size, size_t i)
   {
+    (void)size;
     assert(i < size);
     size_t w = index_to_element(i);
     uint64_t subindex = index_to_subindex(i);
@@ -285,6 +305,7 @@ struct slot_bitmap
   // assumes slot taken
   uint64_t release_slot_returning_updated_word(size_t size, size_t i)
   {
+    (void)size;
     assert(i < size);
     size_t w = index_to_element(i);
     uint64_t subindex = index_to_subindex(i);
@@ -766,21 +787,29 @@ struct copy_functor_given_alias
                                               size_t)
   {
     assert(src == dst);
+    (void)src;
+    (void)dst;
   }
   static void pull_to_client_from_server_impl(void *dst, const void *src,
                                               size_t)
   {
     assert(src == dst);
+    (void)src;
+    (void)dst;
   }
   static void push_from_server_to_client_impl(void *dst, const void *src,
                                               size_t)
   {
     assert(src == dst);
+    (void)src;
+    (void)dst;
   }
   static void pull_to_server_from_client_impl(void *dst, const void *src,
                                               size_t)
   {
     assert(src == dst);
+    (void)src;
+    (void)dst;
   }
 };
 
