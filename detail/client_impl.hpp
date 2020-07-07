@@ -327,15 +327,11 @@ struct client_impl : public SZ, public Counter
     // wave_populate
 
     // Fill may have no precondition, in which case this doesn't need to run
-    Copy::pull_to_client_from_server((void*)&local_buffer[slot],
-                                     (void*)&remote_buffer[slot],
-                                     sizeof(page_t));
+    Copy::pull_to_client_from_server(&local_buffer[slot], &remote_buffer[slot]);
     step(__LINE__, fill_application_state, use_application_state);
     Fill::call(&local_buffer[slot], fill_application_state);
     step(__LINE__, fill_application_state, use_application_state);
-    Copy::push_from_client_to_server((void*)&remote_buffer[slot],
-                                     (void*)&local_buffer[slot],
-                                     sizeof(page_t));
+    Copy::push_from_client_to_server(&remote_buffer[slot], &local_buffer[slot]);
     step(__LINE__, fill_application_state, use_application_state);
 
     tracker().release(slot);
@@ -405,9 +401,8 @@ struct client_impl : public SZ, public Counter
         tracker().claim(slot);
 
         step(__LINE__, fill_application_state, use_application_state);
-        Copy::pull_to_client_from_server((void*)&local_buffer[slot],
-                                         (void*)&remote_buffer[slot],
-                                         sizeof(page_t));
+        Copy::pull_to_client_from_server(&local_buffer[slot],
+                                         &remote_buffer[slot]);
         step(__LINE__, fill_application_state, use_application_state);
         // call the continuation
         Use::call(&local_buffer[slot], use_application_state);
@@ -417,9 +412,8 @@ struct client_impl : public SZ, public Counter
         // Copying the state back to the server is a nop for aliased case,
         // and is only necessary if the server has a non-nop garbage clear
         // callback
-        Copy::push_from_client_to_server((void*)&remote_buffer[slot],
-                                         (void*)&local_buffer[slot],
-                                         sizeof(page_t));
+        Copy::push_from_client_to_server(&remote_buffer[slot],
+                                         &local_buffer[slot]);
 
         step(__LINE__, fill_application_state, use_application_state);
 

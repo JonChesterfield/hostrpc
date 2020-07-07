@@ -747,24 +747,23 @@ struct default_stepper
 template <typename T>
 struct copy_functor_interface
 {
-  // Function type is that of memcpy, i.e. dst first, N in bytes
+  // dst then src, memcpy style. Copies a single page
+  static void push_from_client_to_server(page_t *dst, const page_t *src)
+  {
+    T::push_from_client_to_server_impl(dst, src);
+  }
+  static void pull_to_client_from_server(page_t *dst, const page_t *src)
+  {
+    T::pull_to_client_from_server_impl(dst, src);
+  }
 
-  static void push_from_client_to_server(void *dst, const void *src, size_t N)
+  static void push_from_server_to_client(page_t *dst, const page_t *src)
   {
-    T::push_from_client_to_server_impl(dst, src, N);
+    T::push_from_server_to_client_impl(dst, src);
   }
-  static void pull_to_client_from_server(void *dst, const void *src, size_t N)
+  static void pull_to_server_from_client(page_t *dst, const page_t *src)
   {
-    T::pull_to_client_from_server_impl(dst, src, N);
-  }
-
-  static void push_from_server_to_client(void *dst, const void *src, size_t N)
-  {
-    T::push_from_server_to_client_impl(dst, src, N);
-  }
-  static void pull_to_server_from_client(void *dst, const void *src, size_t N)
-  {
-    T::pull_to_server_from_client_impl(dst, src, N);
+    T::pull_to_server_from_client_impl(dst, src);
   }
 
  private:
@@ -772,10 +771,10 @@ struct copy_functor_interface
   copy_functor_interface() = default;
 
   // Default implementations are no-ops
-  static void push_from_client_to_server_impl(void *, const void *, size_t) {}
-  static void pull_to_client_from_server_impl(void *, const void *, size_t) {}
-  static void push_from_server_to_client_impl(void *, const void *, size_t) {}
-  static void pull_to_server_from_client_impl(void *, const void *, size_t) {}
+  static void push_from_client_to_server_impl(page_t *, const page_t *) {}
+  static void pull_to_client_from_server_impl(page_t *, const page_t *) {}
+  static void push_from_server_to_client_impl(page_t *, const page_t *) {}
+  static void pull_to_server_from_client_impl(page_t *, const page_t *) {}
 };
 
 struct copy_functor_memcpy_pull
@@ -784,14 +783,14 @@ struct copy_functor_memcpy_pull
   friend struct copy_functor_interface<copy_functor_memcpy_pull>;
 
  private:
-  static void pull_to_client_from_server_impl(void *dst, const void *src,
-                                              size_t N)
+  static void pull_to_client_from_server_impl(page_t *dst, const page_t *src)
   {
+    size_t N = sizeof(page_t);
     __builtin_memcpy(dst, src, N);
   }
-  static void pull_to_server_from_client_impl(void *dst, const void *src,
-                                              size_t N)
+  static void pull_to_server_from_client_impl(page_t *dst, const page_t *src)
   {
+    size_t N = sizeof(page_t);
     __builtin_memcpy(dst, src, N);
   }
 };
@@ -801,29 +800,25 @@ struct copy_functor_given_alias
 {
   friend struct copy_functor_interface<copy_functor_given_alias>;
 
-  static void push_from_client_to_server_impl(void *dst, const void *src,
-                                              size_t)
+  static void push_from_client_to_server_impl(page_t *dst, const page_t *src)
   {
     assert(src == dst);
     (void)src;
     (void)dst;
   }
-  static void pull_to_client_from_server_impl(void *dst, const void *src,
-                                              size_t)
+  static void pull_to_client_from_server_impl(page_t *dst, const page_t *src)
   {
     assert(src == dst);
     (void)src;
     (void)dst;
   }
-  static void push_from_server_to_client_impl(void *dst, const void *src,
-                                              size_t)
+  static void push_from_server_to_client_impl(page_t *dst, const page_t *src)
   {
     assert(src == dst);
     (void)src;
     (void)dst;
   }
-  static void pull_to_server_from_client_impl(void *dst, const void *src,
-                                              size_t)
+  static void pull_to_server_from_client_impl(page_t *dst, const page_t *src)
   {
     assert(src == dst);
     (void)src;

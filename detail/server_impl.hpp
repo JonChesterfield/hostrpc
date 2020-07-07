@@ -147,15 +147,13 @@ struct server_impl : public SZ
         assert((o & this_slot) != 0);
 
         // Move data and clear. TODO: Elide the copy for nop clear
-        Copy::pull_to_server_from_client((void*)&local_buffer[slot],
-                                         (void*)&remote_buffer[slot],
-                                         sizeof(page_t));
+        Copy::pull_to_server_from_client(&local_buffer[slot],
+                                         &remote_buffer[slot]);
         step(__LINE__, application_state);
         Clear::call(&local_buffer[slot], application_state);
         step(__LINE__, application_state);
-        Copy::push_from_server_to_client((void*)&remote_buffer[slot],
-                                         (void*)&local_buffer[slot],
-                                         sizeof(page_t));
+        Copy::push_from_server_to_client(&remote_buffer[slot],
+                                         &local_buffer[slot]);
 
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
         uint64_t updated_out = platform::critical<uint64_t>([&]() {
@@ -186,15 +184,11 @@ struct server_impl : public SZ
     tracker().claim(slot);
 
     // make the calls
-    Copy::pull_to_server_from_client((void*)&local_buffer[slot],
-                                     (void*)&remote_buffer[slot],
-                                     sizeof(page_t));
+    Copy::pull_to_server_from_client(&local_buffer[slot], &remote_buffer[slot]);
     step(__LINE__, application_state);
     Op::call(&local_buffer[slot], application_state);
     step(__LINE__, application_state);
-    Copy::push_from_server_to_client((void*)&remote_buffer[slot],
-                                     (void*)&local_buffer[slot],
-                                     sizeof(page_t));
+    Copy::push_from_server_to_client(&remote_buffer[slot], &local_buffer[slot]);
     step(__LINE__, application_state);
 
     assert(c.is(0b101));

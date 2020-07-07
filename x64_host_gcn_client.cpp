@@ -49,17 +49,57 @@ struct use
   };
 };
 
+struct copy_functor_x64_gcn
+    : public hostrpc::copy_functor_interface<copy_functor_x64_gcn>
+{
+  friend struct hostrpc::copy_functor_interface<copy_functor_x64_gcn>;
+
+  // attempting to move incrementally to a gpu-local buffer to avoid
+  // compiler generated accesses to flat memory
+  static void push_from_client_to_server_impl(hostrpc::page_t *dst,
+                                              const hostrpc::page_t *src)
+  {
+    // src is coarse memory, dst is fine
+    assert(src == dst);
+    (void)src;
+    (void)dst;
+  }
+
+  static void pull_to_client_from_server_impl(hostrpc::page_t *dst,
+                                              const hostrpc::page_t *src)
+  {
+    // dst is coarse memory, src is fine
+    assert(src == dst);
+    (void)src;
+    (void)dst;
+  }
+
+  // No copies done by the x64 server as it can't see the gcn local buffer
+  static void push_from_server_to_client_impl(hostrpc::page_t *dst,
+                                              const hostrpc::page_t *src)
+  {
+    assert(src == dst);
+    (void)src;
+    (void)dst;
+  }
+  static void pull_to_server_from_client_impl(hostrpc::page_t *dst,
+                                              const hostrpc::page_t *src)
+  {
+    assert(src == dst);
+    (void)src;
+    (void)dst;
+  }
+};
+
 namespace hostrpc
 {
 template <typename SZ>
-using x64_gcn_client =
-    hostrpc::client_impl<SZ, hostrpc::copy_functor_given_alias, fill, use,
-                         hostrpc::nop_stepper>;
+using x64_gcn_client = hostrpc::client_impl<SZ, copy_functor_x64_gcn, fill, use,
+                                            hostrpc::nop_stepper>;
 
 template <typename SZ>
-using x64_gcn_server =
-    hostrpc::server_indirect_impl<SZ, hostrpc::copy_functor_given_alias,
-                                  hostrpc::nop_stepper>;
+using x64_gcn_server = hostrpc::server_indirect_impl<SZ, copy_functor_x64_gcn,
+                                                     hostrpc::nop_stepper>;
 
 template <typename SZ>
 struct x64_gcn_pair
