@@ -143,8 +143,10 @@ done
 
 for bc in `find . -type f -iname '*.gcn.bc'` ; do
     ll=`echo $bc | sed 's_.bc_.ll_g'`
+    obj=`echo $bc | sed 's_.bc_.obj_g'`
     $OPT -strip-debug $bc -S -o $ll
     $LLC --mcpu=gfx906 -amdgpu-fixed-function-abi $ll
+    $CXX_GCN_LD -c $ll -o $obj
 done
 
 $CXX_X64_LD tests.x64.bc x64_x64_stress.x64.bc states.x64.bc catch.o memory.x64.bc x64_host_x64_client.x64.bc $LDFLAGS -o states.exe
