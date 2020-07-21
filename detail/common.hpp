@@ -1,7 +1,6 @@
 #ifndef HOSTRPC_COMMON_H_INCLUDED
 #define HOSTRPC_COMMON_H_INCLUDED
 
-#include <stdatomic.h>
 #include <stdint.h>
 
 #include "../base_types.hpp"
@@ -694,12 +693,12 @@ inline slot_owner tracker()
 
 inline void step(_Atomic(uint64_t) * steps_left)
 {
-  if (atomic_load(steps_left) == UINT64_MAX)
+  if (__c11_atomic_load(steps_left, __ATOMIC_SEQ_CST) == UINT64_MAX)
     {
       // Disable stepping
       return;
     }
-  while (atomic_load(steps_left) == 0)
+  while (__c11_atomic_load(steps_left, __ATOMIC_SEQ_CST) == 0)
     {
       // Don't burn all the cpu waiting for a step
       platform::sleep_briefly();
