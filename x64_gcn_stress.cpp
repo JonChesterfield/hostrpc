@@ -44,6 +44,7 @@ extern "C" void __device_start_main(kernel_args *args)
   while (__atomic_load_n(args->control, __ATOMIC_ACQUIRE) == 0)
     {
     }
+  // __builtin_amdgcn_workgroup_id_x
   uint64_t r = gpu_call(hostrpc_pair_client, args->id, args->reps);
   args->result = r;
 }
@@ -324,13 +325,15 @@ TEST_CASE("x64_gcn_stress")
     // make sure there's a server running before we wait for the result
     {
       timer t("Collect results");
-      for (unsigned i = 0; i < nclients; i++)
+      for (size_t i = 0; i < client_store.size(); i++)
         {
           kernel_args res = client_store[i]();
           CHECK(res.result == 0);
         }
     }
     server_live = false;
+
+    printf("Servers halting\n");
     for (auto &i : server_store)
       {
         i.join();
