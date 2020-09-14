@@ -27,6 +27,7 @@ struct kernel_args
   uint32_t id;
   uint32_t reps;
   uint64_t result;
+  uint64_t *control;
 };
 
 #if defined(__AMDGCN__)
@@ -40,6 +41,9 @@ static uint64_t gpu_call(hostrpc::x64_gcn_t::client_t *client, uint32_t id,
                          uint32_t reps);
 extern "C" void __device_start_main(kernel_args *args)
 {
+  while (__atomic_load_n(args->control, __ATOMIC_ACQUIRE) == 0)
+    {
+    }
   uint64_t r = gpu_call(hostrpc_pair_client, args->id, args->reps);
   args->result = r;
 }
@@ -166,8 +170,7 @@ TEST_CASE("x64_gcn_stress")
       hsa_status_t rc = hsa_queue_create(
           kernel_agent /* make the queue on this agent */,
           131072 /* todo: size it, this hardcodes max size for vega20 */,
-          HSA_QUEUE_TYPE_SINGLE /* baseline */,
-          NULL /* called on every async event? */,
+          HSA_QUEUE_TYPE_MULTI, NULL /* called on every async event? */,
           NULL /* data passed to previous */,
           // If sizes exceed these values, things are supposed to work slowly
           UINT32_MAX /* private_segment_size, 32_MAX is unknown */,
@@ -283,13 +286,20 @@ TEST_CASE("x64_gcn_stress")
     printf("x64-gcn spawning %u x64 servers, %u gcn clients\n", nservers,
            nclients);
 
+    auto ctrl_holder = hsa::allocate(fine_grained_region, 8);
+    uint64_t *control = (uint64_t *)ctrl_holder.get();
+
+    __atomic_store_n(control, 0, __ATOMIC_RELEASE);
+
     std::vector<launch_t<kernel_args> > client_store;
     {
       timer t("Launching clients");
       for (unsigned i = 0; i < nclients; i++)
         {
-          kernel_args example = {
-              .id = i, .reps = per_client, .result = UINT64_MAX};
+          kernel_args example = {.id = i,
+                                 .reps = per_client,
+                                 .result = UINT64_MAX,
+                                 .control = control};
           launch_t<kernel_args> tmp(kernel_agent, queue, kernel_address,
                                     kernel_private_segment_fixed_size,
                                     kernel_group_segment_fixed_size, example);
@@ -307,6 +317,9 @@ TEST_CASE("x64_gcn_stress")
         }
     }
     printf("Servers running\n");
+
+    // Release
+    __atomic_store_n(control, 1, __ATOMIC_RELEASE);
 
     // make sure there's a server running before we wait for the result
     {
