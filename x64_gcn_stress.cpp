@@ -22,11 +22,12 @@ kernel void __device_start(__global void *args) { __device_start_cast(args); }
 #include <cstdint>
 #endif
 
+#define MAX_WAVES (8)
 struct kernel_args
 {
   uint32_t id;
   uint32_t reps;
-  uint64_t result;
+  uint64_t result[MAX_WAVES];
   uint64_t *control;
 };
 
@@ -44,9 +45,9 @@ extern "C" void __device_start_main(kernel_args *args)
   while (__atomic_load_n(args->control, __ATOMIC_ACQUIRE) == 0)
     {
     }
-  // __builtin_amdgcn_workgroup_id_x
-  uint64_t r = gpu_call(hostrpc_pair_client, args->id, args->reps);
-  args->result = r;
+  uint64_t wg =  __builtin_amdgcn_workgroup_id_x();
+  uint64_t r = gpu_call(hostrpc_pair_client, args->id + wg, args->reps);
+  args->result[wg] = r;
 }
 extern "C" void __device_start_cast(
     __attribute__((address_space(1))) void *asargs)
@@ -108,7 +109,7 @@ uint64_t gpu_call(hostrpc::x64_gcn_t::client_t *client, uint32_t id,
 
       client->invoke(scratch);
 
-      if (0 && check_result)
+      if (check_result)
         {
           if (!equal_page(scratch, expect))
             {
@@ -259,7 +260,7 @@ TEST_CASE("x64_gcn_stress")
     unsigned nclients = 1;
     unsigned per_client = 4096;
 
-    unsigned derive = 5;
+    unsigned derive = 11;
     for (unsigned i = 0; i < derive; i++)
       {
         nclients *= 2;
@@ -295,15 +296,18 @@ TEST_CASE("x64_gcn_stress")
     std::vector<launch_t<kernel_args> > client_store;
     {
       timer t("Launching clients");
-      for (unsigned i = 0; i < nclients; i++)
+      for (unsigned i = 0; i < nclients; i+=MAX_WAVES)
         {
           kernel_args example = {.id = i,
                                  .reps = per_client,
-                                 .result = UINT64_MAX,
+                                 .result = {0},
                                  .control = control};
+          for (size_t i = 0; i < MAX_WAVES; i++) {
+            example.result[i] = UINT64_MAX;
+          }
           launch_t<kernel_args> tmp(kernel_agent, queue, kernel_address,
                                     kernel_private_segment_fixed_size,
-                                    kernel_group_segment_fixed_size, example);
+                                    kernel_group_segment_fixed_size, MAX_WAVES, example);
           client_store.emplace_back(std::move(tmp));
         }
     }
@@ -328,7 +332,9 @@ TEST_CASE("x64_gcn_stress")
       for (size_t i = 0; i < client_store.size(); i++)
         {
           kernel_args res = client_store[i]();
-          CHECK(res.result == 0);
+          for (size_t i = 0; i < MAX_WAVES; i++) {
+            CHECK(res.result[i] == 0);
+          }
         }
     }
     server_live = false;

@@ -138,9 +138,10 @@ struct launch_t
 
   launch_t(hsa_agent_t kernel_agent, hsa_queue_t *queue,
            uint64_t kernel_address, uint32_t private_segment_fixed_size,
-           uint32_t group_segment_fixed_size, T args)
+           uint32_t group_segment_fixed_size, uint64_t number_waves, T args)
 
   {
+    assert(number_waves <= 8);
     uint64_t packet_id;
     packet = setup_and_find_packet(kernel_agent, queue, args, &packet_id);
     if (!packet)
@@ -158,7 +159,7 @@ struct launch_t
     packet->private_segment_size = private_segment_fixed_size;
     packet->group_segment_size = group_segment_fixed_size;
 
-    // packet->grid_size_x = packet->workgroup_size_x * 2;
+    packet->grid_size_x = packet->workgroup_size_x * number_waves;
     
     auto rc = hsa_signal_create(1, 0, NULL, &packet->completion_signal);
     if (rc != HSA_STATUS_SUCCESS)
