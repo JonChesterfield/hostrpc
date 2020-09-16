@@ -112,9 +112,9 @@ struct client
   }
 
  private:
-  _Atomic uint64_t state[client_counters::cc_total_count] = {0u};
+  _Atomic(uint64_t) state[client_counters::cc_total_count] = {0u};
 
-  static void add(_Atomic uint64_t* addr, uint64_t v)
+  static void add(_Atomic(uint64_t) * addr, uint64_t v)
   {
     if (platform::is_master_lane())
       {
@@ -123,7 +123,7 @@ struct client
       }
   }
 
-  static void inc(_Atomic uint64_t* addr)
+  static void inc(_Atomic(uint64_t) * addr)
   {
     uint64_t v = 1;
     add(addr, v);

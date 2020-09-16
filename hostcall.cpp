@@ -187,7 +187,7 @@ class hostcall_impl
  private:
   int spawn_worker(uint16_t queue_id)
   {
-    _Atomic uint32_t *control = &thread_killer;
+    _Atomic(uint32_t) *control = &thread_killer;
     hostrpc::hostcall_interface_t::server_t *server = &servers[queue_id];
     uint64_t *ql = &queue_loc[queue_id];
     // TODO. Can't actually use std::thread because the constructor throws.
@@ -217,7 +217,7 @@ class hostcall_impl
   std::vector<hostrpc::hostcall_interface_t *> stored_pairs;
   std::vector<uint64_t> queue_loc;
 
-  _Atomic uint32_t thread_killer = 0;
+  _Atomic(uint32_t) thread_killer = 0;
   std::vector<std::thread> threads;
   hsa_region_t fine_grained_region;
   hsa_region_t coarse_grained_region;

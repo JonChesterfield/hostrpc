@@ -45,7 +45,7 @@ extern "C" void __device_start_main(kernel_args *args)
   while (__atomic_load_n(args->control, __ATOMIC_ACQUIRE) == 0)
     {
     }
-  uint64_t wg =  __builtin_amdgcn_workgroup_id_x();
+  uint64_t wg = __builtin_amdgcn_workgroup_id_x();
   uint64_t r = gpu_call(hostrpc_pair_client, args->id + wg, args->reps);
   args->result[wg] = r;
 }
@@ -198,7 +198,7 @@ TEST_CASE("x64_gcn_stress")
         }
     }
 
-    _Atomic bool server_live(true);
+    _Atomic(bool) server_live(true);
     size_t N = 1920;
     hostrpc::x64_gcn_t p(N, fine_grained_region.handle,
                          coarse_grained_region.handle);
@@ -296,18 +296,18 @@ TEST_CASE("x64_gcn_stress")
     std::vector<launch_t<kernel_args> > client_store;
     {
       timer t("Launching clients");
-      for (unsigned i = 0; i < nclients; i+=MAX_WAVES)
+      for (unsigned i = 0; i < nclients; i += MAX_WAVES)
         {
-          kernel_args example = {.id = i,
-                                 .reps = per_client,
-                                 .result = {0},
-                                 .control = control};
-          for (size_t i = 0; i < MAX_WAVES; i++) {
-            example.result[i] = UINT64_MAX;
-          }
+          kernel_args example = {
+              .id = i, .reps = per_client, .result = {0}, .control = control};
+          for (size_t i = 0; i < MAX_WAVES; i++)
+            {
+              example.result[i] = UINT64_MAX;
+            }
           launch_t<kernel_args> tmp(kernel_agent, queue, kernel_address,
                                     kernel_private_segment_fixed_size,
-                                    kernel_group_segment_fixed_size, MAX_WAVES, example);
+                                    kernel_group_segment_fixed_size, MAX_WAVES,
+                                    example);
           client_store.emplace_back(std::move(tmp));
         }
     }
@@ -332,9 +332,10 @@ TEST_CASE("x64_gcn_stress")
       for (size_t i = 0; i < client_store.size(); i++)
         {
           kernel_args res = client_store[i]();
-          for (size_t i = 0; i < MAX_WAVES; i++) {
-            CHECK(res.result[i] == 0);
-          }
+          for (size_t i = 0; i < MAX_WAVES; i++)
+            {
+              CHECK(res.result[i] == 0);
+            }
         }
     }
     server_live = false;

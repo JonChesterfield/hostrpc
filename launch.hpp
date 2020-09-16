@@ -160,7 +160,7 @@ struct launch_t
     packet->group_segment_size = group_segment_fixed_size;
 
     packet->grid_size_x = packet->workgroup_size_x * number_waves;
-    
+
     auto rc = hsa_signal_create(1, 0, NULL, &packet->completion_signal);
     if (rc != HSA_STATUS_SUCCESS)
       {

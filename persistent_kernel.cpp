@@ -205,7 +205,7 @@ struct dispatch_packet  // 64 byte aligned, probably
 struct kernel_args
 {
   const dispatch_packet *self;
-  _Atomic uint32_t control;
+  _Atomic(uint32_t) control;
   void *application_args;
   void *my_queue;
 };
@@ -243,7 +243,7 @@ static void kick_signal(uint64_t handle)
 }
 
 extern "C" void __device_persistent_kernel_call(const dispatch_packet *self,
-                                                _Atomic uint32_t *control,
+                                                _Atomic(uint32_t) * control,
                                                 void *application_args,
                                                 void *my_queue)
 {
@@ -256,10 +256,10 @@ extern "C" void __device_persistent_kernel_call(const dispatch_packet *self,
   __device_persistent_call(application_args);
 
   // Acquire an available packet id
-  _Atomic uint64_t *write_dispatch_id =
-      reinterpret_cast<_Atomic uint64_t *>((char *)my_queue + 56);
-  _Atomic uint64_t *read_dispatch_id =
-      reinterpret_cast<_Atomic uint64_t *>((char *)my_queue + 128);
+  _Atomic(uint64_t) *write_dispatch_id =
+      reinterpret_cast<_Atomic(uint64_t) *>((char *)my_queue + 56);
+  _Atomic(uint64_t) *read_dispatch_id =
+      reinterpret_cast<_Atomic(uint64_t) *>((char *)my_queue + 128);
 
   // Need to get queue->size and queue->base_address to use the packet id
   // May want o pass this in as a _constant

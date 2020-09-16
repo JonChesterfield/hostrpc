@@ -25,15 +25,15 @@ _Static_assert(192 == round(129), "");
 #if defined(__x86_64__)
 namespace
 {
-inline _Atomic uint64_t *hsa_allocate_slot_bitmap_data_alloc(
-    hsa_region_t region, size_t size)
+inline _Atomic(uint64_t) *
+    hsa_allocate_slot_bitmap_data_alloc(hsa_region_t region, size_t size)
 {
   const size_t align = 64;
   void *memory = hostrpc::hsa::allocate(region.handle, align, size);
-  return hostrpc::careful_array_cast<_Atomic uint64_t>(memory, size);
+  return hostrpc::careful_array_cast<_Atomic(uint64_t)>(memory, size);
 }
 
-inline void hsa_allocate_slot_bitmap_data_free(_Atomic uint64_t *d)
+inline void hsa_allocate_slot_bitmap_data_free(_Atomic(uint64_t) * d)
 {
   hostrpc::hsa::deallocate(static_cast<void *>(d));
 }

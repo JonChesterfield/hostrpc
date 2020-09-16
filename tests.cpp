@@ -18,17 +18,17 @@ TEST_CASE("instantiate")
   foo.server();
 }
 
-static _Atomic uint64_t* x64_allocate_slot_bitmap_data(size_t size)
+static _Atomic(uint64_t) * x64_allocate_slot_bitmap_data(size_t size)
 {
   assert(size % 64 == 0 && "Size must be a multiple of 64");
   constexpr const static size_t align = 64;
   void* memory = hostrpc::x64_native::allocate(align, size);
-  return hostrpc::careful_array_cast<_Atomic uint64_t>(memory, size);
+  return hostrpc::careful_array_cast<_Atomic(uint64_t)>(memory, size);
 }
 
 struct x64_allocate_slot_bitmap_data_deleter
 {
-  void operator()(_Atomic uint64_t* d)
+  void operator()(_Atomic(uint64_t) * d)
   {
     hostrpc::x64_native::deallocate(static_cast<void*>(d));
   }
@@ -104,10 +104,10 @@ TEST_CASE("set up single word system")
   };
 
   using mailbox_ptr_t =
-      std::unique_ptr<_Atomic uint64_t, x64_allocate_slot_bitmap_data_deleter>;
+      std::unique_ptr<_Atomic(uint64_t), x64_allocate_slot_bitmap_data_deleter>;
 
   using lockarray_ptr_t =
-      std::unique_ptr<_Atomic uint64_t, x64_allocate_slot_bitmap_data_deleter>;
+      std::unique_ptr<_Atomic(uint64_t), x64_allocate_slot_bitmap_data_deleter>;
 
   mailbox_ptr_t send_data(x64_allocate_slot_bitmap_data(N));
   mailbox_ptr_t recv_data(x64_allocate_slot_bitmap_data(N));

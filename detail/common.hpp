@@ -77,7 +77,9 @@ inline uint64_t ctz64(uint64_t value)
     {
       return 64;
     }
-#if defined(__has_builtin) && __has_builtin(__builtin_ctzl)
+#if defined(__has_builtin)
+#if __has_builtin(__builtin_ctzl)
+
   static_assert(
       sizeof(unsigned long) == sizeof(uint64_t),
       "Calling __builtin_ctzl on a uint64_t requires 64 bit unsigned long");
@@ -91,6 +93,7 @@ inline uint64_t ctz64(uint64_t value)
     }
   return pos;
 #endif
+#endif
 }
 
 inline uint64_t clz64(uint64_t value)
@@ -99,13 +102,15 @@ inline uint64_t clz64(uint64_t value)
     {
       return 64;
     }
-#if defined(__has_builtin) && __has_builtin(__builtin_clzl)
+#if defined(__has_builtin)
+#if __has_builtin(__builtin_clzl)
   static_assert(
       sizeof(unsigned long) == sizeof(uint64_t),
       "Calling __builtin_clzl on a uint64_t requires 64 bit unsigned long");
   return (uint64_t)__builtin_clzl(value);
 #else
 #error "Unimplemented clz64"
+#endif
 #endif
 }
 
@@ -197,15 +202,15 @@ struct base
 
 struct fine_grain : public base<false>
 {
-  using Ty = _Atomic uint64_t *;
+  using Ty = _Atomic(uint64_t) *;
 };
 
 struct coarse_grain : public base<true>
 {
 #if defined(__AMDGCN__)
-  using Ty = __attribute__((address_space(1))) _Atomic uint64_t *;
+  using Ty = __attribute__((address_space(1))) _Atomic(uint64_t) *;
 #else
-  using Ty = _Atomic uint64_t *;
+  using Ty = _Atomic(uint64_t) *;
 #endif
 };
 
@@ -228,8 +233,8 @@ template <size_t scope, typename Prop>
 struct slot_bitmap
 {
   using Ty = typename Prop::Ty;
-  static_assert(sizeof(uint64_t) == sizeof(_Atomic uint64_t), "");
-  static_assert(sizeof(_Atomic uint64_t *) == 8, "");
+  static_assert(sizeof(uint64_t) == sizeof(_Atomic(uint64_t)), "");
+  static_assert(sizeof(_Atomic(uint64_t) *) == 8, "");
 
   bool valid(uint64_t N)
   {
@@ -645,7 +650,7 @@ struct slot_owner_t<true>
         slots[i] = UINT32_MAX;
       }
   }
-  _Atomic uint32_t slots[128];
+  _Atomic(uint32_t) slots[128];
 
   void claim(uint64_t slot) { claim(my_id, slot); }
 

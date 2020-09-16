@@ -26,7 +26,7 @@ namespace hostrpc
 
 inline constexpr size_t client_counter_overhead()
 {
-  return client_counters::cc_total_count * sizeof(_Atomic uint64_t);
+  return client_counters::cc_total_count * sizeof(_Atomic(uint64_t));
 }
 
 template <typename T>

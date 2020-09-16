@@ -19,12 +19,12 @@ using x64_x64_server =
     hostrpc::server_indirect_impl<SZ, hostrpc::copy_functor_memcpy_pull,
                                   hostrpc::nop_stepper>;
 
-static _Atomic uint64_t *x64_allocate_atomic_uint64_array(size_t size)
+static _Atomic(uint64_t) * x64_allocate_atomic_uint64_array(size_t size)
 {
   assert(size % 64 == 0 && "Size must be a multiple of 64");
   constexpr const static size_t align = 64;
   void *memory = hostrpc::x64_native::allocate(align, size);
-  return hostrpc::careful_array_cast<_Atomic uint64_t>(memory, size);
+  return hostrpc::careful_array_cast<_Atomic(uint64_t)>(memory, size);
 }
 
 // This doesn't especially care about fill/use/operate/step
