@@ -242,7 +242,7 @@ static int main_with_hsa(int argc, char **argv)
       fprintf(stderr, "Failed to create hostcall\n");
       exit(1);
     }
-  if (hc.enable_queue(queue) != 0)
+  if (hc.enable_queue(kernel_agent, queue) != 0)
     {
       fprintf(stderr, "Failed to enable queue\n");
       exit(1);

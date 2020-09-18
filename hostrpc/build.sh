@@ -53,7 +53,7 @@ CXXCL="$CLANG -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 -emit-llvm -D__OPENCL__ 
 
 
 # msgpack, assumed to be checked out ../ from here
-$CXX_X64 ../msgpack/msgpack.cpp -c -o msgpack.bc
+$CXX_X64 ../impl/msgpack.cpp -c -o msgpack.bc
 $CXX_X64 find_metadata.cpp -c -o find_metadata.bc
 $LINK msgpack.bc find_metadata.bc -o hsa_support.bc
 
@@ -113,7 +113,7 @@ $CXX_GCN amdgcn_main.cpp -c -o amdgcn_main.gcn.bc
 # TODO: Embed it directly in the loader by patching call to main, as the loader doesn't do it
 $CXX_X64 -I$HSAINC amdgcn_loader.cpp -c -o amdgcn_loader.x64.bc
 
-$CXX_X64_LD $LDFLAGS amdgcn_loader.x64.bc memory.x64.bc hostcall_interface.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o amdgcn_loader.exe
+$CXX_X64_LD $LDFLAGS amdgcn_loader.x64.bc memory.x64.bc hostcall_interface.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o ../amdgcn_loader.exe
 
 # Build the device library that calls into main()
 $CXXCL loader/amdgcn_loader_entry.cl -c -o loader/amdgcn_loader_entry.gcn.bc
