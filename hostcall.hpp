@@ -29,9 +29,13 @@ class hostcall
  public:
   hostcall(hsa_executable_t executable, hsa_agent_t kernel_agent);
   hostcall(void *client_symbol_address, hsa_agent_t kernel_agent);
+  ~hostcall();
   bool valid();
-  int enable_queue(hsa_queue_t *queue);
+  int enable_queue(hsa_agent_t kernel_agent, hsa_queue_t *queue);
   int spawn_worker(hsa_queue_t *queue);
+
+  hostcall(const hostcall&) = delete;
+  hostcall(hostcall&&) = delete;
 
  private:
   using state_t = hostrpc::storage<128, 8>;
