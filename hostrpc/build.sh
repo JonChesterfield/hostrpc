@@ -6,6 +6,9 @@ set -x
 # Aomp
 RDIR=$HOME/rocm/aomp
 
+# Needs to resolve to gfx906, gfx1010 or similar
+GFX=`$RDIR/bin/mygpu`
+
 # A poorly named amd-stg-open, does not hang
 # RDIR=$HOME/rocm-3.5-llvm-install
 
@@ -19,7 +22,7 @@ HSALIBDIR="$HOME/rocm/aomp/hsa/lib/"
 HSALIB="$HSALIBDIR/libhsa-runtime64.so" # $RDIR/lib/libomptarget.rtl.hsa.so"
 
 # Shouldn't need these, but copying across from initial for reference 
-# DLIBS="$RDIR/lib/libdevice/libhostcall-amdgcn-gfx906.bc $RDIR/lib/ockl.amdgcn.bc $RDIR/lib/oclc_wavefrontsize64_on.amdgcn.bc $RDIR/lib/oclc_isa_version_906.amdgcn.bc"
+# DLIBS="$RDIR/lib/libdevice/libhostcall-amdgcn-$GFX.bc $RDIR/lib/ockl.amdgcn.bc $RDIR/lib/oclc_wavefrontsize64_on.amdgcn.bc $RDIR/lib/oclc_isa_version_906.amdgcn.bc"
 
 CLANG="$RDIR/bin/clang++"
 LLC="$RDIR/bin/llc"
@@ -32,7 +35,7 @@ OPT="$RDIR/bin/opt"
 CXX="$CLANG -std=c++14 -Wall -Wextra"
 LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR hsa_support.bc -lelf"
 
-AMDGPU="--target=amdgcn-amd-amdhsa -march=gfx906 -mcpu=gfx906 -mllvm -amdgpu-fixed-function-abi -nogpulib"
+AMDGPU="--target=amdgcn-amd-amdhsa -march=$GFX -mcpu=$GFX -mllvm -amdgpu-fixed-function-abi -nogpulib"
 
 # Not sure why CUDACC isn't being set by clang here, probably a bad sign
 NVGPU="--target=nvptx64-nvidia-cuda -march=sm_50 --cuda-gpu-arch=sm_50 -D__CUDACC__"
@@ -148,7 +151,7 @@ for bc in `find . -type f -iname '*.gcn.bc'` ; do
     ll=`echo $bc | sed 's_.bc_.ll_g'`
     obj=`echo $bc | sed 's_.bc_.obj_g'`
     $OPT -strip-debug $bc -S -o $ll
-    $LLC --mcpu=gfx906 -amdgpu-fixed-function-abi $ll
+    $LLC --mcpu=$GFX -amdgpu-fixed-function-abi $ll
     $CXX_GCN_LD -c $ll -o $obj
 done
 
