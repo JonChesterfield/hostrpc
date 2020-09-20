@@ -205,7 +205,27 @@ TEST_CASE("x64_gcn_stress")
 
     hostrpc::x64_gcn_t::client_t *client =
         reinterpret_cast<hostrpc::x64_gcn_t::client_t *>(client_address);
-    client[0] = p.client();
+
+    // Great error from valgrind on gfx1010:
+    // Address 0x8e08000 is in a --- mapped file /dev/dri/renderD128 segment
+    // client[0] = p.client();
+
+    {
+      using Ty = hostrpc::x64_gcn_t::client_t;
+      auto c = hsa::allocate(fine_grained_region, sizeof(Ty));
+      auto *l = new (c.get()) Ty(p.client());
+      int rc = hsa::copy_host_to_gpu(
+          kernel_agent, reinterpret_cast<void *>(&client[0]),
+          reinterpret_cast<const void *>(l), sizeof(Ty));
+      if (rc != 0)
+        {
+          fprintf(stderr, "Failed to copy client state to gpu\n");
+          exit(1);
+        }
+
+      // can't destroy l here. TODO: work out the lifetime problem.
+    }
+
     printf("Initialized gpu client state\n");
 
     auto op_func = [](hostrpc::page_t *page) {

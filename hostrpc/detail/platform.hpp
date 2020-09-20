@@ -144,6 +144,9 @@ inline void init_inactive_lanes(hostrpc::page_t *page, uint64_t v)
   uint32_t scalar_hi =
       __builtin_amdgcn_readfirstlane(static_cast<uint32_t>(v >> 32u));
 
+  // Uses inline asm to switch on the inactive lanes, write values to them
+  // Would like to avoid this as don't want to write asm for all the ISAs
+#if 1
   // Hard codes 2:5 for the quad store and 6:7 for the computed address
   // Can be cheaper if only the first dwordx2 is written
   uint32_t laneid_scratch;
@@ -185,6 +188,7 @@ inline void init_inactive_lanes(hostrpc::page_t *page, uint64_t v)
       : [ loclo ] "s"(loclo), [ lochi ] "s"(lochi), [ vallo ] "s"(scalar_lo),
         [ valhi ] "s"(scalar_hi)
       : "v2", "v3", "v4", "v5", "v6", "v7", "vcc", "memory");
+#endif
 }
 
 inline uint32_t client_start_slot()

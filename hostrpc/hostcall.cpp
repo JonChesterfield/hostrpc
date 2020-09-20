@@ -18,7 +18,6 @@
 
 static const constexpr uint32_t MAX_NUM_DOORBELLS = 0x400;
 
-
 static uint16_t queue_to_index_impl(unsigned char * q)
 {
   constexpr size_t doorbell_signal_offset = 16;
@@ -164,28 +163,6 @@ uint16_t queue_to_index(hsa_queue_t *queue) {
 
 hostrpc::hostcall_interface_t *stored_pairs[MAX_NUM_DOORBELLS] = {0};
 
-static int copy_host_to_gpu(hsa_agent_t agent,
-                     void * dst,
-                     const void * src,
-                     size_t size)
-{
-  // memcpy works for gfx9, should see which is quicker. need this fallback for gfx8
-  hsa_signal_t sig;
-  hsa_status_t rc  = hsa_signal_create(1, 0, 0, &sig);
-  if (rc != HSA_STATUS_SUCCESS) { return 1; }
-
-  rc = core::invoke_hsa_copy(sig, dst, src, size, agent);
-  hsa_signal_destroy(sig);
-
-  if (rc != HSA_STATUS_SUCCESS)
-    {
-      return 1;
-    }
-
-  return 0;
-}
-
-
 class hostcall_impl {
 public:
   hostcall_impl(void *client_symbol_address, hsa_agent_t kernel_agent);
@@ -235,7 +212,7 @@ public:
       auto c = hsa::allocate(fine, sizeof(Ty));
       auto *l = new (c.get()) Ty(res->client());
 
-      int rc = copy_host_to_gpu(kernel_agent,
+      int rc = hsa::copy_host_to_gpu(kernel_agent,
                                 reinterpret_cast<void *>(&clients[queue_id]),
                                 reinterpret_cast<const void *>(l), sizeof(Ty));
 

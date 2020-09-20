@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #include "../impl/msgpack.h"
+#include "../impl/data.h" // TODO: Drop this
 #include "find_metadata.hpp"
 
 namespace hsa
@@ -651,25 +652,25 @@ inline void initialize_packet_defaults(hsa_kernel_dispatch_packet_t* packet)
   packet->kernarg_address = NULL;
 }
 
-// Maps a queue to an integer in [0, 1023] which survives CWSR, so can be used
-// to index into device local structures. Inspired by the rocr.
-inline uint16_t queue_to_index(hsa_queue_t* q)
+inline int copy_host_to_gpu(hsa_agent_t agent,
+                     void * dst,
+                     const void * src,
+                     size_t size)
 {
-  char* sig = reinterpret_cast<char*>(q->doorbell_signal.handle);
-  int64_t kind;
-  memcpy(&kind, sig, 8);
-  // TODO: Work out if any hardware that works for openmp uses legacy doorbell
-  assert(kind == -1);
-  sig += 8;
+  // memcpy works for gfx9, should see which is quicker. need this fallback for gfx8
+  hsa_signal_t sig;
+  hsa_status_t rc  = hsa_signal_create(1, 0, 0, &sig);
+  if (rc != HSA_STATUS_SUCCESS) { return 1; }
 
-  const uint64_t MAX_NUM_DOORBELLS = 0x400;
+  rc = core::invoke_hsa_copy(sig, dst, src, size, agent);
+  hsa_signal_destroy(sig);
 
-  uint64_t ptr;
-  memcpy(&ptr, sig, 8);
-  ptr >>= 3;
-  ptr %= MAX_NUM_DOORBELLS;
+  if (rc != HSA_STATUS_SUCCESS)
+    {
+      return 1;
+    }
 
-  return static_cast<uint16_t>(ptr);
+  return 0;
 }
 
 }  // namespace hsa
