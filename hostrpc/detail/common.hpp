@@ -458,29 +458,36 @@ struct lock_bitmap
   }
 };
 
-template <size_t Sscope, typename SProp, size_t Vscope, typename VProp>
-void staged_claim_slot(size_t size, size_t i,
-                       slot_bitmap<Sscope, SProp> *staging,
-                       slot_bitmap<Vscope, VProp> *visible,
-                       uint64_t *cas_fail_count, uint64_t *cas_help_count)
+template <bool InitialState, size_t Sscope, typename SProp, size_t Vscope,
+          typename VProp>
+void update_visible_from_staging(size_t size, size_t i,
+                                 slot_bitmap<Sscope, SProp> *staging,
+                                 slot_bitmap<Vscope, VProp> *visible,
+                                 uint64_t *cas_fail_count,
+                                 uint64_t *cas_help_count)
 {
-  // claim slot in staging (efficiently) then propagage change to visible
   assert((void *)visible != (void *)staging);
   assert(i < size);
   const size_t w = index_to_element(i);
   const uint64_t subindex = index_to_subindex(i);
 
-  // slot is known clear as lock is held
-  assert(!detail::nthbitset64(staging->load_word(size, w), subindex));
-  assert(!detail::nthbitset64(visible->load_word(size, w), subindex));
+  // InitialState locked for staged_release, clear for staged_claim
+  assert(InitialState ==
+         detail::nthbitset64(staging->load_word(size, w), subindex));
+  assert(InitialState ==
+         detail::nthbitset64(visible->load_word(size, w), subindex));
 
-  // fetch_or to update staging
-  uint64_t staged_result = staging->claim_slot_returning_updated_word(size, i);
-  assert(detail::nthbitset64(staged_result, subindex));
+  // (InitialState ? fetch_and : fetch_or) to update staging
+  uint64_t staged_result =
+      InitialState ? staging->release_slot_returning_updated_word(size, i)
+                   : staging->claim_slot_returning_updated_word(size, i);
+  assert(!InitialState == detail::nthbitset64(staged_result, subindex));
 
-  // propose a value that could plausibly be in visible
-  // this was returned by fetch_or, can refactor to drop the arithmetic
-  uint64_t guess = detail::clearnthbit64(staged_result, subindex);
+  // propose a value that could plausibly be in visible. can refactor to drop
+  // the arithmetic
+  uint64_t guess = InitialState
+                       ? detail::setnthbit64(staged_result, subindex)
+                       : detail::clearnthbit64(staged_result, subindex);
 
   // initialise the value with the latest view of staging that is already
   // available
@@ -491,7 +498,7 @@ void staged_claim_slot(size_t size, size_t i,
   while (!visible->cas(w, guess, proposed, &guess))
     {
       local_fail_count++;
-      if (detail::nthbitset64(guess, subindex))
+      if (!InitialState == detail::nthbitset64(guess, subindex))
         {
           // Cas failed, but another thread has done our work
           local_help_count++;
@@ -501,11 +508,23 @@ void staged_claim_slot(size_t size, size_t i,
 
       // Update our view of proposed and try again
       proposed = staging->load_word(size, w);
-      assert(detail::nthbitset64(proposed, subindex));
+      assert(!InitialState == detail::nthbitset64(proposed, subindex));
     }
   *cas_fail_count = *cas_fail_count + local_fail_count;
   *cas_help_count = *cas_help_count + local_help_count;
-  assert(detail::nthbitset64(visible->load_word(size, w), subindex));
+
+  assert(!InitialState ==
+         detail::nthbitset64(visible->load_word(size, w), subindex));
+}
+
+template <size_t Sscope, typename SProp, size_t Vscope, typename VProp>
+void staged_claim_slot(size_t size, size_t i,
+                       slot_bitmap<Sscope, SProp> *staging,
+                       slot_bitmap<Vscope, VProp> *visible,
+                       uint64_t *cas_fail_count, uint64_t *cas_help_count)
+{
+  update_visible_from_staging<false>(size, i, staging, visible, cas_fail_count,
+                                     cas_help_count);
 }
 
 template <size_t Sscope, typename SProp, size_t Vscope, typename VProp>
@@ -514,50 +533,8 @@ void staged_release_slot(size_t size, size_t i,
                          slot_bitmap<Vscope, VProp> *visible,
                          uint64_t *cas_fail_count, uint64_t *cas_help_count)
 {
-  // claim slot in staging (efficiently) then propagage change to visible
-  assert((void *)visible != (void *)staging);
-  assert(i < size);
-  const size_t w = index_to_element(i);
-  const uint64_t subindex = index_to_subindex(i);
-
-  // slot is known set as lock is held
-  assert(detail::nthbitset64(staging->load_word(size, w), subindex));
-  assert(detail::nthbitset64(visible->load_word(size, w), subindex));
-
-  // fetch_and to update staging
-  uint64_t staged_result =
-      staging->release_slot_returning_updated_word(size, i);
-  assert(!detail::nthbitset64(staged_result, subindex));
-
-  // propose a value that could plausibly be in visible
-  // this was returned by fetch_or, can refactor to drop the arithmetic
-  uint64_t guess = detail::setnthbit64(staged_result, subindex);
-
-  // initialise the value with the latest view of staging that is already
-  // available
-  uint64_t proposed = staged_result;
-
-  uint64_t local_fail_count = 0;
-  uint64_t local_help_count = 0;
-  while (!visible->cas(w, guess, proposed, &guess))
-    {
-      local_fail_count++;
-      if (!detail::nthbitset64(guess, subindex))
-        {
-          // Cas failed, but another thread has done our work
-          local_help_count++;
-          proposed = guess;
-          break;
-        }
-
-      // Update our view of proposed and try again
-      proposed = staging->load_word(size, w);
-      assert(!detail::nthbitset64(proposed, subindex));
-    }
-  *cas_fail_count = *cas_fail_count + local_fail_count;
-  *cas_help_count = *cas_help_count + local_help_count;
-
-  assert(!detail::nthbitset64(visible->load_word(size, w), subindex));
+  update_visible_from_staging<true>(size, i, staging, visible, cas_fail_count,
+                                    cas_help_count);
 }
 
 inline void step(_Atomic(uint64_t) * steps_left)
