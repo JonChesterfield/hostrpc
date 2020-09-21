@@ -308,17 +308,8 @@ struct slot_bitmap
     if (Prop::hasFetchOp())
       {
         // This seems to work on amdgcn, but only with acquire. acq/rel fails
-        if (scope == __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES)
-          {
-            return __opencl_atomic_fetch_and(
-                addr, mask, __ATOMIC_ACQ_REL,
-                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-          }
-        else
-          {
-            return __opencl_atomic_fetch_and(addr, mask, __ATOMIC_ACQ_REL,
-                                             __OPENCL_MEMORY_SCOPE_DEVICE);
-          }
+
+        return __opencl_atomic_fetch_and(addr, mask, __ATOMIC_ACQ_REL, scope);
       }
     else
       {
@@ -348,17 +339,7 @@ struct slot_bitmap
 
     if (Prop::hasFetchOp())
       {
-        if (scope == __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES)
-          {
-            return __opencl_atomic_fetch_or(
-                addr, mask, __ATOMIC_ACQ_REL,
-                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-          }
-        else
-          {
-            return __opencl_atomic_fetch_or(addr, mask, __ATOMIC_ACQ_REL,
-                                            __OPENCL_MEMORY_SCOPE_DEVICE);
-          }
+        return __opencl_atomic_fetch_or(addr, mask, __ATOMIC_ACQ_REL, scope);
       }
     else
       {
