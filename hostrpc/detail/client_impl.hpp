@@ -307,10 +307,9 @@ struct client_impl : public SZ, public Counter
         uint64_t cas_fail_count = 0;
         uint64_t cas_help_count = 0;
         platform::critical<uint64_t>([&]() {
-          return staged_release_slot_returning_updated_word(
-              size, slot, &outbox_staging, &outbox, &cas_fail_count,
-              &cas_help_count);
-          // outbox.release_slot_returning_updated_word(size, slot);
+          staged_release_slot(size, slot, &outbox_staging, &outbox,
+                              &cas_fail_count, &cas_help_count);
+          return 0;
         });
         cas_fail_count = platform::broadcast_master(cas_fail_count);
         cas_help_count = platform::broadcast_master(cas_help_count);
@@ -344,10 +343,9 @@ struct client_impl : public SZ, public Counter
       uint64_t cas_fail_count = 0;
       uint64_t cas_help_count = 0;
       platform::critical<uint64_t>([&]() {
-        return staged_claim_slot_returning_updated_word(
-            size, slot, &outbox_staging, &outbox, &cas_fail_count,
-            &cas_help_count);
-        // return outbox.claim_slot_returning_updated_word(size, slot);
+        staged_claim_slot(size, slot, &outbox_staging, &outbox, &cas_fail_count,
+                          &cas_help_count);
+        return 0;
       });
       cas_fail_count = platform::broadcast_master(cas_fail_count);
       cas_help_count = platform::broadcast_master(cas_help_count);
@@ -422,10 +420,9 @@ struct client_impl : public SZ, public Counter
         uint64_t cas_fail_count = 0;
         uint64_t cas_help_count = 0;
         platform::critical<uint64_t>([&]() {
-          return staged_release_slot_returning_updated_word(
-              size, slot, &outbox_staging, &outbox, &cas_fail_count,
-              &cas_help_count);
-          // return outbox.release_slot_returning_updated_word(size, slot);
+          staged_release_slot(size, slot, &outbox_staging, &outbox,
+                              &cas_fail_count, &cas_help_count);
+          return 0;
         });
         cas_fail_count = platform::broadcast_master(cas_fail_count);
         cas_help_count = platform::broadcast_master(cas_help_count);
@@ -513,7 +510,8 @@ struct client_impl : public SZ, public Counter
                 // wave release slot
                 step(__LINE__, fill_application_state, use_application_state);
                 platform::critical<uint64_t>([&]() {
-                  return active.release_slot_returning_updated_word(size, slot);
+                  active.release_slot(size, slot);
+                  return 0;
                 });
                 // returning if the invoke garbage collected is inefficient
                 // as the caller will need to try again, better to keep the

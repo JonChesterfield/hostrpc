@@ -232,6 +232,7 @@ struct slot_bitmap
                             uint64_t *cas_fail_count);
 
   // assumes slot available
+
   uint64_t claim_slot_returning_updated_word(size_t size, size_t i)
   {
     (void)size;
@@ -249,6 +250,11 @@ struct slot_bitmap
   }
 
   // assumes slot taken
+  void release_slot(size_t size, size_t i)
+  {
+    release_slot_returning_updated_word(size, i);
+  }
+
   uint64_t release_slot_returning_updated_word(size_t size, size_t i)
   {
     (void)size;
@@ -375,10 +381,10 @@ struct slot_bitmap
 };
 
 template <size_t Sscope, typename SProp, size_t Vscope, typename VProp>
-uint64_t staged_claim_slot_returning_updated_word(
-    size_t size, size_t i, slot_bitmap<Sscope, SProp> *staging,
-    slot_bitmap<Vscope, VProp> *visible, uint64_t *cas_fail_count,
-    uint64_t *cas_help_count)
+void staged_claim_slot(size_t size, size_t i,
+                       slot_bitmap<Sscope, SProp> *staging,
+                       slot_bitmap<Vscope, VProp> *visible,
+                       uint64_t *cas_fail_count, uint64_t *cas_help_count)
 {
   // claim slot in staging (efficiently) then propagage change to visible
   assert((void *)visible != (void *)staging);
@@ -422,14 +428,13 @@ uint64_t staged_claim_slot_returning_updated_word(
   *cas_fail_count = *cas_fail_count + local_fail_count;
   *cas_help_count = *cas_help_count + local_help_count;
   assert(detail::nthbitset64(visible->load_word(size, w), subindex));
-  return proposed;
 }
 
 template <size_t Sscope, typename SProp, size_t Vscope, typename VProp>
-uint64_t staged_release_slot_returning_updated_word(
-    size_t size, size_t i, slot_bitmap<Sscope, SProp> *staging,
-    slot_bitmap<Vscope, VProp> *visible, uint64_t *cas_fail_count,
-    uint64_t *cas_help_count)
+void staged_release_slot(size_t size, size_t i,
+                         slot_bitmap<Sscope, SProp> *staging,
+                         slot_bitmap<Vscope, VProp> *visible,
+                         uint64_t *cas_fail_count, uint64_t *cas_help_count)
 {
   // claim slot in staging (efficiently) then propagage change to visible
   assert((void *)visible != (void *)staging);
@@ -475,7 +480,6 @@ uint64_t staged_release_slot_returning_updated_word(
   *cas_help_count = *cas_help_count + local_help_count;
 
   assert(!detail::nthbitset64(visible->load_word(size, w), subindex));
-  return proposed;
 }
 
 // on return true, loaded contains active[w]

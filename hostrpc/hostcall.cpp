@@ -28,7 +28,7 @@ static uint16_t queue_to_index_impl(unsigned char *q)
 #endif
 
   uint64_t handle;
-  __builtin_memcpy(&handle, q + 16, 8);
+  __builtin_memcpy(&handle, q + doorbell_signal_offset, 8);
   char *sig = reinterpret_cast<char *>(handle);
 
   // The signal contains a kind at offset 0, expected to be -1 (non-legacy)

@@ -150,17 +150,13 @@ struct server_impl : public SZ
                                          &local_buffer[slot]);
 
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-        uint64_t updated_out = platform::critical<uint64_t>([&]() {
+        platform::critical<uint64_t>([&]() {
           uint64_t cas_fail_count;
           uint64_t cas_help_count;
-          return staged_release_slot_returning_updated_word(
-              size, slot, &outbox_staging, &outbox, &cas_fail_count,
-              &cas_help_count);
-          // return outbox.release_slot_returning_updated_word(size, slot);
+          staged_release_slot(size, slot, &outbox_staging, &outbox,
+                              &cas_fail_count, &cas_help_count);
+          return 0;
         });
-
-        assert((updated_out & this_slot) == 0);
-        (void)updated_out;
 
         assert(lock_held());
         return false;
@@ -189,11 +185,9 @@ struct server_impl : public SZ
       platform::critical<uint64_t>([&]() {
         uint64_t cas_fail_count = 0;
         uint64_t cas_help_count = 0;
-        return staged_claim_slot_returning_updated_word(
-            size, slot, &outbox_staging, &outbox, &cas_fail_count,
-            &cas_help_count);
-
-        // return outbox.claim_slot_returning_updated_word(size, slot);
+        staged_claim_slot(size, slot, &outbox_staging, &outbox, &cas_fail_count,
+                          &cas_help_count);
+        return 0;
       });
     }
 
@@ -252,11 +246,10 @@ struct server_impl : public SZ
 
                 step(__LINE__, application_state);
 
-                uint64_t a = platform::critical<uint64_t>([&]() {
-                  return active.release_slot_returning_updated_word(size, slot);
+                platform::critical<uint64_t>([&]() {
+                  active.release_slot(size, slot);
+                  return 0;
                 });
-                assert(!detail::nthbitset64(a, index_to_subindex(slot)));
-                (void)a;
 
                 return r;
               }
