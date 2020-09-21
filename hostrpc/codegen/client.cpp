@@ -22,7 +22,7 @@ extern "C" __attribute__((noinline)) void client_instance_direct(client_type& c)
 
 extern "C" __attribute__((noinline)) void client_instance_from_components(
     SZ sz, hostrpc::slot_bitmap_all_svm inbox,
-    hostrpc::slot_bitmap_all_svm outbox, hostrpc::slot_bitmap_device active,
+    hostrpc::slot_bitmap_all_svm outbox, hostrpc::slot_bitmap_coarse active,
     hostrpc::slot_bitmap_coarse outbox_staging, hostrpc::page_t* remote_buffer,
     hostrpc::page_t* local_buffer)
 {

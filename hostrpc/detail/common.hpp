@@ -169,31 +169,16 @@ struct slot_bitmap
   static_assert(sizeof(uint64_t) == sizeof(_Atomic(uint64_t)), "");
   static_assert(sizeof(_Atomic(uint64_t) *) == 8, "");
 
-  bool valid(uint64_t N)
-  {
-    // Notably, default constructed instance isn't valid
-    static_assert(sizeof(slot_bitmap<scope, Prop>) == 8, "");
-    return (a != nullptr) && (N != 0) && (N != SIZE_MAX) && (N % 64 == 0);
-  }
   Ty a;
 
   slot_bitmap() : a(nullptr) {}
 
-  slot_bitmap(size_t size, Ty d) : a(d)
+  slot_bitmap(Ty d) : a(d)
   {
-    assert(valid(size));
-    for (size_t i = 0; i < size / 64; i++)
-      {
-        // can't necessarily write to a from this object. if the memory is on
-        // the gpu, but this instance is being constructed on the gpu first,
-        // then direct writes will fail. However, the data does need to be
-        // zeroed for the bitmap to work.
-
-#if defined(__x86_64__)
-#else
-        a[i] = 0;
-#endif
-      }
+    // can't necessarily write to a from this object. if the memory is on
+    // the gpu, but this instance is being constructed on the gpu first,
+    // then direct writes will fail. However, the data does need to be
+    // zeroed for the bitmap to work.
   }
 
   Ty data() { return a; }

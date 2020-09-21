@@ -58,12 +58,12 @@ struct x64_x64_pair
     auto *server_locks_data = x64_allocate_atomic_uint64_array(N);
     auto *server_outbox_staging_data = x64_allocate_atomic_uint64_array(N);
 
-    slot_bitmap_all_svm send(N, send_data);
-    slot_bitmap_all_svm recv(N, recv_data);
-    slot_bitmap_device client_locks(N, client_locks_data);
-    slot_bitmap_coarse client_outbox_staging(N, client_outbox_staging_data);
-    slot_bitmap_device server_locks(N, server_locks_data);
-    slot_bitmap_coarse server_outbox_staging(N, server_outbox_staging_data);
+    slot_bitmap_all_svm send(send_data);
+    slot_bitmap_all_svm recv(recv_data);
+    slot_bitmap_coarse client_locks(client_locks_data);
+    slot_bitmap_coarse client_outbox_staging(client_outbox_staging_data);
+    slot_bitmap_coarse server_locks(server_locks_data);
+    slot_bitmap_coarse server_outbox_staging(server_outbox_staging_data);
 
     client = {sz,
               recv,
