@@ -3,6 +3,7 @@ set -x
 
 ./clean.sh
 
+DERIVE=${1:-4}
 # Aomp
 RDIR=$HOME/rocm/aomp
 
@@ -81,11 +82,11 @@ $CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc
 $CXX_GCN x64_host_gcn_client.cpp -c -o x64_host_gcn_client.gcn.bc
 $CXX_X64 -I$HSAINC x64_host_gcn_client.cpp -c -o x64_host_gcn_client.x64.bc
 
-$CXX_GCN x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.code.bc
-$CXXCL x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.kern.bc
+$CXX_GCN -DDERIVE_VAL=$DERIVE x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.code.bc
+$CXXCL -DDERIVE_VAL=$DERIVE x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.kern.bc
 $LINK x64_gcn_stress.gcn.code.bc x64_gcn_stress.gcn.kern.bc -o x64_gcn_stress.gcn.bc
 $CXX_GCN_LD x64_gcn_stress.gcn.bc x64_host_gcn_client.gcn.bc -o x64_gcn_stress.gcn.so
-$CXX_X64 -I$HSAINC x64_gcn_stress.cpp -c -o x64_gcn_stress.x64.bc
+$CXX_X64 -DDERIVE_VAL=$DERIVE -I$HSAINC x64_gcn_stress.cpp -c -o x64_gcn_stress.x64.bc
 
 
 $CXX_GCN gcn_host_x64_client.cpp -c -o gcn_host_x64_client.gcn.bc
@@ -141,19 +142,19 @@ $CXX_GCN_LD executable_device.gcn.bc -o a.out
 
 # llc seems to need to be told what architecture it's disassembling
 
-for bc in `find . -type f -iname '*.x64.bc'` ; do
-    ll=`echo $bc | sed 's_.bc_.ll_g'`
-    $OPT -strip-debug $bc -S -o $ll
-    $LLC $ll
-done
-
-for bc in `find . -type f -iname '*.gcn.bc'` ; do
-    ll=`echo $bc | sed 's_.bc_.ll_g'`
-    obj=`echo $bc | sed 's_.bc_.obj_g'`
-    $OPT -strip-debug $bc -S -o $ll
-    $LLC --mcpu=$GFX -amdgpu-fixed-function-abi $ll
-    $CXX_GCN_LD -c $ll -o $obj
-done
+# for bc in `find . -type f -iname '*.x64.bc'` ; do
+#     ll=`echo $bc | sed 's_.bc_.ll_g'`
+#     $OPT -strip-debug $bc -S -o $ll
+#     $LLC $ll
+# done
+# 
+# for bc in `find . -type f -iname '*.gcn.bc'` ; do
+#     ll=`echo $bc | sed 's_.bc_.ll_g'`
+#     obj=`echo $bc | sed 's_.bc_.obj_g'`
+#     $OPT -strip-debug $bc -S -o $ll
+#     $LLC --mcpu=$GFX -amdgpu-fixed-function-abi $ll
+#     $CXX_GCN_LD -c $ll -o $obj
+# done
 
 $CXX_X64_LD tests.x64.bc x64_x64_stress.x64.bc states.x64.bc catch.o memory.x64.bc x64_host_x64_client.x64.bc $LDFLAGS -o states.exe
 
@@ -174,7 +175,7 @@ time ./x64_x64_stress.exe
 echo "Call hostcall/loader executable"
 time ./a.out ; echo $?
 
-echo "Call x64_gcn_stress"
+echo "Call x64_gcn_stress: Derive $DERIVE"
 time ./x64_gcn_stress.exe
 
 # time valgrind --leak-check=full --fair-sched=yes ./states.exe hazard
