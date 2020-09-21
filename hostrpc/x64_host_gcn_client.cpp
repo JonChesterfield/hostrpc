@@ -137,8 +137,8 @@ struct x64_gcn_pair
     auto *server_outbox_staging_data =
         hsa_allocate_slot_bitmap_data_alloc(fine, N);
 
-    slot_bitmap_all_svm send = {send_data};
-    slot_bitmap_all_svm recv = {recv_data};
+    message_bitmap send = {send_data};
+    message_bitmap recv = {recv_data};
     lock_bitmap client_active = {client_active_data};
     slot_bitmap_coarse client_outbox_staging = {client_outbox_staging_data};
     lock_bitmap server_active = {server_active_data};

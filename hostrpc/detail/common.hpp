@@ -152,7 +152,7 @@ struct coarse_grain : public base<true>
 template <size_t scope, typename Prop>
 struct slot_bitmap;
 
-using slot_bitmap_all_svm =
+using message_bitmap =
     slot_bitmap<__OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, properties::fine_grain>;
 
 // coarse grain here raises a HSAIL hardware exception
@@ -279,6 +279,7 @@ struct slot_bitmap
   // returns value from before the and/or
   // these are used on memory visible fromi all svm devices
 
+ private:
   uint64_t fetch_and(uint64_t element, uint64_t mask)
   {
     Ty addr = &a[element];

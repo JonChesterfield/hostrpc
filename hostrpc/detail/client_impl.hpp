@@ -156,8 +156,8 @@ template <typename SZ, typename Copy, typename Fill, typename Use,
           typename Step, typename Counter = counters::client>
 struct client_impl : public SZ, public Counter
 {
-  using inbox_t = slot_bitmap_all_svm;
-  using outbox_t = slot_bitmap_all_svm;
+  using inbox_t = message_bitmap;
+  using outbox_t = message_bitmap;
   using locks_t = lock_bitmap;
   using outbox_staging_t = slot_bitmap_coarse;
 

@@ -117,8 +117,8 @@ TEST_CASE("set up single word system")
   lockarray_ptr_t server_outbox_staging_data(x64_allocate_slot_bitmap_data(N));
 
   using SZ = hostrpc::size_compiletime<N>;
-  slot_bitmap_all_svm send(send_data.get());
-  slot_bitmap_all_svm recv(recv_data.get());
+  message_bitmap send(send_data.get());
+  message_bitmap recv(recv_data.get());
   lock_bitmap client_active(client_active_data.get());
   slot_bitmap_coarse client_outbox_staging(client_outbox_staging_data.get());
   lock_bitmap server_active(server_active_data.get());

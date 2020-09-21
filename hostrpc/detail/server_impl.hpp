@@ -31,8 +31,8 @@ template <typename SZ, typename Copy, typename Op, typename Clear,
           typename Step>
 struct server_impl : public SZ
 {
-  using inbox_t = slot_bitmap_all_svm;
-  using outbox_t = slot_bitmap_all_svm;
+  using inbox_t = message_bitmap;
+  using outbox_t = message_bitmap;
   using locks_t = lock_bitmap;
   using outbox_staging_t = slot_bitmap_coarse;
 
