@@ -210,8 +210,9 @@ struct client_impl : public SZ, public Counter
   {
   }
 
-  void dump() {
-#if defined(__x86_64__)    
+  void dump()
+  {
+#if defined(__x86_64__)
     fprintf(stderr, "remote_buffer %p\n", remote_buffer);
     fprintf(stderr, "local_buffer  %p\n", local_buffer);
     fprintf(stderr, "inbox         %p\n", inbox.a);
@@ -280,16 +281,10 @@ struct client_impl : public SZ, public Counter
     const uint64_t element = index_to_element(slot);
     const uint64_t subindex = index_to_subindex(slot);
 
-    cache c;
-    c.init(slot);
     const size_t size = this->size();
     uint64_t i = inbox.load_word(size, element);
     uint64_t o = outbox_staging.load_word(size, element);
-    uint64_t a = active.load_word(size, element);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
-    c.i(i);
-    c.o(o);
-    c.a(a);
 
     // Called with a lock. The corresponding slot can be:
     //  inbox outbox    state  action
@@ -331,9 +326,7 @@ struct client_impl : public SZ, public Counter
         return false;
       }
 
-    assert(c.is(0b001));
     step(__LINE__, fill_application_state, use_application_state);
-    tracker().claim(slot);
 
     // wave_populate
 
@@ -345,14 +338,12 @@ struct client_impl : public SZ, public Counter
     Copy::push_from_client_to_server(&remote_buffer[slot], &local_buffer[slot]);
     step(__LINE__, fill_application_state, use_application_state);
 
-    tracker().release(slot);
-
     // wave_publish work
     {
       __c11_atomic_thread_fence(__ATOMIC_RELEASE);
       uint64_t cas_fail_count = 0;
       uint64_t cas_help_count = 0;
-      uint64_t o = platform::critical<uint64_t>([&]() {
+      platform::critical<uint64_t>([&]() {
         return staged_claim_slot_returning_updated_word(
             size, slot, &outbox_staging, &outbox, &cas_fail_count,
             &cas_help_count);
@@ -362,9 +353,7 @@ struct client_impl : public SZ, public Counter
       cas_help_count = platform::broadcast_master(cas_help_count);
       Counter::publish_cas_fail(cas_fail_count);
       Counter::publish_cas_help(cas_help_count);
-      c.o(o);
       assert(detail::nthbitset64(o, subindex));
-      assert(c.is(0b011));
     }
 
     step(__LINE__, fill_application_state, use_application_state);
@@ -387,8 +376,6 @@ struct client_impl : public SZ, public Counter
 
             loaded = platform::broadcast_master(loaded);
 
-            c.i(loaded);
-            assert(got == 1 ? c.is(0b111) : c.is(0b011));
             if (got == 1)
               {
                 break;
@@ -408,9 +395,6 @@ struct client_impl : public SZ, public Counter
 
         __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
-        assert(c.is(0b111));
-        tracker().claim(slot);
-
         step(__LINE__, fill_application_state, use_application_state);
         Copy::pull_to_client_from_server(&local_buffer[slot],
                                          &remote_buffer[slot]);
@@ -428,8 +412,6 @@ struct client_impl : public SZ, public Counter
 
         step(__LINE__, fill_application_state, use_application_state);
 
-        tracker().release(slot);
-
         // mark the work as no longer in use
         // todo: is it better to leave this for the GC?
         // can free slots more lazily by updating the staging outbox and
@@ -439,7 +421,7 @@ struct client_impl : public SZ, public Counter
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
         uint64_t cas_fail_count = 0;
         uint64_t cas_help_count = 0;
-        uint64_t o = platform::critical<uint64_t>([&]() {
+        platform::critical<uint64_t>([&]() {
           return staged_release_slot_returning_updated_word(
               size, slot, &outbox_staging, &outbox, &cas_fail_count,
               &cas_help_count);
@@ -449,8 +431,6 @@ struct client_impl : public SZ, public Counter
         cas_help_count = platform::broadcast_master(cas_help_count);
         Counter::finished_cas_fail(cas_fail_count);
         Counter::finished_cas_help(cas_help_count);
-        c.o(o);
-        assert(c.is(0b101));
 
         step(__LINE__, fill_application_state, use_application_state);
       }

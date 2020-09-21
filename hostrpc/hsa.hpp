@@ -18,8 +18,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "../impl/data.h"  // TODO: Drop this
 #include "../impl/msgpack.h"
-#include "../impl/data.h" // TODO: Drop this
 #include "find_metadata.hpp"
 
 namespace hsa
@@ -652,15 +652,17 @@ inline void initialize_packet_defaults(hsa_kernel_dispatch_packet_t* packet)
   packet->kernarg_address = NULL;
 }
 
-inline int copy_host_to_gpu(hsa_agent_t agent,
-                     void * dst,
-                     const void * src,
-                     size_t size)
+inline int copy_host_to_gpu(hsa_agent_t agent, void* dst, const void* src,
+                            size_t size)
 {
-  // memcpy works for gfx9, should see which is quicker. need this fallback for gfx8
+  // memcpy works for gfx9, should see which is quicker. need this fallback for
+  // gfx8
   hsa_signal_t sig;
-  hsa_status_t rc  = hsa_signal_create(1, 0, 0, &sig);
-  if (rc != HSA_STATUS_SUCCESS) { return 1; }
+  hsa_status_t rc = hsa_signal_create(1, 0, 0, &sig);
+  if (rc != HSA_STATUS_SUCCESS)
+    {
+      return 1;
+    }
 
   rc = core::invoke_hsa_copy(sig, dst, src, size, agent);
   hsa_signal_destroy(sig);

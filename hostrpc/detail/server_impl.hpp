@@ -117,16 +117,10 @@ struct server_impl : public SZ
     (void)lock_held;
 
     const size_t size = this->size();
-    cache c;
-    c.init(slot);
 
     uint64_t i = inbox.load_word(size, element);
     uint64_t o = outbox_staging.load_word(size, element);
-    uint64_t a = active.load_word(size, element);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
-    c.i(i);
-    c.o(o);
-    c.a(a);
 
     // Called with a lock. The corresponding slot can be:
     //  inbox outbox    state  action
@@ -179,9 +173,7 @@ struct server_impl : public SZ
         return false;
       }
 
-    assert(c.is(0b101));
     step(__LINE__, application_state);
-    tracker().claim(slot);
 
     // make the calls
     Copy::pull_to_server_from_client(&local_buffer[slot], &remote_buffer[slot]);
@@ -191,14 +183,10 @@ struct server_impl : public SZ
     Copy::push_from_server_to_client(&remote_buffer[slot], &local_buffer[slot]);
     step(__LINE__, application_state);
 
-    assert(c.is(0b101));
-
-    tracker().release(slot);
-
     // publish result
     {
       __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-      uint64_t o = platform::critical<uint64_t>([&]() {
+      platform::critical<uint64_t>([&]() {
         uint64_t cas_fail_count = 0;
         uint64_t cas_help_count = 0;
         return staged_claim_slot_returning_updated_word(
@@ -207,9 +195,8 @@ struct server_impl : public SZ
 
         // return outbox.claim_slot_returning_updated_word(size, slot);
       });
-      c.o(o);
     }
-    assert(c.is(0b111));
+
     // leaves outbox live
     assert(lock_held());
     return true;

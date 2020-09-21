@@ -2,7 +2,7 @@
 #include "detail/client_impl.hpp"
 #include "detail/platform.hpp"
 #include "detail/server_impl.hpp"
-#include "hostcall.hpp" // hostcall_ops prototypes
+#include "hostcall.hpp"  // hostcall_ops prototypes
 #include "memory.hpp"
 
 // Glue the opaque hostcall_interface class onto the freestanding implementation
@@ -14,10 +14,14 @@
 #include <string.h>
 #endif
 
-namespace hostrpc {
-namespace x64_host_amdgcn_client {
-struct fill {
-  static void call(hostrpc::page_t *page, void *dv) {
+namespace hostrpc
+{
+namespace x64_host_amdgcn_client
+{
+struct fill
+{
+  static void call(hostrpc::page_t *page, void *dv)
+  {
 #if defined(__AMDGCN__)
     uint64_t *d = static_cast<uint64_t *>(dv);
     hostcall_ops::pass_arguments(page, d);
@@ -28,8 +32,10 @@ struct fill {
   };
 };
 
-struct use {
-  static void call(hostrpc::page_t *page, void *dv) {
+struct use
+{
+  static void call(hostrpc::page_t *page, void *dv)
+  {
 #if defined(__AMDGCN__)
     uint64_t *d = static_cast<uint64_t *>(dv);
     hostcall_ops::use_result(page, d);
@@ -40,8 +46,10 @@ struct use {
   };
 };
 
-struct operate {
-  static void call(hostrpc::page_t *page, void *) {
+struct operate
+{
+  static void call(hostrpc::page_t *page, void *)
+  {
 #if defined(__x86_64__)
     hostcall_ops::operate(page);
 #else
@@ -50,8 +58,10 @@ struct operate {
   }
 };
 
-struct clear {
-  static void call(hostrpc::page_t *page, void *) {
+struct clear
+{
+  static void call(hostrpc::page_t *page, void *)
+  {
 #if defined(__x86_64__)
     hostcall_ops::clear(page);
 #else
@@ -59,7 +69,7 @@ struct clear {
 #endif
   }
 };
-} // namespace x64_host_amdgcn_client
+}  // namespace x64_host_amdgcn_client
 
 template <typename SZ>
 using x64_amdgcn_client =
@@ -90,19 +100,21 @@ inline void hsa_allocate_slot_bitmap_data_free(_Atomic(uint64_t) * d)
   hostrpc::hsa::deallocate(static_cast<void *>(d));
 }
 
-} // namespace
+}  // namespace
 
 #endif
 
-template <typename SZ> struct x64_amdgcn_pair {
+template <typename SZ>
+struct x64_amdgcn_pair
+{
   using client_type = hostrpc::x64_amdgcn_client<SZ>;
   using server_type = hostrpc::x64_amdgcn_server<SZ>;
   client_type client;
   server_type server;
   SZ sz;
 
-  x64_amdgcn_pair(SZ sz, uint64_t fine_handle, uint64_t coarse_handle)
-      : sz(sz) {
+  x64_amdgcn_pair(SZ sz, uint64_t fine_handle, uint64_t coarse_handle) : sz(sz)
+  {
 #if defined(__x86_64__)
     size_t N = sz.N();
     hsa_region_t fine = {.handle = fine_handle};
@@ -116,9 +128,10 @@ template <typename SZ> struct x64_amdgcn_pair {
     hostrpc::page_t *server_buffer = client_buffer;
 
     // Put the buffer in a known-good state to begin with
-    for (size_t i = 0; i < N; i++) {
-      x64_host_amdgcn_client::clear::call(&client_buffer[i], nullptr);
-    }
+    for (size_t i = 0; i < N; i++)
+      {
+        x64_host_amdgcn_client::clear::call(&client_buffer[i], nullptr);
+      }
 
     auto *send_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
     auto *recv_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
@@ -157,7 +170,8 @@ template <typename SZ> struct x64_amdgcn_pair {
 #endif
   }
 
-  ~x64_amdgcn_pair() {
+  ~x64_amdgcn_pair()
+  {
 #if defined(__x86_64__)
     assert(client.inbox.data() == server.outbox.data());
     assert(client.outbox.data() == server.inbox.data());
@@ -172,12 +186,15 @@ template <typename SZ> struct x64_amdgcn_pair {
     assert(client.local_buffer == server.remote_buffer);
     assert(client.remote_buffer == server.local_buffer);
 
-    if (client.local_buffer == client.remote_buffer) {
-      hsa_memory_free(client.local_buffer);
-    } else {
-      hsa_memory_free(client.local_buffer);
-      hsa_memory_free(server.local_buffer);
-    }
+    if (client.local_buffer == client.remote_buffer)
+      {
+        hsa_memory_free(client.local_buffer);
+      }
+    else
+      {
+        hsa_memory_free(client.local_buffer);
+        hsa_memory_free(server.local_buffer);
+      }
 #endif
   }
 };
@@ -185,8 +202,9 @@ template <typename SZ> struct x64_amdgcn_pair {
 using SZ = hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
 using ty = x64_amdgcn_pair<SZ>;
 
-hostcall_interface_t::hostcall_interface_t(
-    uint64_t hsa_region_t_fine_handle, uint64_t hsa_region_t_coarse_handle) {
+hostcall_interface_t::hostcall_interface_t(uint64_t hsa_region_t_fine_handle,
+                                           uint64_t hsa_region_t_coarse_handle)
+{
   state = nullptr;
 #if defined(__x86_64__)
   SZ sz;
@@ -199,19 +217,22 @@ hostcall_interface_t::hostcall_interface_t(
 #endif
 }
 
-hostcall_interface_t::~hostcall_interface_t() {
+hostcall_interface_t::~hostcall_interface_t()
+{
 #if defined(__x86_64__)
   ty *s = static_cast<ty *>(state);
-  if (s) {
-    // Should probably call the destructors on client/server state here
-    delete s;
-  }
+  if (s)
+    {
+      // Should probably call the destructors on client/server state here
+      delete s;
+    }
 #endif
 }
 
 bool hostcall_interface_t::valid() { return state != nullptr; }
 
-hostcall_interface_t::client_t hostcall_interface_t::client() {
+hostcall_interface_t::client_t hostcall_interface_t::client()
+{
   using res_t = hostcall_interface_t::client_t;
   static_assert(res_t::state_t::size() == sizeof(ty::client_type), "");
   static_assert(res_t::state_t::align() == alignof(ty::client_type), "");
@@ -225,7 +246,8 @@ hostcall_interface_t::client_t hostcall_interface_t::client() {
   return res;
 }
 
-hostcall_interface_t::server_t hostcall_interface_t::server() {
+hostcall_interface_t::server_t hostcall_interface_t::server()
+{
   // Construct an opaque server_t into the aligned state field
   using res_t = hostcall_interface_t::server_t;
   static_assert(res_t::state_t::size() == sizeof(ty::server_type), "");
@@ -240,12 +262,14 @@ hostcall_interface_t::server_t hostcall_interface_t::server() {
   return res;
 }
 
-void hostcall_interface_t::client_t::dump() {
+void hostcall_interface_t::client_t::dump()
+{
   auto *cl = state.open<ty::client_type>();
   cl->dump();
 }
 
-bool hostcall_interface_t::client_t::invoke_impl(void *f, void *u) {
+bool hostcall_interface_t::client_t::invoke_impl(void *f, void *u)
+{
 #if defined(__AMDGCN__)
   auto *cl = state.open<ty::client_type>();
   return cl->rpc_invoke<true>(f, u);
@@ -256,7 +280,8 @@ bool hostcall_interface_t::client_t::invoke_impl(void *f, void *u) {
 #endif
 }
 
-bool hostcall_interface_t::client_t::invoke_async_impl(void *f, void *u) {
+bool hostcall_interface_t::client_t::invoke_async_impl(void *f, void *u)
+{
 #if defined(__AMDGCN__)
   auto *cl = state.open<ty::client_type>();
   return cl->rpc_invoke<true>(f, u);
@@ -268,7 +293,8 @@ bool hostcall_interface_t::client_t::invoke_async_impl(void *f, void *u) {
 }
 
 bool hostcall_interface_t::server_t::handle_impl(void *application_state,
-                                                 uint64_t *l) {
+                                                 uint64_t *l)
+{
 #if defined(__x86_64__)
   auto *se = state.open<ty::server_type>();
   return se->rpc_handle(application_state, l);
@@ -279,4 +305,4 @@ bool hostcall_interface_t::server_t::handle_impl(void *application_state,
 #endif
 }
 
-} // namespace hostrpc
+}  // namespace hostrpc

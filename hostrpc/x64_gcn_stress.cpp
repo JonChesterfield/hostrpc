@@ -284,7 +284,7 @@ TEST_CASE("x64_gcn_stress")
 #ifndef DERIVE_VAL
 #error "Req derive_val"
 #endif
-    
+
     unsigned derive = DERIVE_VAL;
     for (unsigned i = 0; i < derive; i++)
       {
@@ -298,7 +298,7 @@ TEST_CASE("x64_gcn_stress")
     // best effort 64k calls in 1 seconds, 64k/s, using 8 servers procs.
     // pcie latency is about 1us, best possible round trip order of 1M/s.
     // multiple round trips involved at present.
-    
+
     // Looks like contention.
     // run5 is for 32k tasks, clients kernels, 8 waves, 4 servers
     // run6 is for 64k tasks
@@ -318,33 +318,42 @@ TEST_CASE("x64_gcn_stress")
     // 11      2048       2  26427
     // 12      4098       1  47647
 
-    printf("x64-gcn spawning %u x64 servers, %u gcn clients, each doing %u "
-           "reps in batches of %u\n",
-           nservers, nclients, per_client, MAX_WAVES);
+    printf(
+        "x64-gcn spawning %u x64 servers, %u gcn clients, each doing %u "
+        "reps in batches of %u\n",
+        nservers, nclients, per_client, MAX_WAVES);
 
     auto ctrl_holder = hsa::allocate(fine_grained_region, 8);
     uint64_t *control = (uint64_t *)ctrl_holder.get();
 
     __atomic_store_n(control, 0, __ATOMIC_RELEASE);
 
-    // derive 0 x64-gcn spawning 4 x64 servers, 1 gcn clients, each doing 4096 reps in batches of 8
-    // derive 1 x64-gcn spawning 4 x64 servers, 2 gcn clients, each doing 2048 reps in batches of 8
+    // derive 0 x64-gcn spawning 4 x64 servers, 1 gcn clients, each doing 4096
+    // reps in batches of 8 derive 1 x64-gcn spawning 4 x64 servers, 2 gcn
+    // clients, each doing 2048 reps in batches of 8
     std::vector<launch_t<kernel_args> > client_store;
     {
-      uint64_t max_id = (nclients-1)*MAX_WAVES;
-      if (max_id >= MAXCLIENT) {
-        fprintf(stderr, "Max id %lu exceeds MAXCLIENT %lu\n", max_id, (uint64_t)MAXCLIENT);
-        exit(1);
-      }
+      uint64_t max_id = (nclients - 1) * MAX_WAVES;
+      if (max_id >= MAXCLIENT)
+        {
+          fprintf(stderr, "Max id %lu exceeds MAXCLIENT %lu\n", max_id,
+                  (uint64_t)MAXCLIENT);
+          exit(1);
+        }
 
       uint64_t total = (uint64_t)nclients * MAX_WAVES * per_client;
-      fprintf(stderr, "Launching %u kernels each doing %u waves with %u reps, total %lu\n", nclients, MAX_WAVES, per_client, total);
-      
+      fprintf(
+          stderr,
+          "Launching %u kernels each doing %u waves with %u reps, total %lu\n",
+          nclients, MAX_WAVES, per_client, total);
+
       timer t("Launching clients");
       for (unsigned i = 0; i < nclients; i++)
         {
-          kernel_args example = {
-              .id = MAX_WAVES * i, .reps = per_client, .result = {0}, .control = control};
+          kernel_args example = {.id = MAX_WAVES * i,
+                                 .reps = per_client,
+                                 .result = {0},
+                                 .control = control};
 
           for (size_t i = 0; i < MAX_WAVES; i++)
             {
