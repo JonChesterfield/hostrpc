@@ -303,21 +303,7 @@ template <size_t scope, typename Prop> struct slot_bitmap {
   uint64_t load_word(size_t size, size_t i) const {
     (void)size;
     assert(i < (size / 64));
-
-#if 0
-    // Passing a compile time scope to aomp's clang hits a bug:
-    // clang++: /home/amd/aomp/amd-llvm-project/clang/lib/AST/ExprConstant.cpp:14617: bool clang::Expr::isIntegerConstantExpr(llvm::APSInt&, const clang::ASTContext&, clang::SourceLocation*, bool) const: Assertion `!isValueDependent() && "Expression evaluator can't be called on a dependent expression."' failed.
-        return __opencl_atomic_load(&a[i], __ATOMIC_RELAXED, scope);
-#else
-
-    if (scope == __OPENCL_MEMORY_SCOPE_DEVICE) {
-      return __opencl_atomic_load(&a[i], __ATOMIC_RELAXED,
-                                  __OPENCL_MEMORY_SCOPE_DEVICE);
-    } else {
-      return __opencl_atomic_load(&a[i], __ATOMIC_RELAXED,
-                                  __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-    }
-#endif
+    return __opencl_atomic_load(&a[i], __ATOMIC_RELAXED, scope);
   }
 
   bool cas(uint64_t element, uint64_t expect, uint64_t replace,
