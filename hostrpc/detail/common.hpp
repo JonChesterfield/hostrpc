@@ -155,9 +155,6 @@ struct slot_bitmap;
 using slot_bitmap_all_svm =
     slot_bitmap<__OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, properties::fine_grain>;
 
-using slot_bitmap_device =
-    slot_bitmap<__OPENCL_MEMORY_SCOPE_DEVICE, properties::fine_grain>;
-
 // coarse grain here raises a HSAIL hardware exception
 using slot_bitmap_coarse =
     slot_bitmap<__OPENCL_MEMORY_SCOPE_DEVICE, properties::coarse_grain>;
@@ -195,6 +192,8 @@ struct slot_bitmap
 
   void dump(size_t size) const
   {
+    uint64_t loaded = 0;
+    (void)loaded;
     uint64_t w = size / 64;
     printf("Size %lu / words %lu\n", size, w);
     for (uint64_t i = 0; i < w; i++)
@@ -206,18 +205,14 @@ struct slot_bitmap
               {
                 printf(" ");
               }
-            printf("%c", this->operator()(size, 64 * i + j) ? '1' : '0');
+            printf("%c",
+                   this->operator()(size, 64 * i + j, &loaded) ? '1' : '0');
           }
         printf("\n");
       }
   }
 
-  // cas, true on success
-  bool try_claim_empty_slot(size_t size, size_t i, uint64_t *,
-                            uint64_t *cas_fail_count);
-
   // assumes slot available
-
   uint64_t claim_slot_returning_updated_word(size_t size, size_t i)
   {
     (void)size;
@@ -252,8 +247,6 @@ struct slot_bitmap
     uint64_t mask = ~detail::setnthbit64(0, subindex);
 
     uint64_t before = fetch_and(w, mask);
-    // assert(detail::nthbitset64(before, subindex)); // this is firing on the
-    // gpu
     return before & mask;
   }
 
@@ -286,14 +279,13 @@ struct slot_bitmap
   // returns value from before the and/or
   // these are used on memory visible fromi all svm devices
 
-  __attribute__((used)) uint64_t fetch_and(uint64_t element, uint64_t mask)
+  uint64_t fetch_and(uint64_t element, uint64_t mask)
   {
     Ty addr = &a[element];
 
     if (Prop::hasFetchOp())
       {
         // This seems to work on amdgcn, but only with acquire. acq/rel fails
-
         return __opencl_atomic_fetch_and(addr, mask, __ATOMIC_ACQ_REL, scope);
       }
     else
@@ -318,7 +310,7 @@ struct slot_bitmap
       }
   }
 
-  __attribute__((used)) uint64_t fetch_or(uint64_t element, uint64_t mask)
+  uint64_t fetch_or(uint64_t element, uint64_t mask)
   {
     Ty addr = &a[element];
 
@@ -343,6 +335,125 @@ struct slot_bitmap
               }
           }
       }
+  }
+};
+
+struct lock_bitmap
+{
+  using Ty = typename properties::coarse_grain::Ty;
+  static_assert(sizeof(uint64_t) == sizeof(_Atomic(uint64_t)), "");
+  static_assert(sizeof(_Atomic(uint64_t) *) == 8, "");
+  Ty a;
+  lock_bitmap() : a(nullptr) {}
+  lock_bitmap(Ty d) : a(d)
+  {
+    // can't necessarily write to a from this object. if the memory is on
+    // the gpu, but this instance is being constructed on the gpu first,
+    // then direct writes will fail. However, the data does need to be
+    // zeroed for the bitmap to work.
+  }
+
+  Ty data() { return a; }
+  ~lock_bitmap() {}
+
+  // cas, true on success
+  // on return true, loaded contains active[w]
+  bool try_claim_empty_slot(size_t size, size_t i, uint64_t *loaded,
+                            uint64_t *cas_fail_count)
+  {
+    assert(i < size);
+    size_t w = index_to_element(i);
+    uint64_t subindex = index_to_subindex(i);
+
+    uint64_t d = load_word(size, w);
+
+    // printf("Slot %lu, w %lu, subindex %lu, d %lu\n", i, w, subindex, d);
+    uint64_t local_fail_count = 0;
+    for (;;)
+      {
+        // if the bit was already set then we've lost the race
+
+        // can either check the bit is zero, or unconditionally set it and check
+        // if this changed the value
+        uint64_t proposed = detail::setnthbit64(d, subindex);
+        if (proposed == d)
+          {
+            *cas_fail_count = *cas_fail_count + local_fail_count;
+            return false;
+          }
+
+        // If the bit is known zero, can use fetch_or to set it
+
+        uint64_t unexpected_contents;
+
+        uint32_t r = platform::critical<uint32_t>(
+            [&]() { return cas(w, d, proposed, &unexpected_contents); });
+
+        unexpected_contents = platform::broadcast_master(unexpected_contents);
+
+        if (r)
+          {
+            // success, got the lock, and active word was set to proposed
+            *loaded = proposed;
+            *cas_fail_count = *cas_fail_count + local_fail_count;
+            return true;
+          }
+
+        local_fail_count++;
+        // cas failed. reasons:
+        // we lost the slot
+        // another slot in the same word changed
+        // spurious
+
+        // try again if the slot is still empty
+        // may want a give up count / sleep or similar
+        d = unexpected_contents;
+      }
+  }
+
+  // assumes slot taken
+  void release_slot(size_t size, size_t i)
+  {
+    (void)size;
+    assert(i < size);
+    size_t w = index_to_element(i);
+    uint64_t subindex = index_to_subindex(i);
+    assert(detail::nthbitset64(load_word(size, w), subindex));
+
+    // and with everything other than the slot set
+    uint64_t mask = ~detail::setnthbit64(0, subindex);
+
+    Ty addr = &a[w];
+    __opencl_atomic_fetch_and(addr, mask, __ATOMIC_ACQ_REL,
+                              __OPENCL_MEMORY_SCOPE_DEVICE);
+  }
+
+  uint64_t load_word(size_t size, size_t i) const
+  {
+    (void)size;
+    assert(i < (size / 64));
+    return __opencl_atomic_load(&a[i], __ATOMIC_RELAXED,
+                                __OPENCL_MEMORY_SCOPE_DEVICE);
+  }
+
+ private:
+  bool cas(uint64_t element, uint64_t expect, uint64_t replace,
+           uint64_t *loaded)
+  {
+    Ty addr = &a[element];
+
+    // this cas function is not used across devices by this library
+    bool r = __opencl_atomic_compare_exchange_weak(
+        addr, &expect, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED,
+        __OPENCL_MEMORY_SCOPE_DEVICE);
+
+    // on success, bits in memory have been set to replace
+    // on failure, value found is now in expect
+    // if cas succeeded, the bits in memory matched what was expected and now
+    // match replace if it failed, the above call wrote the bits found in memory
+    // into expect
+    *loaded = expect;
+    return r;
   }
 };
 
@@ -447,71 +558,6 @@ void staged_release_slot(size_t size, size_t i,
 
   assert(!detail::nthbitset64(visible->load_word(size, w), subindex));
 }
-
-// on return true, loaded contains active[w]
-template <size_t scope, typename Prop>
-bool slot_bitmap<scope, Prop>::try_claim_empty_slot(size_t size, size_t i,
-                                                    uint64_t *loaded,
-                                                    uint64_t *cas_fail_count)
-{
-  assert(i < size);
-  size_t w = index_to_element(i);
-  uint64_t subindex = index_to_subindex(i);
-
-  uint64_t d = load_word(size, w);
-
-  // printf("Slot %lu, w %lu, subindex %lu, d %lu\n", i, w, subindex, d);
-  uint64_t local_fail_count = 0;
-  for (;;)
-    {
-      // if the bit was already set then we've lost the race
-
-      // can either check the bit is zero, or unconditionally set it and check
-      // if this changed the value
-      uint64_t proposed = detail::setnthbit64(d, subindex);
-      if (proposed == d)
-        {
-          *cas_fail_count = *cas_fail_count + local_fail_count;
-          return false;
-        }
-
-      // If the bit is known zero, can use fetch_or to set it
-
-      uint64_t unexpected_contents;
-
-      uint32_t r = platform::critical<uint32_t>(
-          [&]() { return cas(w, d, proposed, &unexpected_contents); });
-
-      unexpected_contents = platform::broadcast_master(unexpected_contents);
-
-      if (r)
-        {
-          // success, got the lock, and active word was set to proposed
-          *loaded = proposed;
-          *cas_fail_count = *cas_fail_count + local_fail_count;
-          return true;
-        }
-
-      local_fail_count++;
-      // cas failed. reasons:
-      // we lost the slot
-      // another slot in the same word changed
-      // spurious
-
-      // try again if the slot is still empty
-      // may want a give up count / sleep or similar
-      d = unexpected_contents;
-    }
-}
-
-#if 0
-#ifdef __CUDACC__
-// TODO: amdgcn doesn't have thread_local either, just doesn't error on it
-extern unsigned my_id;
-#else
-extern thread_local unsigned my_id;
-#endif
-#endif
 
 inline void step(_Atomic(uint64_t) * steps_left)
 {

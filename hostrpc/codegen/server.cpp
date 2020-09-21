@@ -44,9 +44,9 @@ struct clear_direct
 
 extern "C" void server_instance_direct(
     hostrpc::slot_bitmap_all_svm inbox, hostrpc::slot_bitmap_all_svm outbox,
-    hostrpc::slot_bitmap_coarse active,
-    hostrpc::slot_bitmap_coarse outbox_staging, hostrpc::page_t *remote_buffer,
-    hostrpc::page_t *local_buffer, void *state_arg)
+    hostrpc::lock_bitmap active, hostrpc::slot_bitmap_coarse outbox_staging,
+    hostrpc::page_t *remote_buffer, hostrpc::page_t *local_buffer,
+    void *state_arg)
 {
   using server_type =
       hostrpc::server_impl<SZ, hostrpc::copy_functor_memcpy_pull,
@@ -65,9 +65,9 @@ extern "C" void server_instance_direct(
 
 extern "C" void server_instance_indirect(
     hostrpc::slot_bitmap_all_svm inbox, hostrpc::slot_bitmap_all_svm outbox,
-    hostrpc::slot_bitmap_coarse active,
-    hostrpc::slot_bitmap_coarse outbox_staging, hostrpc::page_t *remote_buffer,
-    hostrpc::page_t *local_buffer, void *state_arg)
+    hostrpc::lock_bitmap active, hostrpc::slot_bitmap_coarse outbox_staging,
+    hostrpc::page_t *remote_buffer, hostrpc::page_t *local_buffer,
+    void *state_arg)
 {
   using server_type =
       hostrpc::server_impl<SZ, hostrpc::copy_functor_memcpy_pull,

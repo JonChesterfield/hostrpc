@@ -158,7 +158,7 @@ struct client_impl : public SZ, public Counter
 {
   using inbox_t = slot_bitmap_all_svm;
   using outbox_t = slot_bitmap_all_svm;
-  using locks_t = slot_bitmap_coarse;
+  using locks_t = lock_bitmap;
   using outbox_staging_t = slot_bitmap_coarse;
 
   client_impl(SZ sz, inbox_t inbox, outbox_t outbox, locks_t active,

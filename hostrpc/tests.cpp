@@ -119,9 +119,9 @@ TEST_CASE("set up single word system")
   using SZ = hostrpc::size_compiletime<N>;
   slot_bitmap_all_svm send(send_data.get());
   slot_bitmap_all_svm recv(recv_data.get());
-  slot_bitmap_coarse client_active(client_active_data.get());
+  lock_bitmap client_active(client_active_data.get());
   slot_bitmap_coarse client_outbox_staging(client_outbox_staging_data.get());
-  slot_bitmap_coarse server_active(server_active_data.get());
+  lock_bitmap server_active(server_active_data.get());
   slot_bitmap_coarse server_outbox_staging(server_outbox_staging_data.get());
 
   const uint64_t calls_planned = 1024;
