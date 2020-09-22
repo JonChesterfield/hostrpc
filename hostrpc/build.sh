@@ -74,7 +74,6 @@ $CXX_GCN codegen/server.cpp -c -o codegen/server.gcn.bc
 
 
 $CXX_X64 -I$HSAINC memory.cpp -c -o memory.x64.bc
-$CXX_X64 -I$HSAINC x64_host_x64_client.cpp -c -o x64_host_x64_client.x64.bc
 $CXX_X64 -I$HSAINC tests.cpp -c -o tests.x64.bc
 $CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc
 
@@ -156,13 +155,13 @@ $CXX_GCN_LD executable_device.gcn.bc -o a.out
 #     $CXX_GCN_LD -c $ll -o $obj
 # done
 
-$CXX_X64_LD tests.x64.bc x64_x64_stress.x64.bc states.x64.bc catch.o memory.x64.bc x64_host_x64_client.x64.bc $LDFLAGS -o states.exe
+$CXX_X64_LD tests.x64.bc x64_x64_stress.x64.bc states.x64.bc catch.o memory.x64.bc $LDFLAGS -o states.exe
 
-$CXX_X64_LD x64_x64_stress.x64.bc catch.o memory.x64.bc x64_host_x64_client.x64.bc $LDFLAGS -o x64_x64_stress.exe
+$CXX_X64_LD x64_x64_stress.x64.bc catch.o memory.x64.bc $LDFLAGS -o x64_x64_stress.exe
 
 $CXX_X64_LD x64_gcn_stress.x64.bc catch.o memory.x64.bc x64_host_gcn_client.x64.bc $LDFLAGS -o x64_gcn_stress.exe
 
-$CXX_X64_LD tests.x64.bc catch.o x64_host_x64_client.x64.bc memory.x64.bc  $LDFLAGS -o tests.exe
+$CXX_X64_LD tests.x64.bc catch.o memory.x64.bc  $LDFLAGS -o tests.exe
 
 
 $CXX_X64_LD persistent_kernel.x64.bc catch.o memory.x64.bc gcn_host_x64_client.x64.bc $LDFLAGS -o persistent_kernel.exe

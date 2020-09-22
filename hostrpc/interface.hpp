@@ -6,7 +6,8 @@
 #include <stdint.h>
 
 #if defined(__x86_64__)
-// #include "x64_host_x64_client.hpp"
+#include "test_common.hpp"  // round
+#include "x64_host_x64_client.hpp"
 #endif
 
 namespace hostrpc
@@ -119,13 +120,36 @@ struct server_handle_overloads
   }
 };
 
+#if defined(__x86_64__)
 struct x64_x64_t
 {
+  using ty = hostrpc::x64_x64_pair_T<hostrpc::size_runtime, indirect::fill,
+                                     indirect::use, indirect::operate,
+                                     indirect::clear>;
+
   // This probably can't be copied, but could be movable
-  x64_x64_t(size_t minimum_number_slots);  // != 0
-  ~x64_x64_t();
+  x64_x64_t(size_t minimum_number_slots) : state(nullptr)
+  {
+    // minimum_number_slots != 0
+    size_t N = minimum_number_slots;
+    N = hostrpc::round(N);
+    hostrpc::size_runtime sz(N);
+    assert(sz.N() != 0);
+    ty *s = new (std::nothrow) ty(sz);
+    state = static_cast<void *>(s);
+  }
+
+  ~x64_x64_t()
+  {
+    ty *s = static_cast<ty *>(state);
+    if (s)
+      {
+        delete s;
+      }
+  }
+
   x64_x64_t(const x64_x64_t &) = delete;
-  bool valid();  // true if construction succeeded
+  bool valid() { return state != nullptr; }  // true if construction succeeded
 
   struct client_t : public client_invoke_overloads<client_t>
   {
@@ -137,7 +161,10 @@ struct x64_x64_t
     using client_invoke_overloads::invoke;
     using client_invoke_overloads::invoke_async;
 
-    client_counters get_counters();
+    client_counters get_counters()
+    {
+      return state.open<ty::client_type>()->get_counters();
+    }
 
    private:
     template <typename ClientType>
@@ -151,9 +178,15 @@ struct x64_x64_t
     }
 
     bool invoke(closure_func_t fill, void *fill_state, closure_func_t use,
-                void *use_state);
+                void *use_state)
+    {
+      return invoke<ty::client_type>(fill, fill_state, use, use_state);
+    }
     bool invoke_async(closure_func_t fill, void *fill_state, closure_func_t use,
-                      void *use_state);
+                      void *use_state)
+    {
+      return invoke_async<ty::client_type>(fill, fill_state, use, use_state);
+    }
     state_t state;
   };
 
@@ -177,15 +210,31 @@ struct x64_x64_t
       (void)sv;
     }
     state_t state;
-    bool handle(closure_func_t operate, void *state, uint64_t *loc);
+    bool handle(closure_func_t func, void *application_state, uint64_t *l)
+    {
+      return handle<ty::server_type>(func, application_state, l);
+    }
   };
 
-  client_t client();
-  server_t server();
+  client_t client()
+  {
+    ty *s = static_cast<ty *>(state);
+    assert(s);
+    ty::client_type &ct = s->client;
+    return {ct};
+  }
+  server_t server()
+  {
+    ty *s = static_cast<ty *>(state);
+    assert(s);
+    ty::server_type &st = s->server;
+    return {st};
+  }
 
  private:
   void *state;
 };
+#endif
 
 struct x64_gcn_t
 {

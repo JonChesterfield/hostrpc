@@ -5,6 +5,13 @@
 #include "detail/common.hpp"
 #include "detail/server_impl.hpp"
 
+#include "memory.hpp"
+#include "test_common.hpp"
+
+#if defined(__x86_64__)
+#include "hsa.h"
+#endif
+
 namespace hostrpc
 {
 struct copy_functor_x64_gcn
