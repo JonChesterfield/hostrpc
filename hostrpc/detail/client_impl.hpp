@@ -352,7 +352,6 @@ struct client_impl : public SZ, public Counter
       cas_help_count = platform::broadcast_master(cas_help_count);
       Counter::publish_cas_fail(cas_fail_count);
       Counter::publish_cas_help(cas_help_count);
-      assert(detail::nthbitset64(o, subindex));
     }
 
     step(__LINE__, fill_application_state, use_application_state);

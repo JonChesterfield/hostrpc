@@ -41,12 +41,10 @@ struct x64_x64_pair
   using server_type = x64_x64_server<SZ>;
   client_type client;
   server_type server;
-  SZ sz;
 
-  x64_x64_pair(SZ sz) : sz(sz)
+  x64_x64_pair(SZ sz)
   {
     size_t N = sz.N();
-    using namespace hostrpc;
     size_t buffer_size = sizeof(page_t) * N;
 
     hostrpc::page_t *client_buffer = hostrpc::careful_array_cast<page_t>(
@@ -77,10 +75,15 @@ struct x64_x64_pair
               server_outbox_staging,
               client_buffer,
               server_buffer};
+
+    assert(client.size() == N);
+    assert(server.size() == N);
   }
+
   ~x64_x64_pair()
   {
-    size_t N = sz.N();
+    size_t N = client.size();
+    assert(server.size() == N);
 
     assert(client.inbox.data() == server.outbox.data());
     assert(client.outbox.data() == server.inbox.data());
@@ -94,7 +97,6 @@ struct x64_x64_pair
     hostrpc::x64_native::deallocate(server.outbox_staging.data());
 
     assert(client.local_buffer != server.local_buffer);
-
     for (size_t i = 0; i < N; i++)
       {
         client.local_buffer[i].~page_t();

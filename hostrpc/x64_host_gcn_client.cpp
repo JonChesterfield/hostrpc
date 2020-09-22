@@ -108,9 +108,8 @@ struct x64_gcn_pair
   using server_type = hostrpc::x64_gcn_server<SZ>;
   client_type client;
   server_type server;
-  SZ sz;
 
-  x64_gcn_pair(SZ sz, uint64_t fine_handle, uint64_t coarse_handle) : sz(sz)
+  x64_gcn_pair(SZ sz, uint64_t fine_handle, uint64_t coarse_handle)
   {
 #if defined(__x86_64__)
     size_t N = sz.N();
@@ -153,7 +152,11 @@ struct x64_gcn_pair
               server_outbox_staging,
               client_buffer,
               server_buffer};
+
+    assert(client.size() == N);
+    assert(server.size() == N);
 #else
+    (void)sz;
     (void)fine_handle;
     (void)coarse_handle;
 #endif
@@ -162,6 +165,9 @@ struct x64_gcn_pair
   ~x64_gcn_pair()
   {
 #if defined(__x86_64__)
+    size_t N = client.size();
+    assert(server.size() == N);
+
     assert(client.inbox.data() == server.outbox.data());
     assert(client.outbox.data() == server.inbox.data());
 
@@ -178,6 +184,10 @@ struct x64_gcn_pair
 
     // postcondition of this instance
     assert(client.local_buffer == client.remote_buffer);
+    for (size_t i = 0; i < N; i++)
+      {
+        client.local_buffer[i].~page_t();
+      }
     hsa_memory_free(client.local_buffer);
 #endif
   }

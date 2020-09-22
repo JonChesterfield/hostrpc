@@ -27,7 +27,7 @@ enum class server_state : uint8_t
   result_with_thread = 0b111,
 };
 
-template <typename SZ, typename Copy, typename Op, typename Clear,
+template <typename SZ, typename Copy, typename Operate, typename Clear,
           typename Step>
 struct server_impl : public SZ
 {
@@ -174,7 +174,7 @@ struct server_impl : public SZ
     // make the calls
     Copy::pull_to_server_from_client(&local_buffer[slot], &remote_buffer[slot]);
     step(__LINE__, application_state);
-    Op::call(&local_buffer[slot], application_state);
+    Operate::call(&local_buffer[slot], application_state);
     step(__LINE__, application_state);
     Copy::push_from_server_to_client(&remote_buffer[slot], &local_buffer[slot]);
     step(__LINE__, application_state);
