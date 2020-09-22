@@ -167,9 +167,8 @@ struct slot_bitmap
   static_assert(sizeof(_Atomic(uint64_t) *) == 8, "");
 
   Ty a;
-
+  static constexpr size_t bits_per_slot() { return 1; }
   slot_bitmap() : a(nullptr) {}
-
   slot_bitmap(Ty d) : a(d)
   {
     // can't necessarily write to a from this object. if the memory is on
@@ -178,9 +177,8 @@ struct slot_bitmap
     // zeroed for the bitmap to work.
   }
 
-  Ty data() { return a; }
-
   ~slot_bitmap() {}
+  Ty data() { return a; }
 
   bool operator()(size_t size, size_t i, uint64_t *loaded) const
   {
@@ -345,17 +343,13 @@ struct lock_bitmap
   static_assert(sizeof(uint64_t) == sizeof(_Atomic(uint64_t)), "");
   static_assert(sizeof(_Atomic(uint64_t) *) == 8, "");
   Ty a;
-  lock_bitmap() : a(nullptr) {}
-  lock_bitmap(Ty d) : a(d)
-  {
-    // can't necessarily write to a from this object. if the memory is on
-    // the gpu, but this instance is being constructed on the gpu first,
-    // then direct writes will fail. However, the data does need to be
-    // zeroed for the bitmap to work.
-  }
+  static constexpr size_t bits_per_slot() { return 1; }
 
-  Ty data() { return a; }
+  lock_bitmap() : a(nullptr) {}
+  lock_bitmap(Ty d) : a(d) {}
+
   ~lock_bitmap() {}
+  Ty data() { return a; }
 
   // cas, true on success
   // on return true, loaded contains active[w]
@@ -536,6 +530,43 @@ void staged_release_slot(size_t size, size_t i,
   update_visible_from_staging<true>(size, i, staging, visible, cas_fail_count,
                                     cas_help_count);
 }
+
+#if 0
+template <bool InitialState, size_t Sscope, typename SProp>
+void update_visible_from_staging(size_t size, size_t i,
+                                 slot_bitmap<Sscope, SProp> *staging,
+                                 message_bitmap *visible,
+                                 uint64_t *cas_fail_count,
+                                 uint64_t *cas_help_count)
+{
+  (void)size;
+  (void)i;
+  (void)staging;
+  (void)visible;
+  (void)cas_fail_count;
+  (void)cas_help_count;
+}
+
+template <size_t Sscope, typename SProp>
+void staged_claim_slot(size_t size, size_t i,
+                       slot_bitmap<Sscope, SProp> *staging,
+                       message_bitmap *visible, uint64_t *cas_fail_count,
+                       uint64_t *cas_help_count)
+{
+  update_visible_from_staging<false>(size, i, staging, visible, cas_fail_count,
+                                     cas_help_count);
+}
+
+template <size_t Sscope, typename SProp>
+void staged_release_slot(size_t size, size_t i,
+                         slot_bitmap<Sscope, SProp> *staging,
+                         message_bitmap *visible, uint64_t *cas_fail_count,
+                         uint64_t *cas_help_count)
+{
+  update_visible_from_staging<true>(size, i, staging, visible, cas_fail_count,
+                                    cas_help_count);
+}
+#endif
 
 inline void step(_Atomic(uint64_t) * steps_left)
 {

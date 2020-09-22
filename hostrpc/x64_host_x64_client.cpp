@@ -19,12 +19,17 @@ using x64_x64_server =
     hostrpc::server_indirect_impl<SZ, hostrpc::copy_functor_memcpy_pull,
                                   hostrpc::nop_stepper>;
 
-static _Atomic(uint64_t) * x64_allocate_atomic_uint64_array(size_t size)
+template <typename T>
+static T x64_alloc(size_t size)
 {
+  constexpr size_t bps = T::bits_per_slot();
+  static_assert(bps == 1 || bps == 8, "");
   assert(size % 64 == 0 && "Size must be a multiple of 64");
   constexpr const static size_t align = 64;
-  void *memory = hostrpc::x64_native::allocate(align, size);
-  return hostrpc::careful_array_cast<_Atomic(uint64_t)>(memory, size);
+  void *memory = hostrpc::x64_native::allocate(align, size * bps);
+  _Atomic(uint64_t) *m =
+      hostrpc::careful_array_cast<_Atomic(uint64_t)>(memory, size * bps);
+  return {m};
 }
 
 // This doesn't especially care about fill/use/operate/step
@@ -51,19 +56,12 @@ struct x64_x64_pair
 
     assert(client_buffer != server_buffer);
 
-    auto *send_data = x64_allocate_atomic_uint64_array(N);
-    auto *recv_data = x64_allocate_atomic_uint64_array(N);
-    auto *client_locks_data = x64_allocate_atomic_uint64_array(N);
-    auto *client_outbox_staging_data = x64_allocate_atomic_uint64_array(N);
-    auto *server_locks_data = x64_allocate_atomic_uint64_array(N);
-    auto *server_outbox_staging_data = x64_allocate_atomic_uint64_array(N);
-
-    message_bitmap send(send_data);
-    message_bitmap recv(recv_data);
-    lock_bitmap client_locks(client_locks_data);
-    slot_bitmap_coarse client_outbox_staging(client_outbox_staging_data);
-    lock_bitmap server_locks(server_locks_data);
-    slot_bitmap_coarse server_outbox_staging(server_outbox_staging_data);
+    auto send = x64_alloc<message_bitmap>(N);
+    auto recv = x64_alloc<message_bitmap>(N);
+    auto client_locks = x64_alloc<lock_bitmap>(N);
+    auto client_outbox_staging = x64_alloc<slot_bitmap_coarse>(N);
+    auto server_locks = x64_alloc<lock_bitmap>(N);
+    auto server_outbox_staging = x64_alloc<slot_bitmap_coarse>(N);
 
     client = {sz,
               recv,

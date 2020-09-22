@@ -124,25 +124,19 @@ struct x64_gcn_pair
 
     hostrpc::page_t *server_buffer = client_buffer;
 
-    auto *send_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
-    auto *recv_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
     // allocating in coarse is probably not sufficient, likely to need to mark
     // the pointer with an address space
-    auto *client_active_data = hsa_allocate_slot_bitmap_data_alloc(coarse, N);
-    auto *client_outbox_staging_data =
-        hsa_allocate_slot_bitmap_data_alloc(coarse, N);
-
     // server_active could be 'malloc', gcn can't access it
-    auto *server_active_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
-    auto *server_outbox_staging_data =
-        hsa_allocate_slot_bitmap_data_alloc(fine, N);
-
-    message_bitmap send = {send_data};
-    message_bitmap recv = {recv_data};
-    lock_bitmap client_active = {client_active_data};
-    slot_bitmap_coarse client_outbox_staging = {client_outbox_staging_data};
-    lock_bitmap server_active = {server_active_data};
-    slot_bitmap_coarse server_outbox_staging = {server_outbox_staging_data};
+    auto send = hsa_allocate_slot_bitmap_data_alloc<message_bitmap>(fine, N);
+    auto recv = hsa_allocate_slot_bitmap_data_alloc<message_bitmap>(fine, N);
+    auto client_active =
+        hsa_allocate_slot_bitmap_data_alloc<lock_bitmap>(coarse, N);
+    auto client_outbox_staging =
+        hsa_allocate_slot_bitmap_data_alloc<slot_bitmap_coarse>(coarse, N);
+    auto server_active =
+        hsa_allocate_slot_bitmap_data_alloc<lock_bitmap>(fine, N);
+    auto server_outbox_staging =
+        hsa_allocate_slot_bitmap_data_alloc<slot_bitmap_coarse>(fine, N);
 
     client = {sz,
               recv,
@@ -196,7 +190,6 @@ x64_gcn_t::x64_gcn_t(size_t N, uint64_t hsa_region_t_fine_handle,
 {
   // for gfx906, probably want N = 2048
   N = hostrpc::round(N);
-
   state = nullptr;
 #if defined(__x86_64__)
   hostrpc::size_runtime sz(N);

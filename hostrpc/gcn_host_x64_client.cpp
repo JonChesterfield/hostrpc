@@ -104,24 +104,17 @@ struct gcn_x64_pair
 
     hostrpc::page_t *server_buffer = client_buffer;
 
-    auto *send_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
-    auto *recv_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
-
     // could be malloc here, gpu can't see the client locks
-    auto *client_active_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
-    auto *client_outbox_staging_data =
-        hsa_allocate_slot_bitmap_data_alloc(fine, N);
-
-    auto *server_active_data = hsa_allocate_slot_bitmap_data_alloc(coarse, N);
-    auto *server_outbox_staging_data =
-        hsa_allocate_slot_bitmap_data_alloc(coarse, N);
-
-    message_bitmap send = {send_data};
-    message_bitmap recv = {recv_data};
-    lock_bitmap client_active = {client_active_data};
-    slot_bitmap_coarse client_outbox_staging = {client_outbox_staging_data};
-    lock_bitmap server_active = {server_active_data};
-    slot_bitmap_coarse server_outbox_staging = {server_outbox_staging_data};
+    auto send = hsa_allocate_slot_bitmap_data_alloc<message_bitmap>(fine, N);
+    auto recv = hsa_allocate_slot_bitmap_data_alloc<message_bitmap>(fine, N);
+    auto client_active =
+        hsa_allocate_slot_bitmap_data_alloc<lock_bitmap>(fine, N);
+    auto client_outbox_staging =
+        hsa_allocate_slot_bitmap_data_alloc<slot_bitmap_coarse>(fine, N);
+    auto server_active =
+        hsa_allocate_slot_bitmap_data_alloc<lock_bitmap>(coarse, N);
+    auto server_outbox_staging =
+        hsa_allocate_slot_bitmap_data_alloc<slot_bitmap_coarse>(coarse, N);
 
     client = {sz,
               recv,

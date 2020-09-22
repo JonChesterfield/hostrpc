@@ -515,18 +515,8 @@ struct client_impl : public SZ, public Counter
                 });
                 // returning if the invoke garbage collected is inefficient
                 // as the caller will need to try again, better to keep the
-                // position in the loop. This raises a memory access error
-                // however HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION: The
-                // agent attempted to access memory beyond the largest legal
-                // address.
-#if 0
-                if (r)
-                  {
-                    return true;
-                  }
-#else
+                // position in the loop.
                 return r;
-#endif
               }
             else
               {

@@ -6,6 +6,7 @@
 #include "memory.hpp"
 #include "tests.hpp"
 
+#include <list>
 #include <thread>
 #include <unistd.h>
 
@@ -18,21 +19,29 @@ TEST_CASE("instantiate")
   foo.server();
 }
 
-static _Atomic(uint64_t) * x64_allocate_slot_bitmap_data(size_t size)
-{
-  assert(size % 64 == 0 && "Size must be a multiple of 64");
-  constexpr const static size_t align = 64;
-  void* memory = hostrpc::x64_native::allocate(align, size);
-  return hostrpc::careful_array_cast<_Atomic(uint64_t)>(memory, size);
-}
-
-struct x64_allocate_slot_bitmap_data_deleter
+struct x64_alloc_deleter
 {
   void operator()(_Atomic(uint64_t) * d)
   {
-    hostrpc::x64_native::deallocate(static_cast<void*>(d));
+    hostrpc::x64_native::deallocate(static_cast<void *>(d));
   }
 };
+
+using deleter_ty = std::unique_ptr<_Atomic(uint64_t), x64_alloc_deleter>;
+
+template <typename T>
+static T x64_alloc(size_t size, std::list<deleter_ty> *store)
+{
+  constexpr size_t bps = T::bits_per_slot();
+  static_assert(bps == 1 || bps == 8, "");
+  assert(size % 64 == 0 && "Size must be a multiple of 64");
+  constexpr const static size_t align = 64;
+  void *memory = hostrpc::x64_native::allocate(align, size * bps);
+  _Atomic(uint64_t) *m =
+      hostrpc::careful_array_cast<_Atomic(uint64_t)>(memory, size * bps);
+  store->emplace_back(deleter_ty{m});
+  return {m};
+}
 
 TEST_CASE("set up single word system")
 {
@@ -61,9 +70,9 @@ TEST_CASE("set up single word system")
 
   struct stepper
   {
-    static void call(int line, void* v)
+    static void call(int line, void *v)
     {
-      application_state_t* state = static_cast<application_state_t*>(v);
+      application_state_t *state = static_cast<application_state_t *>(v);
       if (state->stepper.show_step)
         {
           printf("%s:%d: step\n", state->stepper.name, line);
@@ -74,9 +83,9 @@ TEST_CASE("set up single word system")
 
   struct fill
   {
-    static void call(page_t* p, void* v)
+    static void call(page_t *p, void *v)
     {
-      application_state_t* state = static_cast<application_state_t*>(v);
+      application_state_t *state = static_cast<application_state_t *>(v);
       state->val++;
       // printf("Passing %lu\n", static_cast<uint64_t>(val));
       p->cacheline[0].element[0] = *(state->val);
@@ -85,7 +94,7 @@ TEST_CASE("set up single word system")
 
   struct operate
   {
-    static void call(page_t* p, void*)
+    static void call(page_t *p, void *)
     {
       uint64_t r = p->cacheline[0].element[0];
       // printf("Server received %lu, forwarding as %lu\n", r, 2 * r);
@@ -95,34 +104,24 @@ TEST_CASE("set up single word system")
 
   struct clear
   {
-    static void call(page_t*, void*) {}
+    static void call(page_t *, void *) {}
   };
 
   struct use
   {
-    static void call(page_t* p, void*) { (void)p; }
+    static void call(page_t *p, void *) { (void)p; }
   };
 
-  using mailbox_ptr_t =
-      std::unique_ptr<_Atomic(uint64_t), x64_allocate_slot_bitmap_data_deleter>;
-
-  using lockarray_ptr_t =
-      std::unique_ptr<_Atomic(uint64_t), x64_allocate_slot_bitmap_data_deleter>;
-
-  mailbox_ptr_t send_data(x64_allocate_slot_bitmap_data(N));
-  mailbox_ptr_t recv_data(x64_allocate_slot_bitmap_data(N));
-  lockarray_ptr_t client_active_data(x64_allocate_slot_bitmap_data(N));
-  lockarray_ptr_t client_outbox_staging_data(x64_allocate_slot_bitmap_data(N));
-  lockarray_ptr_t server_active_data(x64_allocate_slot_bitmap_data(N));
-  lockarray_ptr_t server_outbox_staging_data(x64_allocate_slot_bitmap_data(N));
-
   using SZ = hostrpc::size_compiletime<N>;
-  message_bitmap send(send_data.get());
-  message_bitmap recv(recv_data.get());
-  lock_bitmap client_active(client_active_data.get());
-  slot_bitmap_coarse client_outbox_staging(client_outbox_staging_data.get());
-  lock_bitmap server_active(server_active_data.get());
-  slot_bitmap_coarse server_outbox_staging(server_outbox_staging_data.get());
+
+  std::list<deleter_ty> store;
+
+  auto send = x64_alloc<message_bitmap>(N, &store);
+  auto recv = x64_alloc<message_bitmap>(N, &store);
+  auto client_active = x64_alloc<lock_bitmap>(N, &store);
+  auto client_outbox_staging = x64_alloc<slot_bitmap_coarse>(N, &store);
+  auto server_active = x64_alloc<lock_bitmap>(N, &store);
+  auto server_outbox_staging = x64_alloc<slot_bitmap_coarse>(N, &store);
 
   const uint64_t calls_planned = 1024;
   _Atomic(uint64_t) calls_launched(0);
@@ -144,7 +143,7 @@ TEST_CASE("set up single word system")
                         &server_buffer[0],
                         &client_buffer[0]};
 
-      void* application_state_ptr = static_cast<void*>(&app_state);
+      void *application_state_ptr = static_cast<void *>(&app_state);
 
       while (calls_launched < calls_planned)
         {
@@ -179,7 +178,7 @@ TEST_CASE("set up single word system")
                         &client_buffer[0],
                         &server_buffer[0]};
 
-      void* application_state = static_cast<void*>(&stepper_state);
+      void *application_state = static_cast<void *>(&stepper_state);
       uint64_t loc_arg = 0;
       (void)loc_arg;
       for (;;)

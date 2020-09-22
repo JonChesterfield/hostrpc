@@ -106,8 +106,8 @@ TEST_CASE("x64_x64_stress")
     return failures;
   };
 
-  unsigned nservers = 1;
-  unsigned nclients = 128;
+  unsigned nservers = 32;
+  unsigned nclients = 32;  // was 128
 
   std::vector<std::thread> server_store;
   for (unsigned i = 0; i < nservers; i++)

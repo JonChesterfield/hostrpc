@@ -4,6 +4,7 @@
 #include "detail/server_impl.hpp"
 #include "hostcall.hpp"  // hostcall_ops prototypes
 #include "memory.hpp"
+#include "test_common.hpp"
 
 // Glue the opaque hostcall_interface class onto the freestanding implementation
 
@@ -85,6 +86,7 @@ using x64_amdgcn_server =
                          x64_host_amdgcn_client::clear, hostrpc::nop_stepper>;
 
 #if defined(__x86_64__)
+#if 0
 namespace
 {
 inline _Atomic(uint64_t) *
@@ -101,7 +103,7 @@ inline void hsa_allocate_slot_bitmap_data_free(_Atomic(uint64_t) * d)
 }
 
 }  // namespace
-
+#endif
 #endif
 
 template <typename SZ>
@@ -133,21 +135,16 @@ struct x64_amdgcn_pair
         x64_host_amdgcn_client::clear::call(&client_buffer[i], nullptr);
       }
 
-    auto *send_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
-    auto *recv_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
-    auto *client_active_data = hsa_allocate_slot_bitmap_data_alloc(coarse, N);
-    auto *client_outbox_staging_data =
-        hsa_allocate_slot_bitmap_data_alloc(coarse, N);
-    auto *server_active_data = hsa_allocate_slot_bitmap_data_alloc(fine, N);
-    auto *server_outbox_staging_data =
-        hsa_allocate_slot_bitmap_data_alloc(fine, N);
-
-    message_bitmap send = {send_data};
-    message_bitmap recv = {recv_data};
-    lock_bitmap client_active = {client_active_data};
-    slot_bitmap_coarse client_outbox_staging = {client_outbox_staging_data};
-    lock_bitmap server_active = {server_active_data};
-    slot_bitmap_coarse server_outbox_staging = {server_outbox_staging_data};
+    auto send = hsa_allocate_slot_bitmap_data_alloc<message_bitmap>(fine, N);
+    auto recv = hsa_allocate_slot_bitmap_data_alloc<message_bitmap>(fine, N);
+    auto client_active =
+        hsa_allocate_slot_bitmap_data_alloc<lock_bitmap>(coarse, N);
+    auto client_outbox_staging =
+        hsa_allocate_slot_bitmap_data_alloc<slot_bitmap_coarse>(coarse, N);
+    auto server_active =
+        hsa_allocate_slot_bitmap_data_alloc<lock_bitmap>(fine, N);
+    auto server_outbox_staging =
+        hsa_allocate_slot_bitmap_data_alloc<slot_bitmap_coarse>(fine, N);
 
     client = {sz,
               recv,
