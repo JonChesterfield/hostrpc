@@ -1,5 +1,5 @@
-#ifndef GCN_HOST_X64_CLIENT_HPP
-#define GCN_HOST_X64_CLIENT_HPP
+#ifndef GCN_HOST_X64_CLIENT_HPP_INCLUDED
+#define GCN_HOST_X64_CLIENT_HPP_INCLUDED
 
 #include "detail/client_impl.hpp"
 #include "detail/common.hpp"
