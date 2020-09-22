@@ -287,14 +287,15 @@ struct client_impl : public SZ, public Counter
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
     // Called with a lock. The corresponding slot can be:
-    //  inbox outbox    state  action
-    //      0      0     work    work
-    //      0      1     done    none
-    //      1      0  garbage    none (waiting on server)
-    //      1      1  garbage   clean
+    //  inbox outbox    state  action outbox'
+    //      0      0    avail    work       1
+    //      0      1     done    none       -
+    //      1      0  garbage    none       -
+    //      1      1  garbage   clean       0
     // Inbox true means the result has come back
     // That this lock has been taken means no other thread is
     // waiting for that result
+
     uint64_t this_slot = detail::setnthbit64(0, subindex);
     uint64_t garbage_todo = i & o & this_slot;
     uint64_t available = ~i & ~o & this_slot;

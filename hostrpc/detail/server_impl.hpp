@@ -123,11 +123,11 @@ struct server_impl : public SZ
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
     // Called with a lock. The corresponding slot can be:
-    //  inbox outbox    state  action
-    //      0      0     idle    none
-    //      0      1  garbage collect
-    //      1      0     work    work
-    //      1      1  waiting    none
+    //  inbox outbox    state  action outbox'
+    //      0      0     idle    none       -
+    //      0      1  garbage collect       0
+    //      1      0     work    work       1
+    //      1      1  waiting    none       -
 
     uint64_t this_slot = detail::setnthbit64(0, subindex);
     uint64_t work_todo = (i & ~o) & this_slot;
