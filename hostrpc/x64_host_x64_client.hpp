@@ -4,6 +4,7 @@
 #include "detail/client_impl.hpp"
 #include "detail/common.hpp"
 #include "detail/server_impl.hpp"
+#include "memory.hpp"
 
 namespace hostrpc
 {

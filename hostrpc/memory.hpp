@@ -10,6 +10,7 @@
 // without headers.
 #include <new>
 #endif
+
 namespace hostrpc
 {
 namespace x64_native
