@@ -1,9 +1,9 @@
+#include "x64_host_gcn_client.hpp"
 #include "detail/client_impl.hpp"
 #include "detail/server_impl.hpp"
 #include "interface.hpp"
 #include "memory.hpp"
 #include "test_common.hpp"
-#include "x64_host_gcn_client.hpp"
 
 #if defined(__x86_64__)
 #include "hsa.h"
@@ -50,12 +50,10 @@ struct use
   };
 };
 
-
 namespace hostrpc
 {
-
-using ty = x64_gcn_pair_T<hostrpc::size_runtime, fill ,use, indirect::operate, indirect::clear>;
-                                    
+using ty = x64_gcn_pair_T<hostrpc::size_runtime, fill, use, indirect::operate,
+                          indirect::clear>;
 
 x64_gcn_t::x64_gcn_t(size_t N, uint64_t hsa_region_t_fine_handle,
                      uint64_t hsa_region_t_coarse_handle)

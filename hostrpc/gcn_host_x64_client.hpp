@@ -39,7 +39,8 @@ struct gcn_x64_pair_T
     hsa_region_t coarse = {.handle = coarse_handle};
 
     page_t *client_buffer = careful_array_cast<page_t>(
-        hsa::allocate(fine_handle, alignof(page_t), N * sizeof(page_t)), N);
+        hsa_amdgpu::allocate(fine_handle, alignof(page_t), N * sizeof(page_t)),
+        N);
 
     page_t *server_buffer = client_buffer;
 

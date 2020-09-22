@@ -5,6 +5,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#if defined(__x86_64__)
+// #include "x64_host_x64_client.hpp"
+#endif
+
 namespace hostrpc
 {
 // Lifecycle management is tricky for objects which are allocated on one system

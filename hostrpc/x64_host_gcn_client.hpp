@@ -7,7 +7,6 @@
 
 namespace hostrpc
 {
-
 struct copy_functor_x64_gcn
     : public hostrpc::copy_functor_interface<copy_functor_x64_gcn>
 {
@@ -50,7 +49,6 @@ struct copy_functor_x64_gcn
   }
 };
 
-  
 template <typename SZ, typename Fill, typename Use, typename Operate,
           typename Clear>
 struct x64_gcn_pair_T
@@ -72,8 +70,8 @@ struct x64_gcn_pair_T
     hsa_region_t coarse = {.handle = coarse_handle};
 
     hostrpc::page_t *client_buffer = hostrpc::careful_array_cast<page_t>(
-        hostrpc::hsa::allocate(fine_handle, alignof(page_t),
-                               N * sizeof(page_t)),
+        hostrpc::hsa_amdgpu::allocate(fine_handle, alignof(page_t),
+                                      N * sizeof(page_t)),
         N);
 
     hostrpc::page_t *server_buffer = client_buffer;
@@ -115,7 +113,6 @@ struct x64_gcn_pair_T
     (void)fine_handle;
     (void)coarse_handle;
 #endif
-
   }
 
   ~x64_gcn_pair_T()
@@ -147,9 +144,8 @@ struct x64_gcn_pair_T
     hsa_memory_free(client.local_buffer);
 #endif
   }
-  
 };
-  
-}
+
+}  // namespace hostrpc
 
 #endif

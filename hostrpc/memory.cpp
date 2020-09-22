@@ -12,28 +12,28 @@ namespace hostrpc
 #if defined(__x86_64__)
 namespace x64_native
 {
-void* allocate(size_t align, size_t bytes)
+void *allocate(size_t align, size_t bytes)
 {
-  void* memory = ::aligned_alloc(align, bytes);
+  void *memory = ::aligned_alloc(align, bytes);
   if (memory)
     {
       memset(memory, 0, bytes);
     }
   return memory;
 }
-void deallocate(void* d) { free(d); }
+void deallocate(void *d) { free(d); }
 }  // namespace x64_native
 
-namespace hsa
+namespace hsa_amdgpu
 {
-void* allocate(uint64_t hsa_region_t_handle, size_t align, size_t bytes)
+void *allocate(uint64_t hsa_region_t_handle, size_t align, size_t bytes)
 {
   (void)align;  // todo
   hsa_region_t region{.handle = hsa_region_t_handle};
 
   bytes = 4 * ((bytes + 3) / 4);  // fill uses a multiple of four
 
-  void* memory;
+  void *memory;
   if (HSA_STATUS_SUCCESS == hsa_memory_allocate(region, bytes, &memory))
     {
       // probably want memset for fine grain, may want it for gfx9
@@ -48,23 +48,23 @@ void* allocate(uint64_t hsa_region_t_handle, size_t align, size_t bytes)
 
   return nullptr;
 }
-void deallocate(void* d) { hsa_memory_free(d); }
-}  // namespace hsa
+void deallocate(void *d) { hsa_memory_free(d); }
+}  // namespace hsa_amdgpu
 #endif
 
 #if defined(__AMDGCN__)
 
 namespace x64_native
 {
-void* allocate(size_t, size_t) { return nullptr; }
-void deallocate(void*) {}
+void *allocate(size_t, size_t) { return nullptr; }
+void deallocate(void *) {}
 }  // namespace x64_native
 
-namespace hsa
+namespace hsa_amdgpu
 {
-void* allocate(hsa_region_t, size_t, size_t) { return nullptr; }
-void deallocate(void*) {}
-}  // namespace hsa
+void *allocate(hsa_region_t, size_t, size_t) { return nullptr; }
+void deallocate(void *) {}
+}  // namespace hsa_amdgpu
 #endif
 
 }  // namespace hostrpc

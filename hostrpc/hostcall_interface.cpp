@@ -123,8 +123,8 @@ struct x64_amdgcn_pair
     hsa_region_t coarse = {.handle = coarse_handle};
 
     hostrpc::page_t *client_buffer = hostrpc::careful_array_cast<page_t>(
-        hostrpc::hsa::allocate(fine_handle, alignof(page_t),
-                               N * sizeof(page_t)),
+        hostrpc::hsa_amdgpu::allocate(fine_handle, alignof(page_t),
+                                      N * sizeof(page_t)),
         N);
 
     hostrpc::page_t *server_buffer = client_buffer;

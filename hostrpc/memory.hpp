@@ -19,11 +19,11 @@ void* allocate(size_t align, size_t bytes);
 void deallocate(void*);
 }  // namespace x64_native
 
-namespace hsa
+namespace hsa_amdgpu
 {
 void* allocate(uint64_t hsa_region_t_handle, size_t align, size_t bytes);
 void deallocate(void*);
-}  // namespace hsa
+}  // namespace hsa_amdgpu
 
 #if defined(__x86_64__)
 template <typename T>
