@@ -46,6 +46,19 @@ struct closure_pair
   void* state;
 };
 
+template <typename Func>
+closure_pair make_closure_pair(Func* af)
+{
+  auto cbf = [](hostrpc::page_t* page, void* vf) {
+    Func* cf = static_cast<Func*>(vf);
+    return (*cf)(page);
+  };
+  return {
+      .func = cbf,
+      .state = static_cast<void*>(af),
+  };
+}
+
 template <size_t Size, size_t Align>
 struct storage
 {

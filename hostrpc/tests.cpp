@@ -10,15 +10,6 @@
 #include <thread>
 #include <unistd.h>
 
-TEST_CASE("instantiate")
-{
-  hostrpc::x64_x64_t foo(64);
-  CHECK(foo.valid());
-
-  foo.client();
-  foo.server();
-}
-
 struct x64_alloc_deleter
 {
   void operator()(_Atomic(uint64_t) * d)

@@ -161,6 +161,13 @@ struct client_impl : public SZ, public Counter
   using locks_t = lock_bitmap;
   using outbox_staging_t = slot_bitmap_coarse;
 
+  page_t* remote_buffer;
+  page_t* local_buffer;
+  inbox_t inbox;
+  outbox_t outbox;
+  locks_t active;
+  outbox_staging_t outbox_staging;
+
   client_impl(SZ sz, inbox_t inbox, outbox_t outbox, locks_t active,
               outbox_staging_t outbox_staging, page_t* remote_buffer,
               page_t* local_buffer)
@@ -235,6 +242,90 @@ struct client_impl : public SZ, public Counter
   size_t size() { return SZ::N(); }
   size_t words() { return size() / 64; }
 
+  // Returns true if it successfully launched the task
+  template <bool have_continuation>
+  bool rpc_invoke(void* fill_application_state,
+                  void* use_application_state) noexcept
+  {
+    step(__LINE__, fill_application_state, use_application_state);
+
+    const size_t size = this->size();
+    const size_t words = size / 64;
+    // 0b111 is posted request, waited for it, got it
+    // 0b110 is posted request, nothing waited, got one
+    // 0b101 is got a result, don't need it, only spun up a thread for cleanup
+    // 0b100 is got a result, don't need it
+
+    step(__LINE__, fill_application_state, use_application_state);
+
+    size_t slot = SIZE_MAX;
+    // tries each word in sequnce. A cas failing suggests contention, in which
+    // case try the next word instead of the next slot
+    // may be worth supporting non-zero starting word for cache locality effects
+
+    // the array is somewhat contended - attempt to spread out the load by
+    // starting clients off at different points in the array. Doesn't make an
+    // observable difference in the current benchmark.
+
+    // if the invoke call performed garbage collection, the word is not
+    // known to be contended so it may be worth trying a different slot
+    // before trying a different word
+#define CLIENT_OFFSET 0
+
+#if CLIENT_OFFSET
+    const uint32_t wstart = platform::client_start_slot();
+    const uint32_t wend = wstart + words;
+    for (uint64_t wi = wstart; wi != wend; wi++)
+      {
+        uint64_t w =
+            wi % words;  // modulo may hurt here, and probably want 32 bit iv
+#else
+    for (uint64_t w = 0; w < words; w++)
+      {
+#endif
+        uint64_t active_word;
+        slot = find_candidate_client_slot(w);
+        if (slot == SIZE_MAX)
+          {
+            // no slot
+            Counter::no_candidate_slot();
+          }
+        else
+          {
+            uint64_t cas_fail_count = 0;
+            if (active.try_claim_empty_slot(size, slot, &active_word,
+                                            &cas_fail_count))
+              {
+                // Success, got the lock.
+                assert(active_word != 0);
+                Counter::cas_lock_fail(cas_fail_count);
+                bool r = rpc_invoke_given_slot<have_continuation>(
+                    fill_application_state, use_application_state, slot);
+
+                // wave release slot
+                step(__LINE__, fill_application_state, use_application_state);
+                platform::critical<uint64_t>([&]() {
+                  active.release_slot(size, slot);
+                  return 0;
+                });
+                // returning if the invoke garbage collected is inefficient
+                // as the caller will need to try again, better to keep the
+                // position in the loop.
+                return r;
+              }
+            else
+              {
+                Counter::missed_lock_on_candidate_slot();
+              }
+          }
+      }
+
+    // couldn't get a slot, won't launch
+    step(__LINE__, fill_application_state, use_application_state);
+    return false;
+  }
+
+ private:
   size_t find_candidate_client_slot(uint64_t w)
   {
     uint64_t i = inbox.load_word(size(), w);
@@ -446,96 +537,6 @@ struct client_impl : public SZ, public Counter
     // Instead, drop the warp and let the allocator skip occupied inbox slots
     return true;
   }
-
-  // Returns true if it successfully launched the task
-  template <bool have_continuation>
-  bool rpc_invoke(void* fill_application_state,
-                  void* use_application_state) noexcept
-  {
-    step(__LINE__, fill_application_state, use_application_state);
-
-    const size_t size = this->size();
-    const size_t words = size / 64;
-    // 0b111 is posted request, waited for it, got it
-    // 0b110 is posted request, nothing waited, got one
-    // 0b101 is got a result, don't need it, only spun up a thread for cleanup
-    // 0b100 is got a result, don't need it
-
-    step(__LINE__, fill_application_state, use_application_state);
-
-    size_t slot = SIZE_MAX;
-    // tries each word in sequnce. A cas failing suggests contention, in which
-    // case try the next word instead of the next slot
-    // may be worth supporting non-zero starting word for cache locality effects
-
-    // the array is somewhat contended - attempt to spread out the load by
-    // starting clients off at different points in the array. Doesn't make an
-    // observable difference in the current benchmark.
-
-    // if the invoke call performed garbage collection, the word is not
-    // known to be contended so it may be worth trying a different slot
-    // before trying a different word
-#define CLIENT_OFFSET 0
-
-#if CLIENT_OFFSET
-    const uint32_t wstart = platform::client_start_slot();
-    const uint32_t wend = wstart + words;
-    for (uint64_t wi = wstart; wi != wend; wi++)
-      {
-        uint64_t w =
-            wi % words;  // modulo may hurt here, and probably want 32 bit iv
-#else
-    for (uint64_t w = 0; w < words; w++)
-      {
-#endif
-        uint64_t active_word;
-        slot = find_candidate_client_slot(w);
-        if (slot == SIZE_MAX)
-          {
-            // no slot
-            Counter::no_candidate_slot();
-          }
-        else
-          {
-            uint64_t cas_fail_count = 0;
-            if (active.try_claim_empty_slot(size, slot, &active_word,
-                                            &cas_fail_count))
-              {
-                // Success, got the lock.
-                assert(active_word != 0);
-                Counter::cas_lock_fail(cas_fail_count);
-                bool r = rpc_invoke_given_slot<have_continuation>(
-                    fill_application_state, use_application_state, slot);
-
-                // wave release slot
-                step(__LINE__, fill_application_state, use_application_state);
-                platform::critical<uint64_t>([&]() {
-                  active.release_slot(size, slot);
-                  return 0;
-                });
-                // returning if the invoke garbage collected is inefficient
-                // as the caller will need to try again, better to keep the
-                // position in the loop.
-                return r;
-              }
-            else
-              {
-                Counter::missed_lock_on_candidate_slot();
-              }
-          }
-      }
-
-    // couldn't get a slot, won't launch
-    step(__LINE__, fill_application_state, use_application_state);
-    return false;
-  }
-
-  page_t* remote_buffer;
-  page_t* local_buffer;
-  inbox_t inbox;
-  outbox_t outbox;
-  locks_t active;
-  outbox_staging_t outbox_staging;
 };
 
 namespace indirect

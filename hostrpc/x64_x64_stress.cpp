@@ -16,6 +16,51 @@ static void init_page(hostrpc::page_t *page, uint64_t v)
     }
 }
 
+#if defined(__x86_64__)
+namespace hostrpc
+{
+struct x64_x64_t
+{
+  // This probably can't be copied, but could be movable
+  x64_x64_t(size_t minimum_number_slots)
+      : instance(hostrpc::size_runtime(hostrpc::round(minimum_number_slots)))
+  {
+  }
+
+  ~x64_x64_t() {}
+
+  x64_x64_t(const x64_x64_t &) = delete;
+  bool valid()
+  { /*todo*/
+    return true;
+  }  // true if construction succeeded
+
+  template <bool have_continuation>
+  bool rpc_invoke(void *fill, void *use) noexcept
+  {
+    return instance.client.rpc_invoke<have_continuation>(fill, use);
+  }
+
+  bool rpc_handle(void *state) noexcept
+  {
+    return instance.server.rpc_handle(state);
+  }
+
+  bool rpc_handle(void *state, uint64_t *location_arg) noexcept
+  {
+    return instance.server.rpc_handle(state, location_arg);
+  }
+
+  client_counters client_counters() { return instance.client.get_counters(); }
+
+ private:
+  hostrpc::x64_x64_pair_T<hostrpc::size_runtime, indirect::fill, indirect::use,
+                          indirect::operate, indirect::clear>
+      instance;
+};
+}  // namespace hostrpc
+#endif
+
 namespace hostrpc
 {
 thread_local unsigned my_id = 0;
@@ -50,6 +95,8 @@ TEST_CASE("x64_x64_stress")
     unsigned count = 0;
 
     uint64_t server_location = 0;
+
+    hostrpc::closure_pair arg = make_closure_pair(&op_func);
     for (;;)
       {
         if (!server_live)
@@ -57,7 +104,8 @@ TEST_CASE("x64_x64_stress")
             printf("server %u did %u tasks\n", id, count);
             break;
           }
-        bool did_work = p.server().handle(op_func, &server_location);
+        bool did_work =
+            p.rpc_handle(static_cast<void *>(&arg), &server_location);
         if (did_work)
           {
             count++;
@@ -69,24 +117,27 @@ TEST_CASE("x64_x64_stress")
   // when using counters, the copy means all the clients use their
   // own counter - which is good for efficiency but complicates reporting
 
-  auto cl = p.client();
   auto client_worker = [&](unsigned id, unsigned reps) -> unsigned {
     my_id = id;
     page_t scratch;
     page_t expect;
     unsigned count = 0;
     unsigned failures = 0;
+
+    auto fill = [&](hostrpc::page_t *page) {
+      __builtin_memcpy(page, &scratch, sizeof(hostrpc::page_t));
+    };
+    auto use = [&](hostrpc::page_t *page) {
+      __builtin_memcpy(&scratch, page, sizeof(hostrpc::page_t));
+    };
+    hostrpc::closure_pair fill_cp = make_closure_pair(&fill);
+    hostrpc::closure_pair use_cp = make_closure_pair(&use);
+
     for (unsigned r = 0; r < reps; r++)
       {
         init_page(&scratch, id);
         init_page(&expect, id + 1);
-        if (cl.invoke(
-                [&](hostrpc::page_t *page) {
-                  __builtin_memcpy(page, &scratch, sizeof(hostrpc::page_t));
-                },
-                [&](hostrpc::page_t *page) {
-                  __builtin_memcpy(&scratch, page, sizeof(hostrpc::page_t));
-                }))
+        if (p.rpc_invoke<true>(&fill_cp, &use_cp))
           {
             count++;
             if (__builtin_memcmp(&scratch, &expect, sizeof(hostrpc::page_t)) !=
@@ -135,5 +186,5 @@ TEST_CASE("x64_x64_stress")
     }
 
   printf("x64_x64_stress counters:\n");
-  cl.get_counters().dump();
+  p.client_counters().dump();
 }

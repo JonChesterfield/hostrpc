@@ -36,6 +36,13 @@ struct server_impl : public SZ
   using locks_t = lock_bitmap;
   using outbox_staging_t = slot_bitmap_coarse;
 
+  page_t* remote_buffer;
+  page_t* local_buffer;
+  inbox_t inbox;
+  outbox_t outbox;
+  locks_t active;
+  outbox_staging_t outbox_staging;
+
   server_impl(SZ sz, inbox_t inbox, outbox_t outbox, locks_t active,
               outbox_staging_t outbox_staging, page_t* remote_buffer,
               page_t* local_buffer)
@@ -103,6 +110,76 @@ struct server_impl : public SZ
   // may want to rename this, number-slots?
   size_t size() { return SZ::N(); }
 
+  // Returns true if it handled one task. Does not attempt multiple tasks
+  __attribute__((always_inline)) bool rpc_handle(
+      void* application_state) noexcept
+  {
+    uint64_t location = 0;
+    return rpc_handle(application_state, &location);
+  }
+
+  // location != NULL, used to round robin across slots
+  __attribute__((always_inline)) bool rpc_handle(
+      void* application_state, uint64_t* location_arg) noexcept
+  {
+    step(__LINE__, application_state);
+    const size_t size = this->size();
+    const size_t words = size / 64;
+
+    step(__LINE__, application_state);
+
+    const uint64_t location = *location_arg % size;
+    const uint64_t element = index_to_element(location);
+
+    // skip bits in the first word <= subindex
+    uint64_t mask = detail::setbitsrange64(index_to_subindex(location), 63);
+
+    // Tries a few bits in element, then all bits in all the other words, then
+    // all bits in element. This overshoots somewhat but ensures that all slots
+    // are checked. Could truncate the last word to check each slot exactly once
+    for (uint64_t wc = 0; wc < words + 1; wc++)
+      {
+        uint64_t w = (element + wc) % words;
+        uint64_t available = find_candidate_server_available_bitmap(w, mask);
+        while (available != 0)
+          {
+            uint64_t idx = detail::ctz64(available);
+            assert(detail::nthbitset64(available, idx));
+            uint64_t slot = 64 * w + idx;
+            uint64_t active_word;
+            uint64_t cas_fail_count = 0;
+            if (active.try_claim_empty_slot(size, slot, &active_word,
+                                            &cas_fail_count))
+              {
+                // Success, got the lock. Aim location_arg at next slot
+                assert(active_word != 0);
+                *location_arg = slot + 1;
+
+                bool r = rpc_handle_given_slot(application_state, slot);
+
+                step(__LINE__, application_state);
+
+                platform::critical<uint64_t>([&]() {
+                  active.release_slot(size, slot);
+                  return 0;
+                });
+
+                return r;
+              }
+
+            // don't try the same slot repeatedly
+            available = detail::clearnthbit64(available, idx);
+          }
+
+        mask = UINT64_MAX;
+      }
+
+    // Nothing hit, may as well go from the same location on the next call
+    step(__LINE__, application_state);
+    return false;
+  }
+
+ private:
   __attribute__((always_inline)) bool rpc_handle_given_slot(
       void* application_state, size_t slot)
   {
@@ -195,83 +272,6 @@ struct server_impl : public SZ
     assert(lock_held());
     return true;
   }
-
-  // Returns true if it handled one task. Does not attempt multiple tasks
-
-  __attribute__((always_inline)) bool rpc_handle(
-      void* application_state) noexcept
-  {
-    uint64_t location = 0;
-    return rpc_handle(application_state, &location);
-  }
-
-  // location != NULL, used to round robin across slots
-  __attribute__((always_inline)) bool rpc_handle(
-      void* application_state, uint64_t* location_arg) noexcept
-  {
-    step(__LINE__, application_state);
-    const size_t size = this->size();
-    const size_t words = size / 64;
-
-    step(__LINE__, application_state);
-
-    const uint64_t location = *location_arg % size;
-    const uint64_t element = index_to_element(location);
-
-    // skip bits in the first word <= subindex
-    uint64_t mask = detail::setbitsrange64(index_to_subindex(location), 63);
-
-    // Tries a few bits in element, then all bits in all the other words, then
-    // all bits in element. This overshoots somewhat but ensures that all slots
-    // are checked. Could truncate the last word to check each slot exactly once
-    for (uint64_t wc = 0; wc < words + 1; wc++)
-      {
-        uint64_t w = (element + wc) % words;
-        uint64_t available = find_candidate_server_available_bitmap(w, mask);
-        while (available != 0)
-          {
-            uint64_t idx = detail::ctz64(available);
-            assert(detail::nthbitset64(available, idx));
-            uint64_t slot = 64 * w + idx;
-            uint64_t active_word;
-            uint64_t cas_fail_count = 0;
-            if (active.try_claim_empty_slot(size, slot, &active_word,
-                                            &cas_fail_count))
-              {
-                // Success, got the lock. Aim location_arg at next slot
-                assert(active_word != 0);
-                *location_arg = slot + 1;
-
-                bool r = rpc_handle_given_slot(application_state, slot);
-
-                step(__LINE__, application_state);
-
-                platform::critical<uint64_t>([&]() {
-                  active.release_slot(size, slot);
-                  return 0;
-                });
-
-                return r;
-              }
-
-            // don't try the same slot repeatedly
-            available = detail::clearnthbit64(available, idx);
-          }
-
-        mask = UINT64_MAX;
-      }
-
-    // Nothing hit, may as well go from the same location on the next call
-    step(__LINE__, application_state);
-    return false;
-  }
-
-  page_t* remote_buffer;
-  page_t* local_buffer;
-  inbox_t inbox;
-  outbox_t outbox;
-  locks_t active;
-  outbox_staging_t outbox_staging;
 };
 
 namespace indirect
