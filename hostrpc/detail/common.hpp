@@ -531,43 +531,6 @@ void staged_release_slot(size_t size, size_t i,
                                     cas_help_count);
 }
 
-#if 0
-template <bool InitialState, size_t Sscope, typename SProp>
-void update_visible_from_staging(size_t size, size_t i,
-                                 slot_bitmap<Sscope, SProp> *staging,
-                                 message_bitmap *visible,
-                                 uint64_t *cas_fail_count,
-                                 uint64_t *cas_help_count)
-{
-  (void)size;
-  (void)i;
-  (void)staging;
-  (void)visible;
-  (void)cas_fail_count;
-  (void)cas_help_count;
-}
-
-template <size_t Sscope, typename SProp>
-void staged_claim_slot(size_t size, size_t i,
-                       slot_bitmap<Sscope, SProp> *staging,
-                       message_bitmap *visible, uint64_t *cas_fail_count,
-                       uint64_t *cas_help_count)
-{
-  update_visible_from_staging<false>(size, i, staging, visible, cas_fail_count,
-                                     cas_help_count);
-}
-
-template <size_t Sscope, typename SProp>
-void staged_release_slot(size_t size, size_t i,
-                         slot_bitmap<Sscope, SProp> *staging,
-                         message_bitmap *visible, uint64_t *cas_fail_count,
-                         uint64_t *cas_help_count)
-{
-  update_visible_from_staging<true>(size, i, staging, visible, cas_fail_count,
-                                    cas_help_count);
-}
-#endif
-
 inline void step(_Atomic(uint64_t) * steps_left)
 {
   if (__c11_atomic_load(steps_left, __ATOMIC_SEQ_CST) == UINT64_MAX)

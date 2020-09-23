@@ -33,37 +33,36 @@ struct server_impl : public SZ
 {
   using inbox_t = message_bitmap;
   using outbox_t = message_bitmap;
-  using locks_t = lock_bitmap;
   using outbox_staging_t = slot_bitmap_coarse;
 
   page_t* remote_buffer;
   page_t* local_buffer;
+  lock_bitmap active;
   inbox_t inbox;
   outbox_t outbox;
-  locks_t active;
   outbox_staging_t outbox_staging;
-
-  server_impl(SZ sz, inbox_t inbox, outbox_t outbox, locks_t active,
-              outbox_staging_t outbox_staging, page_t* remote_buffer,
-              page_t* local_buffer)
-      : SZ{sz},
-        remote_buffer(remote_buffer),
-        local_buffer(local_buffer),
-        inbox(inbox),
-        outbox(outbox),
-        active(active),
-        outbox_staging(outbox_staging)
-  {
-  }
 
   server_impl()
       : SZ{0},
         remote_buffer(nullptr),
         local_buffer(nullptr),
+        active{},
         inbox{},
         outbox{},
-        active{},
         outbox_staging{}
+  {
+  }
+
+  server_impl(SZ sz, inbox_t inbox, outbox_t outbox, lock_bitmap active,
+              outbox_staging_t outbox_staging, page_t* remote_buffer,
+              page_t* local_buffer)
+      : SZ{sz},
+        remote_buffer(remote_buffer),
+        local_buffer(local_buffer),
+        active(active),
+        inbox(inbox),
+        outbox(outbox),
+        outbox_staging(outbox_staging)
   {
   }
 

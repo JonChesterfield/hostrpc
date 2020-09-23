@@ -2,6 +2,8 @@
 #define HOSTRPC_CLIENT_HPP_INCLUDED
 
 #include "common.hpp"
+#include "counters.hpp"
+
 // Intend to have call and service working across gcn and x86
 // The normal terminology is:
 // Client makes a call to the server, which does some work and sends back a
@@ -38,119 +40,6 @@ enum class client_state : uint8_t
 // garbage that is, can't claim the slot for a new thread is that a sufficient
 // criteria for the slot to be awaiting gc?
 
-namespace counters
-{
-// client_nop compiles to no code
-// both are default-constructed
-
-struct client
-{
-  // Probably want this in the interface, partly to keep size
-  // lined up (this will be multiple words)
-  client() = default;
-  client(const client& o) = default;
-  client& operator=(const client& o) = default;
-
-  void no_candidate_slot()
-  {
-    inc(&state[client_counters::cc_no_candidate_slot]);
-  }
-  void missed_lock_on_candidate_slot()
-  {
-    inc(&state[client_counters::cc_missed_lock_on_candidate_slot]);
-  }
-  void got_lock_after_work_done()
-  {
-    inc(&state[client_counters::cc_got_lock_after_work_done]);
-  }
-  void waiting_for_result()
-  {
-    inc(&state[client_counters::cc_waiting_for_result]);
-  }
-  void cas_lock_fail(uint64_t c)
-  {
-    add(&state[client_counters::cc_cas_lock_fail], c);
-  }
-  void garbage_cas_fail(uint64_t c)
-  {
-    add(&state[client_counters::cc_garbage_cas_fail], c);
-  }
-  void publish_cas_fail(uint64_t c)
-  {
-    add(&state[client_counters::cc_publish_cas_fail], c);
-  }
-  void finished_cas_fail(uint64_t c)
-  {
-    // triggers an infinite loop on amdgcn trunk but not amd-stg-open
-    add(&state[client_counters::cc_finished_cas_fail], c);
-  }
-
-  void garbage_cas_help(uint64_t c)
-  {
-    add(&state[client_counters::cc_garbage_cas_help], c);
-  }
-  void publish_cas_help(uint64_t c)
-  {
-    add(&state[client_counters::cc_publish_cas_help], c);
-  }
-  void finished_cas_help(uint64_t c)
-  {
-    add(&state[client_counters::cc_finished_cas_help], c);
-  }
-
-  // client_counters contains non-atomic, const version of this state
-  // defined in base_types
-  client_counters get()
-  {
-    __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-    client_counters res;
-    for (unsigned i = 0; i < client_counters::cc_total_count; i++)
-      {
-        res.state[i] = state[i];
-      }
-    return res;
-  }
-
- private:
-  _Atomic(uint64_t) state[client_counters::cc_total_count] = {0u};
-
-  static void add(_Atomic(uint64_t) * addr, uint64_t v)
-  {
-    if (platform::is_master_lane())
-      {
-        __opencl_atomic_fetch_add(addr, v, __ATOMIC_RELAXED,
-                                  __OPENCL_MEMORY_SCOPE_DEVICE);
-      }
-  }
-
-  static void inc(_Atomic(uint64_t) * addr)
-  {
-    uint64_t v = 1;
-    add(addr, v);
-  }
-};
-
-struct client_nop
-{
-  client_nop() {}
-  client_counters get() { return {}; }
-
-  void no_candidate_slot() {}
-  void missed_lock_on_candidate_slot() {}
-  void got_lock_after_work_done() {}
-  void waiting_for_result() {}
-  void cas_lock_fail(uint64_t) {}
-
-  void garbage_cas_fail(uint64_t) {}
-  void publish_cas_fail(uint64_t) {}
-  void finished_cas_fail(uint64_t) {}
-  void garbage_cas_help(uint64_t) {}
-  void publish_cas_help(uint64_t) {}
-  void finished_cas_help(uint64_t) {}
-};
-
-}  // namespace counters
-
 // enabling counters breaks codegen for amdgcn,
 template <typename SZ, typename Copy, typename Fill, typename Use,
           typename Step, typename Counter = counters::client>
@@ -158,17 +47,28 @@ struct client_impl : public SZ, public Counter
 {
   using inbox_t = message_bitmap;
   using outbox_t = message_bitmap;
-  using locks_t = lock_bitmap;
   using outbox_staging_t = slot_bitmap_coarse;
 
   page_t* remote_buffer;
   page_t* local_buffer;
+  lock_bitmap active;
   inbox_t inbox;
   outbox_t outbox;
-  locks_t active;
   outbox_staging_t outbox_staging;
 
-  client_impl(SZ sz, inbox_t inbox, outbox_t outbox, locks_t active,
+  client_impl()
+      : SZ{0},
+        Counter{},
+        remote_buffer(nullptr),
+        local_buffer(nullptr),
+        active{},
+        inbox{},
+        outbox{},
+        outbox_staging{}
+  {
+  }
+
+  client_impl(SZ sz, inbox_t inbox, outbox_t outbox, lock_bitmap active,
               outbox_staging_t outbox_staging, page_t* remote_buffer,
               page_t* local_buffer)
 
@@ -176,9 +76,9 @@ struct client_impl : public SZ, public Counter
         Counter{},
         remote_buffer(remote_buffer),
         local_buffer(local_buffer),
+        active(active),
         inbox(inbox),
         outbox(outbox),
-        active(active),
         outbox_staging(outbox_staging)
   {
     constexpr size_t client_size = 48;
@@ -203,18 +103,6 @@ struct client_impl : public SZ, public Counter
 
     static_assert(sizeof(client_impl) == total_size, "");
     static_assert(alignof(client_impl) == 8, "");
-  }
-
-  client_impl()
-      : SZ{0},
-        Counter{},
-        remote_buffer(nullptr),
-        local_buffer(nullptr),
-        inbox{},
-        outbox{},
-        active{},
-        outbox_staging{}
-  {
   }
 
   void dump()
