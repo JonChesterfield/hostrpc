@@ -38,7 +38,7 @@ uint64_t expand_byte(uint8_t x)
   return r;
 }
 
-uint8_t pack_word_slower(uint64_t x)
+extern "C" uint8_t pack_word_slower(uint64_t x)
 {
   unsigned char *p = (unsigned char *)&x;
   uint8_t res = 0;
@@ -49,15 +49,12 @@ uint8_t pack_word_slower(uint64_t x)
   return res;
 }
 
-uint8_t pack_word_faster(uint64_t x)
+extern "C" uint8_t pack_word_faster(uint64_t x)
 {
-  return _pext_u64(x, UINT64_C(0x0101010101010101));
+  return __builtin_ia32_pext_di(x, UINT64_C(0x0101010101010101));
 }
 
-uint8_t pack_word(uint64_t x)
-{
-  return pack_word_faster(x);
-}
+uint8_t pack_word(uint64_t x) { return pack_word_faster(x); }
 
 #define FMT_BUF_SIZE (CHAR_BIT * sizeof(uintmax_t) + 1)
 char *binary_fmt(uintmax_t x, char buf[FMT_BUF_SIZE])
@@ -76,9 +73,9 @@ void round_trip()
       uint64_t word = expand_byte(i);
       uint32_t byte = pack_word(word);
 
-      printf("%u => %lu => %u\n", i, word, byte);
       if (byte != i)
         {
+          printf("%u => %lu => %u\n", i, word, byte);
           exit(1);
         }
     }
@@ -86,10 +83,14 @@ void round_trip()
 
 int main()
 {
+#if __has_builtin(__builtin_ia32_pext_di)
+  printf("have builtin\n");
+#endif
+
   round_trip();
 
   return 0;
-  
+
   char tmp[FMT_BUF_SIZE];
   for (unsigned i = 0; i < 256; i++)
     {
