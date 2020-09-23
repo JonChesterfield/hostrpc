@@ -267,7 +267,6 @@ TEST_CASE("x64_gcn_stress")
     uint32_t kernel_private_segment_fixed_size = 0;
     uint32_t kernel_group_segment_fixed_size = 0;
 
-    fprintf(stderr, "Client address resolved to %lu\n", client_address);
     {
       auto m = ex.get_kernel_info();
       auto it = m.find(std::string(kernel_entry));
@@ -397,7 +396,7 @@ TEST_CASE("x64_gcn_stress")
     // number tasks = MAX_WAVES * nclients * per_client
     unsigned nservers = 8;
     unsigned nclients = 1;
-    unsigned per_client = 4096 * 2;
+    unsigned per_client = 4096 * 2 * 8;
 
 #ifndef DERIVE_VAL
 #error "Req derive_val"

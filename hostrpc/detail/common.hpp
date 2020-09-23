@@ -452,6 +452,72 @@ struct lock_bitmap
   }
 };
 
+template <size_t scope, typename Prop>
+struct slot_bytemap
+{
+  using Ty = _Atomic(uint8_t) *;
+  static_assert(sizeof(uint8_t) == sizeof(_Atomic(uint8_t)), "");
+  static_assert(sizeof(_Atomic(uint8_t)) == 1, "");
+
+  Ty a;
+  static constexpr size_t bits_per_slot() { return 8; }
+  slot_bytemap() : a(nullptr) {}
+  slot_bytemap(Ty d) : a(d)
+  {
+    // can't necessarily write to a from this object. if the memory is on
+    // the gpu, but this instance is being constructed on the gpu first,
+    // then direct writes will fail. However, the data does need to be
+    // zeroed for the bytemap to work.
+  }
+
+  ~slot_bytemap() {}
+  Ty data() { return a; }
+
+  // assumes slot available
+  void claim_slot(size_t size, size_t i)
+  {
+    (void)size;
+    assert(i < size);
+    uint8_t b = 1;
+    if (scope == __OPENCL_MEMORY_SCOPE_DEVICE)
+      {
+        __opencl_atomic_store(&a[i], b, __ATOMIC_RELAXED,
+                              __OPENCL_MEMORY_SCOPE_DEVICE);
+      }
+    else
+      {
+        __opencl_atomic_store(&a[i], b, __ATOMIC_RELAXED,
+                              __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+      }
+  }
+
+  // assumes slot taken
+  void release_slot(size_t size, size_t i)
+  {
+    (void)size;
+    assert(i < size);
+    uint8_t b = 0;
+    if (scope == __OPENCL_MEMORY_SCOPE_DEVICE)
+      {
+        __opencl_atomic_store(&a[i], b, __ATOMIC_RELAXED,
+                              __OPENCL_MEMORY_SCOPE_DEVICE);
+      }
+    else
+      {
+        __opencl_atomic_store(&a[i], b, __ATOMIC_RELAXED,
+                              __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+      }
+  }
+
+  uint64_t load_word(size_t size, size_t i) const
+  {
+    (void)size;
+    (void)i;
+    // Need to read 64 bytes, some aliasing hazards.
+    return 0;
+  }
+};
+
 template <bool InitialState, size_t Sscope, typename SProp, size_t Vscope,
           typename VProp>
 void update_visible_from_staging(size_t size, size_t i,
