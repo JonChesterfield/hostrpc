@@ -248,11 +248,11 @@ struct slot_bitmap
     return before & mask;
   }
 
-  uint64_t load_word(size_t size, size_t i) const
+  uint64_t load_word(size_t size, size_t w) const
   {
     (void)size;
-    assert(i < (size / 64));
-    return __opencl_atomic_load(&a[i], __ATOMIC_RELAXED, scope);
+    assert(w < (size / 64));
+    return __opencl_atomic_load(&a[w], __ATOMIC_RELAXED, scope);
   }
 
   bool cas(uint64_t element, uint64_t expect, uint64_t replace,
@@ -423,11 +423,11 @@ struct lock_bitmap
                               __OPENCL_MEMORY_SCOPE_DEVICE);
   }
 
-  uint64_t load_word(size_t size, size_t i) const
+  uint64_t load_word(size_t size, size_t w) const
   {
     (void)size;
-    assert(i < (size / 64));
-    return __opencl_atomic_load(&a[i], __ATOMIC_RELAXED,
+    assert(w < (size / 64));
+    return __opencl_atomic_load(&a[w], __ATOMIC_RELAXED,
                                 __OPENCL_MEMORY_SCOPE_DEVICE);
   }
 
@@ -479,12 +479,25 @@ struct slot_bytemap
   // assumes slot taken
   void release_slot(size_t size, size_t i) { write_byte<0>(size, i); }
 
-  uint64_t load_word(size_t size, size_t i) const
+
+  
+  uint64_t load_word(size_t size, size_t w) const
   {
     (void)size;
-    (void)i;
+    (void)w;
+    assert(w < (size/64));
+    typedef __attribute__((aligned(64)))
+      __attribute__((may_alias)) _Atomic(uint64_t) aligned_word;
+
+    const aligned_word * ap =  (const aligned_word*)&a[w];
+
+    // uint8_t a0 = pack_word(ap[0]);
+    
+    // word in bytes a[w] to a[w+63], &a[w] is 64 byte aligned
+
     // Need to read 64 bytes, some aliasing hazards.
-    return 0;
+
+    return ap[0];
   }
 
  private:
@@ -504,6 +517,14 @@ struct slot_bytemap
                               __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
       }
   }
+
+
+  uint8_t pack_word(uint64_t x)
+  {
+    x *= UINT64_C(0x102040810204080);
+    return x >> 56u;
+  }
+
 };
 
 template <bool InitialState, size_t Sscope, typename SProp, size_t Vscope,

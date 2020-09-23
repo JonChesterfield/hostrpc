@@ -44,6 +44,7 @@ extern "C" uint8_t pack_word_reference(uint64_t x)
   uint8_t res = 0;
   for (unsigned i = 0; i < 8; i++)
     {
+      printf("i[%u]: %u |= (%u & UINT8_C(0x1)) << %u\n", i, res, p[i], i);
       res |= (p[i] & UINT8_C(0x1)) << i;
     }
   return res;
@@ -62,6 +63,28 @@ extern "C" uint8_t pack_word(uint64_t x)
 #else
   return pack_word_multiply(x);
 #endif
+}
+
+void expand_words_reference(uint64_t x, aligned_byte *data)
+{
+  aligned_word *words = (aligned_word *)data;
+  unsigned char *byte = (unsigned char *)&x;
+
+  for (unsigned i = 0; i < 8; i++)
+    {
+      words[i] = expand_byte(byte[i]);
+    }
+}
+
+extern "C" uint64_t pack_words_reference(aligned_byte *data)
+{
+  aligned_word *words = (aligned_word *)data;
+  uint64_t res = 0;
+  for (unsigned i = 0; i < 8; i++)
+    {
+      res |= ((uint64_t)pack_word(words[i]) & UINT8_C(0xff)) << 8 * i;
+    }
+  return res;
 }
 
 extern "C" uint64_t pack_words(aligned_byte *data)
@@ -239,7 +262,7 @@ char *binary_fmt(uintmax_t x, char buf[FMT_BUF_SIZE])
   return s;
 }
 
-void round_trip()
+void round_trip_word()
 {
   for (unsigned i = 0; i < 256; i++)
     {
@@ -254,6 +277,42 @@ void round_trip()
     }
 }
 
+void zero(aligned_byte *d)
+{
+  for (unsigned i = 0; i < 64; i++)
+    {
+      d[i] = 0;
+    }
+}
+
+void dump(aligned_byte *d)
+{
+  for (unsigned i = 0; i < 64; i++)
+    {
+      printf(" %u", (unsigned)d[i]);
+    }
+  printf("\n");
+}
+
+void round_trip_words()
+{
+  alignas(64) _Atomic(uint8_t) tmp[64];
+
+  for (unsigned s = 0; s < 64; s++)
+    {
+      uint64_t x = UINT64_C(1) << s;
+
+      zero(tmp);
+      expand_words_reference(x, tmp);
+      uint64_t y = pack_words_reference(tmp);
+      if (x != y)
+        {
+          dump(tmp);
+          printf("%lx => %lx\n", x, y);
+        }
+    }
+}
+
 int main()
 {
 #if defined(__BMI2__) && __has_builtin(__builtin_ia32_pext_di)
@@ -262,7 +321,9 @@ int main()
   printf("no pext\n");
 #endif
 
-  round_trip();
+  round_trip_word();
+
+  round_trip_words();
 
   return 0;
 
