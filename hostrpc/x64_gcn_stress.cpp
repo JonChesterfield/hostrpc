@@ -1,5 +1,19 @@
 #define VISIBLE __attribute__((visibility("default")))
 
+#if !defined __OPENCL__
+#if defined(__AMDGCN__)
+// The toolchain shouldn't be emitting undef symbols to this.
+// Work around here for now.
+extern "C"
+{
+  __attribute__((weak)) int __cxa_atexit(void (*)(void *), void *, void *)
+  {
+    return 0;
+  }
+}
+#endif
+#endif
+
 // Kernel entry
 #if defined __OPENCL__
 void __device_start_cast(__global void *asargs);
@@ -9,9 +23,106 @@ kernel void __device_start(__global void *args) { __device_start_cast(args); }
 #if !defined __OPENCL__
 
 #include "base_types.hpp"
+#include "detail/client_impl.hpp"
 #include "detail/platform.hpp"
+#include "detail/server_impl.hpp"
 #include "interface.hpp"
 #include "timer.hpp"
+#include "x64_host_gcn_client.hpp"
+
+#if defined(__x86_64__)
+#include "hsa.h"
+#endif
+
+#if defined(__AMDGCN__)
+static void copy_page(hostrpc::page_t *dst, hostrpc::page_t *src)
+{
+  unsigned id = platform::get_lane_id();
+  hostrpc::cacheline_t *dline = &dst->cacheline[id];
+  hostrpc::cacheline_t *sline = &src->cacheline[id];
+  for (unsigned e = 0; e < 8; e++)
+    {
+      dline->element[e] = sline->element[e];
+    }
+}
+#endif
+
+struct fill
+{
+  static void call(hostrpc::page_t *page, void *dv)
+  {
+#if defined(__AMDGCN__)
+    hostrpc::page_t *d = static_cast<hostrpc::page_t *>(dv);
+    copy_page(page, d);
+#else
+    (void)page;
+    (void)dv;
+#endif
+  };
+};
+
+struct use
+{
+  static void call(hostrpc::page_t *page, void *dv)
+  {
+#if defined(__AMDGCN__)
+    hostrpc::page_t *d = static_cast<hostrpc::page_t *>(dv);
+    copy_page(d, page);
+#else
+    (void)page;
+    (void)dv;
+#endif
+  };
+};
+
+namespace hostrpc
+{
+using x64_gcn_type =
+    hostrpc::x64_gcn_pair_T<hostrpc::size_runtime, fill, use, indirect::operate,
+                            indirect::clear>;
+
+struct x64_gcn_t
+{
+  x64_gcn_type instance;
+
+  x64_gcn_t(size_t N, uint64_t hsa_region_t_fine_handle,
+            uint64_t hsa_region_t_coarse_handle)
+      : instance(hostrpc::round(N), hsa_region_t_fine_handle,
+                 hsa_region_t_coarse_handle)
+
+  {
+  }
+
+  ~x64_gcn_t() {}
+  x64_gcn_t(const x64_gcn_t &) = delete;
+  bool valid() { return true; }  // true if construction succeeded
+
+  template <bool have_continuation>
+  bool rpc_invoke(void *fill, void *use) noexcept
+  {
+    return instance.client.rpc_invoke<have_continuation>(fill, use);
+  }
+
+  bool rpc_handle(void *state) noexcept
+  {
+    return instance.server.rpc_handle(state);
+  }
+
+  bool rpc_handle(void *state, uint64_t *location_arg) noexcept
+  {
+    return instance.server.rpc_handle(state, location_arg);
+  }
+
+  client_counters client_counters() { return instance.client.get_counters(); }
+};
+}  // namespace hostrpc
+
+namespace hostrpc
+{
+using ty = x64_gcn_pair_T<hostrpc::size_runtime, fill, use, indirect::operate,
+                          indirect::clear>;
+
+}  // namespace hostrpc
 
 #define MAXCLIENT (8 * 1024)  // lazy memory management, could malloc it
 
@@ -34,12 +145,11 @@ struct kernel_args
 #if defined(__AMDGCN__)
 
 // Wire opencl kernel up to c++ implementation
-
 VISIBLE
-hostrpc::x64_gcn_t::client_t hostrpc_pair_client[1];
+hostrpc::x64_gcn_type::client_type hostrpc_pair_client[1];
 
-static uint64_t gpu_call(hostrpc::x64_gcn_t::client_t *client, uint32_t id,
-                         uint32_t reps);
+static uint64_t gpu_call(hostrpc::x64_gcn_type::client_type *client,
+                         uint32_t id, uint32_t reps);
 extern "C" void __device_start_main(kernel_args *args)
 {
   while (__atomic_load_n(args->control, __ATOMIC_ACQUIRE) == 0)
@@ -82,7 +192,7 @@ static bool equal_page(hostrpc::page_t *lhs, hostrpc::page_t *rhs)
 hostrpc::page_t scratch_store[MAXCLIENT];
 hostrpc::page_t expect_store[MAXCLIENT];
 
-uint64_t gpu_call(hostrpc::x64_gcn_t::client_t *client, uint32_t id,
+uint64_t gpu_call(hostrpc::x64_gcn_type::client_type *client, uint32_t id,
                   uint32_t reps)
 {
   const bool check_result = true;
@@ -107,7 +217,13 @@ uint64_t gpu_call(hostrpc::x64_gcn_t::client_t *client, uint32_t id,
           init_page(expect, id + r + 1);
         }
 
-      client->invoke(scratch);
+      void *vp = static_cast<void *>(scratch);
+      bool rb = false;
+      do
+        {
+          rb = client->rpc_invoke<true>(vp, vp);
+        }
+      while (rb == false);
 
       if (check_result)
         {
@@ -151,6 +267,7 @@ TEST_CASE("x64_gcn_stress")
     uint32_t kernel_private_segment_fixed_size = 0;
     uint32_t kernel_group_segment_fixed_size = 0;
 
+    fprintf(stderr, "Client address resolved to %lu\n", client_address);
     {
       auto m = ex.get_kernel_info();
       auto it = m.find(std::string(kernel_entry));
@@ -203,27 +320,27 @@ TEST_CASE("x64_gcn_stress")
     hostrpc::x64_gcn_t p(N, fine_grained_region.handle,
                          coarse_grained_region.handle);
 
-    hostrpc::x64_gcn_t::client_t *client =
-        reinterpret_cast<hostrpc::x64_gcn_t::client_t *>(client_address);
-
     // Great error from valgrind on gfx1010:
     // Address 0x8e08000 is in a --- mapped file /dev/dri/renderD128 segment
     // client[0] = p.client();
 
     {
-      using Ty = hostrpc::x64_gcn_t::client_t;
-      auto c = hsa::allocate(fine_grained_region, sizeof(Ty));
-      auto *l = new (c.get()) Ty(p.client());
+      // put a default constructed instance in fine grain memory then overwrite
+      // it with the p instance. May instead want to construct p into fine grain
+      auto c = hsa::allocate(fine_grained_region,
+                             sizeof(hostrpc::x64_gcn_type::client_type));
+      void *vc = c.get();
+      memcpy(vc, &p.instance.client, sizeof(p.instance.client));
+
       int rc = hsa::copy_host_to_gpu(
-          kernel_agent, reinterpret_cast<void *>(&client[0]),
-          reinterpret_cast<const void *>(l), sizeof(Ty));
+          kernel_agent, reinterpret_cast<void *>(client_address),
+          reinterpret_cast<const void *>(vc),
+          sizeof(hostrpc::x64_gcn_type::client_type));
       if (rc != 0)
         {
           fprintf(stderr, "Failed to copy client state to gpu\n");
           exit(1);
         }
-
-      // can't destroy l here. TODO: work out the lifetime problem.
     }
 
     printf("Initialized gpu client state\n");
@@ -256,7 +373,7 @@ TEST_CASE("x64_gcn_stress")
       unsigned count = 0;
 
       uint64_t server_location = 0;
-      hostrpc::x64_gcn_t::server_t s = p.server();
+      hostrpc::closure_pair arg = make_closure_pair(&op_func);
       for (;;)
         {
           if (!server_live)
@@ -264,7 +381,8 @@ TEST_CASE("x64_gcn_stress")
               printf("server %u did %u tasks\n", id, count);
               break;
             }
-          bool did_work = s.handle(op_func, &server_location);
+          bool did_work =
+              p.rpc_handle(static_cast<void *>(&arg), &server_location);
           if (did_work)
             {
               count++;
@@ -401,7 +519,26 @@ TEST_CASE("x64_gcn_stress")
         i.join();
       }
 
-    client->get_counters().dump();
+    // Counters are incremented on the instance on the gpu. Retrieve before
+    // dump.
+    {
+      auto c = hsa::allocate(fine_grained_region,
+                             sizeof(hostrpc::x64_gcn_type::client_type));
+      void *vc = c.get();
+
+      int rc = hsa::copy_host_to_gpu(
+          kernel_agent, vc, reinterpret_cast<const void *>(client_address),
+          sizeof(hostrpc::x64_gcn_type::client_type));
+      if (rc != 0)
+        {
+          fprintf(stderr, "Failed to copy client state back from gpu\n");
+          exit(1);
+        }
+
+      memcpy(&p.instance.client, vc, sizeof(p.instance.client));
+    }
+
+    p.client_counters().dump();
   }
 }
 

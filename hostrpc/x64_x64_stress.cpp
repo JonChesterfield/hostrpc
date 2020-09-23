@@ -95,7 +95,6 @@ TEST_CASE("x64_x64_stress")
     unsigned count = 0;
 
     uint64_t server_location = 0;
-
     hostrpc::closure_pair arg = make_closure_pair(&op_func);
     for (;;)
       {

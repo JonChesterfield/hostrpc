@@ -63,7 +63,7 @@ struct x64_gcn_pair_T
   using Copy = copy_functor_x64_gcn;
   using Step = nop_stepper;
 
-  using client_type = client_impl<SZ, Copy, Fill, Use, Step>;
+  using client_type = client_impl<SZ, Copy, Fill, Use, Step, counters::client>;
   using server_type = server_impl<SZ, Copy, Operate, Clear, Step>;
 
   client_type client;
