@@ -49,13 +49,34 @@ extern "C" uint8_t pack_word_slower(uint64_t x)
   return res;
 }
 
-extern "C" uint8_t pack_word_faster(uint64_t x)
+extern "C" uint8_t pack_word(uint64_t x)
 {
+#if defined(__BMI2__) && __has_builtin(__builtin_ia32_pext_di)
   return __builtin_ia32_pext_di(x, UINT64_C(0x0101010101010101));
+#else
+  return pack_word_slower(x);
+#endif
 }
 
-uint8_t pack_word(uint64_t x) { return pack_word_faster(x); }
 
+extern "C" uint64_t pack_words(aligned_byte *data)
+{
+
+  aligned_word* words = (aligned_word *)data;
+
+  uint8_t st[8];
+  for (unsigned i = 0; i < 8; i++)
+    {
+      st[i] = pack_word(words[i]);
+    }
+
+  uint64_t res;
+  __builtin_memcpy(&res, &st, 8);
+  
+  return res;    
+}
+
+                               
 #define FMT_BUF_SIZE (CHAR_BIT * sizeof(uintmax_t) + 1)
 char *binary_fmt(uintmax_t x, char buf[FMT_BUF_SIZE])
 {
@@ -83,8 +104,10 @@ void round_trip()
 
 int main()
 {
-#if __has_builtin(__builtin_ia32_pext_di)
+#if defined(__BMI2__) && __has_builtin(__builtin_ia32_pext_di)
   printf("have builtin\n");
+#else
+  printf("no pext\n");
 #endif
 
   round_trip();
