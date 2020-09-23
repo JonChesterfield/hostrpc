@@ -474,40 +474,10 @@ struct slot_bytemap
   Ty data() { return a; }
 
   // assumes slot available
-  void claim_slot(size_t size, size_t i)
-  {
-    (void)size;
-    assert(i < size);
-    uint8_t b = 1;
-    if (scope == __OPENCL_MEMORY_SCOPE_DEVICE)
-      {
-        __opencl_atomic_store(&a[i], b, __ATOMIC_RELAXED,
-                              __OPENCL_MEMORY_SCOPE_DEVICE);
-      }
-    else
-      {
-        __opencl_atomic_store(&a[i], b, __ATOMIC_RELAXED,
-                              __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-      }
-  }
+  void claim_slot(size_t size, size_t i) { write_byte<1>(size, i); }
 
   // assumes slot taken
-  void release_slot(size_t size, size_t i)
-  {
-    (void)size;
-    assert(i < size);
-    uint8_t b = 0;
-    if (scope == __OPENCL_MEMORY_SCOPE_DEVICE)
-      {
-        __opencl_atomic_store(&a[i], b, __ATOMIC_RELAXED,
-                              __OPENCL_MEMORY_SCOPE_DEVICE);
-      }
-    else
-      {
-        __opencl_atomic_store(&a[i], b, __ATOMIC_RELAXED,
-                              __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-      }
-  }
+  void release_slot(size_t size, size_t i) { write_byte<0>(size, i); }
 
   uint64_t load_word(size_t size, size_t i) const
   {
@@ -515,6 +485,24 @@ struct slot_bytemap
     (void)i;
     // Need to read 64 bytes, some aliasing hazards.
     return 0;
+  }
+
+ private:
+  template <uint8_t v>
+  void write_byte(size_t size, size_t i)
+  {
+    (void)size;
+    assert(i < size);
+    if (scope == __OPENCL_MEMORY_SCOPE_DEVICE)
+      {
+        __opencl_atomic_store(&a[i], v, __ATOMIC_RELAXED,
+                              __OPENCL_MEMORY_SCOPE_DEVICE);
+      }
+    else
+      {
+        __opencl_atomic_store(&a[i], v, __ATOMIC_RELAXED,
+                              __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+      }
   }
 };
 
