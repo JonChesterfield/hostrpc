@@ -56,7 +56,7 @@ extern "C" void server_instance_direct(hostrpc::message_bitmap inbox,
                            hostrpc::nop_stepper>;
 
   SZ sz;
-  server_type s = {sz,      inbox,         outbox,      active,
+  server_type s = {sz,      active,        inbox,       outbox,
                    staging, remote_buffer, local_buffer};
 
   for (;;)
@@ -79,7 +79,7 @@ extern "C" void server_instance_indirect(hostrpc::message_bitmap inbox,
                            hostrpc::nop_stepper>;
 
   SZ sz;
-  server_type s = {sz,      inbox,         outbox,      active,
+  server_type s = {sz,      active,        inbox,       outbox,
                    staging, remote_buffer, local_buffer};
 
   pack arg = {.func = op_target, .state = state_arg};

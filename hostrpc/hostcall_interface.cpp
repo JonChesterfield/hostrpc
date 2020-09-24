@@ -146,13 +146,13 @@ struct x64_amdgcn_pair
     auto server_staging =
         hsa_allocate_slot_bitmap_data_alloc<slot_bitmap_coarse>(fine, N);
 
-    client = {
-        sz,           recv, send, client_active, client_staging, server_buffer,
-        client_buffer};
+    client = {sz,           client_active,  recv,
+              send,         client_staging, server_buffer,
+              client_buffer};
 
-    server = {
-        sz,           send, recv, server_active, server_staging, client_buffer,
-        server_buffer};
+    server = {sz,           server_active,  send,
+              recv,         server_staging, client_buffer,
+              server_buffer};
 #else
     (void)fine_handle;
     (void)coarse_handle;

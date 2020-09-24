@@ -53,7 +53,7 @@ struct server_impl : public SZ
   {
   }
 
-  server_impl(SZ sz, inbox_t inbox, outbox_t outbox, lock_bitmap active,
+  server_impl(SZ sz, lock_bitmap active, inbox_t inbox, outbox_t outbox,
               staging_t staging, page_t* remote_buffer, page_t* local_buffer)
       : SZ{sz},
         remote_buffer(remote_buffer),

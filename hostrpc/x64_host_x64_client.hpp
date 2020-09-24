@@ -53,11 +53,11 @@ struct x64_x64_pair_T
     auto server_locks = x64_alloc<lock_bitmap>(N);
     auto server_staging = x64_alloc<slot_bitmap_coarse>(N);
 
-    client = {sz,           recv,           send,
-              client_locks, client_staging, server_buffer,
+    client = {sz,           client_locks,   recv,
+              send,         client_staging, server_buffer,
               client_buffer};
-    server = {sz,           send,           recv,
-              server_locks, server_staging, client_buffer,
+    server = {sz,           server_locks,   send,
+              recv,         server_staging, client_buffer,
               server_buffer};
 
     assert(client.size() == N);
