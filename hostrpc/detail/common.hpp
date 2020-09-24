@@ -536,6 +536,8 @@ void update_visible_from_staging(size_t size, size_t i,
                                  uint64_t *cas_fail_count,
                                  uint64_t *cas_help_count)
 {
+  // Write value ~InitialState to slot[i]
+
   assert((void *)visible != (void *)staging);
   assert(i < size);
   const size_t w = index_to_element(i);
@@ -602,6 +604,63 @@ void staged_release_slot(size_t size, size_t i,
                          slot_bitmap<Sscope, SProp> *staging,
                          slot_bitmap<Vscope, VProp> *visible,
                          uint64_t *cas_fail_count, uint64_t *cas_help_count)
+{
+  update_visible_from_staging<true>(size, i, staging, visible, cas_fail_count,
+                                    cas_help_count);
+}
+
+template <bool InitialState, size_t Sscope, typename SProp>
+void update_visible_from_staging(size_t size, size_t i,
+                                 slot_bitmap<Sscope, SProp> *staging,
+                                 slot_bytemap *visible, uint64_t *, uint64_t *)
+{
+  // Write value ~InitialState to slot[i]
+
+  assert((void *)visible != (void *)staging);
+  assert(i < size);
+
+  // InitialState locked for staged_release, clear for staged_claim
+  assert(InitialState ==
+         detail::nthbitset64(staging->load_word(size, w), subindex));
+  assert(InitialState ==
+         detail::nthbitset64(visible->load_word(size, w), subindex));
+
+  // (InitialState ? fetch_and : fetch_or) to update staging
+  if (InitialState)
+    {
+      staging->release_slot_returning_updated_word(size, i);
+    }
+  else
+    {
+      staging->claim_slot_returning_updated_word(size, i);
+    }
+
+  // Write single byte
+  if (InitialState)
+    {
+      visible->release_slot(size, i);
+    }
+  else
+    {
+      visible->claim_slot(size, i);
+    }
+}
+
+template <size_t Sscope, typename SProp>
+void staged_claim_slot(size_t size, size_t i,
+                       slot_bitmap<Sscope, SProp> *staging,
+                       slot_bytemap *visible, uint64_t *cas_fail_count,
+                       uint64_t *cas_help_count)
+{
+  update_visible_from_staging<false>(size, i, staging, visible, cas_fail_count,
+                                     cas_help_count);
+}
+
+template <size_t Sscope, typename SProp>
+void staged_release_slot(size_t size, size_t i,
+                         slot_bitmap<Sscope, SProp> *staging,
+                         slot_bytemap *visible, uint64_t *cas_fail_count,
+                         uint64_t *cas_help_count)
 {
   update_visible_from_staging<true>(size, i, staging, visible, cas_fail_count,
                                     cas_help_count);

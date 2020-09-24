@@ -12,25 +12,30 @@
 
 struct x64_alloc_deleter
 {
+  void operator()(_Atomic(uint8_t) * d)
+  {
+    hostrpc::x64_native::deallocate(static_cast<void *>(d));
+  }
   void operator()(_Atomic(uint64_t) * d)
   {
     hostrpc::x64_native::deallocate(static_cast<void *>(d));
   }
 };
 
-using deleter_ty = std::unique_ptr<_Atomic(uint64_t), x64_alloc_deleter>;
-
 template <typename T>
-static T x64_alloc(size_t size, std::list<deleter_ty> *store)
+static T x64_alloc(
+    size_t size,
+    std::list<std::unique_ptr<typename T::Ty, x64_alloc_deleter>> *store)
 {
+  using DelTy = std::unique_ptr<typename T::Ty, x64_alloc_deleter>;
   constexpr size_t bps = T::bits_per_slot();
   static_assert(bps == 1 || bps == 8, "");
   assert(size % 64 == 0 && "Size must be a multiple of 64");
   constexpr const static size_t align = 64;
   void *memory = hostrpc::x64_native::allocate(align, size * bps);
-  _Atomic(uint64_t) *m =
-      hostrpc::careful_array_cast<_Atomic(uint64_t)>(memory, size * bps);
-  store->emplace_back(deleter_ty{m});
+  typename T::Ty *m =
+      hostrpc::careful_array_cast<typename T::Ty>(memory, size * bps);
+  store->emplace_back(DelTy{m});
   return {m};
 }
 
@@ -105,27 +110,31 @@ TEST_CASE("set up single word system")
 
   using SZ = hostrpc::size_compiletime<N>;
 
-  std::list<deleter_ty> store;
+  std::list<std::unique_ptr<_Atomic(uint8_t), x64_alloc_deleter>> store8;
+  std::list<std::unique_ptr<_Atomic(uint64_t), x64_alloc_deleter>> store64;
 
-  auto send = x64_alloc<message_bitmap>(N, &store);
-  auto recv = x64_alloc<message_bitmap>(N, &store);
-  auto client_active = x64_alloc<lock_bitmap>(N, &store);
-  auto client_staging = x64_alloc<slot_bitmap_coarse>(N, &store);
-  auto server_active = x64_alloc<lock_bitmap>(N, &store);
-  auto server_staging = x64_alloc<slot_bitmap_coarse>(N, &store);
+  hostrpc::copy_functor_memcpy_pull cp;
+
+  using client_type = client_impl<SZ, decltype(cp), fill, use, stepper>;
+
+  using server_type =
+      server_impl<SZ, decltype(cp), operate, clear, hostrpc::default_stepper>;
+
+  auto send = x64_alloc<client_type::outbox_t>(N, &store8);
+  auto recv = x64_alloc<client_type::inbox_t>(N, &store64);
+  auto client_active = x64_alloc<lock_bitmap>(N, &store64);
+  auto client_staging = x64_alloc<client_type::staging_t>(N, &store64);
+  auto server_active = x64_alloc<lock_bitmap>(N, &store64);
+  auto server_staging = x64_alloc<server_type::staging_t>(N, &store64);
 
   const uint64_t calls_planned = 1024;
   _Atomic(uint64_t) calls_launched(0);
   _Atomic(uint64_t) calls_handled(0);
 
-  hostrpc::copy_functor_memcpy_pull cp;
-
   {
     safe_thread cl_thrd([&]() {
       auto app_state = application_state_t(&val, &client_steps, show_step);
 
-      using client_type = client_impl<SZ, hostrpc::copy_functor_memcpy_pull,
-                                      fill, use, stepper>;
       client_type cl = {SZ{},
                         client_active,
                         recv,
@@ -157,9 +166,6 @@ TEST_CASE("set up single word system")
     safe_thread sv_thrd([&]() {
       auto stepper_state =
           hostrpc::default_stepper_state(&server_steps, show_step);
-
-      using server_type = server_impl<SZ, decltype(cp), operate, clear,
-                                      hostrpc::default_stepper>;
 
       server_type sv = {SZ{},
                         server_active,

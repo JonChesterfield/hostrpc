@@ -135,16 +135,22 @@ struct x64_amdgcn_pair
         x64_host_amdgcn_client::clear::call(&client_buffer[i], nullptr);
       }
 
-    auto send = hsa_allocate_slot_bitmap_data_alloc<message_bitmap>(fine, N);
-    auto recv = hsa_allocate_slot_bitmap_data_alloc<message_bitmap>(fine, N);
+    auto send =
+        hsa_allocate_slot_bitmap_data_alloc<typename client_type::outbox_t>(
+            fine, N);
+    auto recv =
+        hsa_allocate_slot_bitmap_data_alloc<typename client_type::inbox_t>(fine,
+                                                                           N);
     auto client_active =
         hsa_allocate_slot_bitmap_data_alloc<lock_bitmap>(coarse, N);
     auto client_staging =
-        hsa_allocate_slot_bitmap_data_alloc<slot_bitmap_coarse>(coarse, N);
+        hsa_allocate_slot_bitmap_data_alloc<typename client_type::staging_t>(
+            coarse, N);
     auto server_active =
         hsa_allocate_slot_bitmap_data_alloc<lock_bitmap>(fine, N);
     auto server_staging =
-        hsa_allocate_slot_bitmap_data_alloc<slot_bitmap_coarse>(fine, N);
+        hsa_allocate_slot_bitmap_data_alloc<typename client_type::staging_t>(
+            fine, N);
 
     client = {sz,           client_active,  recv,
               send,         client_staging, server_buffer,

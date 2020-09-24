@@ -45,16 +45,22 @@ struct gcn_x64_pair_T
     page_t *server_buffer = client_buffer;
 
     // could be malloc here, gpu can't see the client locks
-    auto send = hsa_allocate_slot_bitmap_data_alloc<message_bitmap>(fine, N);
-    auto recv = hsa_allocate_slot_bitmap_data_alloc<message_bitmap>(fine, N);
+    auto send =
+        hsa_allocate_slot_bitmap_data_alloc<typename client_type::outbox_t>(
+            fine, N);
+    auto recv =
+        hsa_allocate_slot_bitmap_data_alloc<typename client_type::inbox_t>(fine,
+                                                                           N);
     auto client_active =
         hsa_allocate_slot_bitmap_data_alloc<lock_bitmap>(fine, N);
     auto client_staging =
-        hsa_allocate_slot_bitmap_data_alloc<slot_bitmap_coarse>(fine, N);
+        hsa_allocate_slot_bitmap_data_alloc<typename client_type::staging_t>(
+            fine, N);
     auto server_active =
         hsa_allocate_slot_bitmap_data_alloc<lock_bitmap>(coarse, N);
     auto server_staging =
-        hsa_allocate_slot_bitmap_data_alloc<slot_bitmap_coarse>(coarse, N);
+        hsa_allocate_slot_bitmap_data_alloc<typename server_type::staging_t>(
+            coarse, N);
 
     client = {sz,           client_active,  recv,
               send,         client_staging, server_buffer,

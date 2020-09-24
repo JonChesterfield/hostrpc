@@ -33,12 +33,16 @@ T hsa_allocate_slot_bitmap_data_alloc(hsa_region_t region, size_t size)
   const size_t align = 64;
   void *memory =
       hostrpc::hsa_amdgpu::allocate(region.handle, align, size * bps);
-  _Atomic(uint64_t) *m =
-      hostrpc::careful_array_cast<_Atomic(uint64_t)>(memory, size * bps);
+  typename T::Ty *m =
+      hostrpc::careful_array_cast<typename T::Ty>(memory, size * bps);
   return {m};
 }
 
 inline void hsa_allocate_slot_bitmap_data_free(_Atomic(uint64_t) * d)
+{
+  hostrpc::hsa_amdgpu::deallocate(static_cast<void *>(d));
+}
+inline void hsa_allocate_slot_bitmap_data_free(_Atomic(uint8_t) * d)
 {
   hostrpc::hsa_amdgpu::deallocate(static_cast<void *>(d));
 }

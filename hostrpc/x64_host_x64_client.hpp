@@ -16,8 +16,8 @@ static T x64_alloc(size_t size)
   assert(size % 64 == 0 && "Size must be a multiple of 64");
   constexpr const static size_t align = 64;
   void *memory = hostrpc::x64_native::allocate(align, size * bps);
-  _Atomic(uint64_t) *m =
-      hostrpc::careful_array_cast<_Atomic(uint64_t)>(memory, size * bps);
+  typename T::Ty *m =
+      hostrpc::careful_array_cast<typename T::Ty>(memory, size * bps);
   return {m};
 }
 
@@ -46,12 +46,12 @@ struct x64_x64_pair_T
 
     assert(client_buffer != server_buffer);
 
-    auto send = x64_alloc<message_bitmap>(N);
-    auto recv = x64_alloc<message_bitmap>(N);
+    auto send = x64_alloc<typename client_type::outbox_t>(N);
+    auto recv = x64_alloc<typename client_type::inbox_t>(N);
     auto client_locks = x64_alloc<lock_bitmap>(N);
-    auto client_staging = x64_alloc<slot_bitmap_coarse>(N);
+    auto client_staging = x64_alloc<typename client_type::staging_t>(N);
     auto server_locks = x64_alloc<lock_bitmap>(N);
-    auto server_staging = x64_alloc<slot_bitmap_coarse>(N);
+    auto server_staging = x64_alloc<typename server_type::staging_t>(N);
 
     client = {sz,           client_locks,   recv,
               send,         client_staging, server_buffer,

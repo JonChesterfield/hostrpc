@@ -46,7 +46,7 @@ template <typename SZ, typename Copy, typename Fill, typename Use,
 struct client_impl : public SZ, public Counter
 {
   using inbox_t = message_bitmap;
-  using outbox_t = message_bitmap;
+  using outbox_t = slot_bytemap;
   using staging_t = slot_bitmap_coarse;
 
   page_t* remote_buffer;
