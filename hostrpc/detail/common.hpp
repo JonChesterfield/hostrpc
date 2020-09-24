@@ -135,15 +135,16 @@ struct base
 
 struct fine_grain : public base<false>
 {
-  using Ty = _Atomic(uint64_t) *;
+  using Ty = __attribute__((aligned(64))) _Atomic(uint64_t);
 };
 
 struct coarse_grain : public base<true>
 {
 #if defined(__AMDGCN__)
-  using Ty = __attribute__((address_space(1))) _Atomic(uint64_t) *;
+  using Ty = __attribute__((aligned(64)))
+  __attribute__((address_space(1))) _Atomic(uint64_t);
 #else
-  using Ty = _Atomic(uint64_t) *;
+  using Ty = __attribute__((aligned(64))) _Atomic(uint64_t);
 #endif
 };
 
@@ -166,10 +167,10 @@ struct slot_bitmap
   static_assert(sizeof(uint64_t) == sizeof(_Atomic(uint64_t)), "");
   static_assert(sizeof(_Atomic(uint64_t) *) == 8, "");
 
-  Ty a;
+  Ty *a;
   static constexpr size_t bits_per_slot() { return 1; }
   slot_bitmap() : a(nullptr) {}
-  slot_bitmap(Ty d) : a(d)
+  slot_bitmap(Ty *d) : a(d)
   {
     // can't necessarily write to a from this object. if the memory is on
     // the gpu, but this instance is being constructed on the gpu first,
@@ -178,7 +179,7 @@ struct slot_bitmap
   }
 
   ~slot_bitmap() {}
-  Ty data() { return a; }
+  Ty *data() { return a; }
 
   bool operator()(size_t size, size_t i, uint64_t *loaded) const
   {
@@ -258,7 +259,7 @@ struct slot_bitmap
   bool cas(uint64_t element, uint64_t expect, uint64_t replace,
            uint64_t *loaded)
   {
-    Ty addr = &a[element];
+    Ty *addr = &a[element];
 
     // this cas function is not used across devices by this library
     bool r = __opencl_atomic_compare_exchange_weak(
@@ -280,7 +281,7 @@ struct slot_bitmap
  private:
   uint64_t fetch_and(uint64_t element, uint64_t mask)
   {
-    Ty addr = &a[element];
+    Ty *addr = &a[element];
 
     if (Prop::hasFetchOp())
       {
@@ -311,7 +312,7 @@ struct slot_bitmap
 
   uint64_t fetch_or(uint64_t element, uint64_t mask)
   {
-    Ty addr = &a[element];
+    Ty *addr = &a[element];
 
     if (Prop::hasFetchOp())
       {
@@ -342,14 +343,14 @@ struct lock_bitmap
   using Ty = typename properties::coarse_grain::Ty;
   static_assert(sizeof(uint64_t) == sizeof(_Atomic(uint64_t)), "");
   static_assert(sizeof(_Atomic(uint64_t) *) == 8, "");
-  Ty a;
+  Ty *a;
   static constexpr size_t bits_per_slot() { return 1; }
 
   lock_bitmap() : a(nullptr) {}
-  lock_bitmap(Ty d) : a(d) {}
+  lock_bitmap(Ty *d) : a(d) {}
 
   ~lock_bitmap() {}
-  Ty data() { return a; }
+  Ty *data() { return a; }
 
   // cas, true on success
   // on return true, loaded contains active[w]
@@ -418,7 +419,7 @@ struct lock_bitmap
     // and with everything other than the slot set
     uint64_t mask = ~detail::setnthbit64(0, subindex);
 
-    Ty addr = &a[w];
+    Ty *addr = &a[w];
     __opencl_atomic_fetch_and(addr, mask, __ATOMIC_ACQ_REL,
                               __OPENCL_MEMORY_SCOPE_DEVICE);
   }
@@ -435,7 +436,7 @@ struct lock_bitmap
   bool cas(uint64_t element, uint64_t expect, uint64_t replace,
            uint64_t *loaded)
   {
-    Ty addr = &a[element];
+    Ty *addr = &a[element];
 
     // this cas function is not used across devices by this library
     bool r = __opencl_atomic_compare_exchange_weak(
@@ -455,14 +456,14 @@ struct lock_bitmap
 template <size_t scope, typename Prop>
 struct slot_bytemap
 {
-  using Ty = _Atomic(uint8_t) *;
+  using Ty = __attribute__((aligned(64))) _Atomic(uint8_t);
   static_assert(sizeof(uint8_t) == sizeof(_Atomic(uint8_t)), "");
   static_assert(sizeof(_Atomic(uint8_t)) == 1, "");
 
-  Ty a;
+  Ty *a;
   static constexpr size_t bits_per_slot() { return 8; }
   slot_bytemap() : a(nullptr) {}
-  slot_bytemap(Ty d) : a(d)
+  slot_bytemap(Ty *d) : a(d)
   {
     // can't necessarily write to a from this object. if the memory is on
     // the gpu, but this instance is being constructed on the gpu first,
@@ -471,7 +472,7 @@ struct slot_bytemap
   }
 
   ~slot_bytemap() {}
-  Ty data() { return a; }
+  Ty *data() { return a; }
 
   // assumes slot available
   void claim_slot(size_t size, size_t i) { write_byte<1>(size, i); }

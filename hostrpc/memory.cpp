@@ -1,4 +1,5 @@
 #include "memory.hpp"
+#include "detail/platform.hpp"
 
 #if defined(__x86_64__)
 #include "hsa.h"
@@ -14,6 +15,7 @@ namespace x64_native
 {
 void *allocate(size_t align, size_t bytes)
 {
+  assert(align >= 64);
   void *memory = ::aligned_alloc(align, bytes);
   if (memory)
     {
@@ -28,6 +30,7 @@ namespace hsa_amdgpu
 {
 void *allocate(uint64_t hsa_region_t_handle, size_t align, size_t bytes)
 {
+  assert(align >= 64);
   (void)align;  // todo
   hsa_region_t region{.handle = hsa_region_t_handle};
 
@@ -54,6 +57,7 @@ void deallocate(void *d) { hsa_memory_free(d); }
 
 #if defined(__AMDGCN__)
 
+// Allocators presently unimplemented for amdgcn
 namespace x64_native
 {
 void *allocate(size_t, size_t) { return nullptr; }
