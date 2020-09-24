@@ -22,11 +22,11 @@ extern "C" __attribute__((noinline)) void client_instance_direct(client_type& c)
 
 extern "C" __attribute__((noinline)) void client_instance_from_components(
     SZ sz, hostrpc::message_bitmap inbox, hostrpc::message_bitmap outbox,
-    hostrpc::lock_bitmap active, hostrpc::slot_bitmap_coarse outbox_staging,
+    hostrpc::lock_bitmap active, hostrpc::slot_bitmap_coarse staging,
     hostrpc::page_t* remote_buffer, hostrpc::page_t* local_buffer)
 {
-  client_type c = {
-      sz, inbox, outbox, active, outbox_staging, remote_buffer, local_buffer};
+  client_type c = {sz,      inbox,         outbox,      active,
+                   staging, remote_buffer, local_buffer};
   client_instance_direct(c);
 }
 

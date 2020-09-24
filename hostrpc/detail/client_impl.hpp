@@ -46,15 +46,15 @@ template <typename SZ, typename Copy, typename Fill, typename Use,
 struct client_impl : public SZ, public Counter
 {
   using inbox_t = message_bitmap;
-  using outbox_t = message_bitmap;
-  using outbox_staging_t = slot_bitmap_coarse;
+  using taskstate_t = message_bitmap;
+  using staging_t = slot_bitmap_coarse;
 
   page_t* remote_buffer;
   page_t* local_buffer;
   lock_bitmap active;
   inbox_t inbox;
-  outbox_t outbox;
-  outbox_staging_t outbox_staging;
+  taskstate_t outbox;
+  staging_t staging;
 
   client_impl()
       : SZ{0},
@@ -64,13 +64,12 @@ struct client_impl : public SZ, public Counter
         active{},
         inbox{},
         outbox{},
-        outbox_staging{}
+        staging{}
   {
   }
 
-  client_impl(SZ sz, inbox_t inbox, outbox_t outbox, lock_bitmap active,
-              outbox_staging_t outbox_staging, page_t* remote_buffer,
-              page_t* local_buffer)
+  client_impl(SZ sz, inbox_t inbox, taskstate_t outbox, lock_bitmap active,
+              staging_t staging, page_t* remote_buffer, page_t* local_buffer)
 
       : SZ{sz},
         Counter{},
@@ -79,7 +78,7 @@ struct client_impl : public SZ, public Counter
         active(active),
         inbox(inbox),
         outbox(outbox),
-        outbox_staging(outbox_staging)
+        staging(staging)
   {
     constexpr size_t client_size = 48;
 
@@ -113,7 +112,7 @@ struct client_impl : public SZ, public Counter
     fprintf(stderr, "inbox         %p\n", inbox.a);
     fprintf(stderr, "outbox        %p\n", outbox.a);
     fprintf(stderr, "active        %p\n", active.a);
-    fprintf(stderr, "outbox stg    %p\n", outbox_staging.a);
+    fprintf(stderr, "outbox stg    %p\n", staging.a);
 #endif
   }
 
@@ -217,7 +216,7 @@ struct client_impl : public SZ, public Counter
   size_t find_candidate_client_slot(uint64_t w)
   {
     uint64_t i = inbox.load_word(size(), w);
-    uint64_t o = outbox_staging.load_word(size(), w);
+    uint64_t o = staging.load_word(size(), w);
     uint64_t a = active.load_word(size(), w);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
@@ -244,7 +243,7 @@ struct client_impl : public SZ, public Counter
   void dump_word(size_t size, uint64_t word)
   {
     uint64_t i = inbox.load_word(size, word);
-    uint64_t o = outbox_staging.load_word(size, word);
+    uint64_t o = staging.load_word(size, word);
     uint64_t a = active.load_word(size, word);
     (void)(i + o + a);
     printf("%lu %lu %lu\n", i, o, a);
@@ -262,7 +261,7 @@ struct client_impl : public SZ, public Counter
 
     const size_t size = this->size();
     uint64_t i = inbox.load_word(size, element);
-    uint64_t o = outbox_staging.load_word(size, element);
+    uint64_t o = staging.load_word(size, element);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
     // Called with a lock. The corresponding slot can be:
@@ -287,8 +286,8 @@ struct client_impl : public SZ, public Counter
         uint64_t cas_fail_count = 0;
         uint64_t cas_help_count = 0;
         platform::critical<uint64_t>([&]() {
-          staged_release_slot(size, slot, &outbox_staging, &outbox,
-                              &cas_fail_count, &cas_help_count);
+          staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
+                              &cas_help_count);
           return 0;
         });
         cas_fail_count = platform::broadcast_master(cas_fail_count);
@@ -323,7 +322,7 @@ struct client_impl : public SZ, public Counter
       uint64_t cas_fail_count = 0;
       uint64_t cas_help_count = 0;
       platform::critical<uint64_t>([&]() {
-        staged_claim_slot(size, slot, &outbox_staging, &outbox, &cas_fail_count,
+        staged_claim_slot(size, slot, &staging, &outbox, &cas_fail_count,
                           &cas_help_count);
         return 0;
       });
@@ -399,8 +398,8 @@ struct client_impl : public SZ, public Counter
         uint64_t cas_fail_count = 0;
         uint64_t cas_help_count = 0;
         platform::critical<uint64_t>([&]() {
-          staged_release_slot(size, slot, &outbox_staging, &outbox,
-                              &cas_fail_count, &cas_help_count);
+          staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
+                              &cas_help_count);
           return 0;
         });
         cas_fail_count = platform::broadcast_master(cas_fail_count);

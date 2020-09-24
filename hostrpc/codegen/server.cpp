@@ -42,11 +42,13 @@ struct clear_direct
 };
 }  // namespace hostrpc
 
-extern "C" void server_instance_direct(
-    hostrpc::message_bitmap inbox, hostrpc::message_bitmap outbox,
-    hostrpc::lock_bitmap active, hostrpc::slot_bitmap_coarse outbox_staging,
-    hostrpc::page_t *remote_buffer, hostrpc::page_t *local_buffer,
-    void *state_arg)
+extern "C" void server_instance_direct(hostrpc::message_bitmap inbox,
+                                       hostrpc::message_bitmap outbox,
+                                       hostrpc::lock_bitmap active,
+                                       hostrpc::slot_bitmap_coarse staging,
+                                       hostrpc::page_t *remote_buffer,
+                                       hostrpc::page_t *local_buffer,
+                                       void *state_arg)
 {
   using server_type =
       hostrpc::server_impl<SZ, hostrpc::copy_functor_memcpy_pull,
@@ -54,8 +56,8 @@ extern "C" void server_instance_direct(
                            hostrpc::nop_stepper>;
 
   SZ sz;
-  server_type s = {
-      sz, inbox, outbox, active, outbox_staging, remote_buffer, local_buffer};
+  server_type s = {sz,      inbox,         outbox,      active,
+                   staging, remote_buffer, local_buffer};
 
   for (;;)
     {
@@ -63,11 +65,13 @@ extern "C" void server_instance_direct(
     }
 }
 
-extern "C" void server_instance_indirect(
-    hostrpc::message_bitmap inbox, hostrpc::message_bitmap outbox,
-    hostrpc::lock_bitmap active, hostrpc::slot_bitmap_coarse outbox_staging,
-    hostrpc::page_t *remote_buffer, hostrpc::page_t *local_buffer,
-    void *state_arg)
+extern "C" void server_instance_indirect(hostrpc::message_bitmap inbox,
+                                         hostrpc::message_bitmap outbox,
+                                         hostrpc::lock_bitmap active,
+                                         hostrpc::slot_bitmap_coarse staging,
+                                         hostrpc::page_t *remote_buffer,
+                                         hostrpc::page_t *local_buffer,
+                                         void *state_arg)
 {
   using server_type =
       hostrpc::server_impl<SZ, hostrpc::copy_functor_memcpy_pull,
@@ -75,8 +79,8 @@ extern "C" void server_instance_indirect(
                            hostrpc::nop_stepper>;
 
   SZ sz;
-  server_type s = {
-      sz, inbox, outbox, active, outbox_staging, remote_buffer, local_buffer};
+  server_type s = {sz,      inbox,         outbox,      active,
+                   staging, remote_buffer, local_buffer};
 
   pack arg = {.func = op_target, .state = state_arg};
 

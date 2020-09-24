@@ -33,14 +33,14 @@ struct server_impl : public SZ
 {
   using inbox_t = message_bitmap;
   using outbox_t = message_bitmap;
-  using outbox_staging_t = slot_bitmap_coarse;
+  using staging_t = slot_bitmap_coarse;
 
   page_t* remote_buffer;
   page_t* local_buffer;
   lock_bitmap active;
   inbox_t inbox;
   outbox_t outbox;
-  outbox_staging_t outbox_staging;
+  staging_t staging;
 
   server_impl()
       : SZ{0},
@@ -49,20 +49,19 @@ struct server_impl : public SZ
         active{},
         inbox{},
         outbox{},
-        outbox_staging{}
+        staging{}
   {
   }
 
   server_impl(SZ sz, inbox_t inbox, outbox_t outbox, lock_bitmap active,
-              outbox_staging_t outbox_staging, page_t* remote_buffer,
-              page_t* local_buffer)
+              staging_t staging, page_t* remote_buffer, page_t* local_buffer)
       : SZ{sz},
         remote_buffer(remote_buffer),
         local_buffer(local_buffer),
         active(active),
         inbox(inbox),
         outbox(outbox),
-        outbox_staging(outbox_staging)
+        staging(staging)
   {
   }
 
@@ -73,7 +72,7 @@ struct server_impl : public SZ
   void dump_word(size_t size, uint64_t word)
   {
     uint64_t i = inbox.load_word(size, word);
-    uint64_t o = outbox_staging.load_word(size, word);
+    uint64_t o = staging.load_word(size, word);
     uint64_t a = active.load_word(size, word);
     (void)(i + o + a);
     printf("%lu %lu %lu\n", i, o, a);
@@ -83,7 +82,7 @@ struct server_impl : public SZ
   {
     const size_t size = this->size();
     uint64_t i = inbox.load_word(size, w);
-    uint64_t o = outbox_staging.load_word(size, w);
+    uint64_t o = staging.load_word(size, w);
     uint64_t a = active.load_word(size, w);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
@@ -195,7 +194,7 @@ struct server_impl : public SZ
     const size_t size = this->size();
 
     uint64_t i = inbox.load_word(size, element);
-    uint64_t o = outbox_staging.load_word(size, element);
+    uint64_t o = staging.load_word(size, element);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
     // Called with a lock. The corresponding slot can be:
@@ -229,8 +228,8 @@ struct server_impl : public SZ
         platform::critical<uint64_t>([&]() {
           uint64_t cas_fail_count;
           uint64_t cas_help_count;
-          staged_release_slot(size, slot, &outbox_staging, &outbox,
-                              &cas_fail_count, &cas_help_count);
+          staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
+                              &cas_help_count);
           return 0;
         });
 
@@ -261,7 +260,7 @@ struct server_impl : public SZ
       platform::critical<uint64_t>([&]() {
         uint64_t cas_fail_count = 0;
         uint64_t cas_help_count = 0;
-        staged_claim_slot(size, slot, &outbox_staging, &outbox, &cas_fail_count,
+        staged_claim_slot(size, slot, &staging, &outbox, &cas_fail_count,
                           &cas_help_count);
         return 0;
       });

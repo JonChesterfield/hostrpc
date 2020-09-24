@@ -49,23 +49,15 @@ struct x64_x64_pair_T
     auto send = x64_alloc<message_bitmap>(N);
     auto recv = x64_alloc<message_bitmap>(N);
     auto client_locks = x64_alloc<lock_bitmap>(N);
-    auto client_outbox_staging = x64_alloc<slot_bitmap_coarse>(N);
+    auto client_staging = x64_alloc<slot_bitmap_coarse>(N);
     auto server_locks = x64_alloc<lock_bitmap>(N);
-    auto server_outbox_staging = x64_alloc<slot_bitmap_coarse>(N);
+    auto server_staging = x64_alloc<slot_bitmap_coarse>(N);
 
-    client = {sz,
-              recv,
-              send,
-              client_locks,
-              client_outbox_staging,
-              server_buffer,
+    client = {sz,           recv,           send,
+              client_locks, client_staging, server_buffer,
               client_buffer};
-    server = {sz,
-              send,
-              recv,
-              server_locks,
-              server_outbox_staging,
-              client_buffer,
+    server = {sz,           send,           recv,
+              server_locks, server_staging, client_buffer,
               server_buffer};
 
     assert(client.size() == N);
@@ -85,8 +77,8 @@ struct x64_x64_pair_T
     hostrpc::x64_native::deallocate(client.active.data());
     hostrpc::x64_native::deallocate(server.active.data());
 
-    hostrpc::x64_native::deallocate(client.outbox_staging.data());
-    hostrpc::x64_native::deallocate(server.outbox_staging.data());
+    hostrpc::x64_native::deallocate(client.staging.data());
+    hostrpc::x64_native::deallocate(server.staging.data());
 
     assert(client.local_buffer != server.local_buffer);
     for (size_t i = 0; i < N; i++)

@@ -110,9 +110,9 @@ TEST_CASE("set up single word system")
   auto send = x64_alloc<message_bitmap>(N, &store);
   auto recv = x64_alloc<message_bitmap>(N, &store);
   auto client_active = x64_alloc<lock_bitmap>(N, &store);
-  auto client_outbox_staging = x64_alloc<slot_bitmap_coarse>(N, &store);
+  auto client_staging = x64_alloc<slot_bitmap_coarse>(N, &store);
   auto server_active = x64_alloc<lock_bitmap>(N, &store);
-  auto server_outbox_staging = x64_alloc<slot_bitmap_coarse>(N, &store);
+  auto server_staging = x64_alloc<slot_bitmap_coarse>(N, &store);
 
   const uint64_t calls_planned = 1024;
   _Atomic(uint64_t) calls_launched(0);
@@ -130,7 +130,7 @@ TEST_CASE("set up single word system")
                         recv,
                         send,
                         client_active,
-                        client_outbox_staging,
+                        client_staging,
                         &server_buffer[0],
                         &client_buffer[0]};
 
@@ -165,7 +165,7 @@ TEST_CASE("set up single word system")
                         send,
                         recv,
                         server_active,
-                        server_outbox_staging,
+                        server_staging,
                         &client_buffer[0],
                         &server_buffer[0]};
 
