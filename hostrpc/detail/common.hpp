@@ -453,7 +453,6 @@ struct lock_bitmap
   }
 };
 
-template <size_t scope, typename Prop>
 struct slot_bytemap
 {
   // assumes sizeof a is a multiple of 64, may be worth passing size to the
@@ -498,19 +497,11 @@ struct slot_bytemap
   {
     (void)size;
     assert(i < size);
-    if (scope == __OPENCL_MEMORY_SCOPE_DEVICE)
-      {
-        __opencl_atomic_store(&a[i], v, __ATOMIC_RELAXED,
-                              __OPENCL_MEMORY_SCOPE_DEVICE);
-      }
-    else
-      {
-        __opencl_atomic_store(&a[i], v, __ATOMIC_RELAXED,
-                              __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-      }
+    __opencl_atomic_store(&a[i], v, __ATOMIC_RELAXED,
+                          __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
   }
 
-  uint8_t pack_word(uint64_t x)
+  uint8_t pack_word(uint64_t x) const
   {
     // x = 0000000h 0000000g 0000000f 0000000e 0000000d 0000000c 0000000b
     // 0000000a
@@ -523,7 +514,7 @@ struct slot_bytemap
     return r;
   }
 
-  uint64_t pack_words(Ty *data)
+  uint64_t pack_words(Ty *data) const
   {
     typedef __attribute__((aligned(64)))
     __attribute__((may_alias)) _Atomic(uint64_t) aligned_word;

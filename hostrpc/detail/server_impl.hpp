@@ -38,6 +38,7 @@ struct server_impl : public SZ
   page_t* remote_buffer;
   page_t* local_buffer;
   lock_bitmap active;
+
   inbox_t inbox;
   outbox_t outbox;
   staging_t staging;

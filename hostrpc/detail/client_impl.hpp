@@ -46,7 +46,7 @@ template <typename SZ, typename Copy, typename Fill, typename Use,
 struct client_impl : public SZ, public Counter
 {
   using inbox_t = message_bitmap;
-  using taskstate_t = message_bitmap;
+  using outbox_t = message_bitmap;
   using staging_t = slot_bitmap_coarse;
 
   page_t* remote_buffer;
@@ -54,7 +54,7 @@ struct client_impl : public SZ, public Counter
   lock_bitmap active;
 
   inbox_t inbox;
-  taskstate_t outbox;
+  outbox_t outbox;
   staging_t staging;
 
   client_impl()
@@ -69,7 +69,7 @@ struct client_impl : public SZ, public Counter
   {
   }
 
-  client_impl(SZ sz, lock_bitmap active, inbox_t inbox, taskstate_t outbox,
+  client_impl(SZ sz, lock_bitmap active, inbox_t inbox, outbox_t outbox,
               staging_t staging, page_t* remote_buffer, page_t* local_buffer)
 
       : SZ{sz},
