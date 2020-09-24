@@ -52,12 +52,19 @@ extern "C" uint8_t pack_word_reference(uint64_t x)
 
 extern "C" uint8_t pack_word_multiply(uint64_t x)
 {
-  x *= UINT64_C(0x102040810204080);
-  return x >> 56u;
+  // x = 0000000h 0000000g 0000000f 0000000e 0000000d 0000000c 0000000b 0000000a
+  uint64_t m = x * UINT64_C(0x102040810204080);
+  // m = hgfedcba -------- -------- -------- -------- -------- -------- --------
+  uint64_t r = m >> 56u;
+  // r = 00000000 00000000 00000000 00000000 00000000 00000000 00000000 hgfedcba
+  return r;
 }
 
 extern "C" uint8_t pack_word(uint64_t x)
 {
+  // default to this for now
+  return pack_word_multiply(x);
+
 #if defined(__BMI2__) && __has_builtin(__builtin_ia32_pext_di)
   return __builtin_ia32_pext_di(x, UINT64_C(0x0101010101010101));
 #else

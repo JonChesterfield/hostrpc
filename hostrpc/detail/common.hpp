@@ -456,6 +456,8 @@ struct lock_bitmap
 template <size_t scope, typename Prop>
 struct slot_bytemap
 {
+  // assumes sizeof a is a multiple of 64, may be worth passing size to the
+  // constructor and asserting
   using Ty = __attribute__((aligned(64))) _Atomic(uint8_t);
   static_assert(sizeof(uint8_t) == sizeof(_Atomic(uint8_t)), "");
   static_assert(sizeof(_Atomic(uint8_t)) == 1, "");
@@ -485,18 +487,9 @@ struct slot_bytemap
     (void)size;
     (void)w;
     assert(w < (size / 64));
-    typedef __attribute__((aligned(64)))
-    __attribute__((may_alias)) _Atomic(uint64_t) aligned_word;
-
-    const aligned_word *ap = (const aligned_word *)&a[w];
-
-    // uint8_t a0 = pack_word(ap[0]);
-
-    // word in bytes a[w] to a[w+63], &a[w] is 64 byte aligned
-
-    // Need to read 64 bytes, some aliasing hazards.
-
-    return ap[0];
+    size_t i = 64 * w;
+    assert(i < size);
+    return pack_words(&a[i]);
   }
 
  private:
@@ -519,8 +512,28 @@ struct slot_bytemap
 
   uint8_t pack_word(uint64_t x)
   {
-    x *= UINT64_C(0x102040810204080);
-    return x >> 56u;
+    // x = 0000000h 0000000g 0000000f 0000000e 0000000d 0000000c 0000000b
+    // 0000000a
+    uint64_t m = x * UINT64_C(0x102040810204080);
+    // m = hgfedcba -------- -------- -------- -------- -------- --------
+    // --------
+    uint64_t r = m >> 56u;
+    // r = 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+    // hgfedcba
+    return r;
+  }
+
+  uint64_t pack_words(Ty *data)
+  {
+    typedef __attribute__((aligned(64)))
+    __attribute__((may_alias)) _Atomic(uint64_t) aligned_word;
+    aligned_word *words = (aligned_word *)data;
+    uint64_t res = 0;
+    for (unsigned i = 0; i < 8; i++)
+      {
+        res |= ((uint64_t)pack_word(words[i]) & UINT8_C(0xff)) << 8 * i;
+      }
+    return res;
   }
 };
 
