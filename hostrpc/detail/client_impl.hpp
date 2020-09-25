@@ -45,10 +45,10 @@ template <typename SZ, typename Copy, typename Fill, typename Use,
           typename Step, typename Counter = counters::client>
 struct client_impl : public SZ, public Counter
 {
-  using inbox_t = message_bitmap;
-  using outbox_t = message_bitmap;
-  using staging_t = slot_bitmap_coarse;
   using Word = uint64_t;
+  using inbox_t = message_bitmap<Word>;
+  using outbox_t = message_bitmap<Word>;
+  using staging_t = slot_bitmap_coarse<Word>;
   constexpr size_t wordBits() const { return 8 * sizeof(Word); }
   uint32_t size() const { return SZ::N(); }
   uint32_t words() const { return size() / wordBits(); }
@@ -233,7 +233,7 @@ struct client_impl : public SZ, public Counter
     Word candidate = available | garbage_todo;
     if (candidate != 0)
       {
-        return wordBits() * w + detail::ctz64(candidate);
+        return wordBits() * w + bits::ctz(candidate);
       }
 
     return UINT32_MAX;
@@ -274,7 +274,7 @@ struct client_impl : public SZ, public Counter
     // That this lock has been taken means no other thread is
     // waiting for that result
 
-    Word this_slot = detail::setnthbit64((Word)0, subindex);
+    Word this_slot = bits::setnthbit((Word)0, subindex);
     Word garbage_todo = i & o & this_slot;
     Word available = ~i & ~o & this_slot;
 

@@ -31,10 +31,10 @@ template <typename SZ, typename Copy, typename Operate, typename Clear,
           typename Step>
 struct server_impl : public SZ
 {
-  using inbox_t = message_bitmap;
-  using outbox_t = message_bitmap;
-  using staging_t = slot_bitmap_coarse;
   using Word = uint64_t;
+  using inbox_t = message_bitmap<Word>;
+  using outbox_t = message_bitmap<Word>;
+  using staging_t = slot_bitmap_coarse<Word>;
   constexpr size_t wordBits() const { return 8 * sizeof(Word); }
   // may want to rename this, number-slots?
   uint32_t size() const { return SZ::N(); }
@@ -104,7 +104,7 @@ struct server_impl : public SZ
     Word available = find_candidate_server_available_bitmap(w, mask);
     if (available != 0)
       {
-        return wordBits() * w + detail::ctz64(available);
+        return wordBits() * w + bits::ctz(available);
       }
     return UINT32_MAX;
   }
@@ -131,8 +131,12 @@ struct server_impl : public SZ
     const uint32_t element = index_to_element(location);
 
     // skip bits in the first word <= subindex
-    Word mask =
-        detail::setbitsrange64(index_to_subindex(location), wordBits() - 1);
+    static_assert((sizeof(Word) == 8) || (sizeof(Word) == 4), "");
+    Word mask = (sizeof(Word) == 8)
+                    ? detail::setbitsrange64(index_to_subindex(location),
+                                             wordBits() - 1)
+                    : detail::setbitsrange32(index_to_subindex(location),
+                                             wordBits() - 1);
 
     // Tries a few bits in element, then all bits in all the other words, then
     // all bits in element. This overshoots somewhat but ensures that all slots
@@ -143,8 +147,8 @@ struct server_impl : public SZ
         Word available = find_candidate_server_available_bitmap(w, mask);
         while (available != 0)
           {
-            uint32_t idx = detail::ctz64(available);
-            assert(detail::nthbitset64(available, idx));
+            uint32_t idx = bits::ctz(available);
+            assert(bits::nthbitset(available, idx));
             uint32_t slot = wordBits() * w + idx;
             uint64_t cas_fail_count = 0;
             if (active.try_claim_empty_slot(size, slot, &cas_fail_count))
@@ -165,7 +169,7 @@ struct server_impl : public SZ
               }
 
             // don't try the same slot repeatedly
-            available = detail::clearnthbit64(available, idx);
+            available = bits::clearnthbit(available, idx);
           }
 
         mask = ~((Word)0);
@@ -186,7 +190,7 @@ struct server_impl : public SZ
     const uint32_t subindex = index_to_subindex(slot);
 
     auto lock_held = [&]() -> bool {
-      return detail::nthbitset64(active.load_word(size(), element), subindex);
+      return bits::nthbitset(active.load_word(size(), element), subindex);
     };
     (void)lock_held;
 
@@ -203,7 +207,7 @@ struct server_impl : public SZ
     //      1      0     work    work       1
     //      1      1  waiting    none       -
 
-    Word this_slot = detail::setnthbit64(0, subindex);
+    Word this_slot = bits::setnthbit((Word)0, subindex);
     Word work_todo = (i & ~o) & this_slot;
     Word garbage_todo = (~i & o) & this_slot;
 

@@ -33,58 +33,57 @@ inline uint64_t index_to_element(uint64_t x) { return x / 64u; }
 
 inline uint64_t index_to_subindex(uint64_t x) { return x % 64u; }
 
-namespace detail
+namespace bits
 {
-inline bool multiple_of_64(uint64_t x) { return (x % 64) == 0; }
-
-inline uint64_t round_up_to_multiple_of_64(uint64_t x)
+inline bool nthbitset(uint32_t x, uint32_t n)
 {
-  return 64u * ((x + 63u) / 64u);
+  assert(n < 32);
+  return x & (UINT32_C(1) << n);
 }
 
-inline bool nthbitset64(uint64_t x, uint64_t n)
-{
-  // assert(n < 64);
-  return x & (1ull << n);
-}
-
-inline uint64_t setnthbit64(uint64_t x, uint64_t n)
+inline bool nthbitset(uint64_t x, uint32_t n)
 {
   assert(n < 64);
-  return x | (1ull << n);
+  return x & (UINT64_C(1) << n);
 }
 
-inline uint64_t clearnthbit64(uint64_t x, uint64_t n)
+inline uint32_t setnthbit(uint32_t x, uint32_t n)
+{
+  assert(n < 32);
+  return x | (UINT32_C(1) << n);
+}
+
+inline uint64_t setnthbit(uint64_t x, uint32_t n)
 {
   assert(n < 64);
-  return x & ~(1ull << n);
+  return x | (UINT64_C(1) << n);
 }
 
-inline uint64_t setbitsrange64(uint64_t l, uint64_t h)
+inline uint32_t clearnthbit(uint32_t x, uint32_t n)
 {
-  uint64_t base = UINT64_MAX;
-  uint64_t width = (h - l) + 1;
-  // The &63 is eliminated by the backend for x86-64 as that's the
-  // behaviour of the shift instruction.
-  base >>= (UINT64_C(63) & (UINT64_C(64) - width));
-  base <<= (UINT64_C(63) & l);
-  return base;
+  assert(n < 32);
+  return x & ~(UINT32_C(1) << n);
 }
 
-inline uint64_t ctz64(uint64_t value)
+inline uint64_t clearnthbit(uint64_t x, uint32_t n)
+{
+  assert(n < 64);
+  return x & ~(UINT64_C(1) << n);
+}
+
+inline uint32_t ctz(uint32_t value)
 {
   if (value == 0)
     {
-      return 64;
+      return 32;
     }
 #if defined(__has_builtin)
-#if __has_builtin(__builtin_ctzl)
-  static_assert(
-      sizeof(unsigned long) == sizeof(uint64_t),
-      "Calling __builtin_ctzl on a uint64_t requires 64 bit unsigned long");
-  return (uint64_t)__builtin_ctzl(value);
+#if __has_builtin(__builtin_ctz)
+  static_assert(sizeof(unsigned) == sizeof(uint32_t),
+                "Calling __builtin_ctz on a uint32_t requires 32 bit unsigned");
+  return (uint32_t)__builtin_ctz(value);
 #else
-  uint64_t pos = 0;
+  uint32_t pos = 0;
   while (!(value & 1))
     {
       value >>= 1;
@@ -95,7 +94,49 @@ inline uint64_t ctz64(uint64_t value)
 #endif
 }
 
-inline uint64_t clz64(uint64_t value)
+inline uint32_t ctz(uint64_t value)
+{
+  if (value == 0)
+    {
+      return 64;
+    }
+#if defined(__has_builtin)
+#if __has_builtin(__builtin_ctzl)
+  static_assert(
+      sizeof(unsigned long) == sizeof(uint64_t),
+      "Calling __builtin_ctzl on a uint64_t requires 64 bit unsigned long");
+  return (uint32_t)__builtin_ctzl(value);
+#else
+  uint32_t pos = 0;
+  while (!(value & 1))
+    {
+      value >>= 1;
+      ++pos;
+    }
+  return pos;
+#endif
+#endif
+}
+
+inline uint32_t clz(uint32_t value)
+{
+  if (value == 0)
+    {
+      return 32;
+    }
+#if defined(__has_builtin)
+#if __has_builtin(__builtin_clz)
+  static_assert(
+      sizeof(unsigned) == sizeof(uint32_t),
+      "Calling __builtin_clzl on a uint32_t requires 32 bit unsigned");
+  return (uint32_t)__builtin_clz(value);
+#else
+#error "Unimplemented clz(32)"
+#endif
+#endif
+}
+
+inline uint32_t clz(uint64_t value)
 {
   if (value == 0)
     {
@@ -106,11 +147,42 @@ inline uint64_t clz64(uint64_t value)
   static_assert(
       sizeof(unsigned long) == sizeof(uint64_t),
       "Calling __builtin_clzl on a uint64_t requires 64 bit unsigned long");
-  return (uint64_t)__builtin_clzl(value);
+  return (uint32_t)__builtin_clzl(value);
 #else
-#error "Unimplemented clz64"
+#error "Unimplemented clz(64)"
 #endif
 #endif
+}
+
+}  // namespace bits
+
+namespace detail
+{
+inline bool multiple_of_64(uint64_t x) { return (x % 64) == 0; }
+
+inline uint64_t round_up_to_multiple_of_64(uint64_t x)
+{
+  return 64u * ((x + 63u) / 64u);
+}
+
+inline uint32_t setbitsrange32(uint32_t l, uint32_t h)
+{
+  uint32_t base = UINT32_MAX;
+  uint32_t width = (h - l) + 1;
+  base >>= (UINT64_C(31) & (UINT32_C(32) - width));
+  base <<= (UINT64_C(31) & l);
+  return base;
+}
+
+inline uint64_t setbitsrange64(uint32_t l, uint32_t h)
+{
+  uint64_t base = UINT64_MAX;
+  uint32_t width = (h - l) + 1;
+  // The &63 is eliminated by the backend for x86-64 as that's the
+  // behaviour of the shift instruction.
+  base >>= (UINT64_C(63) & (UINT64_C(64) - width));
+  base <<= (UINT64_C(63) & l);
+  return base;
 }
 
 }  // namespace detail
@@ -150,25 +222,30 @@ struct coarse_grain : public base<true>
 
 }  // namespace properties
 
-template <size_t scope, typename Prop>
+template <typename Word, size_t scope, typename Prop>
 struct slot_bitmap;
 
-using message_bitmap =
-    slot_bitmap<__OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, properties::fine_grain>;
+template <typename Word>
+using message_bitmap = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
+                                   properties::fine_grain>;
 
-// coarse grain here raises a HSAIL hardware exception
+template <typename Word>
 using slot_bitmap_coarse =
-    slot_bitmap<__OPENCL_MEMORY_SCOPE_DEVICE, properties::coarse_grain>;
+    slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_DEVICE, properties::coarse_grain>;
 
-template <size_t scope, typename Prop>
+template <typename Word, size_t scope, typename Prop>
 struct slot_bitmap
 {
   using Ty = typename Prop::Ty;
-  using Word = uint64_t;
+
+  // could check the types, expecting uint64_t or uint32_t
+  static_assert((sizeof(Word) == 8) || (sizeof(Word) == 4), "");
+
   constexpr size_t wordBits() { return 8 * sizeof(Word); }
 
-  static_assert(sizeof(uint64_t) == sizeof(_Atomic(uint64_t)), "");
-  static_assert(sizeof(_Atomic(uint64_t) *) == 8, "");
+  static_assert(sizeof(Word) == sizeof(_Atomic(Word)), "");
+  static_assert(sizeof(Word *) == 8, "");
+  static_assert(sizeof(_Atomic(Word) *) == 8, "");
 
   Ty *a;
   static constexpr uint32_t bits_per_slot() { return 1; }
@@ -189,7 +266,7 @@ struct slot_bitmap
     uint32_t w = index_to_element(i);
     Word d = load_word(size, w);
     *loaded = d;
-    return detail::nthbitset64(d, index_to_subindex(i));
+    return bits::nthbitset(d, index_to_subindex(i));
   }
 
   void dump(uint32_t size) const
@@ -225,7 +302,7 @@ struct slot_bitmap
     assert(!detail::nthbitset64(load_word(size, w), subindex));
 
     // or with only the slot set
-    Word mask = detail::setnthbit64((Word)0, subindex);
+    Word mask = bits::setnthbit((Word)0, subindex);
 
     Word before = fetch_or(w, mask);
     assert(!detail::nthbitset64(before, subindex));
@@ -244,10 +321,10 @@ struct slot_bitmap
     assert(i < size);
     uint32_t w = index_to_element(i);
     uint32_t subindex = index_to_subindex(i);
-    assert(detail::nthbitset64(load_word(size, w), subindex));
+    assert(bits::nthbitset64(load_word(size, w), subindex));
 
     // and with everything other than the slot set
-    Word mask = ~detail::setnthbit64((Word)0, subindex);
+    Word mask = ~bits::setnthbit((Word)0, subindex);
 
     Word before = fetch_and(w, mask);
     return before & mask;
@@ -372,7 +449,7 @@ struct lock_bitmap
 
         // can either check the bit is zero, or unconditionally set it and check
         // if this changed the value
-        Word proposed = detail::setnthbit64(d, subindex);
+        Word proposed = bits::setnthbit(d, subindex);
         if (proposed == d)
           {
             *cas_fail_count = *cas_fail_count + local_fail_count;
@@ -413,10 +490,10 @@ struct lock_bitmap
     assert(i < size);
     uint32_t w = index_to_element(i);
     uint32_t subindex = index_to_subindex(i);
-    assert(detail::nthbitset64(load_word(size, w), subindex));
+    assert(bits::nthbitset(load_word(size, w), subindex));
 
     // and with everything other than the slot set
-    Word mask = ~detail::setnthbit64((Word)0, subindex);
+    Word mask = ~bits::setnthbit((Word)0, subindex);
 
     Ty *addr = &a[w];
     __opencl_atomic_fetch_and(addr, mask, __ATOMIC_ACQ_REL,
@@ -543,18 +620,15 @@ struct slot_bytemap
   }
 };
 
-template <bool InitialState, size_t Sscope, typename SProp, size_t Vscope,
-          typename VProp>
+template <bool InitialState, typename Word, size_t Sscope, typename SProp,
+          size_t Vscope, typename VProp>
 void update_visible_from_staging(uint32_t size, uint32_t i,
-                                 slot_bitmap<Sscope, SProp> *staging,
-                                 slot_bitmap<Vscope, VProp> *visible,
+                                 slot_bitmap<Word, Sscope, SProp> *staging,
+                                 slot_bitmap<Word, Vscope, VProp> *visible,
                                  uint64_t *cas_fail_count,
                                  uint64_t *cas_help_count)
 {
   // Write value ~InitialState to slot[i]
-  using Word = typename slot_bitmap<Sscope, SProp>::Word;
-  static_assert(
-      sizeof(Word) == sizeof(typename slot_bitmap<Vscope, VProp>::Word), "");
 
   assert((void *)visible != (void *)staging);
   assert(i < size);
@@ -563,9 +637,9 @@ void update_visible_from_staging(uint32_t size, uint32_t i,
 
   // InitialState locked for staged_release, clear for staged_claim
   assert(InitialState ==
-         detail::nthbitset64(staging->load_word(size, w), subindex));
+         bits::nthbitset(staging->load_word(size, w), subindex));
   assert(InitialState ==
-         detail::nthbitset64(visible->load_word(size, w), subindex));
+         bits::nthbitset(visible->load_word(size, w), subindex));
 
   // (InitialState ? fetch_and : fetch_or) to update staging
   Word staged_result =
@@ -575,8 +649,8 @@ void update_visible_from_staging(uint32_t size, uint32_t i,
 
   // propose a value that could plausibly be in visible. can refactor to drop
   // the arithmetic
-  Word guess = InitialState ? detail::setnthbit64(staged_result, subindex)
-                            : detail::clearnthbit64(staged_result, subindex);
+  Word guess = InitialState ? bits::setnthbit(staged_result, subindex)
+                            : bits::clearnthbit(staged_result, subindex);
 
   // initialise the value with the latest view of staging that is already
   // available
@@ -587,7 +661,7 @@ void update_visible_from_staging(uint32_t size, uint32_t i,
   while (!visible->cas(w, guess, proposed, &guess))
     {
       local_fail_count++;
-      if (!InitialState == detail::nthbitset64(guess, subindex))
+      if (!InitialState == bits::nthbitset(guess, subindex))
         {
           // Cas failed, but another thread has done our work
           local_help_count++;
@@ -597,42 +671,43 @@ void update_visible_from_staging(uint32_t size, uint32_t i,
 
       // Update our view of proposed and try again
       proposed = staging->load_word(size, w);
-      assert(!InitialState == detail::nthbitset64(proposed, subindex));
+      assert(!InitialState == bits::nthbitset(proposed, subindex));
     }
   *cas_fail_count = *cas_fail_count + local_fail_count;
   *cas_help_count = *cas_help_count + local_help_count;
 
   assert(!InitialState ==
-         detail::nthbitset64(visible->load_word(size, w), subindex));
+         bits::nthbitset(visible->load_word(size, w), subindex));
 }
 
-template <size_t Sscope, typename SProp, size_t Vscope, typename VProp>
+template <typename Word, size_t Sscope, typename SProp, size_t Vscope,
+          typename VProp>
 void staged_claim_slot(uint32_t size, uint32_t i,
-                       slot_bitmap<Sscope, SProp> *staging,
-                       slot_bitmap<Vscope, VProp> *visible,
+                       slot_bitmap<Word, Sscope, SProp> *staging,
+                       slot_bitmap<Word, Vscope, VProp> *visible,
                        uint64_t *cas_fail_count, uint64_t *cas_help_count)
 {
   update_visible_from_staging<false>(size, i, staging, visible, cas_fail_count,
                                      cas_help_count);
 }
 
-template <size_t Sscope, typename SProp, size_t Vscope, typename VProp>
+template <typename Word, size_t Sscope, typename SProp, size_t Vscope,
+          typename VProp>
 void staged_release_slot(uint32_t size, uint32_t i,
-                         slot_bitmap<Sscope, SProp> *staging,
-                         slot_bitmap<Vscope, VProp> *visible,
+                         slot_bitmap<Word, Sscope, SProp> *staging,
+                         slot_bitmap<Word, Vscope, VProp> *visible,
                          uint64_t *cas_fail_count, uint64_t *cas_help_count)
 {
   update_visible_from_staging<true>(size, i, staging, visible, cas_fail_count,
                                     cas_help_count);
 }
 
-template <bool InitialState, size_t Sscope, typename SProp>
+template <bool InitialState, typename Word, size_t Sscope, typename SProp>
 void update_visible_from_staging(uint32_t size, uint32_t i,
-                                 slot_bitmap<Sscope, SProp> *staging,
+                                 slot_bitmap<Word, Sscope, SProp> *staging,
                                  slot_bytemap *visible, uint64_t *, uint64_t *)
 {
   // Write value ~InitialState to slot[i]
-  using Word = typename slot_bitmap<Sscope, SProp>::Word;
   static_assert(sizeof(Word) == sizeof(typename slot_bytemap::Word), "");
 
   assert((void *)visible != (void *)staging);
@@ -665,9 +740,9 @@ void update_visible_from_staging(uint32_t size, uint32_t i,
     }
 }
 
-template <size_t Sscope, typename SProp>
+template <typename Word, size_t Sscope, typename SProp>
 void staged_claim_slot(uint32_t size, uint32_t i,
-                       slot_bitmap<Sscope, SProp> *staging,
+                       slot_bitmap<Word, Sscope, SProp> *staging,
                        slot_bytemap *visible, uint64_t *cas_fail_count,
                        uint64_t *cas_help_count)
 {
@@ -675,9 +750,9 @@ void staged_claim_slot(uint32_t size, uint32_t i,
                                      cas_help_count);
 }
 
-template <size_t Sscope, typename SProp>
+template <typename Word, size_t Sscope, typename SProp>
 void staged_release_slot(uint32_t size, uint32_t i,
-                         slot_bitmap<Sscope, SProp> *staging,
+                         slot_bitmap<Word, Sscope, SProp> *staging,
                          slot_bytemap *visible, uint64_t *cas_fail_count,
                          uint64_t *cas_help_count)
 {
