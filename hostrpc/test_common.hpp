@@ -38,14 +38,12 @@ T hsa_allocate_slot_bitmap_data_alloc(hsa_region_t region, size_t size)
   return {m};
 }
 
-inline void hsa_allocate_slot_bitmap_data_free(_Atomic(uint64_t) * d)
+template <typename T>
+void hsa_allocate_slot_bitmap_data_free(T *d)
 {
   hostrpc::hsa_amdgpu::deallocate(static_cast<void *>(d));
 }
-inline void hsa_allocate_slot_bitmap_data_free(_Atomic(uint8_t) * d)
-{
-  hostrpc::hsa_amdgpu::deallocate(static_cast<void *>(d));
-}
+
 }  // namespace
 #endif
 }  // namespace hostrpc

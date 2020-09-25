@@ -12,22 +12,25 @@
 
 struct x64_alloc_deleter
 {
-  void operator()(_Atomic(uint8_t) * d)
+  struct D
   {
-    hostrpc::x64_native::deallocate(static_cast<void *>(d));
-  }
-  void operator()(_Atomic(uint64_t) * d)
+    void operator()(void *d) { hostrpc::x64_native::deallocate(d); }
+  };
+
+  using UPtr = std::unique_ptr<void, D>;
+
+  template <typename T>
+  void operator()(T *d)
   {
-    hostrpc::x64_native::deallocate(static_cast<void *>(d));
+    s.emplace_back(UPtr{static_cast<void *>(d)});
   }
+
+  std::list<UPtr> s;
 };
 
 template <typename T>
-static T x64_alloc(
-    size_t size,
-    std::list<std::unique_ptr<typename T::Ty, x64_alloc_deleter>> *store)
+static T x64_alloc(size_t size, x64_alloc_deleter *store)
 {
-  using DelTy = std::unique_ptr<typename T::Ty, x64_alloc_deleter>;
   constexpr size_t bps = T::bits_per_slot();
   static_assert(bps == 1 || bps == 8, "");
   assert(size % 64 == 0 && "Size must be a multiple of 64");
@@ -35,7 +38,7 @@ static T x64_alloc(
   void *memory = hostrpc::x64_native::allocate(align, size * bps);
   typename T::Ty *m =
       hostrpc::careful_array_cast<typename T::Ty>(memory, size * bps);
-  store->emplace_back(DelTy{m});
+  (*store)(m);
   return {m};
 }
 
@@ -110,8 +113,7 @@ TEST_CASE("set up single word system")
 
   using SZ = hostrpc::size_compiletime<N>;
 
-  std::list<std::unique_ptr<_Atomic(uint8_t), x64_alloc_deleter>> store8;
-  std::list<std::unique_ptr<_Atomic(uint64_t), x64_alloc_deleter>> store64;
+  x64_alloc_deleter store;
 
   hostrpc::copy_functor_memcpy_pull cp;
 
@@ -120,12 +122,12 @@ TEST_CASE("set up single word system")
   using server_type =
       server_impl<SZ, decltype(cp), operate, clear, hostrpc::default_stepper>;
 
-  auto send = x64_alloc<client_type::outbox_t>(N, &store8);
-  auto recv = x64_alloc<client_type::inbox_t>(N, &store64);
-  auto client_active = x64_alloc<lock_bitmap>(N, &store64);
-  auto client_staging = x64_alloc<client_type::staging_t>(N, &store64);
-  auto server_active = x64_alloc<lock_bitmap>(N, &store64);
-  auto server_staging = x64_alloc<server_type::staging_t>(N, &store64);
+  auto send = x64_alloc<client_type::outbox_t>(N, &store);
+  auto recv = x64_alloc<client_type::inbox_t>(N, &store);
+  auto client_active = x64_alloc<lock_bitmap>(N, &store);
+  auto client_staging = x64_alloc<client_type::staging_t>(N, &store);
+  auto server_active = x64_alloc<lock_bitmap>(N, &store);
+  auto server_staging = x64_alloc<server_type::staging_t>(N, &store);
 
   const uint64_t calls_planned = 1024;
   _Atomic(uint64_t) calls_launched(0);

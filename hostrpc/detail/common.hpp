@@ -455,11 +455,21 @@ struct lock_bitmap
 
 struct slot_bytemap
 {
+#define SLOT_BYTEMAP_ATOMIC 0
+
   // assumes sizeof a is a multiple of 64, may be worth passing size to the
   // constructor and asserting
+#if SLOT_BYTEMAP_ATOMIC
   using Ty = __attribute__((aligned(64))) _Atomic(uint8_t);
+  using WordTy = __attribute__((aligned(64)))
+  __attribute__((may_alias)) _Atomic(uint64_t);
   static_assert(sizeof(uint8_t) == sizeof(_Atomic(uint8_t)), "");
   static_assert(sizeof(_Atomic(uint8_t)) == 1, "");
+#else
+  using Ty = __attribute__((aligned(64))) uint8_t;
+  using WordTy =
+      __attribute__((aligned(64))) __attribute__((may_alias)) uint64_t;
+#endif
 
   Ty *a;
   static constexpr size_t bits_per_slot() { return 8; }
@@ -497,8 +507,12 @@ struct slot_bytemap
   {
     (void)size;
     assert(i < size);
+#if SLOT_BYTEMAP_ATOMIC
     __opencl_atomic_store(&a[i], v, __ATOMIC_RELAXED,
                           __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+#else
+    a[i] = v;
+#endif
   }
 
   uint8_t pack_word(uint64_t x) const
@@ -516,13 +530,12 @@ struct slot_bytemap
 
   uint64_t pack_words(Ty *data) const
   {
-    typedef __attribute__((aligned(64)))
-    __attribute__((may_alias)) _Atomic(uint64_t) aligned_word;
-    aligned_word *words = (aligned_word *)data;
+    WordTy *words = (WordTy *)data;
     uint64_t res = 0;
     for (unsigned i = 0; i < 8; i++)
       {
-        res |= ((uint64_t)pack_word(words[i]) & UINT8_C(0xff)) << 8 * i;
+        WordTy w = words[i];  // should probably be a relaxed load
+        res |= ((uint64_t)pack_word(w) & UINT8_C(0xff)) << 8 * i;
       }
     return res;
   }
