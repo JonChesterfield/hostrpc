@@ -277,7 +277,7 @@ class hostcall_impl
   {
     _Atomic(uint32_t) *control = &thread_killer;
     hostrpc::hostcall_interface_t::server_t *server = &servers[queue_id];
-    uint64_t *ql = &queue_loc[queue_id];
+    uint32_t *ql = &queue_loc[queue_id];
     // TODO. Can't actually use std::thread because the constructor throws.
     threads.emplace_back([control, server, ql]() {
       for (;;)
@@ -303,7 +303,7 @@ class hostcall_impl
   // heap allocated, may not need the servers() instance
   std::vector<hostrpc::hostcall_interface_t::server_t> servers;
   std::vector<hostrpc::hostcall_interface_t *> stored_pairs;
-  std::vector<uint64_t> queue_loc;
+  std::vector<uint32_t> queue_loc;
 
   _Atomic(uint32_t) thread_killer = 0;
   std::vector<std::thread> threads;

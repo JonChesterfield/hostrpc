@@ -36,13 +36,13 @@ namespace server
 template <typename T>
 struct interface
 {
-  bool handle(void *x, uint64_t *location_arg) noexcept
+  bool handle(void *x, uint32_t *location_arg) noexcept
   {
     return derived().handle_impl(x, location_arg);
   }
   bool handle(void *x) noexcept
   {
-    uint64_t loc;
+    uint32_t loc;
     return handle(x, &loc);
   }
 
@@ -86,7 +86,7 @@ struct hostcall_interface_t
     using state_t = hostrpc::storage<48, 8>;
 
    private:
-    bool handle_impl(void *, uint64_t *);
+    bool handle_impl(void *, uint32_t *);
     state_t state;
   };
 

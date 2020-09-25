@@ -48,6 +48,10 @@ struct client_impl : public SZ, public Counter
   using inbox_t = message_bitmap;
   using outbox_t = message_bitmap;
   using staging_t = slot_bitmap_coarse;
+  using Word = uint64_t;
+  constexpr size_t wordBits() const { return 8 * sizeof(Word); }
+  uint32_t size() const { return SZ::N(); }
+  uint32_t words() const { return size() / wordBits(); }
 
   page_t* remote_buffer;
   page_t* local_buffer;
@@ -127,9 +131,6 @@ struct client_impl : public SZ, public Counter
 
   client_counters get_counters() { return Counter::get(); }
 
-  size_t size() { return SZ::N(); }
-  size_t words() { return size() / 64; }
-
   // Returns true if it successfully launched the task
   template <bool have_continuation>
   bool rpc_invoke(void* fill_application_state,
@@ -137,8 +138,8 @@ struct client_impl : public SZ, public Counter
   {
     step(__LINE__, fill_application_state, use_application_state);
 
-    const size_t size = this->size();
-    const size_t words = size / 64;
+    const uint32_t size = this->size();
+    const uint32_t words = this->words();
     // 0b111 is posted request, waited for it, got it
     // 0b110 is posted request, nothing waited, got one
     // 0b101 is got a result, don't need it, only spun up a thread for cleanup
@@ -146,7 +147,7 @@ struct client_impl : public SZ, public Counter
 
     step(__LINE__, fill_application_state, use_application_state);
 
-    size_t slot = SIZE_MAX;
+    uint32_t slot = UINT32_MAX;
     // tries each word in sequnce. A cas failing suggests contention, in which
     // case try the next word instead of the next slot
     // may be worth supporting non-zero starting word for cache locality effects
@@ -163,17 +164,16 @@ struct client_impl : public SZ, public Counter
 #if CLIENT_OFFSET
     const uint32_t wstart = platform::client_start_slot();
     const uint32_t wend = wstart + words;
-    for (uint64_t wi = wstart; wi != wend; wi++)
+    for (uint32_t wi = wstart; wi != wend; wi++)
       {
-        uint64_t w =
+        uint32_t w =
             wi % words;  // modulo may hurt here, and probably want 32 bit iv
 #else
-    for (uint64_t w = 0; w < words; w++)
+    for (uint32_t w = 0; w < words; w++)
       {
 #endif
-        uint64_t active_word;
         slot = find_candidate_client_slot(w);
-        if (slot == SIZE_MAX)
+        if (slot == UINT32_MAX)
           {
             // no slot
             Counter::no_candidate_slot();
@@ -181,18 +181,16 @@ struct client_impl : public SZ, public Counter
         else
           {
             uint64_t cas_fail_count = 0;
-            if (active.try_claim_empty_slot(size, slot, &active_word,
-                                            &cas_fail_count))
+            if (active.try_claim_empty_slot(size, slot, &cas_fail_count))
               {
                 // Success, got the lock.
-                assert(active_word != 0);
                 Counter::cas_lock_fail(cas_fail_count);
                 bool r = rpc_invoke_given_slot<have_continuation>(
                     fill_application_state, use_application_state, slot);
 
                 // wave release slot
                 step(__LINE__, fill_application_state, use_application_state);
-                platform::critical<uint64_t>([&]() {
+                platform::critical<uint32_t>([&]() {
                   active.release_slot(size, slot);
                   return 0;
                 });
@@ -214,38 +212,38 @@ struct client_impl : public SZ, public Counter
   }
 
  private:
-  size_t find_candidate_client_slot(uint64_t w)
+  uint32_t find_candidate_client_slot(uint32_t w)
   {
-    uint64_t i = inbox.load_word(size(), w);
-    uint64_t o = staging.load_word(size(), w);
-    uint64_t a = active.load_word(size(), w);
+    Word i = inbox.load_word(size(), w);
+    Word o = staging.load_word(size(), w);
+    Word a = active.load_word(size(), w);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
     // inbox == outbox == 0 => available for use
-    uint64_t available = ~i & ~o & ~a;
+    Word available = ~i & ~o & ~a;
 
     // 1 0 => garbage waiting on server
     // 1 1 => garbage that client can act on
     // Take those that client can act on and are not locked
-    uint64_t garbage_todo = i & o & ~a;
+    Word garbage_todo = i & o & ~a;
 
     // could also let through inbox == 1 on the basis that
     // the client may have
 
-    uint64_t candidate = available | garbage_todo;
+    Word candidate = available | garbage_todo;
     if (candidate != 0)
       {
-        return 64 * w + detail::ctz64(candidate);
+        return wordBits() * w + detail::ctz64(candidate);
       }
 
-    return SIZE_MAX;
+    return UINT32_MAX;
   }
 
-  void dump_word(size_t size, uint64_t word)
+  void dump_word(uint32_t size, Word word)
   {
-    uint64_t i = inbox.load_word(size, word);
-    uint64_t o = staging.load_word(size, word);
-    uint64_t a = active.load_word(size, word);
+    Word i = inbox.load_word(size, word);
+    Word o = staging.load_word(size, word);
+    Word a = active.load_word(size, word);
     (void)(i + o + a);
     printf("%lu %lu %lu\n", i, o, a);
   }
@@ -254,15 +252,16 @@ struct client_impl : public SZ, public Counter
   // If there's no continuation, shouldn't require a use_application_state
   template <bool have_continuation>
   bool rpc_invoke_given_slot(void* fill_application_state,
-                             void* use_application_state, size_t slot) noexcept
+                             void* use_application_state,
+                             uint32_t slot) noexcept
   {
-    assert(slot != SIZE_MAX);
-    const uint64_t element = index_to_element(slot);
-    const uint64_t subindex = index_to_subindex(slot);
+    assert(slot != UINT32_MAX);
+    const uint32_t element = index_to_element(slot);
+    const uint32_t subindex = index_to_subindex(slot);
 
-    const size_t size = this->size();
-    uint64_t i = inbox.load_word(size, element);
-    uint64_t o = staging.load_word(size, element);
+    const uint32_t size = this->size();
+    Word i = inbox.load_word(size, element);
+    Word o = staging.load_word(size, element);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
     // Called with a lock. The corresponding slot can be:
@@ -275,9 +274,9 @@ struct client_impl : public SZ, public Counter
     // That this lock has been taken means no other thread is
     // waiting for that result
 
-    uint64_t this_slot = detail::setnthbit64(0, subindex);
-    uint64_t garbage_todo = i & o & this_slot;
-    uint64_t available = ~i & ~o & this_slot;
+    Word this_slot = detail::setnthbit64((Word)0, subindex);
+    Word garbage_todo = i & o & this_slot;
+    Word available = ~i & ~o & this_slot;
 
     assert((garbage_todo & available) == 0);  // disjoint
 
@@ -286,7 +285,7 @@ struct client_impl : public SZ, public Counter
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
         uint64_t cas_fail_count = 0;
         uint64_t cas_help_count = 0;
-        platform::critical<uint64_t>([&]() {
+        platform::critical<uint32_t>([&]() {
           staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
                               &cas_help_count);
           return 0;
@@ -322,7 +321,7 @@ struct client_impl : public SZ, public Counter
       __c11_atomic_thread_fence(__ATOMIC_RELEASE);
       uint64_t cas_fail_count = 0;
       uint64_t cas_help_count = 0;
-      platform::critical<uint64_t>([&]() {
+      platform::critical<uint32_t>([&]() {
         staged_claim_slot(size, slot, &staging, &outbox, &cas_fail_count,
                           &cas_help_count);
         return 0;
@@ -344,7 +343,7 @@ struct client_impl : public SZ, public Counter
     if (have_continuation)
       {
         // wait for H1, result available
-        uint64_t loaded = 0;
+        Word loaded = 0;
 
         while (true)
           {
@@ -398,7 +397,7 @@ struct client_impl : public SZ, public Counter
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
         uint64_t cas_fail_count = 0;
         uint64_t cas_help_count = 0;
-        platform::critical<uint64_t>([&]() {
+        platform::critical<uint32_t>([&]() {
           staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
                               &cas_help_count);
           return 0;

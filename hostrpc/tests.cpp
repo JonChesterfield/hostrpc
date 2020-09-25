@@ -178,8 +178,7 @@ TEST_CASE("set up single word system")
                         &server_buffer[0]};
 
       void *application_state = static_cast<void *>(&stepper_state);
-      uint64_t loc_arg = 0;
-      (void)loc_arg;
+      uint32_t loc_arg = 0;
       for (;;)
         {
           if (sv.rpc_handle(application_state, &loc_arg))

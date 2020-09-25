@@ -288,7 +288,7 @@ bool hostcall_interface_t::client_t::invoke_async_impl(void *f, void *u)
 }
 
 bool hostcall_interface_t::server_t::handle_impl(void *application_state,
-                                                 uint64_t *l)
+                                                 uint32_t *l)
 {
 #if defined(__x86_64__)
   auto *se = state.open<ty::server_type>();

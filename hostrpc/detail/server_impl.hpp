@@ -34,6 +34,11 @@ struct server_impl : public SZ
   using inbox_t = message_bitmap;
   using outbox_t = message_bitmap;
   using staging_t = slot_bitmap_coarse;
+  using Word = uint64_t;
+  constexpr size_t wordBits() const { return 8 * sizeof(Word); }
+  // may want to rename this, number-slots?
+  uint32_t size() const { return SZ::N(); }
+  uint32_t words() const { return size() / wordBits(); }
 
   page_t* remote_buffer;
   page_t* local_buffer;
@@ -70,95 +75,88 @@ struct server_impl : public SZ
 
   void step(int x, void* y) { Step::call(x, y); }
 
-  void dump_word(size_t size, uint64_t word)
+  void dump_word(uint32_t size, Word word)
   {
-    uint64_t i = inbox.load_word(size, word);
-    uint64_t o = staging.load_word(size, word);
-    uint64_t a = active.load_word(size, word);
+    Word i = inbox.load_word(size, word);
+    Word o = staging.load_word(size, word);
+    Word a = active.load_word(size, word);
     (void)(i + o + a);
     printf("%lu %lu %lu\n", i, o, a);
   }
 
-  size_t find_candidate_server_available_bitmap(uint64_t w, uint64_t mask)
+  Word find_candidate_server_available_bitmap(uint32_t w, Word mask)
   {
-    const size_t size = this->size();
-    uint64_t i = inbox.load_word(size, w);
-    uint64_t o = staging.load_word(size, w);
-    uint64_t a = active.load_word(size, w);
+    const uint32_t size = this->size();
+    Word i = inbox.load_word(size, w);
+    Word o = staging.load_word(size, w);
+    Word a = active.load_word(size, w);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
-    uint64_t work = i & ~o;
-    uint64_t garbage = ~i & o;
-    uint64_t todo = work | garbage;
-    uint64_t available = todo & ~a & mask;
+    Word work = i & ~o;
+    Word garbage = ~i & o;
+    Word todo = work | garbage;
+    Word available = todo & ~a & mask;
     return available;
   }
 
-  size_t find_candidate_server_slot(uint64_t w, uint64_t mask)
+  uint32_t find_candidate_server_slot(uint32_t w, Word mask)
   {
-    uint64_t available = find_candidate_server_available_bitmap(w, mask);
+    Word available = find_candidate_server_available_bitmap(w, mask);
     if (available != 0)
       {
-        return 64 * w + detail::ctz64(available);
+        return wordBits() * w + detail::ctz64(available);
       }
-    return SIZE_MAX;
+    return UINT32_MAX;
   }
-
-  size_t words() { return size() / 64; }
-
-  // may want to rename this, number-slots?
-  size_t size() { return SZ::N(); }
 
   // Returns true if it handled one task. Does not attempt multiple tasks
   __attribute__((always_inline)) bool rpc_handle(
       void* application_state) noexcept
   {
-    uint64_t location = 0;
+    uint32_t location = 0;
     return rpc_handle(application_state, &location);
   }
 
   // location != NULL, used to round robin across slots
   __attribute__((always_inline)) bool rpc_handle(
-      void* application_state, uint64_t* location_arg) noexcept
+      void* application_state, uint32_t* location_arg) noexcept
   {
     step(__LINE__, application_state);
-    const size_t size = this->size();
-    const size_t words = size / 64;
+    const uint32_t size = this->size();
+    const uint32_t words = this->words();
 
     step(__LINE__, application_state);
 
-    const uint64_t location = *location_arg % size;
-    const uint64_t element = index_to_element(location);
+    const uint32_t location = *location_arg % size;
+    const uint32_t element = index_to_element(location);
 
     // skip bits in the first word <= subindex
-    uint64_t mask = detail::setbitsrange64(index_to_subindex(location), 63);
+    Word mask =
+        detail::setbitsrange64(index_to_subindex(location), wordBits() - 1);
 
     // Tries a few bits in element, then all bits in all the other words, then
     // all bits in element. This overshoots somewhat but ensures that all slots
     // are checked. Could truncate the last word to check each slot exactly once
-    for (uint64_t wc = 0; wc < words + 1; wc++)
+    for (uint32_t wc = 0; wc < words + 1; wc++)
       {
-        uint64_t w = (element + wc) % words;
-        uint64_t available = find_candidate_server_available_bitmap(w, mask);
+        uint32_t w = (element + wc) % words;
+        Word available = find_candidate_server_available_bitmap(w, mask);
         while (available != 0)
           {
-            uint64_t idx = detail::ctz64(available);
+            uint32_t idx = detail::ctz64(available);
             assert(detail::nthbitset64(available, idx));
-            uint64_t slot = 64 * w + idx;
-            uint64_t active_word;
+            uint32_t slot = wordBits() * w + idx;
             uint64_t cas_fail_count = 0;
-            if (active.try_claim_empty_slot(size, slot, &active_word,
-                                            &cas_fail_count))
+            if (active.try_claim_empty_slot(size, slot, &cas_fail_count))
               {
                 // Success, got the lock. Aim location_arg at next slot
-                assert(active_word != 0);
                 *location_arg = slot + 1;
 
                 bool r = rpc_handle_given_slot(application_state, slot);
 
                 step(__LINE__, application_state);
 
-                platform::critical<uint64_t>([&]() {
+                platform::critical<uint32_t>([&]() {
                   active.release_slot(size, slot);
                   return 0;
                 });
@@ -170,7 +168,7 @@ struct server_impl : public SZ
             available = detail::clearnthbit64(available, idx);
           }
 
-        mask = UINT64_MAX;
+        mask = ~((Word)0);
       }
 
     // Nothing hit, may as well go from the same location on the next call
@@ -180,22 +178,22 @@ struct server_impl : public SZ
 
  private:
   __attribute__((always_inline)) bool rpc_handle_given_slot(
-      void* application_state, size_t slot)
+      void* application_state, uint32_t slot)
   {
     assert(slot != SIZE_MAX);
 
-    const uint64_t element = index_to_element(slot);
-    const uint64_t subindex = index_to_subindex(slot);
+    const uint32_t element = index_to_element(slot);
+    const uint32_t subindex = index_to_subindex(slot);
 
     auto lock_held = [&]() -> bool {
       return detail::nthbitset64(active.load_word(size(), element), subindex);
     };
     (void)lock_held;
 
-    const size_t size = this->size();
+    const uint32_t size = this->size();
 
-    uint64_t i = inbox.load_word(size, element);
-    uint64_t o = staging.load_word(size, element);
+    Word i = inbox.load_word(size, element);
+    Word o = staging.load_word(size, element);
     __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
 
     // Called with a lock. The corresponding slot can be:
@@ -205,9 +203,9 @@ struct server_impl : public SZ
     //      1      0     work    work       1
     //      1      1  waiting    none       -
 
-    uint64_t this_slot = detail::setnthbit64(0, subindex);
-    uint64_t work_todo = (i & ~o) & this_slot;
-    uint64_t garbage_todo = (~i & o) & this_slot;
+    Word this_slot = detail::setnthbit64(0, subindex);
+    Word work_todo = (i & ~o) & this_slot;
+    Word garbage_todo = (~i & o) & this_slot;
 
     assert((work_todo & garbage_todo) == 0);  // disjoint
     assert(lock_held());
@@ -226,7 +224,7 @@ struct server_impl : public SZ
                                          &local_buffer[slot]);
 
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-        platform::critical<uint64_t>([&]() {
+        platform::critical<uint32_t>([&]() {
           uint64_t cas_fail_count;
           uint64_t cas_help_count;
           staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
@@ -258,7 +256,7 @@ struct server_impl : public SZ
     // publish result
     {
       __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-      platform::critical<uint64_t>([&]() {
+      platform::critical<uint32_t>([&]() {
         uint64_t cas_fail_count = 0;
         uint64_t cas_help_count = 0;
         staged_claim_slot(size, slot, &staging, &outbox, &cas_fail_count,

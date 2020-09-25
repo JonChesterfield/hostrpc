@@ -164,11 +164,14 @@ template <size_t scope, typename Prop>
 struct slot_bitmap
 {
   using Ty = typename Prop::Ty;
+  using Word = uint64_t;
+  constexpr size_t wordBits() { return 8 * sizeof(Word); }
+
   static_assert(sizeof(uint64_t) == sizeof(_Atomic(uint64_t)), "");
   static_assert(sizeof(_Atomic(uint64_t) *) == 8, "");
 
   Ty *a;
-  static constexpr size_t bits_per_slot() { return 1; }
+  static constexpr uint32_t bits_per_slot() { return 1; }
   slot_bitmap() : a(nullptr) {}
   slot_bitmap(Ty *d) : a(d)
   {
@@ -181,83 +184,83 @@ struct slot_bitmap
   ~slot_bitmap() {}
   Ty *data() { return a; }
 
-  bool operator()(size_t size, size_t i, uint64_t *loaded) const
+  bool operator()(uint32_t size, uint32_t i, Word *loaded) const
   {
-    size_t w = index_to_element(i);
-    uint64_t d = load_word(size, w);
+    uint32_t w = index_to_element(i);
+    Word d = load_word(size, w);
     *loaded = d;
     return detail::nthbitset64(d, index_to_subindex(i));
   }
 
-  void dump(size_t size) const
+  void dump(uint32_t size) const
   {
-    uint64_t loaded = 0;
+    Word loaded = 0;
     (void)loaded;
-    uint64_t w = size / 64;
+    uint32_t w = size / wordBits();
     printf("Size %lu / words %lu\n", size, w);
-    for (uint64_t i = 0; i < w; i++)
+    for (uint32_t i = 0; i < w; i++)
       {
         printf("[%2lu]:", i);
-        for (uint64_t j = 0; j < 64; j++)
+        for (uint32_t j = 0; j < wordBits(); j++)
           {
             if (j % 8 == 0)
               {
                 printf(" ");
               }
-            printf("%c",
-                   this->operator()(size, 64 * i + j, &loaded) ? '1' : '0');
+            printf("%c", this->operator()(size, wordBits() * i + j, &loaded)
+                             ? '1'
+                             : '0');
           }
         printf("\n");
       }
   }
 
   // assumes slot available
-  uint64_t claim_slot_returning_updated_word(size_t size, size_t i)
+  Word claim_slot_returning_updated_word(uint32_t size, uint32_t i)
   {
     (void)size;
     assert(i < size);
-    size_t w = index_to_element(i);
-    uint64_t subindex = index_to_subindex(i);
+    uint32_t w = index_to_element(i);
+    uint32_t subindex = index_to_subindex(i);
     assert(!detail::nthbitset64(load_word(size, w), subindex));
 
     // or with only the slot set
-    uint64_t mask = detail::setnthbit64(0, subindex);
+    Word mask = detail::setnthbit64((Word)0, subindex);
 
-    uint64_t before = fetch_or(w, mask);
+    Word before = fetch_or(w, mask);
     assert(!detail::nthbitset64(before, subindex));
     return before | mask;
   }
 
   // assumes slot taken
-  void release_slot(size_t size, size_t i)
+  void release_slot(uint32_t size, uint32_t i)
   {
     release_slot_returning_updated_word(size, i);
   }
 
-  uint64_t release_slot_returning_updated_word(size_t size, size_t i)
+  Word release_slot_returning_updated_word(uint32_t size, uint32_t i)
   {
     (void)size;
     assert(i < size);
-    size_t w = index_to_element(i);
-    uint64_t subindex = index_to_subindex(i);
+    uint32_t w = index_to_element(i);
+    uint32_t subindex = index_to_subindex(i);
     assert(detail::nthbitset64(load_word(size, w), subindex));
 
     // and with everything other than the slot set
-    uint64_t mask = ~detail::setnthbit64(0, subindex);
+    Word mask = ~detail::setnthbit64((Word)0, subindex);
 
-    uint64_t before = fetch_and(w, mask);
+    Word before = fetch_and(w, mask);
     return before & mask;
   }
 
-  uint64_t load_word(size_t size, size_t w) const
+  Word load_word(uint32_t size, uint32_t w) const
   {
     (void)size;
-    assert(w < (size / 64));
+    assert(w < (size / (8 * sizeof(Word))));
     return __opencl_atomic_load(&a[w], __ATOMIC_RELAXED, scope);
   }
 
-  bool cas(uint64_t element, uint64_t expect, uint64_t replace,
-           uint64_t *loaded)
+  bool cas(Word element, Word expect, Word replace, Word *loaded)
   {
     Ty *addr = &a[element];
 
@@ -279,10 +282,9 @@ struct slot_bitmap
   // these are used on memory visible fromi all svm devices
 
  private:
-  uint64_t fetch_and(uint64_t element, uint64_t mask)
+  Word fetch_and(uint32_t element, Word mask)
   {
     Ty *addr = &a[element];
-
     if (Prop::hasFetchOp())
       {
         // This seems to work on amdgcn, but only with acquire. acq/rel fails
@@ -292,11 +294,11 @@ struct slot_bitmap
       {
         // load and atomic cas have similar cost across pcie, may be faster to
         // use a (usually wrong) initial guess instead of a load
-        uint64_t current = __opencl_atomic_load(
+        Word current = __opencl_atomic_load(
             addr, __ATOMIC_RELAXED, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
         while (1)
           {
-            uint64_t replace = current & mask;
+            Word replace = current & mask;
 
             bool r = __opencl_atomic_compare_exchange_weak(
                 addr, &current, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED,
@@ -310,21 +312,20 @@ struct slot_bitmap
       }
   }
 
-  uint64_t fetch_or(uint64_t element, uint64_t mask)
+  Word fetch_or(uint32_t element, Word mask)
   {
     Ty *addr = &a[element];
-
     if (Prop::hasFetchOp())
       {
         return __opencl_atomic_fetch_or(addr, mask, __ATOMIC_ACQ_REL, scope);
       }
     else
       {
-        uint64_t current = __opencl_atomic_load(
+        Word current = __opencl_atomic_load(
             addr, __ATOMIC_RELAXED, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
         while (1)
           {
-            uint64_t replace = current | mask;
+            Word replace = current | mask;
 
             bool r = __opencl_atomic_compare_exchange_weak(
                 addr, &current, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED,
@@ -341,6 +342,7 @@ struct slot_bitmap
 struct lock_bitmap
 {
   using Ty = typename properties::coarse_grain::Ty;
+  using Word = uint64_t;
   static_assert(sizeof(uint64_t) == sizeof(_Atomic(uint64_t)), "");
   static_assert(sizeof(_Atomic(uint64_t) *) == 8, "");
   Ty *a;
@@ -354,14 +356,13 @@ struct lock_bitmap
 
   // cas, true on success
   // on return true, loaded contains active[w]
-  bool try_claim_empty_slot(size_t size, size_t i, uint64_t *loaded,
-                            uint64_t *cas_fail_count)
+  bool try_claim_empty_slot(uint32_t size, uint32_t i, uint64_t *cas_fail_count)
   {
     assert(i < size);
-    size_t w = index_to_element(i);
-    uint64_t subindex = index_to_subindex(i);
+    uint32_t w = index_to_element(i);
+    uint32_t subindex = index_to_subindex(i);
 
-    uint64_t d = load_word(size, w);
+    Word d = load_word(size, w);
 
     // printf("Slot %lu, w %lu, subindex %lu, d %lu\n", i, w, subindex, d);
     uint64_t local_fail_count = 0;
@@ -371,7 +372,7 @@ struct lock_bitmap
 
         // can either check the bit is zero, or unconditionally set it and check
         // if this changed the value
-        uint64_t proposed = detail::setnthbit64(d, subindex);
+        Word proposed = detail::setnthbit64(d, subindex);
         if (proposed == d)
           {
             *cas_fail_count = *cas_fail_count + local_fail_count;
@@ -380,8 +381,7 @@ struct lock_bitmap
 
         // If the bit is known zero, can use fetch_or to set it
 
-        uint64_t unexpected_contents;
-
+        Word unexpected_contents;
         uint32_t r = platform::critical<uint32_t>(
             [&]() { return cas(w, d, proposed, &unexpected_contents); });
 
@@ -390,7 +390,6 @@ struct lock_bitmap
         if (r)
           {
             // success, got the lock, and active word was set to proposed
-            *loaded = proposed;
             *cas_fail_count = *cas_fail_count + local_fail_count;
             return true;
           }
@@ -408,33 +407,32 @@ struct lock_bitmap
   }
 
   // assumes slot taken
-  void release_slot(size_t size, size_t i)
+  void release_slot(uint32_t size, uint32_t i)
   {
     (void)size;
     assert(i < size);
-    size_t w = index_to_element(i);
-    uint64_t subindex = index_to_subindex(i);
+    uint32_t w = index_to_element(i);
+    uint32_t subindex = index_to_subindex(i);
     assert(detail::nthbitset64(load_word(size, w), subindex));
 
     // and with everything other than the slot set
-    uint64_t mask = ~detail::setnthbit64(0, subindex);
+    Word mask = ~detail::setnthbit64((Word)0, subindex);
 
     Ty *addr = &a[w];
     __opencl_atomic_fetch_and(addr, mask, __ATOMIC_ACQ_REL,
                               __OPENCL_MEMORY_SCOPE_DEVICE);
   }
 
-  uint64_t load_word(size_t size, size_t w) const
+  Word load_word(uint32_t size, uint32_t w) const
   {
     (void)size;
-    assert(w < (size / 64));
+    assert(w < (size / (8 * sizeof(Word))));
     return __opencl_atomic_load(&a[w], __ATOMIC_RELAXED,
                                 __OPENCL_MEMORY_SCOPE_DEVICE);
   }
 
  private:
-  bool cas(uint64_t element, uint64_t expect, uint64_t replace,
-           uint64_t *loaded)
+  bool cas(uint32_t element, Word expect, Word replace, Word *loaded)
   {
     Ty *addr = &a[element];
 
@@ -461,15 +459,18 @@ struct slot_bytemap
   // constructor and asserting
 #if SLOT_BYTEMAP_ATOMIC
   using Ty = __attribute__((aligned(64))) _Atomic(uint8_t);
-  using WordTy = __attribute__((aligned(64)))
+  using AliasingWordTy = __attribute__((aligned(64)))
   __attribute__((may_alias)) _Atomic(uint64_t);
   static_assert(sizeof(uint8_t) == sizeof(_Atomic(uint8_t)), "");
   static_assert(sizeof(_Atomic(uint8_t)) == 1, "");
 #else
   using Ty = __attribute__((aligned(64))) uint8_t;
-  using WordTy =
+  using AliasingWordTy =
       __attribute__((aligned(64))) __attribute__((may_alias)) uint64_t;
 #endif
+
+  using Word = uint64_t;
+  constexpr size_t wordBits() const { return 8 * sizeof(Word); }
 
   Ty *a;
   static constexpr size_t bits_per_slot() { return 8; }
@@ -486,24 +487,24 @@ struct slot_bytemap
   Ty *data() { return a; }
 
   // assumes slot available
-  void claim_slot(size_t size, size_t i) { write_byte<1>(size, i); }
+  void claim_slot(uint32_t size, uint32_t i) { write_byte<1>(size, i); }
 
   // assumes slot taken
-  void release_slot(size_t size, size_t i) { write_byte<0>(size, i); }
+  void release_slot(uint32_t size, uint32_t i) { write_byte<0>(size, i); }
 
-  uint64_t load_word(size_t size, size_t w) const
+  Word load_word(uint32_t size, uint32_t w) const
   {
     (void)size;
     (void)w;
-    assert(w < (size / 64));
-    size_t i = 64 * w;
+    assert(w < (size / wordBits()));
+    uint32_t i = w * wordBits();
     assert(i < size);
     return pack_words(&a[i]);
   }
 
  private:
   template <uint8_t v>
-  void write_byte(size_t size, size_t i)
+  void write_byte(uint32_t size, uint32_t i)
   {
     (void)size;
     assert(i < size);
@@ -530,11 +531,12 @@ struct slot_bytemap
 
   uint64_t pack_words(Ty *data) const
   {
-    WordTy *words = (WordTy *)data;
+    static_assert(sizeof(Word) == 8, "");
+    AliasingWordTy *words = (AliasingWordTy *)data;
     uint64_t res = 0;
     for (unsigned i = 0; i < 8; i++)
       {
-        WordTy w = words[i];  // should probably be a relaxed load
+        AliasingWordTy w = words[i];  // should probably be a relaxed load
         res |= ((uint64_t)pack_word(w) & UINT8_C(0xff)) << 8 * i;
       }
     return res;
@@ -543,18 +545,21 @@ struct slot_bytemap
 
 template <bool InitialState, size_t Sscope, typename SProp, size_t Vscope,
           typename VProp>
-void update_visible_from_staging(size_t size, size_t i,
+void update_visible_from_staging(uint32_t size, uint32_t i,
                                  slot_bitmap<Sscope, SProp> *staging,
                                  slot_bitmap<Vscope, VProp> *visible,
                                  uint64_t *cas_fail_count,
                                  uint64_t *cas_help_count)
 {
   // Write value ~InitialState to slot[i]
+  using Word = typename slot_bitmap<Sscope, SProp>::Word;
+  static_assert(
+      sizeof(Word) == sizeof(typename slot_bitmap<Vscope, VProp>::Word), "");
 
   assert((void *)visible != (void *)staging);
   assert(i < size);
-  const size_t w = index_to_element(i);
-  const uint64_t subindex = index_to_subindex(i);
+  const uint32_t w = index_to_element(i);
+  const uint32_t subindex = index_to_subindex(i);
 
   // InitialState locked for staged_release, clear for staged_claim
   assert(InitialState ==
@@ -563,20 +568,19 @@ void update_visible_from_staging(size_t size, size_t i,
          detail::nthbitset64(visible->load_word(size, w), subindex));
 
   // (InitialState ? fetch_and : fetch_or) to update staging
-  uint64_t staged_result =
+  Word staged_result =
       InitialState ? staging->release_slot_returning_updated_word(size, i)
                    : staging->claim_slot_returning_updated_word(size, i);
   assert(!InitialState == detail::nthbitset64(staged_result, subindex));
 
   // propose a value that could plausibly be in visible. can refactor to drop
   // the arithmetic
-  uint64_t guess = InitialState
-                       ? detail::setnthbit64(staged_result, subindex)
-                       : detail::clearnthbit64(staged_result, subindex);
+  Word guess = InitialState ? detail::setnthbit64(staged_result, subindex)
+                            : detail::clearnthbit64(staged_result, subindex);
 
   // initialise the value with the latest view of staging that is already
   // available
-  uint64_t proposed = staged_result;
+  Word proposed = staged_result;
 
   uint64_t local_fail_count = 0;
   uint64_t local_help_count = 0;
@@ -603,7 +607,7 @@ void update_visible_from_staging(size_t size, size_t i,
 }
 
 template <size_t Sscope, typename SProp, size_t Vscope, typename VProp>
-void staged_claim_slot(size_t size, size_t i,
+void staged_claim_slot(uint32_t size, uint32_t i,
                        slot_bitmap<Sscope, SProp> *staging,
                        slot_bitmap<Vscope, VProp> *visible,
                        uint64_t *cas_fail_count, uint64_t *cas_help_count)
@@ -613,7 +617,7 @@ void staged_claim_slot(size_t size, size_t i,
 }
 
 template <size_t Sscope, typename SProp, size_t Vscope, typename VProp>
-void staged_release_slot(size_t size, size_t i,
+void staged_release_slot(uint32_t size, uint32_t i,
                          slot_bitmap<Sscope, SProp> *staging,
                          slot_bitmap<Vscope, VProp> *visible,
                          uint64_t *cas_fail_count, uint64_t *cas_help_count)
@@ -623,11 +627,13 @@ void staged_release_slot(size_t size, size_t i,
 }
 
 template <bool InitialState, size_t Sscope, typename SProp>
-void update_visible_from_staging(size_t size, size_t i,
+void update_visible_from_staging(uint32_t size, uint32_t i,
                                  slot_bitmap<Sscope, SProp> *staging,
                                  slot_bytemap *visible, uint64_t *, uint64_t *)
 {
   // Write value ~InitialState to slot[i]
+  using Word = typename slot_bitmap<Sscope, SProp>::Word;
+  static_assert(sizeof(Word) == sizeof(typename slot_bytemap::Word), "");
 
   assert((void *)visible != (void *)staging);
   assert(i < size);
@@ -660,7 +666,7 @@ void update_visible_from_staging(size_t size, size_t i,
 }
 
 template <size_t Sscope, typename SProp>
-void staged_claim_slot(size_t size, size_t i,
+void staged_claim_slot(uint32_t size, uint32_t i,
                        slot_bitmap<Sscope, SProp> *staging,
                        slot_bytemap *visible, uint64_t *cas_fail_count,
                        uint64_t *cas_help_count)
@@ -670,7 +676,7 @@ void staged_claim_slot(size_t size, size_t i,
 }
 
 template <size_t Sscope, typename SProp>
-void staged_release_slot(size_t size, size_t i,
+void staged_release_slot(uint32_t size, uint32_t i,
                          slot_bitmap<Sscope, SProp> *staging,
                          slot_bytemap *visible, uint64_t *cas_fail_count,
                          uint64_t *cas_help_count)

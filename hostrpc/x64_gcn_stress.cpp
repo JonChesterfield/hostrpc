@@ -108,7 +108,7 @@ struct x64_gcn_t
     return instance.server.rpc_handle(state);
   }
 
-  bool rpc_handle(void *state, uint64_t *location_arg) noexcept
+  bool rpc_handle(void *state, uint32_t *location_arg) noexcept
   {
     return instance.server.rpc_handle(state, location_arg);
   }
@@ -371,7 +371,7 @@ TEST_CASE("x64_gcn_stress")
     auto server_worker = [&](unsigned id) {
       unsigned count = 0;
 
-      uint64_t server_location = 0;
+      uint32_t server_location = 0;
       hostrpc::closure_pair arg = make_closure_pair(&op_func);
       for (;;)
         {
