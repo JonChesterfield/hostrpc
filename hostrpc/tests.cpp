@@ -117,16 +117,17 @@ TEST_CASE("set up single word system")
 
   hostrpc::copy_functor_memcpy_pull cp;
 
-  using client_type = client_impl<SZ, decltype(cp), fill, use, stepper>;
+  using Word = uint64_t;
+  using client_type = client_impl<Word, SZ, decltype(cp), fill, use, stepper>;
 
-  using server_type =
-      server_impl<SZ, decltype(cp), operate, clear, hostrpc::default_stepper>;
+  using server_type = server_impl<Word, SZ, decltype(cp), operate, clear,
+                                  hostrpc::default_stepper>;
 
   auto send = x64_alloc<client_type::outbox_t>(N, &store);
   auto recv = x64_alloc<client_type::inbox_t>(N, &store);
-  auto client_active = x64_alloc<lock_bitmap>(N, &store);
+  auto client_active = x64_alloc<client_type::lock_t>(N, &store);
   auto client_staging = x64_alloc<client_type::staging_t>(N, &store);
-  auto server_active = x64_alloc<lock_bitmap>(N, &store);
+  auto server_active = x64_alloc<server_type::lock_t>(N, &store);
   auto server_staging = x64_alloc<server_type::staging_t>(N, &store);
 
   const uint64_t calls_planned = 1024;

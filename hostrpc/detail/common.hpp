@@ -205,18 +205,20 @@ struct base
   static constexpr bool hasFetchOp() { return HasFetchOpArg; }
 };
 
+template <typename Word>
 struct fine_grain : public base<false>
 {
-  using Ty = __attribute__((aligned(64))) _Atomic(uint64_t);
+  using Ty = __attribute__((aligned(64))) _Atomic(Word);
 };
 
+template <typename Word>
 struct coarse_grain : public base<true>
 {
 #if defined(__AMDGCN__)
   using Ty = __attribute__((aligned(64)))
-  __attribute__((address_space(1))) _Atomic(uint64_t);
+  __attribute__((address_space(1))) _Atomic(Word);
 #else
-  using Ty = __attribute__((aligned(64))) _Atomic(uint64_t);
+  using Ty = __attribute__((aligned(64))) _Atomic(Word);
 #endif
 };
 
@@ -227,11 +229,11 @@ struct slot_bitmap;
 
 template <typename Word>
 using message_bitmap = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
-                                   properties::fine_grain>;
+                                   properties::fine_grain<Word>>;
 
 template <typename Word>
-using slot_bitmap_coarse =
-    slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_DEVICE, properties::coarse_grain>;
+using slot_bitmap_coarse = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_DEVICE,
+                                       properties::coarse_grain<Word>>;
 
 template <typename Word, size_t scope, typename Prop>
 struct slot_bitmap
@@ -416,12 +418,12 @@ struct slot_bitmap
   }
 };
 
+template <typename Word>
 struct lock_bitmap
 {
-  using Ty = typename properties::coarse_grain::Ty;
-  using Word = uint64_t;
-  static_assert(sizeof(uint64_t) == sizeof(_Atomic(uint64_t)), "");
-  static_assert(sizeof(_Atomic(uint64_t) *) == 8, "");
+  using Ty = typename properties::coarse_grain<Word>::Ty;
+  static_assert(sizeof(Word) == sizeof(_Atomic(Word)), "");
+  static_assert(sizeof(_Atomic(Word) *) == 8, "");
   Ty *a;
   static constexpr size_t bits_per_slot() { return 1; }
 
@@ -528,8 +530,10 @@ struct lock_bitmap
   }
 };
 
+template <typename Word>
 struct slot_bytemap
 {
+  static_assert(sizeof(Word) == 8, "Unimplemented for uint32_t");
 #define SLOT_BYTEMAP_ATOMIC 0
 
   // assumes sizeof a is a multiple of 64, may be worth passing size to the
@@ -537,16 +541,15 @@ struct slot_bytemap
 #if SLOT_BYTEMAP_ATOMIC
   using Ty = __attribute__((aligned(64))) _Atomic(uint8_t);
   using AliasingWordTy = __attribute__((aligned(64)))
-  __attribute__((may_alias)) _Atomic(uint64_t);
+  __attribute__((may_alias)) _Atomic(Word);
   static_assert(sizeof(uint8_t) == sizeof(_Atomic(uint8_t)), "");
   static_assert(sizeof(_Atomic(uint8_t)) == 1, "");
 #else
   using Ty = __attribute__((aligned(64))) uint8_t;
   using AliasingWordTy =
-      __attribute__((aligned(64))) __attribute__((may_alias)) uint64_t;
+      __attribute__((aligned(64))) __attribute__((may_alias)) Word;
 #endif
 
-  using Word = uint64_t;
   constexpr size_t wordBits() const { return 8 * sizeof(Word); }
 
   Ty *a;
@@ -705,10 +708,10 @@ void staged_release_slot(uint32_t size, uint32_t i,
 template <bool InitialState, typename Word, size_t Sscope, typename SProp>
 void update_visible_from_staging(uint32_t size, uint32_t i,
                                  slot_bitmap<Word, Sscope, SProp> *staging,
-                                 slot_bytemap *visible, uint64_t *, uint64_t *)
+                                 slot_bytemap<Word> *visible, uint64_t *,
+                                 uint64_t *)
 {
   // Write value ~InitialState to slot[i]
-  static_assert(sizeof(Word) == sizeof(typename slot_bytemap::Word), "");
 
   assert((void *)visible != (void *)staging);
   assert(i < size);
@@ -743,7 +746,7 @@ void update_visible_from_staging(uint32_t size, uint32_t i,
 template <typename Word, size_t Sscope, typename SProp>
 void staged_claim_slot(uint32_t size, uint32_t i,
                        slot_bitmap<Word, Sscope, SProp> *staging,
-                       slot_bytemap *visible, uint64_t *cas_fail_count,
+                       slot_bytemap<Word> *visible, uint64_t *cas_fail_count,
                        uint64_t *cas_help_count)
 {
   update_visible_from_staging<false>(size, i, staging, visible, cas_fail_count,
@@ -753,7 +756,7 @@ void staged_claim_slot(uint32_t size, uint32_t i,
 template <typename Word, size_t Sscope, typename SProp>
 void staged_release_slot(uint32_t size, uint32_t i,
                          slot_bitmap<Word, Sscope, SProp> *staging,
-                         slot_bytemap *visible, uint64_t *cas_fail_count,
+                         slot_bytemap<Word> *visible, uint64_t *cas_fail_count,
                          uint64_t *cas_help_count)
 {
   update_visible_from_staging<true>(size, i, staging, visible, cas_fail_count,

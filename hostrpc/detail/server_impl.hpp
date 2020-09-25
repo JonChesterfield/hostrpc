@@ -27,14 +27,15 @@ enum class server_state : uint8_t
   result_with_thread = 0b111,
 };
 
-template <typename SZ, typename Copy, typename Operate, typename Clear,
-          typename Step>
+template <typename Word, typename SZ, typename Copy, typename Operate,
+          typename Clear, typename Step>
 struct server_impl : public SZ
 {
-  using Word = uint64_t;
+  using lock_t = lock_bitmap<Word>;
   using inbox_t = message_bitmap<Word>;
   using outbox_t = message_bitmap<Word>;
   using staging_t = slot_bitmap_coarse<Word>;
+
   constexpr size_t wordBits() const { return 8 * sizeof(Word); }
   // may want to rename this, number-slots?
   uint32_t size() const { return SZ::N(); }
@@ -42,7 +43,7 @@ struct server_impl : public SZ
 
   page_t* remote_buffer;
   page_t* local_buffer;
-  lock_bitmap active;
+  lock_t active;
 
   inbox_t inbox;
   outbox_t outbox;
@@ -59,7 +60,7 @@ struct server_impl : public SZ
   {
   }
 
-  server_impl(SZ sz, lock_bitmap active, inbox_t inbox, outbox_t outbox,
+  server_impl(SZ sz, lock_t active, inbox_t inbox, outbox_t outbox,
               staging_t staging, page_t* remote_buffer, page_t* local_buffer)
       : SZ{sz},
         remote_buffer(remote_buffer),
@@ -295,9 +296,9 @@ struct clear
 };
 }  // namespace indirect
 
-template <typename SZ, typename Copy, typename Step>
+template <typename Word, typename SZ, typename Copy, typename Step>
 using server_indirect_impl =
-    server_impl<SZ, Copy, indirect::operate, indirect::clear, Step>;
+    server_impl<Word, SZ, Copy, indirect::operate, indirect::clear, Step>;
 
 }  // namespace hostrpc
 #endif

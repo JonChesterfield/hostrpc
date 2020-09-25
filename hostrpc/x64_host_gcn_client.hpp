@@ -63,8 +63,10 @@ struct x64_gcn_pair_T
   using Copy = copy_functor_x64_gcn;
   using Step = nop_stepper;
 
-  using client_type = client_impl<SZ, Copy, Fill, Use, Step, counters::client>;
-  using server_type = server_impl<SZ, Copy, Operate, Clear, Step>;
+  using Word = uint64_t;
+  using client_type =
+      client_impl<Word, SZ, Copy, Fill, Use, Step, counters::client>;
+  using server_type = server_impl<Word, SZ, Copy, Operate, Clear, Step>;
 
   client_type client;
   server_type server;
@@ -93,12 +95,14 @@ struct x64_gcn_pair_T
         hsa_allocate_slot_bitmap_data_alloc<typename client_type::inbox_t>(fine,
                                                                            N);
     auto client_active =
-        hsa_allocate_slot_bitmap_data_alloc<lock_bitmap>(coarse, N);
+        hsa_allocate_slot_bitmap_data_alloc<typename client_type::lock_t>(
+            coarse, N);
     auto client_staging =
         hsa_allocate_slot_bitmap_data_alloc<typename client_type::staging_t>(
             coarse, N);
     auto server_active =
-        hsa_allocate_slot_bitmap_data_alloc<lock_bitmap>(fine, N);
+        hsa_allocate_slot_bitmap_data_alloc<typename server_type::lock_t>(fine,
+                                                                          N);
     auto server_staging =
         hsa_allocate_slot_bitmap_data_alloc<typename server_type::staging_t>(
             fine, N);

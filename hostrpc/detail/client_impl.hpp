@@ -41,11 +41,11 @@ enum class client_state : uint8_t
 // criteria for the slot to be awaiting gc?
 
 // enabling counters breaks codegen for amdgcn,
-template <typename SZ, typename Copy, typename Fill, typename Use,
-          typename Step, typename Counter = counters::client>
+template <typename Word, typename SZ, typename Copy, typename Fill,
+          typename Use, typename Step, typename Counter = counters::client>
 struct client_impl : public SZ, public Counter
 {
-  using Word = uint64_t;
+  using lock_t = lock_bitmap<Word>;
   using inbox_t = message_bitmap<Word>;
   using outbox_t = message_bitmap<Word>;
   using staging_t = slot_bitmap_coarse<Word>;
@@ -55,7 +55,7 @@ struct client_impl : public SZ, public Counter
 
   page_t* remote_buffer;
   page_t* local_buffer;
-  lock_bitmap active;
+  lock_t active;
 
   inbox_t inbox;
   outbox_t outbox;
@@ -73,7 +73,7 @@ struct client_impl : public SZ, public Counter
   {
   }
 
-  client_impl(SZ sz, lock_bitmap active, inbox_t inbox, outbox_t outbox,
+  client_impl(SZ sz, lock_t active, inbox_t inbox, outbox_t outbox,
               staging_t staging, page_t* remote_buffer, page_t* local_buffer)
 
       : SZ{sz},
@@ -448,9 +448,9 @@ struct use
 
 }  // namespace indirect
 
-template <typename SZ, typename Copy, typename Step>
+template <typename Word, typename SZ, typename Copy, typename Step>
 using client_indirect_impl =
-    client_impl<SZ, Copy, indirect::fill, indirect::use, Step>;
+    client_impl<Word, SZ, Copy, indirect::fill, indirect::use, Step>;
 
 }  // namespace hostrpc
 

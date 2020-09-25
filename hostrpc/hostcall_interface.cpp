@@ -72,16 +72,16 @@ struct clear
 };
 }  // namespace x64_host_amdgcn_client
 
-template <typename SZ>
+template <typename Word, typename SZ>
 using x64_amdgcn_client =
-    hostrpc::client_impl<SZ, hostrpc::copy_functor_given_alias,
+    hostrpc::client_impl<Word, SZ, hostrpc::copy_functor_given_alias,
                          x64_host_amdgcn_client::fill,
                          x64_host_amdgcn_client::use, hostrpc::nop_stepper,
                          hostrpc::counters::client_nop>;
 
-template <typename SZ>
+template <typename Word, typename SZ>
 using x64_amdgcn_server =
-    hostrpc::server_impl<SZ, hostrpc::copy_functor_given_alias,
+    hostrpc::server_impl<Word, SZ, hostrpc::copy_functor_given_alias,
                          x64_host_amdgcn_client::operate,
                          x64_host_amdgcn_client::clear, hostrpc::nop_stepper>;
 
@@ -109,8 +109,10 @@ inline void hsa_allocate_slot_bitmap_data_free(_Atomic(uint64_t) * d)
 template <typename SZ>
 struct x64_amdgcn_pair
 {
-  using client_type = hostrpc::x64_amdgcn_client<SZ>;
-  using server_type = hostrpc::x64_amdgcn_server<SZ>;
+  using Word = uint64_t;
+
+  using client_type = hostrpc::x64_amdgcn_client<Word, SZ>;
+  using server_type = hostrpc::x64_amdgcn_server<Word, SZ>;
   client_type client;
   server_type server;
   SZ sz;
@@ -142,12 +144,14 @@ struct x64_amdgcn_pair
         hsa_allocate_slot_bitmap_data_alloc<typename client_type::inbox_t>(fine,
                                                                            N);
     auto client_active =
-        hsa_allocate_slot_bitmap_data_alloc<lock_bitmap>(coarse, N);
+        hsa_allocate_slot_bitmap_data_alloc<typename client_type::lock_t>(
+            coarse, N);
     auto client_staging =
         hsa_allocate_slot_bitmap_data_alloc<typename client_type::staging_t>(
             coarse, N);
     auto server_active =
-        hsa_allocate_slot_bitmap_data_alloc<lock_bitmap>(fine, N);
+        hsa_allocate_slot_bitmap_data_alloc<typename server_type::lock_t>(fine,
+                                                                          N);
     auto server_staging =
         hsa_allocate_slot_bitmap_data_alloc<typename client_type::staging_t>(
             fine, N);
