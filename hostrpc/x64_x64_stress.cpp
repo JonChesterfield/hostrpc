@@ -134,8 +134,9 @@ TEST_CASE("x64_x64_stress")
 
     for (unsigned r = 0; r < reps; r++)
       {
-        init_page(&scratch, id);
-        init_page(&expect, id + 1);
+        init_page(&scratch, id + r);
+        init_page(&expect, id + r + 1);
+
         if (p.rpc_invoke<true>(&fill_cp, &use_cp))
           {
             count++;

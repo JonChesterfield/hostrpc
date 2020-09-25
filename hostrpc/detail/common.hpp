@@ -29,9 +29,19 @@ namespace hostrpc
 
 namespace
 {
-inline uint64_t index_to_element(uint64_t x) { return x / 64u; }
+template <typename Word>
+inline uint32_t index_to_element(uint32_t x)
+{
+  uint32_t wordBits = 8 * sizeof(Word);
+  return x / wordBits;
+}
 
-inline uint64_t index_to_subindex(uint64_t x) { return x % 64u; }
+template <typename Word>
+inline uint32_t index_to_subindex(uint32_t x)
+{
+  uint32_t wordBits = 8 * sizeof(Word);
+  return x % wordBits;
+}
 
 namespace bits
 {
@@ -265,10 +275,10 @@ struct slot_bitmap
 
   bool operator()(uint32_t size, uint32_t i, Word *loaded) const
   {
-    uint32_t w = index_to_element(i);
+    uint32_t w = index_to_element<Word>(i);
     Word d = load_word(size, w);
     *loaded = d;
-    return bits::nthbitset(d, index_to_subindex(i));
+    return bits::nthbitset(d, index_to_subindex<Word>(i));
   }
 
   void dump(uint32_t size) const
@@ -299,15 +309,15 @@ struct slot_bitmap
   {
     (void)size;
     assert(i < size);
-    uint32_t w = index_to_element(i);
-    uint32_t subindex = index_to_subindex(i);
-    assert(!detail::nthbitset64(load_word(size, w), subindex));
+    uint32_t w = index_to_element<Word>(i);
+    uint32_t subindex = index_to_subindex<Word>(i);
+    assert(!bits::nthbitset(load_word(size, w), subindex));
 
     // or with only the slot set
     Word mask = bits::setnthbit((Word)0, subindex);
 
     Word before = fetch_or(w, mask);
-    assert(!detail::nthbitset64(before, subindex));
+    assert(!bits::nthbitset(before, subindex));
     return before | mask;
   }
 
@@ -321,9 +331,9 @@ struct slot_bitmap
   {
     (void)size;
     assert(i < size);
-    uint32_t w = index_to_element(i);
-    uint32_t subindex = index_to_subindex(i);
-    assert(bits::nthbitset64(load_word(size, w), subindex));
+    uint32_t w = index_to_element<Word>(i);
+    uint32_t subindex = index_to_subindex<Word>(i);
+    assert(bits::nthbitset(load_word(size, w), subindex));
 
     // and with everything other than the slot set
     Word mask = ~bits::setnthbit((Word)0, subindex);
@@ -438,8 +448,8 @@ struct lock_bitmap
   bool try_claim_empty_slot(uint32_t size, uint32_t i, uint64_t *cas_fail_count)
   {
     assert(i < size);
-    uint32_t w = index_to_element(i);
-    uint32_t subindex = index_to_subindex(i);
+    uint32_t w = index_to_element<Word>(i);
+    uint32_t subindex = index_to_subindex<Word>(i);
 
     Word d = load_word(size, w);
 
@@ -490,8 +500,8 @@ struct lock_bitmap
   {
     (void)size;
     assert(i < size);
-    uint32_t w = index_to_element(i);
-    uint32_t subindex = index_to_subindex(i);
+    uint32_t w = index_to_element<Word>(i);
+    uint32_t subindex = index_to_subindex<Word>(i);
     assert(bits::nthbitset(load_word(size, w), subindex));
 
     // and with everything other than the slot set
@@ -635,8 +645,8 @@ void update_visible_from_staging(uint32_t size, uint32_t i,
 
   assert((void *)visible != (void *)staging);
   assert(i < size);
-  const uint32_t w = index_to_element(i);
-  const uint32_t subindex = index_to_subindex(i);
+  const uint32_t w = index_to_element<Word>(i);
+  const uint32_t subindex = index_to_subindex<Word>(i);
 
   // InitialState locked for staged_release, clear for staged_claim
   assert(InitialState ==
@@ -648,7 +658,7 @@ void update_visible_from_staging(uint32_t size, uint32_t i,
   Word staged_result =
       InitialState ? staging->release_slot_returning_updated_word(size, i)
                    : staging->claim_slot_returning_updated_word(size, i);
-  assert(!InitialState == detail::nthbitset64(staged_result, subindex));
+  assert(!InitialState == bits::nthbitset(staged_result, subindex));
 
   // propose a value that could plausibly be in visible. can refactor to drop
   // the arithmetic
@@ -715,12 +725,6 @@ void update_visible_from_staging(uint32_t size, uint32_t i,
 
   assert((void *)visible != (void *)staging);
   assert(i < size);
-
-  // InitialState locked for staged_release, clear for staged_claim
-  assert(InitialState ==
-         detail::nthbitset64(staging->load_word(size, w), subindex));
-  assert(InitialState ==
-         detail::nthbitset64(visible->load_word(size, w), subindex));
 
   // (InitialState ? fetch_and : fetch_or) to update staging
   if (InitialState)

@@ -27,7 +27,7 @@ struct x64_x64_pair_T
 {
   using Copy = copy_functor_memcpy_pull;
   using Step = nop_stepper;
-  using Word = uint64_t;
+  using Word = uint32_t;
   using client_type = client_impl<Word, SZ, Copy, Fill, Use, Step>;
   using server_type = server_impl<Word, SZ, Copy, Operate, Clear, Step>;
 

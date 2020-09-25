@@ -256,8 +256,8 @@ struct client_impl : public SZ, public Counter
                              uint32_t slot) noexcept
   {
     assert(slot != UINT32_MAX);
-    const uint32_t element = index_to_element(slot);
-    const uint32_t subindex = index_to_subindex(slot);
+    const uint32_t element = index_to_element<Word>(slot);
+    const uint32_t subindex = index_to_subindex<Word>(slot);
 
     const uint32_t size = this->size();
     Word i = inbox.load_word(size, element);

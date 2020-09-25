@@ -129,14 +129,14 @@ struct server_impl : public SZ
     step(__LINE__, application_state);
 
     const uint32_t location = *location_arg % size;
-    const uint32_t element = index_to_element(location);
+    const uint32_t element = index_to_element<Word>(location);
 
     // skip bits in the first word <= subindex
     static_assert((sizeof(Word) == 8) || (sizeof(Word) == 4), "");
     Word mask = (sizeof(Word) == 8)
-                    ? detail::setbitsrange64(index_to_subindex(location),
+                    ? detail::setbitsrange64(index_to_subindex<Word>(location),
                                              wordBits() - 1)
-                    : detail::setbitsrange32(index_to_subindex(location),
+                    : detail::setbitsrange32(index_to_subindex<Word>(location),
                                              wordBits() - 1);
 
     // Tries a few bits in element, then all bits in all the other words, then
@@ -187,8 +187,8 @@ struct server_impl : public SZ
   {
     assert(slot != SIZE_MAX);
 
-    const uint32_t element = index_to_element(slot);
-    const uint32_t subindex = index_to_subindex(slot);
+    const uint32_t element = index_to_element<Word>(slot);
+    const uint32_t subindex = index_to_subindex<Word>(slot);
 
     auto lock_held = [&]() -> bool {
       return bits::nthbitset(active.load_word(size(), element), subindex);
