@@ -157,7 +157,12 @@ extern "C" void __device_start_main(kernel_args *args)
     }
   uint64_t wg = __builtin_amdgcn_workgroup_id_x();
   uint64_t r = gpu_call(hostrpc_pair_client, args->id + wg, args->reps);
-  args->result[wg] = r;
+
+  if (platform::is_master_lane())
+    {
+      // TODO: Should return multiple values or error if they differ
+      args->result[wg] = r;
+    }
 }
 extern "C" void __device_start_cast(
     __attribute__((address_space(1))) void *asargs)
@@ -179,6 +184,34 @@ static void init_page(hostrpc::page_t *page, uint64_t v)
 static bool equal_page(hostrpc::page_t *lhs, hostrpc::page_t *rhs)
 {
   bool eq = true;
+  // 32 vs 64 active lanes may work out OK if this only checks the
+  // cache lines that correspond to get_lane_id. Something roughly like:
+  if (0)
+    {
+      bool gather[64];
+      for (unsigned i = 0; i < 64; i++)
+        {
+          gather[i] = true;
+        }
+
+      unsigned id = platform::get_lane_id();
+      hostrpc::cacheline_t *line_lhs = &lhs->cacheline[id];
+      hostrpc::cacheline_t *line_rhs = &rhs->cacheline[id];
+
+      for (unsigned e = 0; e < 8; e++)
+        {
+          gather[id] &= line_lhs->element[e] == line_rhs->element[e];
+        }
+
+      bool gathered = true;
+      for (unsigned i = 0; i < 64; i++)
+        {
+          gathered &= gather[i];
+        }
+
+      return gathered;
+    }
+
   for (unsigned i = 0; i < 64; i++)
     {
       for (unsigned e = 0; e < 8; e++)
@@ -189,7 +222,9 @@ static bool equal_page(hostrpc::page_t *lhs, hostrpc::page_t *rhs)
   return eq;
 }
 
+VISIBLE
 hostrpc::page_t scratch_store[MAXCLIENT];
+VISIBLE
 hostrpc::page_t expect_store[MAXCLIENT];
 
 uint64_t gpu_call(hostrpc::x64_gcn_type::client_type *client, uint32_t id,
@@ -343,6 +378,11 @@ TEST_CASE("x64_gcn_stress")
     }
 
     printf("Initialized gpu client state\n");
+
+    // This is presently being called for 'operate' and for 'clear', which is OK
+    // for this test but not right in general. Need separate void *s for the two
+    // Reasonable chance we also want to initialize the data before the first
+    // call
 
     auto op_func = [](hostrpc::page_t *page) {
 #if 0

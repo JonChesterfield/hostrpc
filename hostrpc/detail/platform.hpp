@@ -124,6 +124,9 @@ __attribute__((always_inline)) inline uint64_t broadcast_master(uint64_t x)
 
 inline void init_inactive_lanes(hostrpc::page_t *page, uint64_t v)
 {
+  // a 32 wide wave is not handled well here. The asm also doesn't parse on
+  // gfx10, and will be tricky to write on nvptx.
+
   // may want to do this control flow within the asm
   uint64_t activemask = __builtin_amdgcn_read_exec();
   if (activemask == UINT64_MAX)
