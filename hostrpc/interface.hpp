@@ -34,92 +34,6 @@ inline constexpr size_t client_counter_overhead()
   return client_counters::cc_total_count * sizeof(_Atomic(uint64_t));
 }
 
-template <typename T>
-struct client_invoke_overloads
-{
-  template <typename Fill, typename Use>
-  bool invoke(Fill f, Use u)
-  {
-    auto cbf = [](hostrpc::page_t *page, void *vf) {
-      Fill *f = static_cast<Fill *>(vf);
-      (*f)(page);
-    };
-    auto cbu = [](hostrpc::page_t *page, void *vf) {
-      Use *f = static_cast<Use *>(vf);
-      (*f)(page);
-    };
-    return derived().invoke(cbf, static_cast<void *>(&f), cbu,
-                            static_cast<void *>(&u));
-  }
-
-  template <typename Fill, typename Use>
-  bool invoke_async(Fill f, Use u)
-  {
-    auto cbf = [](hostrpc::page_t *page, void *vf) {
-      Fill *f = static_cast<Fill *>(vf);
-      (*f)(page);
-    };
-    auto cbu = [](hostrpc::page_t *page, void *vf) {
-      Use *f = static_cast<Use *>(vf);
-      (*f)(page);
-    };
-    return derived().invoke_async(cbf, static_cast<void *>(&f), cbu,
-                                  static_cast<void *>(&u));
-  }
-
- private:
-  friend T;
-  T &derived() { return *static_cast<T *>(this); }
-
-  template <typename ClientType>
-  bool invoke(closure_func_t fill, void *fill_state, closure_func_t use,
-              void *use_state)
-  {
-    hostrpc::closure_pair fill_arg = {.func = fill, .state = fill_state};
-    hostrpc::closure_pair use_arg = {.func = use, .state = use_state};
-    auto *cl = derived().state.template open<ClientType>();
-    return cl->template rpc_invoke<true>(static_cast<void *>(&fill_arg),
-                                         static_cast<void *>(&use_arg));
-  }
-
-  template <typename ClientType>
-  bool invoke_async(closure_func_t fill, void *fill_state, closure_func_t use,
-                    void *use_state)
-  {
-    hostrpc::closure_pair fill_arg = {.func = fill, .state = fill_state};
-    hostrpc::closure_pair use_arg = {.func = use, .state = use_state};
-    auto *cl = derived().state.template open<ClientType>();
-    return cl->template rpc_invoke<false>(static_cast<void *>(&fill_arg),
-                                          static_cast<void *>(&use_arg));
-  }
-};
-
-template <typename T>
-struct server_handle_overloads
-{
-  template <typename Func>
-  bool handle(Func f, uint64_t *loc)
-  {
-    auto cb = [](hostrpc::page_t *page, void *vf) {
-      Func *f = static_cast<Func *>(vf);
-      (*f)(page);
-    };
-    return derived().handle(cb, static_cast<void *>(&f), loc);
-  }
-
- private:
-  friend T;
-  T &derived() { return *static_cast<T *>(this); }
-
-  template <typename ServerType>
-  bool handle(closure_func_t func, void *application_state, uint64_t *l)
-  {
-    hostrpc::closure_pair arg = {.func = func, .state = application_state};
-    auto *se = derived().state.template open<ServerType>();
-    return se->rpc_handle(static_cast<void *>(&arg), l);
-  }
-};
-
 struct gcn_x64_t
 {
   gcn_x64_t(size_t minimum_number_slots, uint64_t hsa_region_t_fine_handle,
@@ -158,7 +72,7 @@ struct gcn_x64_t
     server_t() {}
     using state_t = hostrpc::storage<56, 8>;
 
-    bool handle(uint64_t *loc);
+    bool handle(hostrpc::page_t *, uint32_t *loc);
 
    private:
     template <typename ServerType>

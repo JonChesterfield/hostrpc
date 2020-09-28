@@ -58,9 +58,9 @@ TEST_CASE("set up single word system")
 
   struct application_state_t
   {
-    application_state_t(_Atomic(uint64_t) * val,
-                        _Atomic(uint64_t) * client_steps, bool show_step)
-        : val(val), stepper(client_steps, show_step)
+    application_state_t(_Atomic(uint64_t) * val, _Atomic(uint64_t) * steps,
+                        bool show_step)
+        : val(val), stepper(steps, show_step)
     {
     }
     _Atomic(uint64_t) * val;
@@ -120,8 +120,8 @@ TEST_CASE("set up single word system")
   using Word = uint64_t;
   using client_type = client_impl<Word, SZ, decltype(cp), fill, use, stepper>;
 
-  using server_type = server_impl<Word, SZ, decltype(cp), operate, clear,
-                                  hostrpc::default_stepper>;
+  using server_type =
+      server_impl<Word, SZ, decltype(cp), operate, clear, stepper>;
 
   auto send = x64_alloc<client_type::outbox_t>(N, &store);
   auto recv = x64_alloc<client_type::inbox_t>(N, &store);
@@ -167,8 +167,7 @@ TEST_CASE("set up single word system")
     });
 
     safe_thread sv_thrd([&]() {
-      auto stepper_state =
-          hostrpc::default_stepper_state(&server_steps, show_step);
+      auto app_state = application_state_t(&val, &server_steps, show_step);
 
       server_type sv = {SZ{},
                         server_active,
@@ -178,11 +177,12 @@ TEST_CASE("set up single word system")
                         &client_buffer[0],
                         &server_buffer[0]};
 
-      void *application_state = static_cast<void *>(&stepper_state);
+      void *application_state_ptr = static_cast<void *>(&app_state);
       uint32_t loc_arg = 0;
       for (;;)
         {
-          if (sv.rpc_handle(application_state, &loc_arg))
+          if (sv.rpc_handle(application_state_ptr, application_state_ptr,
+                            &loc_arg))
 
             {
               calls_handled++;

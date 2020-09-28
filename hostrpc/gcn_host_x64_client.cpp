@@ -143,9 +143,10 @@ void gcn_x64_t::client_t::invoke_async(hostrpc::page_t *page)
   while (r == false);
 }
 
-bool gcn_x64_t::server_t::handle(uint64_t *loc)
+bool gcn_x64_t::server_t::handle(hostrpc::page_t *page, uint32_t *loc)
 {
-  return state.open<ty::server_type>()->rpc_handle(loc);
+  void *vp = static_cast<void *>(page);
+  return state.open<ty::server_type>()->rpc_handle(vp, vp, loc);
 }
 
 }  // namespace hostrpc

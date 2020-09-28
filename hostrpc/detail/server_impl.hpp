@@ -74,7 +74,11 @@ struct server_impl : public SZ
 
   static void* operator new(size_t, server_impl* p) { return p; }
 
-  void step(int x, void* y) { Step::call(x, y); }
+  void step(int x, void* y, void* z)
+  {
+    Step::call(x, y);
+    Step::call(x, z);
+  }
 
   void dump_word(uint32_t size, Word word)
   {
@@ -112,21 +116,23 @@ struct server_impl : public SZ
 
   // Returns true if it handled one task. Does not attempt multiple tasks
   __attribute__((always_inline)) bool rpc_handle(
-      void* application_state) noexcept
+      void* operate_application_state, void* clear_application_state) noexcept
   {
     uint32_t location = 0;
-    return rpc_handle(application_state, &location);
+    return rpc_handle(operate_application_state, clear_application_state,
+                      &location);
   }
 
   // location != NULL, used to round robin across slots
   __attribute__((always_inline)) bool rpc_handle(
-      void* application_state, uint32_t* location_arg) noexcept
+      void* operate_application_state, void* clear_application_state,
+      uint32_t* location_arg) noexcept
   {
-    step(__LINE__, application_state);
+    step(__LINE__, operate_application_state, clear_application_state);
     const uint32_t size = this->size();
     const uint32_t words = this->words();
 
-    step(__LINE__, application_state);
+    step(__LINE__, operate_application_state, clear_application_state);
 
     const uint32_t location = *location_arg % size;
     const uint32_t element = index_to_element<Word>(location);
@@ -157,9 +163,11 @@ struct server_impl : public SZ
                 // Success, got the lock. Aim location_arg at next slot
                 *location_arg = slot + 1;
 
-                bool r = rpc_handle_given_slot(application_state, slot);
+                bool r = rpc_handle_given_slot(operate_application_state,
+                                               clear_application_state, slot);
 
-                step(__LINE__, application_state);
+                step(__LINE__, operate_application_state,
+                     clear_application_state);
 
                 platform::critical<uint32_t>([&]() {
                   active.release_slot(size, slot);
@@ -177,13 +185,14 @@ struct server_impl : public SZ
       }
 
     // Nothing hit, may as well go from the same location on the next call
-    step(__LINE__, application_state);
+    step(__LINE__, operate_application_state, clear_application_state);
     return false;
   }
 
  private:
   __attribute__((always_inline)) bool rpc_handle_given_slot(
-      void* application_state, uint32_t slot)
+      void* operate_application_state, void* clear_application_state,
+      uint32_t slot)
   {
     assert(slot != SIZE_MAX);
 
@@ -222,9 +231,9 @@ struct server_impl : public SZ
         // Move data and clear. TODO: Elide the copy for nop clear
         Copy::pull_to_server_from_client(&local_buffer[slot],
                                          &remote_buffer[slot]);
-        step(__LINE__, application_state);
-        Clear::call(&local_buffer[slot], application_state);
-        step(__LINE__, application_state);
+        step(__LINE__, operate_application_state, clear_application_state);
+        Clear::call(&local_buffer[slot], clear_application_state);
+        step(__LINE__, operate_application_state, clear_application_state);
         Copy::push_from_server_to_client(&remote_buffer[slot],
                                          &local_buffer[slot]);
 
@@ -243,20 +252,20 @@ struct server_impl : public SZ
 
     if (!work_todo)
       {
-        step(__LINE__, application_state);
+        step(__LINE__, operate_application_state, clear_application_state);
         assert(lock_held());
         return false;
       }
 
-    step(__LINE__, application_state);
+    step(__LINE__, operate_application_state, clear_application_state);
 
     // make the calls
     Copy::pull_to_server_from_client(&local_buffer[slot], &remote_buffer[slot]);
-    step(__LINE__, application_state);
-    Operate::call(&local_buffer[slot], application_state);
-    step(__LINE__, application_state);
+    step(__LINE__, operate_application_state, clear_application_state);
+    Operate::call(&local_buffer[slot], operate_application_state);
+    step(__LINE__, operate_application_state, clear_application_state);
     Copy::push_from_server_to_client(&remote_buffer[slot], &local_buffer[slot]);
-    step(__LINE__, application_state);
+    step(__LINE__, operate_application_state, clear_application_state);
 
     // publish result
     {

@@ -805,13 +805,16 @@ struct default_stepper
 {
   static void call(int line, void *v)
   {
-    default_stepper_state *state = static_cast<default_stepper_state *>(v);
-    if (state->show_step)
+    if (v)
       {
-        printf("%s:%d: step\n", state->name, line);
+        default_stepper_state *state = static_cast<default_stepper_state *>(v);
+        if (state->show_step)
+          {
+            printf("%s:%d: step\n", state->name, line);
+          }
+        (void)line;
+        step(state->val);
       }
-    (void)line;
-    step(state->val);
   }
 };
 

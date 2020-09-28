@@ -103,14 +103,15 @@ struct x64_gcn_t
     return instance.client.rpc_invoke<have_continuation>(fill, use);
   }
 
-  bool rpc_handle(void *state) noexcept
+  bool rpc_handle(void *operate_state, void *clear_state) noexcept
   {
-    return instance.server.rpc_handle(state);
+    return instance.server.rpc_handle(operate_state, clear_state);
   }
 
-  bool rpc_handle(void *state, uint32_t *location_arg) noexcept
+  bool rpc_handle(void *operate_state, void *clear_state,
+                  uint32_t *location_arg) noexcept
   {
-    return instance.server.rpc_handle(state, location_arg);
+    return instance.server.rpc_handle(operate_state, clear_state, location_arg);
   }
 
   client_counters client_counters() { return instance.client.get_counters(); }
@@ -408,11 +409,30 @@ TEST_CASE("x64_gcn_stress")
         }
     };
 
+    auto cl_func = [](hostrpc::page_t *page) {
+#if 0
+      printf("gcn stress hit clear function\n");
+      printf("first values %lu/%lu/%lu\n",
+             page->cacheline[0].element[0],
+             page->cacheline[0].element[1],
+             page->cacheline[1].element[0]);
+#endif
+      for (unsigned c = 0; c < 64; c++)
+        {
+          hostrpc::cacheline_t &line = page->cacheline[c];
+          for (unsigned i = 0; i < 8; i++)
+            {
+              line.element[i] = 0;
+            }
+        }
+    };
+
     auto server_worker = [&](unsigned id) {
       unsigned count = 0;
 
       uint32_t server_location = 0;
-      hostrpc::closure_pair arg = make_closure_pair(&op_func);
+      hostrpc::closure_pair op_arg = make_closure_pair(&op_func);
+      hostrpc::closure_pair cl_arg = make_closure_pair(&cl_func);
       for (;;)
         {
           if (!server_live)
@@ -421,7 +441,8 @@ TEST_CASE("x64_gcn_stress")
               break;
             }
           bool did_work =
-              p.rpc_handle(static_cast<void *>(&arg), &server_location);
+              p.rpc_handle(static_cast<void *>(&op_arg),
+                           static_cast<void *>(&cl_arg), &server_location);
           if (did_work)
             {
               count++;

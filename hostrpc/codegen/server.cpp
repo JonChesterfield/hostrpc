@@ -61,7 +61,7 @@ extern "C" void server_instance_direct(server_type_direct::inbox_t inbox,
 
   for (;;)
     {
-      s.rpc_handle(state_arg);
+      s.rpc_handle(state_arg, state_arg);
     }
 }
 
@@ -84,6 +84,6 @@ extern "C" void server_instance_indirect(
 
   for (;;)
     {
-      s.rpc_handle(static_cast<void *>(&arg));
+      s.rpc_handle(static_cast<void *>(&arg), static_cast<void *>(&arg));
     }
 }
