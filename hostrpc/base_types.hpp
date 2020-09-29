@@ -145,6 +145,14 @@ struct server_counters
     sc_cas_lock_fail = 1,
     sc_missed_lock_on_candidate_bitmap = 2,
     sc_missed_lock_on_word = 3,
+
+    sc_garbage_cas_fail = 4,
+    sc_publish_cas_fail = 5,
+
+    sc_garbage_cas_help = 6,
+    sc_publish_cas_help = 7,
+    sc_got_lock_after_work_done = 8,
+
     sc_total_count,
   };
   uint64_t state[sc_total_count];
@@ -164,6 +172,14 @@ struct server_counters
     printf("SC: missed_lock_on_candidate_bitmap: %lu\n",
            state[sc_missed_lock_on_candidate_bitmap]);
     printf("SC: missed_lock_on_word: %lu\n", state[sc_missed_lock_on_word]);
+
+    printf("SC: got_lock_after_work_done: %lu\n",
+           state[sc_got_lock_after_work_done]);
+
+    printf("SC: garbage_cas_fail: %lu\n", state[sc_garbage_cas_fail]);
+    printf("SC: garbage_cas_help: %lu\n", state[sc_garbage_cas_help]);
+    printf("SC: publish_fail: %lu\n", state[sc_publish_cas_fail]);
+    printf("SC: publish_help: %lu\n", state[sc_publish_cas_help]);
   }
 #endif
 };

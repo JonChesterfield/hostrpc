@@ -94,12 +94,37 @@ struct server_impl : public B
 
   void cas_lock_fail(uint64_t c) { add(server_counters::sc_cas_lock_fail, c); }
 
+  void got_lock_after_work_done()
+  {
+    inc(server_counters::sc_got_lock_after_work_done);
+  }
+
   void missed_lock_on_candidate_bitmap()
   {
     inc(server_counters::sc_missed_lock_on_candidate_bitmap);
   }
 
   void missed_lock_on_word() { inc(server_counters::sc_missed_lock_on_word); }
+
+  void garbage_cas_fail(uint64_t c)
+  {
+    add(server_counters::sc_garbage_cas_fail, c);
+  }
+
+  void garbage_cas_help(uint64_t c)
+  {
+    add(server_counters::sc_garbage_cas_help, c);
+  }
+
+  void publish_cas_fail(uint64_t c)
+  {
+    add(server_counters::sc_publish_cas_fail, c);
+  }
+
+  void publish_cas_help(uint64_t c)
+  {
+    add(server_counters::sc_publish_cas_help, c);
+  }
 
   server_counters get()
   {

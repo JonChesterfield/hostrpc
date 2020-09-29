@@ -243,13 +243,18 @@ struct server_impl : public SZ, public Counter
                                          &local_buffer[slot]);
 
         __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+        uint64_t cas_fail_count = 0;
+        uint64_t cas_help_count = 0;
         platform::critical<uint32_t>([&]() {
-          uint64_t cas_fail_count;
-          uint64_t cas_help_count;
           staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
                               &cas_help_count);
           return 0;
         });
+
+        cas_fail_count = platform::broadcast_master(cas_fail_count);
+        cas_help_count = platform::broadcast_master(cas_help_count);
+        Counter::garbage_cas_fail(cas_fail_count);
+        Counter::garbage_cas_help(cas_help_count);
 
         assert(lock_held());
         return false;
@@ -257,6 +262,7 @@ struct server_impl : public SZ, public Counter
 
     if (!work_todo)
       {
+        Counter::got_lock_after_work_done();
         step(__LINE__, operate_application_state, clear_application_state);
         assert(lock_held());
         return false;
@@ -275,13 +281,17 @@ struct server_impl : public SZ, public Counter
     // publish result
     {
       __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+      uint64_t cas_fail_count = 0;
+      uint64_t cas_help_count = 0;
       platform::critical<uint32_t>([&]() {
-        uint64_t cas_fail_count = 0;
-        uint64_t cas_help_count = 0;
         staged_claim_slot(size, slot, &staging, &outbox, &cas_fail_count,
                           &cas_help_count);
         return 0;
       });
+      cas_fail_count = platform::broadcast_master(cas_fail_count);
+      cas_help_count = platform::broadcast_master(cas_help_count);
+      Counter::publish_cas_fail(cas_fail_count);
+      Counter::publish_cas_help(cas_help_count);
     }
 
     // leaves outbox live
