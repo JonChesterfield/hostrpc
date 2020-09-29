@@ -103,11 +103,6 @@ struct x64_gcn_t
     return instance.client.rpc_invoke<have_continuation>(fill, use);
   }
 
-  bool rpc_handle(void *operate_state, void *clear_state) noexcept
-  {
-    return instance.server.rpc_handle(operate_state, clear_state);
-  }
-
   bool rpc_handle(void *operate_state, void *clear_state,
                   uint32_t *location_arg) noexcept
   {
@@ -115,6 +110,7 @@ struct x64_gcn_t
   }
 
   client_counters client_counters() { return instance.client.get_counters(); }
+  server_counters server_counters() { return instance.server.get_counters(); }
 };
 }  // namespace hostrpc
 
@@ -187,6 +183,7 @@ static bool equal_page(hostrpc::page_t *lhs, hostrpc::page_t *rhs)
   bool eq = true;
   // 32 vs 64 active lanes may work out OK if this only checks the
   // cache lines that correspond to get_lane_id. Something roughly like:
+
   if (0)
     {
       bool gather[64];
@@ -455,9 +452,9 @@ TEST_CASE("x64_gcn_stress")
     };
 
     // number tasks = MAX_WAVES * nclients * per_client
-    unsigned nservers = 8;
+    unsigned nservers = 64;
     unsigned nclients = 1;
-    unsigned per_client = 4096 * 2 * 8;
+    unsigned per_client = 4096 * 2;
 
 #ifndef DERIVE_VAL
 #error "Req derive_val"
@@ -598,6 +595,7 @@ TEST_CASE("x64_gcn_stress")
       memcpy(&p.instance.client, vc, sizeof(p.instance.client));
     }
 
+    p.server_counters().dump();
     p.client_counters().dump();
   }
 }

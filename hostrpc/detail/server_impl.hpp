@@ -2,6 +2,7 @@
 #define HOSTRPC_SERVER_HPP_INCLUDED
 
 #include "common.hpp"
+#include "counters.hpp"
 
 namespace hostrpc
 {
@@ -28,8 +29,8 @@ enum class server_state : uint8_t
 };
 
 template <typename Word, typename SZ, typename Copy, typename Operate,
-          typename Clear, typename Step>
-struct server_impl : public SZ
+          typename Clear, typename Step, typename Counter = counters::server>
+struct server_impl : public SZ, public Counter
 {
   using lock_t = lock_bitmap<Word>;
   using inbox_t = message_bitmap<Word>;
@@ -51,6 +52,7 @@ struct server_impl : public SZ
 
   server_impl()
       : SZ{0},
+        Counter{},
         remote_buffer(nullptr),
         local_buffer(nullptr),
         active{},
@@ -63,6 +65,7 @@ struct server_impl : public SZ
   server_impl(SZ sz, lock_t active, inbox_t inbox, outbox_t outbox,
               staging_t staging, page_t* remote_buffer, page_t* local_buffer)
       : SZ{sz},
+        Counter{},
         remote_buffer(remote_buffer),
         local_buffer(local_buffer),
         active(active),
@@ -79,6 +82,8 @@ struct server_impl : public SZ
     Step::call(x, y);
     Step::call(x, z);
   }
+
+  server_counters get_counters() { return Counter::get(); }
 
   void dump_word(uint32_t size, Word word)
   {
@@ -102,16 +107,6 @@ struct server_impl : public SZ
     Word todo = work | garbage;
     Word available = todo & ~a & mask;
     return available;
-  }
-
-  uint32_t find_candidate_server_slot(uint32_t w, Word mask)
-  {
-    Word available = find_candidate_server_available_bitmap(w, mask);
-    if (available != 0)
-      {
-        return wordBits() * w + bits::ctz(available);
-      }
-    return UINT32_MAX;
   }
 
   // Returns true if it handled one task. Does not attempt multiple tasks
@@ -152,6 +147,10 @@ struct server_impl : public SZ
       {
         uint32_t w = (element + wc) % words;
         Word available = find_candidate_server_available_bitmap(w, mask);
+        if (available == 0)
+          {
+            Counter::no_candidate_bitmap();
+          }
         while (available != 0)
           {
             uint32_t idx = bits::ctz(available);
@@ -160,6 +159,7 @@ struct server_impl : public SZ
             uint64_t cas_fail_count = 0;
             if (active.try_claim_empty_slot(size, slot, &cas_fail_count))
               {
+                Counter::cas_lock_fail(cas_fail_count);
                 // Success, got the lock. Aim location_arg at next slot
                 *location_arg = slot + 1;
 
@@ -176,12 +176,17 @@ struct server_impl : public SZ
 
                 return r;
               }
+            else
+              {
+                Counter::missed_lock_on_candidate_bitmap();
+              }
 
             // don't try the same slot repeatedly
             available = bits::clearnthbit(available, idx);
           }
 
         mask = ~((Word)0);
+        Counter::missed_lock_on_word();
       }
 
     // Nothing hit, may as well go from the same location on the next call

@@ -66,7 +66,8 @@ struct x64_gcn_pair_T
   using Word = uint64_t;
   using client_type =
       client_impl<Word, SZ, Copy, Fill, Use, Step, counters::client>;
-  using server_type = server_impl<Word, SZ, Copy, Operate, Clear, Step>;
+  using server_type =
+      server_impl<Word, SZ, Copy, Operate, Clear, Step, counters::server>;
 
   client_type client;
   server_type server;

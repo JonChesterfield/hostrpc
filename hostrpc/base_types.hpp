@@ -39,23 +39,23 @@ struct size_compiletime
   constexpr size_t N() const { return SZ; }
 };
 
-using closure_func_t = void (*)(page_t*, void*);
+using closure_func_t = void (*)(page_t *, void *);
 struct closure_pair
 {
   closure_func_t func;
-  void* state;
+  void *state;
 };
 
 template <typename Func>
-closure_pair make_closure_pair(Func* af)
+closure_pair make_closure_pair(Func *af)
 {
-  auto cbf = [](hostrpc::page_t* page, void* vf) {
-    Func* cf = static_cast<Func*>(vf);
+  auto cbf = [](hostrpc::page_t *page, void *vf) {
+    Func *cf = static_cast<Func *>(vf);
     return (*cf)(page);
   };
   return {
       .func = cbf,
-      .state = static_cast<void*>(af),
+      .state = static_cast<void *>(af),
   };
 }
 
@@ -66,16 +66,16 @@ struct storage
   static constexpr size_t align() { return Align; }
 
   template <typename T>
-  T* open()
+  T *open()
   {
-    return __builtin_launder(reinterpret_cast<T*>(data));
+    return __builtin_launder(reinterpret_cast<T *>(data));
   }
 
   // TODO: Allow move construct into storage
   template <typename T>
-  T* construct(T t)
+  T *construct(T t)
   {
-    return new (reinterpret_cast<T*>(data)) T(t);
+    return new (reinterpret_cast<T *>(data)) T(t);
   }
 
   template <typename T>
@@ -89,7 +89,7 @@ struct storage
 
 struct client_counters
 {
-  enum
+  enum : unsigned
   {
     cc_no_candidate_slot = 0,
     cc_missed_lock_on_candidate_slot = 1,
@@ -120,23 +120,53 @@ struct client_counters
 #if defined(__x86_64__)
   void dump() const
   {
-    printf("no_candidate_slot: %lu\n", state[cc_no_candidate_slot]);
-    printf("missed_lock_on_candidate_slot: %lu\n",
+    printf("CC: no_candidate_slot: %lu\n", state[cc_no_candidate_slot]);
+    printf("CC: missed_lock_on_candidate_slot: %lu\n",
            state[cc_missed_lock_on_candidate_slot]);
-    printf("got_lock_after_work_done: %lu\n",
+    printf("CC: got_lock_after_work_done: %lu\n",
            state[cc_got_lock_after_work_done]);
-    printf("waiting_for_result: %lu\n", state[cc_waiting_for_result]);
-    printf("cas_lock_fail: %lu\n", state[cc_cas_lock_fail]);
-    printf("garbage_cas_fail: %lu\n", state[cc_garbage_cas_fail]);
-    printf("garbage_cas_help: %lu\n", state[cc_garbage_cas_help]);
-    printf("publish_fail: %lu\n", state[cc_publish_cas_fail]);
-    printf("publish_help: %lu\n", state[cc_publish_cas_help]);
-    printf("finished_fail: %lu\n", state[cc_finished_cas_fail]);
-    printf("finished_help: %lu\n", state[cc_finished_cas_help]);
+    printf("CC: waiting_for_result: %lu\n", state[cc_waiting_for_result]);
+    printf("CC: cas_lock_fail: %lu\n", state[cc_cas_lock_fail]);
+    printf("CC: garbage_cas_fail: %lu\n", state[cc_garbage_cas_fail]);
+    printf("CC: garbage_cas_help: %lu\n", state[cc_garbage_cas_help]);
+    printf("CC: publish_fail: %lu\n", state[cc_publish_cas_fail]);
+    printf("CC: publish_help: %lu\n", state[cc_publish_cas_help]);
+    printf("CC: finished_fail: %lu\n", state[cc_finished_cas_fail]);
+    printf("CC: finished_help: %lu\n", state[cc_finished_cas_help]);
   }
 #endif
 };
 
+struct server_counters
+{
+  enum : unsigned
+  {
+    sc_no_candidate_bitmap = 0,
+    sc_cas_lock_fail = 1,
+    sc_missed_lock_on_candidate_bitmap = 2,
+    sc_missed_lock_on_word = 3,
+    sc_total_count,
+  };
+  uint64_t state[sc_total_count];
+  server_counters()
+  {
+    for (unsigned i = 0; i < sc_total_count; i++)
+      {
+        state[i] = 0;
+      }
+  }
+
+#if defined(__x86_64__)
+  void dump() const
+  {
+    printf("SC: no_candidate_bitmap: %lu\n", state[sc_no_candidate_bitmap]);
+    printf("SC: cas_lock_fail: %lu\n", state[sc_cas_lock_fail]);
+    printf("SC: missed_lock_on_candidate_bitmap: %lu\n",
+           state[sc_missed_lock_on_candidate_bitmap]);
+    printf("SC: missed_lock_on_word: %lu\n", state[sc_missed_lock_on_word]);
+  }
+#endif
+};
 }  // namespace hostrpc
 
 #endif

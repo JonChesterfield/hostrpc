@@ -445,11 +445,12 @@ struct lock_bitmap
 
   // cas, true on success
   // on return true, loaded contains active[w]
-  bool try_claim_empty_slot(uint32_t size, uint32_t i, uint64_t *cas_fail_count)
+  bool try_claim_empty_slot(uint32_t size, uint32_t slot,
+                            uint64_t *cas_fail_count)
   {
-    assert(i < size);
-    uint32_t w = index_to_element<Word>(i);
-    uint32_t subindex = index_to_subindex<Word>(i);
+    assert(slot < size);
+    uint32_t w = index_to_element<Word>(slot);
+    uint32_t subindex = index_to_subindex<Word>(slot);
 
     Word d = load_word(size, w);
 
