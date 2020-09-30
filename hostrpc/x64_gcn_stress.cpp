@@ -157,7 +157,6 @@ extern "C" void __device_start_main(kernel_args *args)
 
   if (platform::is_master_lane())
     {
-      // TODO: Should return multiple values or error if they differ
       args->result[wg] = r;
     }
 }
@@ -170,7 +169,7 @@ extern "C" void __device_start_cast(
 
 static void init_page(hostrpc::page_t *page, uint64_t v)
 {
-  platform::init_inactive_lanes(page, v);
+  // Only need to initialize lines corresponding to live lanes
   hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
   for (unsigned e = 0; e < 8; e++)
     {
@@ -180,44 +179,24 @@ static void init_page(hostrpc::page_t *page, uint64_t v)
 
 static bool equal_page(hostrpc::page_t *lhs, hostrpc::page_t *rhs)
 {
-  bool eq = true;
-  // 32 vs 64 active lanes may work out OK if this only checks the
-  // cache lines that correspond to get_lane_id. Something roughly like:
-
-  if (0)
+  // Would like to only check live lanes
+  // TODO: Work out how reduction ops work on amdgcn
+  unsigned id = platform::get_lane_id();
+  hostrpc::cacheline_t *line_lhs = &lhs->cacheline[id];
+  hostrpc::cacheline_t *line_rhs = &rhs->cacheline[id];
+  
+  uint32_t diff = 0;
+  for (unsigned e = 0; e < 8; e++)
     {
-      bool gather[64];
-      for (unsigned i = 0; i < 64; i++)
-        {
-          gather[i] = true;
-        }
-
-      unsigned id = platform::get_lane_id();
-      hostrpc::cacheline_t *line_lhs = &lhs->cacheline[id];
-      hostrpc::cacheline_t *line_rhs = &rhs->cacheline[id];
-
-      for (unsigned e = 0; e < 8; e++)
-        {
-          gather[id] &= line_lhs->element[e] == line_rhs->element[e];
-        }
-
-      bool gathered = true;
-      for (unsigned i = 0; i < 64; i++)
-        {
-          gathered &= gather[i];
-        }
-
-      return gathered;
+      diff |= line_lhs->element[e] != line_rhs->element[e];
     }
+  
+  // TODO: Don't think this sort of reduction is defined on nvptx
+  // amdgcn treats inactive lanes as containing zero
+  diff = platform::reduction_sum(diff);
+  diff = platform::broadcast_master(diff);
 
-  for (unsigned i = 0; i < 64; i++)
-    {
-      for (unsigned e = 0; e < 8; e++)
-        {
-          eq &= (lhs->cacheline[i].element[e] == rhs->cacheline[i].element[e]);
-        }
-    }
-  return eq;
+  return diff == 0;  
 }
 
 VISIBLE
@@ -241,7 +220,7 @@ uint64_t gpu_call(hostrpc::x64_gcn_type::client_type *client, uint32_t id,
   hostrpc::page_t *expect = &stack_expect;
 #endif
 
-  uint64_t failures = 0;
+  uint32_t failures = 0;
   for (unsigned r = 0; r < reps; r++)
     {
       if (check_result)
@@ -266,6 +245,9 @@ uint64_t gpu_call(hostrpc::x64_gcn_type::client_type *client, uint32_t id,
             }
         }
     }
+
+  failures = platform::reduction_sum(failures);
+  failures = platform::broadcast_master(failures);
 
   return failures;
 }
@@ -452,7 +434,7 @@ TEST_CASE("x64_gcn_stress")
     };
 
     // number tasks = MAX_WAVES * nclients * per_client
-    unsigned nservers = 64;
+    unsigned nservers = 4;
     unsigned nclients = 1;
     unsigned per_client = 4096 * 2;
 

@@ -34,6 +34,11 @@ inline constexpr size_t client_counter_overhead()
   return client_counters::cc_total_count * sizeof(_Atomic(uint64_t));
 }
 
+inline constexpr size_t server_counter_overhead()
+{
+  return server_counters::sc_total_count * sizeof(_Atomic(uint64_t));
+}
+
 struct gcn_x64_t
 {
   gcn_x64_t(size_t minimum_number_slots, uint64_t hsa_region_t_fine_handle,
@@ -57,6 +62,7 @@ struct gcn_x64_t
     template <typename ClientType>
     client_t(ClientType ct)
     {
+      static_assert(static_equal<state_t::size(), sizeof(ClientType)>(), "");
       static_assert(state_t::size() == sizeof(ClientType), "");
       static_assert(state_t::align() == alignof(ClientType), "");
       auto *cv = state.construct<ClientType>(ct);
@@ -70,7 +76,7 @@ struct gcn_x64_t
   {
     friend struct gcn_x64_t;
     server_t() {}
-    using state_t = hostrpc::storage<56, 8>;
+    using state_t = hostrpc::storage<72 + server_counter_overhead(), 8>;
 
     bool handle(hostrpc::page_t *, uint32_t *loc);
 
@@ -78,6 +84,7 @@ struct gcn_x64_t
     template <typename ServerType>
     server_t(ServerType st)
     {
+      static_assert(static_equal<state_t::size(), sizeof(ServerType)>(), "");
       static_assert(state_t::size() == sizeof(ServerType), "");
       static_assert(state_t::align() == alignof(ServerType), "");
       auto *sv = state.construct<ServerType>(st);

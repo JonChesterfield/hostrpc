@@ -40,7 +40,7 @@ inline bool is_master_lane(void) { return true; }
 inline uint32_t get_lane_id(void) { return 0; }
 inline uint32_t broadcast_master(uint32_t x) { return x; }
 inline uint64_t broadcast_master(uint64_t x) { return x; }
-inline void init_inactive_lanes(hostrpc::page_t *, uint64_t) {}
+inline uint32_t reduction_sum(uint32_t x) { return x; }
 inline uint32_t client_start_slot() { return 0; }
 }  // namespace platform
 #endif
@@ -108,6 +108,27 @@ __attribute__((always_inline)) inline bool is_master_lane(void)
   return lane_id == lowest_active;
 }
 
+__attribute__((always_inline)) inline 
+int32_t __impl_shfl_down_sync(int32_t var,
+                         uint32_t laneDelta) {
+  // derived from openmp runtime
+  int32_t width = 64;
+  int self = get_lane_id();
+  int index = self + laneDelta;
+  index = (int)(laneDelta + (self & (width - 1))) >= width ? self : index;
+  return __builtin_amdgcn_ds_bpermute(index << 2, var);
+}
+
+__attribute__((always_inline)) inline uint32_t reduction_sum(uint32_t x) {
+  x += __impl_shfl_down_sync(x, 32);
+  x += __impl_shfl_down_sync(x, 16);
+  x += __impl_shfl_down_sync(x, 8);
+  x += __impl_shfl_down_sync(x, 4);
+  x += __impl_shfl_down_sync(x, 2);
+  x += __impl_shfl_down_sync(x, 1);
+  return x;
+}
+
 __attribute__((always_inline)) inline uint32_t broadcast_master(uint32_t x)
 {
   return __builtin_amdgcn_readfirstlane(x);
@@ -120,78 +141,6 @@ __attribute__((always_inline)) inline uint64_t broadcast_master(uint64_t x)
   lo = broadcast_master(lo);
   hi = broadcast_master(hi);
   return ((uint64_t)hi << 32u) | lo;
-}
-
-inline void init_inactive_lanes(hostrpc::page_t *page, uint64_t v)
-{
-  // a 32 wide wave is not handled well here. The asm also doesn't parse on
-  // gfx10, and will be tricky to write on nvptx.
-
-  // may want to do this control flow within the asm
-  uint64_t activemask = __builtin_amdgcn_read_exec();
-  if (activemask == UINT64_MAX)
-    {
-      return;
-    }
-
-  // 64 bit addition is by 2x32bit, need to convert the pointer to an integer
-  uint64_t addr;
-  __builtin_memcpy(&addr, &page, 8);
-
-  // need the address and initializer to be lane independent
-  uint32_t loclo = __builtin_amdgcn_readfirstlane(static_cast<uint32_t>(addr));
-  uint32_t lochi =
-      __builtin_amdgcn_readfirstlane(static_cast<uint32_t>(addr >> 32u));
-
-  uint32_t scalar_lo = __builtin_amdgcn_readfirstlane(static_cast<uint32_t>(v));
-  uint32_t scalar_hi =
-      __builtin_amdgcn_readfirstlane(static_cast<uint32_t>(v >> 32u));
-
-  // Uses inline asm to switch on the inactive lanes, write values to them
-  // Would like to avoid this as don't want to write asm for all the ISAs
-#if 1
-  // Hard codes 2:5 for the quad store and 6:7 for the computed address
-  // Can be cheaper if only the first dwordx2 is written
-  uint32_t laneid_scratch;
-  asm("// wait, may not be necessary\n\t"
-      "s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)\n\t"
-      "// Invert active lanes\n\t"
-      "s_not_b64 exec, exec\n\t"
-      "// broadcast address to v[6:7]\n\t"
-      "v_mov_b32_e32 v6, %[loclo]\n\t"
-      "v_mov_b32_e32 v7, %[lochi]\n\t"
-
-      "// Calculate offset into page\n\t"
-      "v_mbcnt_lo_u32_b32 %[laneid], -1, 0\n\t"
-      "v_mbcnt_hi_u32_b32 %[laneid], -1, %[laneid]\n\t"
-      "v_lshlrev_b32_e32 %[laneid], 6, %[laneid]\n\t"
-      "v_add_co_u32_e32 v6, vcc, v6, %[laneid]\n\t"
-      "v_addc_co_u32_e32 v7, vcc, 0, v7, vcc\n\t"
-
-      "// Write payload to v[2:5]\n\t"
-      "v_mov_b32_e32 v2, %[vallo]\n\t"
-      "v_mov_b32_e32 v3, %[valhi]\n\t"
-      "v_mov_b32_e32 v4, %[vallo]\n\t"
-      "v_mov_b32_e32 v5, %[valhi]\n\t"
-
-      "// v[0:1] from reg constraints on loclo/hi\n\t"
-      // flat_store_dwordx2 v[6:7], v[2:3] if only e[0]
-      "flat_store_dwordx4 v[6:7], v[2:5]\n\t"
-      "flat_store_dwordx4 v[6:7], v[2:5] offset:16\n\t"
-      "flat_store_dwordx4 v[6:7], v[2:5] offset:32\n\t"
-      "flat_store_dwordx4 v[6:7], v[2:5] offset:48\n\t"
-
-      "// Restore active lanes\n\t"
-      "s_not_b64 exec, exec\n\t"
-
-      "// wait\n\t"
-      "s_waitcnt vmcnt(0) lgkmcnt(0)\n\t"
-
-      : [ laneid ] "=&v"(laneid_scratch)
-      : [ loclo ] "s"(loclo), [ lochi ] "s"(lochi), [ vallo ] "s"(scalar_lo),
-        [ valhi ] "s"(scalar_hi)
-      : "v2", "v3", "v4", "v5", "v6", "v7", "vcc", "memory");
-#endif
 }
 
 inline uint32_t client_start_slot()

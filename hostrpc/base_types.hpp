@@ -8,6 +8,13 @@
 #include <stdio.h>
 #endif
 
+template <size_t lhs, size_t rhs>
+constexpr bool static_equal()
+{
+  static_assert(lhs == rhs, "");
+  return lhs == rhs;
+}
+
 namespace hostrpc
 {
 struct cacheline_t

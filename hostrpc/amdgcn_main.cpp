@@ -28,7 +28,17 @@ void operate(hostrpc::page_t *page)
     }
 }
 
-void clear(hostrpc::page_t *) {}
+void clear(hostrpc::page_t *page)
+{
+  for (unsigned c = 0; c < 64; c++)
+    {
+      hostrpc::cacheline_t &line = page->cacheline[c];
+      for (unsigned i = 0; i < 8; i++)
+        {
+          line.element[i] = UINT64_MAX;
+        }
+    }
+}
 
 #endif
 
@@ -36,8 +46,6 @@ void clear(hostrpc::page_t *) {}
 
 void pass_arguments(hostrpc::page_t *page, uint64_t d[8])
 {
-  platform::init_inactive_lanes(page, UINT64_MAX);
-
   hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
   for (unsigned i = 0; i < 8; i++)
     {
@@ -114,8 +122,12 @@ extern "C" __attribute__((visibility("default"))) int main(int argc,
 
   hostrpc::page_t page;
 
+  // Initialize it as if by calling clear
   hostrpc::cacheline_t &line = page.cacheline[platform::get_lane_id()];
-  // hostrpc::cacheline_t expect;
+  for (unsigned e = 0; e < 8; e++)
+    {
+      line.element[e] = UINT64_MAX;
+    }
 
   unsigned rep = 0;
   // for (unsigned rep = 0; rep < 64000; rep++)
@@ -123,8 +135,6 @@ extern "C" __attribute__((visibility("default"))) int main(int argc,
     {
       if (platform::get_lane_id() % 2 == 0)
         {
-          platform::init_inactive_lanes(&page, 42u);
-
           for (unsigned e = 0; e < 8; e++)
             {
               line.element[e] =

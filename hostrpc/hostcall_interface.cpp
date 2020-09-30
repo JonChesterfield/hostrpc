@@ -83,7 +83,8 @@ template <typename Word, typename SZ>
 using x64_amdgcn_server =
     hostrpc::server_impl<Word, SZ, hostrpc::copy_functor_given_alias,
                          x64_host_amdgcn_client::operate,
-                         x64_host_amdgcn_client::clear, hostrpc::nop_stepper>;
+                         x64_host_amdgcn_client::clear, hostrpc::nop_stepper,
+                         hostrpc::counters::server_nop>;
 
 #if defined(__x86_64__)
 #if 0
@@ -233,6 +234,7 @@ bool hostcall_interface_t::valid() { return state != nullptr; }
 hostcall_interface_t::client_t hostcall_interface_t::client()
 {
   using res_t = hostcall_interface_t::client_t;
+  static_equal<res_t::state_t::size(), sizeof(ty::client_type)>();
   static_assert(res_t::state_t::size() == sizeof(ty::client_type), "");
   static_assert(res_t::state_t::align() == alignof(ty::client_type), "");
 
@@ -249,7 +251,7 @@ hostcall_interface_t::server_t hostcall_interface_t::server()
 {
   // Construct an opaque server_t into the aligned state field
   using res_t = hostcall_interface_t::server_t;
-  static_assert(res_t::state_t::size() == sizeof(ty::server_type), "");
+  static_equal<res_t::state_t::size(), sizeof(ty::server_type)>();
   static_assert(res_t::state_t::align() == alignof(ty::server_type), "");
 
   ty *s = static_cast<ty *>(state);
