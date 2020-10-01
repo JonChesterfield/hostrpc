@@ -130,7 +130,7 @@ using ty = x64_gcn_pair_T<hostrpc::size_runtime, fill, use, indirect::operate,
 #include <cstdint>
 #endif
 
-#define MAX_WAVES (8)
+#define MAX_WAVES (1)
 struct kernel_args
 {
   uint32_t id;
@@ -184,20 +184,22 @@ static bool equal_page(hostrpc::page_t *lhs, hostrpc::page_t *rhs)
   unsigned id = platform::get_lane_id();
   hostrpc::cacheline_t *line_lhs = &lhs->cacheline[id];
   hostrpc::cacheline_t *line_rhs = &rhs->cacheline[id];
-  
+
   uint32_t diff = 0;
   for (unsigned e = 0; e < 8; e++)
     {
       diff |= line_lhs->element[e] != line_rhs->element[e];
     }
-  
+
   // TODO: Don't think this sort of reduction is defined on nvptx
   // amdgcn treats inactive lanes as containing zero
   diff = platform::reduction_sum(diff);
   diff = platform::broadcast_master(diff);
 
-  return diff == 0;  
+  return diff == 0;
 }
+
+// error: 'alignas' attribute cannot be applied to types ?
 
 VISIBLE
 hostrpc::page_t scratch_store[MAXCLIENT];
@@ -208,10 +210,12 @@ uint64_t gpu_call(hostrpc::x64_gcn_type::client_type *client, uint32_t id,
                   uint32_t reps)
 {
   const bool check_result = true;
-
+  id = platform::broadcast_master(id);
 #if 1
   hostrpc::page_t *scratch = &scratch_store[id];
   hostrpc::page_t *expect = &expect_store[id];
+  // asm volatile ("// " :"+r"(scratch), "+r"(expect) ::);
+
 #else
   // This is associated with memory corruption. 8k per thread may be too much.
   hostrpc::page_t stack_scratch;
@@ -225,11 +229,18 @@ uint64_t gpu_call(hostrpc::x64_gcn_type::client_type *client, uint32_t id,
     {
       if (check_result)
         {
-          init_page(scratch, id + r);
-          init_page(expect, id + r + 1);
+          if (0)
+            {
+              init_page(scratch, id + r);
+              init_page(expect, id + r + 1);
+            }
+
+          init_page(scratch, 42);
+          init_page(expect, 43);
         }
 
       void *vp = static_cast<void *>(scratch);
+      vp = (void *)platform::broadcast_master((uint64_t)vp);
       bool rb = false;
       do
         {
@@ -364,13 +375,36 @@ TEST_CASE("x64_gcn_stress")
     // Reasonable chance we also want to initialize the data before the first
     // call
 
-    auto op_func = [](hostrpc::page_t *page) {
-#if 0
-      printf("gcn stress hit server function\n");
-      printf("first values %lu/%lu/%lu\n",
-             page->cacheline[0].element[0],
-             page->cacheline[0].element[1],
-             page->cacheline[1].element[0]);
+    auto page_to_index = [&](hostrpc::page_t *page) -> int64_t {
+      hostrpc::page_t *base = p.instance.client.remote_buffer;
+
+      intptr_t d = page - base;
+      // fprintf(stderr,"base %lx, page %lx, diff %ld\n", (uint64_t)base,
+      // (uint64_t)page, d);
+      return d;
+    };
+
+    auto str = [](bool hit) -> const char * { return hit ? "FAIL" : "pass"; };
+    auto op_func = [&](hostrpc::page_t *page) {
+#if 1
+      // printf("gcn stress hit server function\n");
+      uint64_t f[3] = {
+          page->cacheline[0].element[0],
+          page->cacheline[0].element[1],
+          page->cacheline[1].element[0],
+      };
+      uint64_t e = 42;
+      bool hit = false;
+      for (int i = 0; i < 3; i++)
+        {
+          if (f[i] != e) hit = true;
+        }
+      if (hit)
+        {
+          fprintf(stderr, "Operate (%s)(%ld): first values %lu/%lu/%lu\n",
+                  str(hit), page_to_index(page), f[0], f[1], f[2]);
+        }
+
 #endif
       for (unsigned c = 0; c < 64; c++)
         {
@@ -388,13 +422,26 @@ TEST_CASE("x64_gcn_stress")
         }
     };
 
-    auto cl_func = [](hostrpc::page_t *page) {
-#if 0
-      printf("gcn stress hit clear function\n");
-      printf("first values %lu/%lu/%lu\n",
-             page->cacheline[0].element[0],
-             page->cacheline[0].element[1],
-             page->cacheline[1].element[0]);
+    auto cl_func = [&](hostrpc::page_t *page) {
+#if 1
+      //   printf("gcn stress hit clear function\n");
+      uint64_t f[3] = {
+          page->cacheline[0].element[0],
+          page->cacheline[0].element[1],
+          page->cacheline[1].element[0],
+      };
+      uint64_t e = 43;
+      bool hit = false;
+      for (int i = 0; i < 3; i++)
+        {
+          if (f[i] != e) hit = true;
+        }
+      if (hit)
+        {
+          fprintf(stderr, "Clear (%s)(%ld): first values %lu/%lu/%lu\n",
+                  str(hit), page_to_index(page), f[0], f[1], f[2]);
+        }
+
 #endif
       for (unsigned c = 0; c < 64; c++)
         {
@@ -407,6 +454,8 @@ TEST_CASE("x64_gcn_stress")
     };
 
     auto server_worker = [&](unsigned id) {
+      uint64_t thread_id = get_thread_id();
+      fprintf(stderr, "Server worker id %u => %lx\n", id, thread_id);
       unsigned count = 0;
 
       uint32_t server_location = 0;
@@ -434,9 +483,9 @@ TEST_CASE("x64_gcn_stress")
     };
 
     // number tasks = MAX_WAVES * nclients * per_client
-    unsigned nservers = 4;
+    unsigned nservers = 2;
     unsigned nclients = 1;
-    unsigned per_client = 4096 * 2;
+    unsigned per_client = 64;  // 4096 * 2;
 
 #ifndef DERIVE_VAL
 #error "Req derive_val"
@@ -475,10 +524,10 @@ TEST_CASE("x64_gcn_stress")
     // 11      2048       2  26427
     // 12      4098       1  47647
 
-    printf(
-        "x64-gcn spawning %u x64 servers, %u gcn clients, each doing %u "
-        "reps in batches of %u\n",
-        nservers, nclients, per_client, MAX_WAVES);
+    fprintf(stderr,
+            "x64-gcn spawning %u x64 servers, %u gcn clients, each doing %u "
+            "reps in batches of %u\n",
+            nservers, nclients, per_client, MAX_WAVES);
 
     auto ctrl_holder = hsa::allocate(fine_grained_region, 8);
     uint64_t *control = (uint64_t *)ctrl_holder.get();
@@ -507,7 +556,8 @@ TEST_CASE("x64_gcn_stress")
       timer t("Launching clients");
       for (unsigned i = 0; i < nclients; i++)
         {
-          kernel_args example = {.id = MAX_WAVES * i,
+          fprintf(stderr, "client %u, id %u\n", (4 + i), MAX_WAVES * (4 + i));
+          kernel_args example = {.id = MAX_WAVES * (4 + i),
                                  .reps = per_client,
                                  .result = {0},
                                  .control = control};

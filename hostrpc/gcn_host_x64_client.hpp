@@ -4,6 +4,7 @@
 #include "detail/client_impl.hpp"
 #include "detail/common.hpp"
 #include "detail/server_impl.hpp"
+#include "test_common.hpp"
 
 // client parameterised on fill, use
 // server parameterised on operate, clear

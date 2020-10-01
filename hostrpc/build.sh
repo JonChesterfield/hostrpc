@@ -87,6 +87,10 @@ $LINK x64_gcn_stress.gcn.code.bc x64_gcn_stress.gcn.kern.bc -o x64_gcn_stress.gc
 $CXX_GCN_LD x64_gcn_stress.gcn.bc x64_host_gcn_client.gcn.bc -o x64_gcn_stress.gcn.so
 $CXX_X64 -DDERIVE_VAL=$DERIVE -I$HSAINC x64_gcn_stress.cpp -c -o x64_gcn_stress.x64.bc
 
+$CXX_X64_LD x64_gcn_stress.x64.bc catch.o memory.x64.bc x64_host_gcn_client.x64.bc $LDFLAGS -o x64_gcn_stress.exe
+echo "Call x64_gcn_stress: Derive $DERIVE"
+time ./x64_gcn_stress.exe
+exit
 
 $CXX_GCN gcn_host_x64_client.cpp -c -o gcn_host_x64_client.gcn.bc
 $CXX_X64 -I$HSAINC gcn_host_x64_client.cpp -c -o gcn_host_x64_client.x64.bc

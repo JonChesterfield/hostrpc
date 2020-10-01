@@ -108,9 +108,9 @@ __attribute__((always_inline)) inline bool is_master_lane(void)
   return lane_id == lowest_active;
 }
 
-__attribute__((always_inline)) inline 
-int32_t __impl_shfl_down_sync(int32_t var,
-                         uint32_t laneDelta) {
+__attribute__((always_inline)) inline int32_t __impl_shfl_down_sync(
+    int32_t var, uint32_t laneDelta)
+{
   // derived from openmp runtime
   int32_t width = 64;
   int self = get_lane_id();
@@ -119,7 +119,8 @@ int32_t __impl_shfl_down_sync(int32_t var,
   return __builtin_amdgcn_ds_bpermute(index << 2, var);
 }
 
-__attribute__((always_inline)) inline uint32_t reduction_sum(uint32_t x) {
+__attribute__((always_inline)) inline uint32_t reduction_sum(uint32_t x)
+{
   x += __impl_shfl_down_sync(x, 32);
   x += __impl_shfl_down_sync(x, 16);
   x += __impl_shfl_down_sync(x, 8);
