@@ -180,51 +180,45 @@ inline void sleep(void) {}
 
 namespace detail
 {
-__attribute__((always_inline)) inline uint32_t ballot()
-{
-#if CUDA_VERSION >= 9000
-  return __activemask();
-#else
-  return 0;  // __ballot undeclared, definitely can't include cuda.h though
-             // return __ballot(1);
-#endif
-}
+// clang --target=nvptx64-nvidia-cuda doesn't seem to enabled the various
+// intrinsics. Can't compile the majority of the code as cuda, so moving the
+// platform functions out of line.
 
-__attribute__((always_inline)) inline uint32_t get_master_lane_id(void)
-{
-  return 0;  // todo
-}
+uint32_t ballot();
+
+uint32_t get_master_lane_id(void);
 
 }  // namespace detail
-__attribute__((always_inline)) inline uint32_t get_lane_id(void)
-{
-  // uses threadIdx.x & 0x1f from cuda, need to find the corresponding intrinsic
-  return 0;
-}
 
-__attribute__((always_inline)) inline bool is_master_lane(void)
+uint32_t get_lane_id(void);
+
+bool is_master_lane(void)
 {
   return get_lane_id() == detail::get_master_lane_id();
 }
 
-__attribute__((always_inline)) inline uint32_t broadcast_master(uint32_t x)
+uint32_t broadcast_master(uint32_t x);
+
+// probably don't want to model 64 wide warps on nvptx
+uint64_t broadcast_master(uint64_t x)
 {
-  // involves __shfl_sync
-  uint32_t lane_id = get_lane_id();
-  uint32_t master_id = detail::get_master_lane_id();
-  uint32_t v;
-  if (lane_id == master_id)
-    {
-      v = x;
-    }
-  // shfl_sync isn't declared either
-  // v = __shfl_sync(UINT32_MAX, v, master_id);
-  return v;
+  assert(0);
+  return x;
 }
 
-__attribute__((always_inline)) inline uint64_t broadcast_master(uint64_t x)
+inline uint32_t client_start_slot() { return 0; }
+
+// In detail?
+int32_t __impl_shfl_down_sync(int32_t var, uint32_t laneDelta);
+
+__attribute__((always_inline)) inline uint32_t reduction_sum(uint32_t x)
 {
-  // probably don't want to model 64 wide warps on nvptx
+  x += __impl_shfl_down_sync(x, 32);
+  x += __impl_shfl_down_sync(x, 16);
+  x += __impl_shfl_down_sync(x, 8);
+  x += __impl_shfl_down_sync(x, 4);
+  x += __impl_shfl_down_sync(x, 2);
+  x += __impl_shfl_down_sync(x, 1);
   return x;
 }
 }  // namespace platform
