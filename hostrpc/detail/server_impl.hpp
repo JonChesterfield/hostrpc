@@ -245,8 +245,8 @@ struct server_impl : public SZ, public Counter
       {
         assert((o & this_slot) != 0);
 #if defined(__x86_64__)
-        fprintf(stderr, "[%lx] Clear slot %u\n", (uint64_t)get_thread_id(),
-                slot);
+        // fprintf(stderr, "[%lx] Clear slot %u\n", (uint64_t)get_thread_id(),
+        // slot);
 #endif
         // Move data and clear. TODO: Elide the copy for nop clear
         Copy::pull_to_server_from_client(&local_buffer[slot],
@@ -286,7 +286,8 @@ struct server_impl : public SZ, public Counter
     step(__LINE__, operate_application_state, clear_application_state);
 
 #if defined(__x86_64__)
-    fprintf(stderr, "[%lx] Operate slot %u\n", (uint64_t)get_thread_id(), slot);
+    // fprintf(stderr, "[%lx] Operate slot %u\n", (uint64_t)get_thread_id(),
+    // slot);
 #endif
     // make the calls
     Copy::pull_to_server_from_client(&local_buffer[slot], &remote_buffer[slot]);

@@ -64,7 +64,9 @@ $CXX_X64 ../impl/msgpack.cpp -c -o msgpack.bc
 $CXX_X64 find_metadata.cpp -c -o find_metadata.bc
 $LINK msgpack.bc find_metadata.bc -o hsa_support.bc
 
-# time $CXX -O3 catch.cpp -c -o catch.o
+if [ ! -f catch.o ]; then
+    time $CXX -O3 catch.cpp -c -o catch.o
+fi
 
 $CXX_X64 states.cpp -c -o states.x64.bc
 

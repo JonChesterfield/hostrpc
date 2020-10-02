@@ -39,7 +39,6 @@ inline void sleep(void) { sleep_noexcept(1000); }
 inline bool is_master_lane(void) { return true; }
 inline uint32_t get_lane_id(void) { return 0; }
 inline uint32_t broadcast_master(uint32_t x) { return x; }
-inline uint64_t broadcast_master(uint64_t x) { return x; }
 inline uint32_t reduction_sum(uint32_t x) { return x; }
 inline uint32_t client_start_slot() { return 0; }
 }  // namespace platform
@@ -107,7 +106,8 @@ __attribute__((always_inline)) inline bool is_master_lane(void)
   // TODO: readfirstlane(lane_id) == lowest_active?
   return lane_id == lowest_active;
 }
-
+namespace detail
+{
 __attribute__((always_inline)) inline int32_t __impl_shfl_down_sync(
     int32_t var, uint32_t laneDelta)
 {
@@ -118,30 +118,11 @@ __attribute__((always_inline)) inline int32_t __impl_shfl_down_sync(
   index = (int)(laneDelta + (self & (width - 1))) >= width ? self : index;
   return __builtin_amdgcn_ds_bpermute(index << 2, var);
 }
-
-__attribute__((always_inline)) inline uint32_t reduction_sum(uint32_t x)
-{
-  x += __impl_shfl_down_sync(x, 32);
-  x += __impl_shfl_down_sync(x, 16);
-  x += __impl_shfl_down_sync(x, 8);
-  x += __impl_shfl_down_sync(x, 4);
-  x += __impl_shfl_down_sync(x, 2);
-  x += __impl_shfl_down_sync(x, 1);
-  return x;
-}
+}  // namespace detail
 
 __attribute__((always_inline)) inline uint32_t broadcast_master(uint32_t x)
 {
   return __builtin_amdgcn_readfirstlane(x);
-}
-
-__attribute__((always_inline)) inline uint64_t broadcast_master(uint64_t x)
-{
-  uint32_t lo = x;
-  uint32_t hi = x >> 32u;
-  lo = broadcast_master(lo);
-  hi = broadcast_master(hi);
-  return ((uint64_t)hi << 32u) | lo;
 }
 
 inline uint32_t client_start_slot()
@@ -169,10 +150,9 @@ inline uint32_t client_start_slot()
 }
 
 }  // namespace platform
-#endif
+#endif // defined(__AMDGCN__)
 
 #if defined(__CUDACC__)
-
 namespace platform
 {
 inline void sleep_briefly(void) {}
@@ -184,9 +164,9 @@ namespace detail
 // intrinsics. Can't compile the majority of the code as cuda, so moving the
 // platform functions out of line.
 
-uint32_t ballot();
-
 uint32_t get_master_lane_id(void);
+
+int32_t __impl_shfl_down_sync(int32_t var, uint32_t laneDelta);
 
 }  // namespace detail
 
@@ -199,33 +179,38 @@ bool is_master_lane(void)
 
 uint32_t broadcast_master(uint32_t x);
 
-// probably don't want to model 64 wide warps on nvptx
-uint64_t broadcast_master(uint64_t x)
-{
-  assert(0);
-  return x;
-}
-
 inline uint32_t client_start_slot() { return 0; }
 
-// In detail?
-int32_t __impl_shfl_down_sync(int32_t var, uint32_t laneDelta);
-
-__attribute__((always_inline)) inline uint32_t reduction_sum(uint32_t x)
-{
-  x += __impl_shfl_down_sync(x, 32);
-  x += __impl_shfl_down_sync(x, 16);
-  x += __impl_shfl_down_sync(x, 8);
-  x += __impl_shfl_down_sync(x, 4);
-  x += __impl_shfl_down_sync(x, 2);
-  x += __impl_shfl_down_sync(x, 1);
-  return x;
-}
 }  // namespace platform
-#endif
+#endif // defined(__CUDACC__)
 
 namespace platform
 {
+// Related functions derived from the platform specific ones
+
+#if defined(__AMDGCN__) || defined(__CUDACC__)
+__attribute__((always_inline)) inline uint32_t reduction_sum(uint32_t x)
+{
+  // could implement shfl_down for x64 and drop the macro
+  x += detail::__impl_shfl_down_sync(x, 32);
+  x += detail::__impl_shfl_down_sync(x, 16);
+  x += detail::__impl_shfl_down_sync(x, 8);
+  x += detail::__impl_shfl_down_sync(x, 4);
+  x += detail::__impl_shfl_down_sync(x, 2);
+  x += detail::__impl_shfl_down_sync(x, 1);
+  return x;
+}
+#endif
+
+__attribute__((always_inline)) inline uint64_t broadcast_master(uint64_t x)
+{
+  uint32_t lo = x;
+  uint32_t hi = x >> 32u;
+  lo = broadcast_master(lo);
+  hi = broadcast_master(hi);
+  return ((uint64_t)hi << 32u) | lo;
+}
+
 template <typename U, typename F>
 U critical(F f)
 {

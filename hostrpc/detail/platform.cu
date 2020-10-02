@@ -8,7 +8,9 @@
 #define WARPSIZE 32
 DEVICE uint32_t get_lane_id(void) { return threadIdx.x & (WARPSIZE - 1); }
 
-DEVICE uint32_t ballot()
+namespace detail
+{
+static DEVICE uint32_t ballot()
 {
 #if CUDA_VERSION >= 9000
   return __activemask();
@@ -17,8 +19,6 @@ DEVICE uint32_t ballot()
 #endif
 }
 
-namespace detail
-{
 DEVICE uint32_t get_master_lane_id(void)
 {
   uint32_t activemask = ballot();
