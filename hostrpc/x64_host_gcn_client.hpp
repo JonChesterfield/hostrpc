@@ -9,6 +9,7 @@
 #include "test_common.hpp"
 
 #if defined(__x86_64__)
+// May want this header to be free of hsa stuff, following the nvptx layout
 #include "hsa.h"
 #endif
 
@@ -37,19 +38,21 @@ struct x64_gcn_pair_T
     hsa_region_t fine = {.handle = fine_handle};
     hsa_region_t coarse = {.handle = coarse_handle};
 
+    // Shared buffer. todo: drop the redundant pointer
     hostrpc::page_t *client_buffer = hostrpc::careful_array_cast<page_t>(
         hostrpc::hsa_amdgpu::allocate(fine_handle, alignof(page_t),
                                       N * sizeof(page_t)),
         N);
 
     hostrpc::page_t *server_buffer =
-        client_buffer;  // todo: drop the redundant pointer
+        client_buffer;
 
     // allocating in coarse is probably not sufficient, likely to need to mark
     // the pointer with an address space
     // server_active could be 'malloc', gcn can't access it
 
     // fine grained area, can read/write from either client or server
+    // todo: send/recv in terms of server type instead of client?
     auto send =
         hsa_allocate_slot_bitmap_data_alloc<typename client_type::outbox_t>(
             fine, N);

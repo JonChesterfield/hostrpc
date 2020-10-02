@@ -103,6 +103,9 @@ $CXX_CUDA detail/platform.cu -c -emit-llvm -o detail/platform.ptx.bc
 $CXX_PTX codegen/client.cpp -c -o codegen/client.ptx.bc
 $CXX_PTX codegen/server.cpp -c -o codegen/server.ptx.bc
 
+$CXX_PTX x64_ptx_stress.cpp -c -o x64_ptx_stress.gcn.code.bc
+$CXX_X64 -I$HSAINC x64_ptx_stress.cpp -c -o x64_ptx_stress.x64.bc
+
 $CXX_GCN hostcall_interface.cpp -c -o hostcall_interface.gcn.bc
 $CXX_X64 -I$HSAINC hostcall_interface.cpp -c -o hostcall_interface.x64.bc
 
