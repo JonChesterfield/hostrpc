@@ -150,7 +150,7 @@ inline uint32_t client_start_slot()
 }
 
 }  // namespace platform
-#endif // defined(__AMDGCN__)
+#endif  // defined(__AMDGCN__)
 
 #if defined(__CUDACC__)
 namespace platform
@@ -182,7 +182,7 @@ uint32_t broadcast_master(uint32_t x);
 inline uint32_t client_start_slot() { return 0; }
 
 }  // namespace platform
-#endif // defined(__CUDACC__)
+#endif  // defined(__CUDACC__)
 
 namespace platform
 {

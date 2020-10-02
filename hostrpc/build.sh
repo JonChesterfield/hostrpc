@@ -9,6 +9,7 @@ RDIR=$HOME/rocm/aomp
 
 # Needs to resolve to gfx906, gfx1010 or similar
 GFX=`$RDIR/bin/mygpu`
+GFX=gfx906
 
 # A poorly named amd-stg-open, does not hang
 # RDIR=$HOME/rocm-3.5-llvm-install
@@ -82,10 +83,6 @@ $CXX_X64 -I$HSAINC memory.cpp -c -o memory.x64.bc
 $CXX_X64 -I$HSAINC tests.cpp -c -o tests.x64.bc
 $CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc
 
-
-$CXX_GCN x64_host_gcn_client.cpp -c -o x64_host_gcn_client.gcn.bc
-$CXX_X64 -I$HSAINC x64_host_gcn_client.cpp -c -o x64_host_gcn_client.x64.bc
-
 $CXX_GCN -DDERIVE_VAL=$DERIVE x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.code.bc
 $CXXCL -DDERIVE_VAL=$DERIVE x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.kern.bc
 $LINK x64_gcn_stress.gcn.code.bc x64_gcn_stress.gcn.kern.bc -o x64_gcn_stress.gcn.bc
@@ -102,9 +99,9 @@ $LINK persistent_kernel.gcn.code.bc persistent_kernel.gcn.kern.bc -o persistent_
 $CXX_GCN_LD persistent_kernel.gcn.bc x64_host_gcn_client.gcn.bc -o persistent_kernel.gcn.so
 $CXX_X64 -I$HSAINC persistent_kernel.cpp -c -o persistent_kernel.x64.bc
 
-$CXX_PTX codegen/client.cpp -c -o codegen/client.ptx.bc
-
 $CXX_CUDA detail/platform.cu -c -emit-llvm -o detail/platform.ptx.bc
+$CXX_PTX codegen/client.cpp -c -o codegen/client.ptx.bc
+$CXX_PTX codegen/server.cpp -c -o codegen/server.ptx.bc
 
 $CXX_GCN hostcall_interface.cpp -c -o hostcall_interface.gcn.bc
 $CXX_X64 -I$HSAINC hostcall_interface.cpp -c -o hostcall_interface.x64.bc

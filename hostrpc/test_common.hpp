@@ -39,6 +39,18 @@ T hsa_allocate_slot_bitmap_data_alloc(hsa_region_t region, size_t size)
 }
 
 template <typename T>
+T x64_allocate_slot_bitmap_data_alloc(size_t size)
+{
+  constexpr size_t bps = T::bits_per_slot();
+  static_assert(bps == 1 || bps == 8, "");
+  const size_t align = 64;
+  void *memory = hostrpc::x64_native::allocate(align, size * bps);
+  typename T::Ty *m =
+      hostrpc::careful_array_cast<typename T::Ty>(memory, size * bps);
+  return {m};
+}
+
+template <typename T>
 void hsa_allocate_slot_bitmap_data_free(T *d)
 {
   hostrpc::hsa_amdgpu::deallocate(static_cast<void *>(d));

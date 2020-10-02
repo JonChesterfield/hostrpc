@@ -14,53 +14,11 @@
 
 namespace hostrpc
 {
-struct copy_functor_x64_gcn
-    : public hostrpc::copy_functor_interface<copy_functor_x64_gcn>
-{
-  friend struct hostrpc::copy_functor_interface<copy_functor_x64_gcn>;
-
-  // attempting to move incrementally to a gpu-local buffer to avoid
-  // compiler generated accesses to flat memory
-  static void push_from_client_to_server_impl(hostrpc::page_t *dst,
-                                              const hostrpc::page_t *src)
-  {
-    // src is coarse memory, dst is fine
-    assert(src == dst);
-    (void)src;
-    (void)dst;
-  }
-
-  static void pull_to_client_from_server_impl(hostrpc::page_t *dst,
-                                              const hostrpc::page_t *src)
-  {
-    // dst is coarse memory, src is fine
-    assert(src == dst);
-    (void)src;
-    (void)dst;
-  }
-
-  // No copies done by the x64 server as it can't see the gcn local buffer
-  static void push_from_server_to_client_impl(hostrpc::page_t *dst,
-                                              const hostrpc::page_t *src)
-  {
-    assert(src == dst);
-    (void)src;
-    (void)dst;
-  }
-  static void pull_to_server_from_client_impl(hostrpc::page_t *dst,
-                                              const hostrpc::page_t *src)
-  {
-    assert(src == dst);
-    (void)src;
-    (void)dst;
-  }
-};
-
 template <typename SZ, typename Fill, typename Use, typename Operate,
           typename Clear>
 struct x64_gcn_pair_T
 {
-  using Copy = copy_functor_x64_gcn;
+  using Copy = copy_functor_given_alias;
   using Step = nop_stepper;
 
   using Word = uint64_t;
@@ -84,29 +42,35 @@ struct x64_gcn_pair_T
                                       N * sizeof(page_t)),
         N);
 
-    hostrpc::page_t *server_buffer = client_buffer;
+    hostrpc::page_t *server_buffer =
+        client_buffer;  // todo: drop the redundant pointer
 
     // allocating in coarse is probably not sufficient, likely to need to mark
     // the pointer with an address space
     // server_active could be 'malloc', gcn can't access it
+
+    // fine grained area, can read/write from either client or server
     auto send =
         hsa_allocate_slot_bitmap_data_alloc<typename client_type::outbox_t>(
             fine, N);
     auto recv =
         hsa_allocate_slot_bitmap_data_alloc<typename client_type::inbox_t>(fine,
                                                                            N);
+
+    // only accessed by client
     auto client_active =
         hsa_allocate_slot_bitmap_data_alloc<typename client_type::lock_t>(
             coarse, N);
     auto client_staging =
         hsa_allocate_slot_bitmap_data_alloc<typename client_type::staging_t>(
             coarse, N);
+
+    // only accessed by server
     auto server_active =
-        hsa_allocate_slot_bitmap_data_alloc<typename server_type::lock_t>(fine,
-                                                                          N);
+        x64_allocate_slot_bitmap_data_alloc<typename server_type::lock_t>(N);
+
     auto server_staging =
-        hsa_allocate_slot_bitmap_data_alloc<typename server_type::staging_t>(
-            fine, N);
+        x64_allocate_slot_bitmap_data_alloc<typename server_type::staging_t>(N);
 
     client = {sz,           client_active,  recv,
               send,         client_staging, server_buffer,
@@ -138,8 +102,8 @@ struct x64_gcn_pair_T
     hsa_allocate_slot_bitmap_data_free(client.outbox.data());
     hsa_allocate_slot_bitmap_data_free(client.active.data());
     hsa_allocate_slot_bitmap_data_free(client.staging.data());
-    hsa_allocate_slot_bitmap_data_free(server.active.data());
-    hsa_allocate_slot_bitmap_data_free(server.staging.data());
+    free(server.active.data());
+    free(server.staging.data());
 
     // precondition of structure
     assert(client.local_buffer == server.remote_buffer);
