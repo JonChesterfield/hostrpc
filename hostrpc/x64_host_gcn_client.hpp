@@ -44,8 +44,7 @@ struct x64_gcn_pair_T
                                       N * sizeof(page_t)),
         N);
 
-    hostrpc::page_t *server_buffer =
-        client_buffer;
+    hostrpc::page_t *server_buffer = client_buffer;
 
     // allocating in coarse is probably not sufficient, likely to need to mark
     // the pointer with an address space

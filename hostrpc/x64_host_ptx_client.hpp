@@ -8,7 +8,6 @@
 #include "memory.hpp"
 #include "test_common.hpp"
 
-
 #if defined(__x86_64__)
 #include <cstdio>
 #include <cstdlib>
@@ -16,46 +15,49 @@
 
 namespace hostrpc
 {
+namespace cuda
+{
+void* allocate_gpu(size_t align, size_t size);
+void deallocate_gpu(void*);
 
-  namespace cuda
-  {
-    void * allocate_gpu(size_t align, size_t size);
-    void deallocate_gpu(void*);
+void* allocate_shared(size_t align, size_t size);
+void deallocate_shared(void*);
 
-    void * allocate_shared(size_t align, size_t size);
-    void deallocate_shared(void*);
-
-    void * device_ptr_from_host_ptr(void*);
-  }
+void* device_ptr_from_host_ptr(void*);
+}  // namespace cuda
 
 #if defined(__x86_64__)
-  template <typename T>
+template <typename T>
 struct x64_ptx_pair
 {
-  x64_ptx_pair(size_t align,  size_t element_count) :x64(nullptr), ptx(nullptr)
+  x64_ptx_pair(size_t align, size_t element_count) : x64(nullptr), ptx(nullptr)
   {
     size_t element_size = sizeof(T);
     size_t bytes = element_size * element_count;
-    void * void_x64_buffer = cuda::allocate_shared(align, bytes);
-    if (void_x64_buffer) {
-      void * void_ptx_buffer = cuda::device_ptr_from_host_ptr(void_x64_buffer);
-      if (void_ptx_buffer) {
-        x64 = hostrpc::careful_array_cast<T>(void_x64_buffer, element_count);
-        assert(x64);
-        ptx = hostrpc::careful_array_cast<T>(void_ptx_buffer, element_count);
-        assert(ptx);
-        return;
+    void* void_x64_buffer = cuda::allocate_shared(align, bytes);
+    if (void_x64_buffer)
+      {
+        void* void_ptx_buffer = cuda::device_ptr_from_host_ptr(void_x64_buffer);
+        if (void_ptx_buffer)
+          {
+            x64 =
+                hostrpc::careful_array_cast<T>(void_x64_buffer, element_count);
+            assert(x64);
+            ptx =
+                hostrpc::careful_array_cast<T>(void_ptx_buffer, element_count);
+            assert(ptx);
+            return;
+          }
       }
-    }
 
     fprintf(stderr, "Failed to construct x64_ptx_pair_T, exit\n");
     exit(1);
   }
-  T * x64 ;
-  T * ptx ;
+  T* x64;
+  T* ptx;
 };
 #endif
-  
+
 template <typename SZ, typename Fill, typename Use, typename Operate,
           typename Clear>
 struct x64_ptx_pair_T
@@ -77,7 +79,7 @@ struct x64_ptx_pair_T
 #if defined(__x86_64__)
     size_t N = sz.N();
 
-    x64_ptx_pair<page_t> buffer (alignof(page_t), N);
+    x64_ptx_pair<page_t> buffer(alignof(page_t), N);
 
     // area read/write by either
     x64_ptx_pair<typename server_type::outbox_t::Ty> send(64, N);
@@ -86,15 +88,12 @@ struct x64_ptx_pair_T
     // only accessed by client
     // ....
 
-
-        // only accessed by server
+    // only accessed by server
     auto server_active =
         x64_allocate_slot_bitmap_data_alloc<typename server_type::lock_t>(N);
 
     auto server_staging =
         x64_allocate_slot_bitmap_data_alloc<typename server_type::staging_t>(N);
-
-      
 
 #if 0
     client = {sz,           client_active,  recv,
@@ -107,17 +106,14 @@ struct x64_ptx_pair_T
 #endif
     assert(client.size() == N);
     assert(server.size() == N);
-    
-    return;
 
+    return;
 
 #else
     (void)sz;
 #endif
   }
-
-  
 };
-}
+}  // namespace hostrpc
 
 #endif

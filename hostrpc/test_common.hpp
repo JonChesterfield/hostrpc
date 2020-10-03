@@ -26,7 +26,7 @@ _Static_assert(192 == round(129), "");
 namespace
 {
 template <typename T>
-T careful_cast_to_bitmap(void * memory, size_t size)
+T careful_cast_to_bitmap(void *memory, size_t size)
 {
   constexpr size_t bps = T::bits_per_slot();
   static_assert(bps == 1 || bps == 8, "");
@@ -34,7 +34,7 @@ T careful_cast_to_bitmap(void * memory, size_t size)
       hostrpc::careful_array_cast<typename T::Ty>(memory, size * bps);
   return {m};
 }
-  
+
 template <typename T>
 T hsa_allocate_slot_bitmap_data_alloc(hsa_region_t region, size_t size)
 {
