@@ -74,16 +74,19 @@ struct x64_gcn_pair_T
     auto server_staging =
         x64_allocate_slot_bitmap_data_alloc<typename server_type::staging_t>(N);
 
-    client = {sz,           client_active,  recv,
-              send,         client_staging, server_buffer,
-              client_buffer};
-
     server = {sz,           server_active,  send,
               recv,         server_staging, client_buffer,
               server_buffer};
 
+    client = {sz,           client_active,  recv,
+              send,         client_staging, server_buffer,
+              client_buffer};
+
     assert(client.size() == N);
     assert(server.size() == N);
+
+    assert(client.inbox.data() == server.outbox.data());
+    assert(client.outbox.data() == server.inbox.data());
 #else
     (void)sz;
     (void)fine_handle;
@@ -97,13 +100,12 @@ struct x64_gcn_pair_T
     size_t N = client.size();
     assert(server.size() == N);
 
-    assert(client.inbox.data() == server.outbox.data());
-    assert(client.outbox.data() == server.inbox.data());
+    hsa_allocate_slot_bitmap_data_free(server.inbox.data());
+    hsa_allocate_slot_bitmap_data_free(server.outbox.data());
 
-    hsa_allocate_slot_bitmap_data_free(client.inbox.data());
-    hsa_allocate_slot_bitmap_data_free(client.outbox.data());
     hsa_allocate_slot_bitmap_data_free(client.active.data());
     hsa_allocate_slot_bitmap_data_free(client.staging.data());
+
     free(server.active.data());
     free(server.staging.data());
 
@@ -112,12 +114,12 @@ struct x64_gcn_pair_T
     assert(client.remote_buffer == server.local_buffer);
 
     // postcondition of this instance
-    assert(client.local_buffer == client.remote_buffer);
+    assert(server.local_buffer == server.remote_buffer);
     for (size_t i = 0; i < N; i++)
       {
-        client.local_buffer[i].~page_t();
+        server.local_buffer[i].~page_t();
       }
-    hsa_memory_free(client.local_buffer);
+    hsa_memory_free(server.local_buffer);
 #endif
   }
 };

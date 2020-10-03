@@ -9,35 +9,41 @@
 #include "test_common.hpp"
 
 #if defined(__x86_64__)
+#include "x64_host_ptx_client_cuda.hpp"
 #include <cstdio>
 #include <cstdlib>
-#endif
+#include <vector>
 
 namespace hostrpc
 {
 namespace cuda
 {
-void* allocate_gpu(size_t align, size_t size);
-void deallocate_gpu(void*);
+// allocates and zero fills
+void *allocate_gpu(size_t align, size_t size, void **to_free);
+void *allocate_shared(size_t align, size_t size, void **to_free);
 
-void* allocate_shared(size_t align, size_t size);
-void deallocate_shared(void*);
-
-void* device_ptr_from_host_ptr(void*);
 }  // namespace cuda
+}  // namespace hostrpc
 
+#endif
+
+namespace hostrpc
+{
 #if defined(__x86_64__)
 template <typename T>
 struct x64_ptx_pair
 {
-  x64_ptx_pair(size_t align, size_t element_count) : x64(nullptr), ptx(nullptr)
+  x64_ptx_pair(size_t align, size_t element_count, std::vector<void *> &tofree)
+      : x64(nullptr), ptx(nullptr)
   {
     size_t element_size = sizeof(T);
     size_t bytes = element_size * element_count;
-    void* void_x64_buffer = cuda::allocate_shared(align, bytes);
+    void *p;
+    void *void_x64_buffer = cuda::allocate_shared(align, bytes, &p);
     if (void_x64_buffer)
       {
-        void* void_ptx_buffer = cuda::device_ptr_from_host_ptr(void_x64_buffer);
+        tofree.push_back(p);
+        void *void_ptx_buffer = cuda::device_ptr_from_host_ptr(void_x64_buffer);
         if (void_ptx_buffer)
           {
             x64 =
@@ -53,9 +59,25 @@ struct x64_ptx_pair
     fprintf(stderr, "Failed to construct x64_ptx_pair_T, exit\n");
     exit(1);
   }
-  T* x64;
-  T* ptx;
+  T *x64;
+  T *ptx;
 };
+
+template <typename T>
+T ptx_allocate_slot_bitmap_data_alloc(size_t size, std::vector<void *> &to_free)
+{
+  constexpr size_t bps = T::bits_per_slot();
+  static_assert(bps == 1 || bps == 8, "");
+  const size_t align = 64;
+  void *p;
+  void *memory = cuda::allocate_gpu(align, size * bps, &p);
+  if (memory)
+    {
+      to_free.push_back(p);
+    }
+  return careful_cast_to_bitmap<T>(memory, size);
+}
+
 #endif
 
 template <typename SZ, typename Fill, typename Use, typename Operate,
@@ -74,19 +96,30 @@ struct x64_ptx_pair_T
   client_type client;
   server_type server;
 
+#if defined(__x86_64__)
+  // todo: verify that host/gpu size mismatch is OK here
+  std::vector<void *> tofree_gpu;     // todo: array
+  std::vector<void *> tofree_shared;  // todo: array
+#endif
+
   x64_ptx_pair_T(SZ sz)
   {
 #if defined(__x86_64__)
     size_t N = sz.N();
 
-    x64_ptx_pair<page_t> buffer(alignof(page_t), N);
+    x64_ptx_pair<page_t> buffer(alignof(page_t), N, tofree_shared);
 
     // area read/write by either
-    x64_ptx_pair<typename server_type::outbox_t::Ty> send(64, N);
-    x64_ptx_pair<typename server_type::inbox_t::Ty> recv(64, N);
+    x64_ptx_pair<typename server_type::outbox_t::Ty> send(64, N, tofree_shared);
+    x64_ptx_pair<typename server_type::inbox_t::Ty> recv(64, N, tofree_shared);
 
     // only accessed by client
-    // ....
+    auto client_active =
+        ptx_allocate_slot_bitmap_data_alloc<typename client_type::lock_t>(
+            N, tofree_gpu);
+    auto client_staging =
+        ptx_allocate_slot_bitmap_data_alloc<typename client_type::staging_t>(
+            N, tofree_gpu);
 
     // only accessed by server
     auto server_active =
@@ -95,22 +128,44 @@ struct x64_ptx_pair_T
     auto server_staging =
         x64_allocate_slot_bitmap_data_alloc<typename server_type::staging_t>(N);
 
-#if 0
-    client = {sz,           client_active,  recv,
-              send,         client_staging, server_buffer,
-              client_buffer};
+    server = {sz,         server_active, recv.x64, send.x64, server_staging,
+              buffer.x64, buffer.x64};
 
-    server = {sz,           server_active,  send,
-              recv,         server_staging, client_buffer,
-              server_buffer};
-#endif
+    client = {sz,         client_active, send.ptx, recv.ptx, client_staging,
+              buffer.ptx, buffer.ptx};
+
     assert(client.size() == N);
     assert(server.size() == N);
 
-    return;
-
 #else
     (void)sz;
+#endif
+  }
+
+  ~x64_ptx_pair_T()
+  {
+#if defined(__x86_64__)
+    size_t N = client.size();
+    assert(server.size() == N);
+
+    // can't easily compare host/gpu pointers for aliasing in asserts here
+
+    cuda::deallocate_shared(server.inbox.data());
+    cuda::deallocate_shared(server.outbox.data());
+
+    cuda::deallocate_gpu(client.active.data());
+    cuda::deallocate_gpu(client.staging.data());
+
+    free(server.active.data());
+    free(server.staging.data());
+
+    // buffers alias
+    assert(server.local_buffer == server.remote_buffer);
+    for (size_t i = 0; i < N; i++)
+      {
+        server.local_buffer[i].~page_t();
+      }
+    cuda::deallocate_shared(server.local_buffer);
 #endif
   }
 };
