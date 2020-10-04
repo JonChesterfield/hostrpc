@@ -3,8 +3,6 @@
 #include "hostcall_interface.hpp"
 
 // trying to get something running on gfx8
-#define FORCE_QUEUE_ZERO 0
-
 #if defined(__x86_64__)
 #include "../impl/data.h"
 #include "hostcall.h"
@@ -15,49 +13,7 @@
 #endif
 
 #include "detail/platform.hpp"  // assert
-
-static const constexpr uint32_t MAX_NUM_DOORBELLS = 0x400;
-
-static uint16_t queue_to_index_impl(unsigned char *q)
-{
-  constexpr size_t doorbell_signal_offset = 16;
-#if defined(__x86_64__)
-  // avoiding #include hsa.h on the gpu
-  static_assert(
-      offsetof(hsa_queue_t, doorbell_signal) == doorbell_signal_offset, "");
-#endif
-
-  uint64_t handle;
-  __builtin_memcpy(&handle, q + doorbell_signal_offset, 8);
-  char *sig = reinterpret_cast<char *>(handle);
-
-  // The signal contains a kind at offset 0, expected to be -1 (non-legacy)
-  int64_t kind;
-  __builtin_memcpy(&kind, sig, 8);
-  assert(kind == -1 || kind == -2);
-  (void)kind;
-
-  sig += 8;  // step over kind field
-
-  // kind is probably a fixed function of architecture
-  if (kind == -1)
-    {
-      uint64_t ptr;
-      __builtin_memcpy(&ptr, sig, 8);
-      ptr >>= 3;
-      ptr %= MAX_NUM_DOORBELLS;
-      return static_cast<uint16_t>(ptr);
-    }
-  else
-    {
-      // this is not based on anything, may be picking a queue semi-randomly
-      uint32_t ptr;
-      __builtin_memcpy(&ptr, sig, 4);
-      ptr >>= 3;
-      ptr %= MAX_NUM_DOORBELLS;
-      return static_cast<uint16_t>(ptr);
-    }
-}
+#include "queue_to_index.hpp"
 
 using SZ = hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
 
@@ -72,58 +28,6 @@ hostrpc::hostcall_interface_t::client_t *get_client_singleton(size_t i)
   return &client_singleton[i];
 }
 
-extern "C" unsigned char *get_queue()
-{
-  __attribute__((address_space(4))) void *vq = __builtin_amdgcn_queue_ptr();
-  unsigned char *q = (unsigned char *)vq;
-  return q;
-}
-
-// Also in hsa.hpp
-
-extern "C" uint16_t get_queue_index_asm()
-{
-#if FORCE_QUEUE_ZERO
-  return 0;
-#else
-
-  static_assert(MAX_NUM_DOORBELLS < UINT16_MAX, "");
-  uint32_t tmp0, tmp1;
-
-  // Derived from mGetDoorbellId in amd_gpu_shaders.h, rocr
-  // Using similar naming, exactly the same control flow.
-  // This may be expensive enough to be worth caching or precomputing.
-  uint32_t res;
-  asm("s_mov_b32 %[tmp0], exec_lo\n\t"
-      "s_mov_b32 %[tmp1], exec_hi\n\t"
-      "s_mov_b32 exec_lo, 0x80000000\n\t"
-      "s_sendmsg sendmsg(MSG_GET_DOORBELL)\n\t"
-      "%=:\n\t"
-      "s_nop 7\n\t"
-      "s_bitcmp0_b32 exec_lo, 0x1F\n\t"
-      "s_cbranch_scc0 %=b\n\t"
-      "s_mov_b32 %[ret], exec_lo\n\t"
-      "s_mov_b32 exec_lo, %[tmp0]\n\t"
-      "s_mov_b32 exec_hi, %[tmp1]\n\t"
-      : [ tmp0 ] "=&r"(tmp0), [ tmp1 ] "=&r"(tmp1), [ ret ] "=r"(res));
-
-  res %= MAX_NUM_DOORBELLS;
-
-  return static_cast<uint16_t>(res);
-#endif
-}
-
-static uint16_t get_queue_index_intrinsic()
-{
-  unsigned char *q = get_queue();
-  return queue_to_index_impl(q);
-}
-
-static uint16_t get_queue_index()
-{
-  const bool via_asm = false;
-  return via_asm ? get_queue_index_asm() : get_queue_index_intrinsic();
-}
 
 void hostcall_client(uint64_t data[8])
 {
@@ -160,12 +64,6 @@ void hostcall_client_async(uint64_t data[8])
 const char *hostcall_client_symbol() { return "client_singleton"; }
 
 hostrpc::hostcall_interface_t::server_t server_singleton[MAX_NUM_DOORBELLS];
-
-uint16_t queue_to_index(hsa_queue_t *queue)
-{
-  unsigned char *q = reinterpret_cast<unsigned char *>(queue);
-  return queue_to_index_impl(q);
-}
 
 hostrpc::hostcall_interface_t *stored_pairs[MAX_NUM_DOORBELLS] = {0};
 
