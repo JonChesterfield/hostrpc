@@ -14,6 +14,7 @@
 
 #if defined(__x86_64__)
 #include "hsa.h"
+#include <stdlib.h>
 #endif
 
 namespace hostrpc

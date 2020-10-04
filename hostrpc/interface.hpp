@@ -10,6 +10,8 @@
 #include "x64_host_x64_client.hpp"
 #endif
 
+#include "gcn_host_x64_client.hpp"
+
 namespace hostrpc
 {
 // Lifecycle management is tricky for objects which are allocated on one system
@@ -41,12 +43,100 @@ inline constexpr size_t server_counter_overhead()
 
 struct gcn_x64_t
 {
-  gcn_x64_t(size_t minimum_number_slots, uint64_t hsa_region_t_fine_handle,
-            uint64_t hsa_region_t_coarse_handle);
+#if defined(__x86_64__)
+  static void copy_page(hostrpc::page_t *dst, hostrpc::page_t *src)
+  {
+    __builtin_memcpy(dst, src, sizeof(hostrpc::page_t));
+  }
+#endif
 
-  ~gcn_x64_t();
+  struct fill
+  {
+    static void call(hostrpc::page_t *page, void *dv)
+    {
+#if defined(__x86_64__)
+      hostrpc::page_t *d = static_cast<hostrpc::page_t *>(dv);
+      copy_page(page, d);
+#else
+      (void)page;
+      (void)dv;
+#endif
+    };
+  };
+
+  struct use
+  {
+    static void call(hostrpc::page_t *page, void *dv)
+    {
+#if defined(__x86_64__)
+      hostrpc::page_t *d = static_cast<hostrpc::page_t *>(dv);
+      copy_page(d, page);
+#else
+      (void)page;
+      (void)dv;
+#endif
+    };
+  };
+
+#if defined(__AMDGCN__)
+  static void gcn_server_callback(hostrpc::cacheline_t *)
+  {
+    // not yet implemented, maybe take a function pointer out of [0]
+  }
+#endif
+
+  struct operate
+  {
+    static void call(hostrpc::page_t *page, void *)
+    {
+#if defined(__AMDGCN__)
+      // Call through to a specific handler, one cache line per lane
+      hostrpc::cacheline_t *l = &page->cacheline[platform::get_lane_id()];
+      gcn_server_callback(l);
+#else
+      (void)page;
+#endif
+    };
+  };
+
+  struct clear
+  {
+    static void call(hostrpc::page_t *, void *) {}
+  };
+
+  using ty = gcn_x64_pair_T<hostrpc::size_runtime, fill, use, operate, clear>;
+
+  gcn_x64_t(size_t N, uint64_t hsa_region_t_fine_handle,
+            uint64_t hsa_region_t_coarse_handle)
+  {
+    // for gfx906, probably want N = 2048
+    N = hostrpc::round(N);
+
+    state = nullptr;
+#if defined(__x86_64__)
+    hostrpc::size_runtime sz(N);
+    ty *s = new (std::nothrow)
+        ty(sz, hsa_region_t_fine_handle, hsa_region_t_coarse_handle);
+    state = static_cast<void *>(s);
+#else
+    (void)hsa_region_t_fine_handle;
+    (void)hsa_region_t_coarse_handle;
+#endif
+  }
+
+  ~gcn_x64_t()
+  {
+#if defined(__x86_64__)
+    ty *s = static_cast<ty *>(state);
+    if (s)
+      {
+        // Should probably call the destructors on client/server state here
+        delete s;
+      }
+#endif
+  }
   gcn_x64_t(const gcn_x64_t &) = delete;
-  bool valid();
+  bool valid() { return state != nullptr; }
 
   struct client_t
   {
@@ -55,8 +145,27 @@ struct gcn_x64_t
 
     using state_t = hostrpc::storage<56 + client_counter_overhead(), 8>;
 
-    void invoke(hostrpc::page_t *);
-    void invoke_async(hostrpc::page_t *);
+    void invoke(hostrpc::page_t *page)
+    {
+      void *vp = static_cast<void *>(page);
+      bool r = false;
+      do
+        {
+          r = state.open<ty::client_type>()->rpc_invoke<true>(vp, vp);
+        }
+      while (r == false);
+    }
+
+    void invoke_async(hostrpc::page_t *page)
+    {
+      void *vp = static_cast<void *>(page);
+      bool r = false;
+      do
+        {
+          r = state.open<ty::client_type>()->rpc_invoke<false>(vp, vp);
+        }
+      while (r == false);
+    }
 
    private:
     template <typename ClientType>
@@ -78,7 +187,11 @@ struct gcn_x64_t
     server_t() {}
     using state_t = hostrpc::storage<72 + server_counter_overhead(), 8>;
 
-    bool handle(hostrpc::page_t *, uint32_t *loc);
+    bool handle(hostrpc::page_t *page, uint32_t *loc)
+    {
+      void *vp = static_cast<void *>(page);
+      return state.open<ty::server_type>()->rpc_handle(vp, vp, loc);
+    }
 
    private:
     template <typename ServerType>
@@ -94,8 +207,21 @@ struct gcn_x64_t
     state_t state;
   };
 
-  client_t client();
-  server_t server();
+  client_t client()
+  {
+    ty *s = static_cast<ty *>(state);
+    assert(s);
+    ty::client_type ct = s->client;
+    return {ct};
+  }
+
+  server_t server()
+  {
+    ty *s = static_cast<ty *>(state);
+    assert(s);
+    ty::server_type st = s->server;
+    return {st};
+  }
 
  private:
   void *state;

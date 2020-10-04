@@ -58,7 +58,7 @@ CXX_GCN_LD="$CXX $GCNFLAGS"
 
 CXXCL="$CLANG -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 -emit-llvm -D__OPENCL__ $AMDGPU"
 
-CXX_PTX="`which clang++` $NVPTXFLAGS"
+CXX_PTX="/home/amd/.emacs.d/bin/clang++ $NVPTXFLAGS"
 
 CXX_CUDA="$CLANG -O2 $COMMONFLAGS -xcuda --cuda-path=/usr/local/cuda --cuda-gpu-arch=sm_50 -I/usr/local/cuda/include"
 
@@ -91,9 +91,6 @@ $LINK x64_gcn_stress.gcn.code.bc x64_gcn_stress.gcn.kern.bc -o x64_gcn_stress.gc
 $CXX_GCN_LD x64_gcn_stress.gcn.bc -o x64_gcn_stress.gcn.so
 $CXX_X64 -DDERIVE_VAL=$DERIVE -I$HSAINC x64_gcn_stress.cpp -c -o x64_gcn_stress.x64.bc
 
-$CXX_GCN gcn_host_x64_client.cpp -c -o gcn_host_x64_client.gcn.bc
-$CXX_X64 -I$HSAINC gcn_host_x64_client.cpp -c -o gcn_host_x64_client.x64.bc
-
 
 $CXX_GCN persistent_kernel.cpp -c -o persistent_kernel.gcn.code.bc
 $CXXCL persistent_kernel.cpp -c -o persistent_kernel.gcn.kern.bc
@@ -101,13 +98,13 @@ $LINK persistent_kernel.gcn.code.bc persistent_kernel.gcn.kern.bc -o persistent_
 $CXX_GCN_LD persistent_kernel.gcn.bc -o persistent_kernel.gcn.so
 $CXX_X64 -I$HSAINC persistent_kernel.cpp -c -o persistent_kernel.x64.bc
 
-$CXX_CUDA --cuda-device-only detail/platform.cu -c -emit-llvm -o detail/platform.ptx.bc
-$CXX_CUDA --cuda-host-only x64_host_ptx_client.cu  -c -emit-llvm -o x64_host_ptx_client.x64.bc
-$CXX_PTX codegen/client.cpp -c -o codegen/client.ptx.bc
-$CXX_PTX codegen/server.cpp -c -o codegen/server.ptx.bc
-
-$CXX_PTX x64_ptx_stress.cpp -c -o x64_ptx_stress.gcn.code.bc
-$CXX_X64 -I$HSAINC x64_ptx_stress.cpp -c -o x64_ptx_stress.x64.bc
+# TODO: Sort out script to ignore this when there's no ptx device
+# $CXX_CUDA --cuda-device-only detail/platform.cu -c -emit-llvm -o detail/platform.ptx.bc
+# $CXX_CUDA --cuda-host-only x64_host_ptx_client.cu  -c -emit-llvm -o x64_host_ptx_client.x64.bc
+# $CXX_PTX codegen/client.cpp -c -o codegen/client.ptx.bc
+# $CXX_PTX codegen/server.cpp -c -o codegen/server.ptx.bc
+# $CXX_PTX x64_ptx_stress.cpp -c -o x64_ptx_stress.gcn.code.bc
+# $CXX_X64 -I$HSAINC x64_ptx_stress.cpp -c -o x64_ptx_stress.x64.bc
 
 $CXX_GCN hostcall_interface.cpp -c -o hostcall_interface.gcn.bc
 $CXX_X64 -I$HSAINC hostcall_interface.cpp -c -o hostcall_interface.x64.bc
@@ -173,7 +170,7 @@ $CXX_X64_LD x64_gcn_stress.x64.bc catch.o memory.x64.bc $LDFLAGS -o x64_gcn_stre
 $CXX_X64_LD tests.x64.bc catch.o memory.x64.bc  $LDFLAGS -o tests.exe
 
 
-$CXX_X64_LD persistent_kernel.x64.bc catch.o memory.x64.bc gcn_host_x64_client.x64.bc $LDFLAGS -o persistent_kernel.exe
+$CXX_X64_LD persistent_kernel.x64.bc catch.o memory.x64.bc $LDFLAGS -o persistent_kernel.exe
 
 time ./persistent_kernel.exe
 
