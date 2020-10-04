@@ -56,7 +56,7 @@ CXX_GCN="$CLANG -std=c++14 $COMMONFLAGS $GCNFLAGS"
 CXX_X64_LD="$CXX"
 CXX_GCN_LD="$CXX $GCNFLAGS"
 
-CXXCL="$CLANG -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 -emit-llvm -D__OPENCL__ $AMDGPU"
+CXXCL="$CLANG -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 -emit-llvm -D__OPENCL__ -ffreestanding $AMDGPU"
 
 CXX_PTX="/home/amd/.emacs.d/bin/clang++ $NVPTXFLAGS"
 

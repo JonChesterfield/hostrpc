@@ -92,8 +92,7 @@ struct launch_t
         return nullptr;
       }
 
-    T *mutable_arg =
-        new (reinterpret_cast<T *>(mutable_arg_state.get())) T(args);
+    T *mutable_arg = new (mutable_arg_state.get()) T(args);
 
     // Allocate kernarg memory, including implicit args
     void *kernarg_state =
@@ -123,10 +122,12 @@ struct launch_t
            PacketInitializer initializer)
 
   {
+    fprintf(stderr, "launch_t ctor w/ initializer\n");
     uint64_t packet_id;
     packet = setup_and_find_packet(kernel_agent, queue, args, &packet_id);
     if (!packet)
       {
+        fprintf(stderr, "failed to create launch_t\n");
         return;
       }
 
@@ -134,6 +135,7 @@ struct launch_t
     __c11_atomic_thread_fence(__ATOMIC_RELEASE);
 
     hsa_signal_store_release(queue->doorbell_signal, packet_id);
+    fprintf(stderr, "Signalled queue to mark packet launch\n");
   }
 
   launch_t(hsa_agent_t kernel_agent, hsa_queue_t *queue,
@@ -141,6 +143,7 @@ struct launch_t
            uint32_t group_segment_fixed_size, uint64_t number_waves, T args)
 
   {
+    fprintf(stderr, "launch_t ctor hardcoded\n");
     assert(number_waves <= 8);
     uint64_t packet_id;
     packet = setup_and_find_packet(kernel_agent, queue, args, &packet_id);
@@ -204,12 +207,16 @@ struct launch_t
         return;
       }
 
-    do
+    // completion signal may be null, in which case waiting on it doesn't work
+    if (packet->completion_signal.handle != 0)
       {
+        do
+          {
+          }
+        while (hsa_signal_wait_acquire(
+                   packet->completion_signal, HSA_SIGNAL_CONDITION_EQ, 0,
+                   5000 /*000000*/, HSA_WAIT_STATE_ACTIVE) != 0);
       }
-    while (hsa_signal_wait_acquire(packet->completion_signal,
-                                   HSA_SIGNAL_CONDITION_EQ, 0, 5000 /*000000*/,
-                                   HSA_WAIT_STATE_ACTIVE) != 0);
     ready = true;
   }
 

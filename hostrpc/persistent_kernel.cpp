@@ -18,7 +18,12 @@ kernel void __device_persistent_kernel(__global void *args)
 }
 #endif
 
-#if 0
+#if !defined __OPENCL__
+
+#if 1
+#if !defined(__AMDGCN__)
+#include "amd_hsa_queue.h"
+#include "hsa.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -28,141 +33,21 @@ static void assert_size_t_equal()
   static_assert(expect == actual, "");
 }
 
-#define HSA_LARGE_MODEL 1
-
-typedef enum {
-  /**
-   * Queue supports multiple producers.
-   */
-  HSA_QUEUE_TYPE_MULTI = 0,
-  /**
-   * Queue only supports a single producer.
-   */
-  HSA_QUEUE_TYPE_SINGLE = 1
-} hsa_queue_type_t;
-
-typedef struct hsa_signal_s {
-  /**
-   * Opaque handle. The value 0 is reserved.
-   */
-  uint64_t handle;
-} hsa_signal_t;
-
-typedef struct hsa_queue_s {
-  /**
-   * Queue type.
-   */
-  hsa_queue_type_t type;
-
-  /**
-   * Queue features mask. This is a bit-field of ::hsa_queue_feature_t
-   * values. Applications should ignore any unknown set bits.
-   */
-  uint32_t features;
-
-#ifdef HSA_LARGE_MODEL
-#ifdef DEVICE_COMPILER
-   __global
-#endif
-  void *base_address;
-#elif defined HSA_LITTLE_ENDIAN
-  /**
-   * Starting address of the HSA runtime-allocated buffer used to store the AQL
-   * packets. Must be aligned to the size of an AQL packet.
-   */
-#ifdef DEVICE_COMPILER
-   __global
-#endif
-  void *base_address;
-  /**
-   * Reserved. Must be 0.
-   */
-  uint32_t reserved0;
-#else
-  uint32_t reserved0;
-#ifdef DEVICE_COMPILER
-   __global
-#endif
-  void *base_address;
-#endif
-
-  /**
-   * Signal object used by the application to indicate the ID of a packet that
-   * is ready to be processed. The HSA runtime manages the doorbell signal. If
-   * the application tries to replace or destroy this signal, the behavior is
-   * undefined.
-   *
-   * If @a type is ::HSA_QUEUE_TYPE_SINGLE the doorbell signal value must be
-   * updated in a monotonically increasing fashion. If @a type is
-   * ::HSA_QUEUE_TYPE_MULTI, the doorbell signal value can be updated with any
-   * value.
-   */
-  hsa_signal_t doorbell_signal;
-
-  /**
-   * Maximum number of packets the queue can hold. Must be a power of 2.
-   */
-  uint32_t size;
-  /**
-   * Reserved. Must be 0.
-   */
-  uint32_t reserved1;
-  /**
-   * Queue identifier, which is unique over the lifetime of the application.
-   */
-  uint64_t id;
-
-} hsa_queue_t;
-
-typedef uint32_t amd_queue_properties32_t;
-
-
-// AMD Queue.
-#define AMD_QUEUE_ALIGN_BYTES 64
-#define AMD_QUEUE_ALIGN alignas(AMD_QUEUE_ALIGN_BYTES)
-typedef struct AMD_QUEUE_ALIGN amd_queue_s {
-  hsa_queue_t hsa_queue;
-  uint32_t reserved1[4];
-  volatile uint64_t write_dispatch_id;
-  uint32_t group_segment_aperture_base_hi;
-  uint32_t private_segment_aperture_base_hi;
-  uint32_t max_cu_id;
-  uint32_t max_wave_id;
-  volatile uint64_t max_legacy_doorbell_dispatch_id_plus_1;
-  volatile uint32_t legacy_doorbell_lock;
-  uint32_t reserved2[9];
-  volatile uint64_t read_dispatch_id;
-  uint32_t read_dispatch_id_field_base_byte_offset;
-  uint32_t compute_tmpring_size;
-  uint32_t scratch_resource_descriptor[4];
-  uint64_t scratch_backing_memory_location;
-  uint64_t scratch_backing_memory_byte_size;
-  uint32_t scratch_workitem_byte_size;
-  amd_queue_properties32_t queue_properties;
-  uint32_t reserved3[2];
-  hsa_signal_t queue_inactive_signal;
-  uint32_t reserved4[14];
-} amd_queue_t;
-
-
-
 void check_assumptions()
 {
-    assert_size_t_equal<sizeof(hsa_queue_t), 40>();
-    assert_size_t_equal<sizeof(amd_queue_t), 256>();
-    assert_size_t_equal<offsetof(hsa_queue_t, size), 24>();
-    assert_size_t_equal<offsetof(hsa_queue_t, base_address), 8>();
-    assert_size_t_equal<offsetof(hsa_queue_t, doorbell_signal), 16>();    
-    assert_size_t_equal<offsetof(amd_queue_t, write_dispatch_id), 56>();
-    assert_size_t_equal<offsetof(amd_queue_t, read_dispatch_id), 128>();
-
+  assert_size_t_equal<sizeof(hsa_queue_t), 40>();
+  assert_size_t_equal<sizeof(amd_queue_t), 256>();
+  assert_size_t_equal<offsetof(hsa_queue_t, size), 24>();
+  assert_size_t_equal<offsetof(hsa_queue_t, base_address), 8>();
+  assert_size_t_equal<offsetof(hsa_queue_t, doorbell_signal), 16>();
+  assert_size_t_equal<offsetof(amd_queue_t, write_dispatch_id), 56>();
+  assert_size_t_equal<offsetof(amd_queue_t, read_dispatch_id), 128>();
 }
 
 #else
 void check_assumptions() {}
 #endif
-
-#if !defined __OPENCL__
+#endif
 
 #include <stddef.h>
 #include <stdint.h>
@@ -205,7 +90,7 @@ struct dispatch_packet  // 64 byte aligned, probably
 struct kernel_args
 {
   const dispatch_packet *self;
-  _Atomic(uint32_t) control;
+  _Atomic(uint32_t) * control;
   void *application_args;
   void *my_queue;
 };
@@ -231,38 +116,60 @@ static void kick_signal(uint64_t handle)
     {
       if (event_mailbox_ptr)
         {
-#define AS(P, V, O, S) __opencl_atomic_store(P, V, O, S)
           uint32_t id = *event_id;
-          AS(event_mailbox_ptr, id, __ATOMIC_RELEASE,
-             __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-#undef AS
+          __opencl_atomic_store(event_mailbox_ptr, id, __ATOMIC_RELEASE,
+                                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+
           __builtin_amdgcn_s_sendmsg(1 | (0 << 4),
                                      __builtin_amdgcn_readfirstlane(id) & 0xff);
         }
     }
 }
 
+#if 0
+static unsigned char *get_dispatch_ptr()
+{
+  __attribute__((address_space(4))) void *vq = __builtin_amdgcn_dispatch_ptr();
+  unsigned char *q = (unsigned char *)vq;
+  return q;
+}
+#endif
+
 extern "C" void __device_persistent_kernel_call(const dispatch_packet *self,
                                                 _Atomic(uint32_t) * control,
                                                 void *application_args,
                                                 void *my_queue)
 {
+  // The queue intrinsic returns a pointer to __constant memory, which probably
+  // can't be mutated by fetch_add. Certainly refuses to compile.
+
+  // dispatch packet available in addr(4), __builtin_amdgcn_dispatch_ptr();
   if (*control == 0)
     {
+      __opencl_atomic_store(control, 1, __ATOMIC_RELEASE,
+                            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+      return;
+    }
+  else
+    {
+      __opencl_atomic_store(control, 2, __ATOMIC_RELEASE,
+                            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
       return;
     }
 
   // TODO: Probably call this N times before the tail call
+  // Could return based on the return value of this
   __device_persistent_call(application_args);
 
   // Acquire an available packet id
+
   _Atomic(uint64_t) *write_dispatch_id =
       reinterpret_cast<_Atomic(uint64_t) *>((char *)my_queue + 56);
   _Atomic(uint64_t) *read_dispatch_id =
       reinterpret_cast<_Atomic(uint64_t) *>((char *)my_queue + 128);
 
   // Need to get queue->size and queue->base_address to use the packet id
-  // May want o pass this in as a _constant
+  // May want to pass this in as a _constant
   uint32_t size = *(uint32_t *)((char *)my_queue + 24);
 
   uint64_t packet_id = platform::critical<uint64_t>([&]() {
@@ -275,6 +182,7 @@ extern "C" void __device_persistent_kernel_call(const dispatch_packet *self,
     bool full = true;
     while (full)
       {
+        // May want to back off more smoothly on full queue
         uint64_t idx =
             __opencl_atomic_load(read_dispatch_id, __ATOMIC_ACQUIRE,
                                  __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
@@ -300,7 +208,7 @@ extern "C" void __device_persistent_kernel_cast(
     __attribute__((address_space(1))) void *asargs)
 {
   kernel_args *args = (kernel_args *)asargs;
-  __device_persistent_kernel_call(args->self, &args->control,
+  __device_persistent_kernel_call(args->self, args->control,
                                   args->application_args, args->my_queue);
 }
 
@@ -348,15 +256,12 @@ TEST_CASE("persistent_kernel")
 
     printf("Kernel address %lx\n", kernel_address);
 
-    // Following needs more work
-    return;
-
     hsa_queue_t *queue;
     {
       hsa_status_t rc = hsa_queue_create(
           kernel_agent /* make the queue on this agent */,
           131072 /* todo: size it, this hardcodes max size for vega20 */,
-          HSA_QUEUE_TYPE_SINGLE /* baseline */,
+          HSA_QUEUE_TYPE_MULTI /* baseline */,
           NULL /* called on every async event? */,
           NULL /* data passed to previous */,
           // If sizes exceed these values, things are supposed to work slowly
@@ -388,15 +293,22 @@ TEST_CASE("persistent_kernel")
     hostrpc::gcn_x64_t p(N, fine_grained_region.handle,
                          coarse_grained_region.handle);
 
+    // 4 bytes in its own page isn't ideal
+    auto control_state =
+        hsa::allocate(fine_grained_region, sizeof(_Atomic(uint32_t)));
+
     kernel_args example = {
         .self = 0,  // initialized during launch_t::launch_t
-        .control = UINT32_C(0),
+        .control = new (control_state.get()) _Atomic(uint32_t),
         .application_args = 0,  // unused for now
         .my_queue = (void *)queue,
     };
+    __opencl_atomic_store(example.control, 0, __ATOMIC_RELEASE,
+                          __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
 
     auto initializer = [&](hsa_kernel_dispatch_packet_t *packet,
                            with_implicit_args<kernel_args *> *state) -> void {
+      fprintf(stderr, "Called initializer\n");
       uint64_t kernarg_address;
       __builtin_memcpy(&kernarg_address, &state, 8);
 
@@ -408,7 +320,7 @@ TEST_CASE("persistent_kernel")
       __builtin_memcpy(&(state->state->application_args), &kernarg_address, 8);
 
       // state.self needs to put the dispatch_packet on the heap as it refers to
-      // itself leaks for now
+      // itself leaks for now (may be able to use intrinsic)
       hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
       auto heap =
           hsa::allocate(fine_grained_region, sizeof(dispatch_packet)).release();
@@ -425,6 +337,16 @@ TEST_CASE("persistent_kernel")
     };
 
     auto l = launch_t<kernel_args>(kernel_agent, queue, example, initializer);
+    fprintf(stderr, "Launch instance\n");
+
+    while (__opencl_atomic_load(example.control, __ATOMIC_ACQUIRE,
+                                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES) == 0)
+      {
+        fprintf(stderr, "watching control\n");
+        platform::sleep_noexcept(10000000);
+      }
+
+    fprintf(stderr, "Instance set control to non-zero\n");
   }
 }
 
