@@ -43,15 +43,12 @@ struct x64_gcn_pair_T
         hostrpc::hsa_amdgpu::allocate(fine_handle, alignof(page_t),
                                       N * sizeof(page_t)),
         N);
-
     hostrpc::page_t *server_buffer = client_buffer;
 
     // allocating in coarse is probably not sufficient, likely to need to mark
     // the pointer with an address space
-    // server_active could be 'malloc', gcn can't access it
 
     // fine grained area, can read/write from either client or server
-    // todo: send/recv in terms of server type instead of client?
     auto recv =
         hsa_allocate_slot_bitmap_data_alloc<typename server_type::inbox_t>(fine,
                                                                            N);

@@ -4,6 +4,8 @@
 #include "detail/client_impl.hpp"
 #include "detail/common.hpp"
 #include "detail/server_impl.hpp"
+
+#include "memory.hpp"
 #include "test_common.hpp"
 
 // client parameterised on fill, use
@@ -43,22 +45,23 @@ struct gcn_x64_pair_T
     page_t *client_buffer = careful_array_cast<page_t>(
         hsa_amdgpu::allocate(fine_handle, alignof(page_t), N * sizeof(page_t)),
         N);
-
     page_t *server_buffer = client_buffer;
 
-    // could be malloc here, gpu can't see the client locks
+    // fine grain
     auto send =
-        hsa_allocate_slot_bitmap_data_alloc<typename client_type::outbox_t>(
-            fine, N);
-    auto recv =
-        hsa_allocate_slot_bitmap_data_alloc<typename client_type::inbox_t>(fine,
+        hsa_allocate_slot_bitmap_data_alloc<typename server_type::inbox_t>(fine,
                                                                            N);
-    auto client_active =
-        hsa_allocate_slot_bitmap_data_alloc<typename client_type::lock_t>(fine,
-                                                                          N);
-    auto client_staging =
-        hsa_allocate_slot_bitmap_data_alloc<typename client_type::staging_t>(
+    auto recv =
+        hsa_allocate_slot_bitmap_data_alloc<typename server_type::outbox_t>(
             fine, N);
+
+    // only accessed by client
+    auto client_active =
+        x64_allocate_slot_bitmap_data_alloc<typename client_type::lock_t>(N);
+    auto client_staging =
+        x64_allocate_slot_bitmap_data_alloc<typename client_type::staging_t>(N);
+
+    // only accessed by server
     auto server_active =
         hsa_allocate_slot_bitmap_data_alloc<typename server_type::lock_t>(
             coarse, N);
@@ -93,8 +96,10 @@ struct gcn_x64_pair_T
 
     hsa_allocate_slot_bitmap_data_free(client.inbox.data());
     hsa_allocate_slot_bitmap_data_free(client.outbox.data());
-    hsa_allocate_slot_bitmap_data_free(client.active.data());
-    hsa_allocate_slot_bitmap_data_free(client.staging.data());
+
+    free(client.active.data());
+    free(client.staging.data());
+
     hsa_allocate_slot_bitmap_data_free(server.active.data());
     hsa_allocate_slot_bitmap_data_free(server.staging.data());
 
@@ -103,12 +108,12 @@ struct gcn_x64_pair_T
     assert(client.remote_buffer == server.local_buffer);
 
     // postcondition of this instance
-    assert(client.local_buffer == client.remote_buffer);
+    assert(server.local_buffer == server.remote_buffer);
     for (size_t i = 0; i < N; i++)
       {
-        client.local_buffer[i].~page_t();
+        server.local_buffer[i].~page_t();
       }
-    hsa_memory_free(client.local_buffer);
+    hsa_memory_free(server.local_buffer);
 #endif
   }
 };
