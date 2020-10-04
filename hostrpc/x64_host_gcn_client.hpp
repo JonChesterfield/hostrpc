@@ -21,8 +21,8 @@ struct x64_gcn_pair_T
 {
   using Copy = copy_functor_given_alias;
   using Step = nop_stepper;
-
   using Word = uint64_t;
+
   using client_type =
       client_impl<Word, SZ, Copy, Fill, Use, Step, counters::client>;
   using server_type =
@@ -52,12 +52,12 @@ struct x64_gcn_pair_T
 
     // fine grained area, can read/write from either client or server
     // todo: send/recv in terms of server type instead of client?
-    auto send =
-        hsa_allocate_slot_bitmap_data_alloc<typename client_type::outbox_t>(
-            fine, N);
     auto recv =
-        hsa_allocate_slot_bitmap_data_alloc<typename client_type::inbox_t>(fine,
+        hsa_allocate_slot_bitmap_data_alloc<typename server_type::inbox_t>(fine,
                                                                            N);
+    auto send =
+        hsa_allocate_slot_bitmap_data_alloc<typename server_type::outbox_t>(
+            fine, N);
 
     // only accessed by client
     auto client_active =
@@ -74,12 +74,12 @@ struct x64_gcn_pair_T
     auto server_staging =
         x64_allocate_slot_bitmap_data_alloc<typename server_type::staging_t>(N);
 
-    server = {sz,           server_active,  send,
-              recv,         server_staging, client_buffer,
+    server = {sz,           server_active,  recv,
+              send,         server_staging, client_buffer,
               server_buffer};
 
-    client = {sz,           client_active,  recv,
-              send,         client_staging, server_buffer,
+    client = {sz,           client_active,  send,
+              recv,         client_staging, server_buffer,
               client_buffer};
 
     assert(client.size() == N);
