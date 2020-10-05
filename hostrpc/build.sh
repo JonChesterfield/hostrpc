@@ -87,7 +87,7 @@ $CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc
 
 $CXX_GCN -DDERIVE_VAL=$DERIVE x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.code.bc
 $CXXCL -DDERIVE_VAL=$DERIVE x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.kern.bc
-$LINK x64_gcn_stress.gcn.code.bc x64_gcn_stress.gcn.kern.bc -o x64_gcn_stress.gcn.bc
+$LINK x64_gcn_stress.gcn.code.bc x64_gcn_stress.gcn.kern.bc dispatch_id.ll -o x64_gcn_stress.gcn.bc
 $CXX_GCN_LD x64_gcn_stress.gcn.bc -o x64_gcn_stress.gcn.so
 $CXX_X64 -DDERIVE_VAL=$DERIVE -I$HSAINC x64_gcn_stress.cpp -c -o x64_gcn_stress.x64.bc
 

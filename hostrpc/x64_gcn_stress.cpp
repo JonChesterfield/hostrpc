@@ -193,6 +193,9 @@ hostrpc::page_t scratch_store[MAXCLIENT];
 VISIBLE
 hostrpc::page_t expect_store[MAXCLIENT];
 
+//  return __builtin_amdgcn_dispatch_id() doesn't compile
+extern "C" uint64_t my_dispatch_id();
+
 uint64_t gpu_call(hostrpc::x64_gcn_type::client_type *client, uint32_t id,
                   uint32_t reps)
 {
