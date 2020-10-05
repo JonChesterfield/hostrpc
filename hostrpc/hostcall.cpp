@@ -1,6 +1,5 @@
 #include "hostcall.hpp"
 #include "base_types.hpp"
-#include "hostcall_interface.hpp"
 #include "x64_host_gcn_client.hpp"
 
 #include <stddef.h>
@@ -120,17 +119,99 @@ struct hostcall_interface_t
 
 using SZ = hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
 
+// a 'per queue' structure, one per gpu, is basically a global variable
+// could be factored as such
+
+template <typename T>
+struct gpu_singleton
+{
+  // data is going to be a pointer to a contiguous block of gpu memory
+  // need to allocate some coarse grain memory on the host and initalize
+  // the gpu, and the cpu, pointer with it
+  // Thinking of having two instances to this singleton, one on the host and one
+  // on the gpu
+
+#if defined(__x86_64__)
+  static T *x64_data;
+#endif
+
 #if defined(__AMDGCN__)
+  // Marking it with asm ("label") does set the name, but also puts it in comdat
+  // Seeking cleaner solution to being able to dlsym it
+  __attribute__((
+      visibility("default"))) static T *gcn_data  // asm ("predicatable")
+      ;
+#endif
+
+  static T &data()
+  {
+#if defined(__x86_64__)
+    return *x64_data;
+#endif
+#if defined(__AMDGCN__)
+    return *gcn_data;
+#endif
+  }
+
+  int construct(uint64_t hsa_handle)
+  {
+#if defined(__x86_64__)
+    hsa_region_t region = {.handle = hsa_handle};
+    void *ptr;
+    hsa_status_t rc =
+        hsa_memory_allocate(region, sizeof(T) * MAX_NUM_DOORBELLS, &ptr);
+    data() = ptr;
+
+    if (rc != HSA_STATUS_SUCCESS)
+      {
+        return 1;
+      }
+
+      // Host data now points to the memory
+
+      // Guess the name of the device pointer...
+
+#endif
+    (void)hsa_handle;
+    return 0;
+  }
+
+  // operator() cannot be a static member function
+#if defined(__AMDGCN__)
+  static T &get()
+  {
+    uint16_t index = get_queue_index();
+    return data[index];
+  }
+#endif
+
+#if defined(__x86_64__)
+  static T &get(hsa_queue_t *queue)
+  {
+    uint16_t index = queue_to_index(queue);
+    return data[index];
+  };
+#endif
+};
+
+#if defined(__AMDGCN__)
+
+template <typename T>
+T *gpu_singleton<T>::gcn_data;
 
 // Accessing this, sometimes, raises a page not present fault on gfx8
 // drawback of embedding in image is that multiple shared libraries will all
 // need their own copy, whereas it really should be one per gpu
 
-// a 'per queue' structure, one per gpu, is basically a global variable
-// could be factored as such
-
 __attribute__((visibility("default")))
 hostrpc::hostcall_interface_t::client_type client_singleton[MAX_NUM_DOORBELLS];
+
+gpu_singleton<int> hazardsi;
+gpu_singleton<float> hazardsf;
+
+int &use_data_int() { return gpu_singleton<int>::data(); }
+
+float &use_data_float() { return gpu_singleton<float>::data(); }
 
 hostrpc::hostcall_interface_t::client_type *get_client_singleton(size_t i)
 {
