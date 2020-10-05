@@ -23,16 +23,16 @@ using SZ = hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
 // drawback of embedding in image is that multiple shared libraries will all
 // need their own copy, whereas it really should be one per gpu
 __attribute__((visibility("default")))
-hostrpc::hostcall_interface_t::client_t client_singleton[MAX_NUM_DOORBELLS];
+hostrpc::hostcall_interface_t::client_type client_singleton[MAX_NUM_DOORBELLS];
 
-hostrpc::hostcall_interface_t::client_t *get_client_singleton(size_t i)
+hostrpc::hostcall_interface_t::client_type *get_client_singleton(size_t i)
 {
   return &client_singleton[i];
 }
 
 void hostcall_client(uint64_t data[8])
 {
-  hostrpc::hostcall_interface_t::client_t *c =
+  hostrpc::hostcall_interface_t::client_type *c =
       get_client_singleton(get_queue_index());
 
   bool success = false;
@@ -40,20 +40,20 @@ void hostcall_client(uint64_t data[8])
   while (!success)
     {
       void *d = static_cast<void *>(&data[0]);
-      success = c->invoke(d, d);
+      success = c->rpc_invoke<true>(d, d);
     }
 }
 
 void hostcall_client_async(uint64_t data[8])
 {
-  hostrpc::hostcall_interface_t::client_t *c =
+  hostrpc::hostcall_interface_t::client_type *c =
       get_client_singleton(get_queue_index());
   bool success = false;
 
   while (!success)
     {
       void *d = static_cast<void *>(&data[0]);
-      success = c->invoke_async(d, d);
+      success = c->rpc_invoke<false>(d, d);
     }
 }
 
@@ -64,7 +64,7 @@ void hostcall_client_async(uint64_t data[8])
 // Get the start of the array
 const char *hostcall_client_symbol() { return "client_singleton"; }
 
-hostrpc::hostcall_interface_t::server_t server_singleton[MAX_NUM_DOORBELLS];
+hostrpc::hostcall_interface_t::server_type server_singleton[MAX_NUM_DOORBELLS];
 
 hostrpc::hostcall_interface_t *stored_pairs[MAX_NUM_DOORBELLS] = {0};
 
@@ -117,15 +117,16 @@ class hostcall_impl
 
     if (0)
       {
-        clients[queue_id] = res->client();  // fails on gfx8
+        clients[queue_id] = res->instance.client;  // fails on gfx8
       }
     else
       {
         // should work on gfx8, possibly slowly
         hsa_region_t fine = hsa::region_fine_grained(kernel_agent);
-        using Ty = hostrpc::hostcall_interface_t::client_t;
+        using Ty = hostrpc::hostcall_interface_t::client_type;
         auto c = hsa::allocate(fine, sizeof(Ty));
-        auto *l = new (c.get()) Ty(res->client());
+        auto *l =
+            new (reinterpret_cast<Ty *>(c.get())) Ty(res->instance.client);
 
         int rc = hsa::copy_host_to_gpu(
             kernel_agent, reinterpret_cast<void *>(&clients[queue_id]),
@@ -141,7 +142,7 @@ class hostcall_impl
           }
       }
 
-    servers[queue_id] = res->server();
+    servers[queue_id] = res->instance.server;
 
     stored_pairs[queue_id] = res;
 
@@ -175,13 +176,13 @@ class hostcall_impl
   int spawn_worker(uint16_t queue_id)
   {
     _Atomic(uint32_t) *control = &thread_killer;
-    hostrpc::hostcall_interface_t::server_t *server = &servers[queue_id];
+    hostrpc::hostcall_interface_t::server_type *server = &servers[queue_id];
     uint32_t *ql = &queue_loc[queue_id];
     // TODO. Can't actually use std::thread because the constructor throws.
     threads.emplace_back([control, server, ql]() {
       for (;;)
         {
-          while (server->handle(nullptr, ql))
+          while (server->rpc_handle(nullptr, ql))
             {
             }
 
@@ -197,10 +198,10 @@ class hostcall_impl
   }
 
   // Going to need these to be opaque
-  hostrpc::hostcall_interface_t::client_t *clients;  // statically allocated
+  hostrpc::hostcall_interface_t::client_type *clients;  // statically allocated
 
   // heap allocated, may not need the servers() instance
-  std::vector<hostrpc::hostcall_interface_t::server_t> servers;
+  std::vector<hostrpc::hostcall_interface_t::server_type> servers;
   std::vector<hostrpc::hostcall_interface_t *> stored_pairs;
   std::vector<uint32_t> queue_loc;
 
@@ -215,8 +216,8 @@ class hostcall_impl
 hostcall_impl::hostcall_impl(void *client_addr, hsa_agent_t kernel_agent)
 {
   // The client_t array is per-gpu-image. Find it.
-  clients =
-      reinterpret_cast<hostrpc::hostcall_interface_t::client_t *>(client_addr);
+  clients = reinterpret_cast<hostrpc::hostcall_interface_t::client_type *>(
+      client_addr);
 
   // todo: error checks here
   fine_grained_region = hsa::region_fine_grained(kernel_agent);

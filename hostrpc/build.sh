@@ -106,9 +106,6 @@ $CXX_X64 -I$HSAINC persistent_kernel.cpp -c -o persistent_kernel.x64.bc
 # $CXX_PTX x64_ptx_stress.cpp -c -o x64_ptx_stress.gcn.code.bc
 # $CXX_X64 -I$HSAINC x64_ptx_stress.cpp -c -o x64_ptx_stress.x64.bc
 
-$CXX_GCN hostcall_interface.cpp -c -o hostcall_interface.gcn.bc
-$CXX_X64 -I$HSAINC hostcall_interface.cpp -c -o hostcall_interface.x64.bc
-
 $CXX_GCN hostcall.cpp -c -o hostcall.gcn.bc
 $CXX_X64 -I$HSAINC hostcall.cpp -c -o hostcall.x64.bc
 
@@ -122,7 +119,7 @@ $CXX_GCN amdgcn_main.cpp -c -o amdgcn_main.gcn.bc
 # TODO: Embed it directly in the loader by patching call to main, as the loader doesn't do it
 $CXX_X64 -I$HSAINC amdgcn_loader.cpp -c -o amdgcn_loader.x64.bc
 
-$CXX_X64_LD $LDFLAGS amdgcn_loader.x64.bc memory.x64.bc hostcall_interface.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o ../amdgcn_loader.exe
+$CXX_X64_LD $LDFLAGS amdgcn_loader.x64.bc memory.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o ../amdgcn_loader.exe
 
 # Build the device library that calls into main()
 $CXXCL loader/amdgcn_loader_entry.cl -c -o loader/amdgcn_loader_entry.gcn.bc
@@ -132,7 +129,7 @@ $LINK loader/amdgcn_loader_entry.gcn.bc loader/amdgcn_loader_cast.gcn.bc | $OPT 
 
 
 
-$LINK amdgcn_main.gcn.bc amdgcn_loader_device.gcn.bc hostcall_interface.gcn.bc hostcall.gcn.bc  -o executable_device.gcn.bc
+$LINK amdgcn_main.gcn.bc amdgcn_loader_device.gcn.bc  hostcall.gcn.bc  -o executable_device.gcn.bc
 
 # Link the device image
 $CXX_GCN_LD executable_device.gcn.bc -o a.out
