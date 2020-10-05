@@ -43,7 +43,6 @@ void clear(hostrpc::page_t *page)
 #endif
 
 #if defined __AMDGCN__
-
 void pass_arguments(hostrpc::page_t *page, uint64_t d[8])
 {
   hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];

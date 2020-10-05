@@ -11,12 +11,14 @@
 #if defined(__x86_64__)
 // May want this header to be free of hsa stuff, following the nvptx layout
 #include "hsa.h"
+#include <stdlib.h>
 #endif
 
 namespace hostrpc
 {
 template <typename SZ, typename Fill, typename Use, typename Operate,
-          typename Clear>
+          typename Clear, typename ClientCounter = counters::client,
+          typename ServerCounter = counters::server>
 struct x64_gcn_pair_T
 {
   using Copy = copy_functor_given_alias;
@@ -24,9 +26,9 @@ struct x64_gcn_pair_T
   using Word = uint64_t;
 
   using client_type =
-      client_impl<Word, SZ, Copy, Fill, Use, Step, counters::client>;
+      client_impl<Word, SZ, Copy, Fill, Use, Step, ClientCounter>;
   using server_type =
-      server_impl<Word, SZ, Copy, Operate, Clear, Step, counters::server>;
+      server_impl<Word, SZ, Copy, Operate, Clear, Step, ServerCounter>;
 
   client_type client;
   server_type server;
@@ -44,6 +46,8 @@ struct x64_gcn_pair_T
                                       N * sizeof(page_t)),
         N);
     hostrpc::page_t *server_buffer = client_buffer;
+
+    // may be prudent to zero init the buffer here
 
     // allocating in coarse is probably not sufficient, likely to need to mark
     // the pointer with an address space

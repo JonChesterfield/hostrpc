@@ -3,17 +3,10 @@
 
 #include "base_types.hpp"
 #include <stddef.h>
-
-// needs to scale with CUs
-namespace hostrpc
-{
-static const constexpr size_t x64_host_amdgcn_array_size = 2048;
-}
-
-#if defined(__AMDGCN__)
-// amdgcn client API
-
 #include <stdint.h>
+
+// amdgcn client api
+#if defined(__AMDGCN__)
 void hostcall_client(uint64_t data[8]);
 void hostcall_client_async(uint64_t data[8]);
 #endif
@@ -24,6 +17,7 @@ void hostcall_client_async(uint64_t data[8]);
 #include "hsa.h"
 const char *hostcall_client_symbol();
 
+// Templating this may be the way to avoid the singleton requirement
 class hostcall
 {
  public:
@@ -43,7 +37,7 @@ class hostcall
 };
 #endif
 
-// Functions implemented by the user of the library
+// Implementation api. This construct is a singleton.
 namespace hostcall_ops
 {
 #if defined(__x86_64__)
@@ -55,5 +49,11 @@ void pass_arguments(hostrpc::page_t *page, uint64_t data[8]);
 void use_result(hostrpc::page_t *page, uint64_t data[8]);
 #endif
 }  // namespace hostcall_ops
+
+// TODO: runtime
+namespace hostrpc
+{
+static const constexpr size_t x64_host_amdgcn_array_size = 2048;
+}
 
 #endif

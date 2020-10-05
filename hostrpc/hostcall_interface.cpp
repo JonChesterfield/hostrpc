@@ -6,6 +6,8 @@
 #include "memory.hpp"
 #include "test_common.hpp"
 
+#include "x64_host_gcn_client.hpp"
+
 // Glue the opaque hostcall_interface class onto the freestanding implementation
 
 // hsa uses freestanding C headers, unlike hsa.hpp
@@ -72,132 +74,11 @@ struct clear
 };
 }  // namespace x64_host_amdgcn_client
 
-template <typename Word, typename SZ>
-using x64_amdgcn_client =
-    hostrpc::client_impl<Word, SZ, hostrpc::copy_functor_given_alias,
-                         x64_host_amdgcn_client::fill,
-                         x64_host_amdgcn_client::use, hostrpc::nop_stepper,
-                         hostrpc::counters::client_nop>;
-
-template <typename Word, typename SZ>
-using x64_amdgcn_server =
-    hostrpc::server_impl<Word, SZ, hostrpc::copy_functor_given_alias,
-                         x64_host_amdgcn_client::operate,
-                         x64_host_amdgcn_client::clear, hostrpc::nop_stepper,
-                         hostrpc::counters::server_nop>;
-
-#if defined(__x86_64__)
-#if 0
-namespace
-{
-inline _Atomic(uint64_t) *
-    hsa_allocate_slot_bitmap_data_alloc(hsa_region_t region, size_t size)
-{
-  const size_t align = 64;
-  void *memory = hostrpc::hsa::allocate(region.handle, align, size);
-  return hostrpc::careful_array_cast<_Atomic(uint64_t)>(memory, size);
-}
-
-inline void hsa_allocate_slot_bitmap_data_free(_Atomic(uint64_t) * d)
-{
-  hostrpc::hsa::deallocate(static_cast<void *>(d));
-}
-
-}  // namespace
-#endif
-#endif
-
 template <typename SZ>
-struct x64_amdgcn_pair
-{
-  using Word = uint64_t;
-
-  using client_type = hostrpc::x64_amdgcn_client<Word, SZ>;
-  using server_type = hostrpc::x64_amdgcn_server<Word, SZ>;
-  client_type client;
-  server_type server;
-  SZ sz;
-
-  x64_amdgcn_pair(SZ sz, uint64_t fine_handle, uint64_t coarse_handle) : sz(sz)
-  {
-#if defined(__x86_64__)
-    size_t N = sz.N();
-    hsa_region_t fine = {.handle = fine_handle};
-    hsa_region_t coarse = {.handle = coarse_handle};
-
-    hostrpc::page_t *client_buffer = hostrpc::careful_array_cast<page_t>(
-        hostrpc::hsa_amdgpu::allocate(fine_handle, alignof(page_t),
-                                      N * sizeof(page_t)),
-        N);
-
-    hostrpc::page_t *server_buffer = client_buffer;
-
-    // Put the buffer in a known-good state to begin with
-    for (size_t i = 0; i < N; i++)
-      {
-        x64_host_amdgcn_client::clear::call(&client_buffer[i], nullptr);
-      }
-
-    auto send =
-        hsa_allocate_slot_bitmap_data_alloc<typename client_type::outbox_t>(
-            fine, N);
-    auto recv =
-        hsa_allocate_slot_bitmap_data_alloc<typename client_type::inbox_t>(fine,
-                                                                           N);
-    auto client_active =
-        hsa_allocate_slot_bitmap_data_alloc<typename client_type::lock_t>(
-            coarse, N);
-    auto client_staging =
-        hsa_allocate_slot_bitmap_data_alloc<typename client_type::staging_t>(
-            coarse, N);
-    auto server_active =
-        hsa_allocate_slot_bitmap_data_alloc<typename server_type::lock_t>(fine,
-                                                                          N);
-    auto server_staging =
-        hsa_allocate_slot_bitmap_data_alloc<typename client_type::staging_t>(
-            fine, N);
-
-    client = {sz,           client_active,  recv,
-              send,         client_staging, server_buffer,
-              client_buffer};
-
-    server = {sz,           server_active,  send,
-              recv,         server_staging, client_buffer,
-              server_buffer};
-#else
-    (void)fine_handle;
-    (void)coarse_handle;
-#endif
-  }
-
-  ~x64_amdgcn_pair()
-  {
-#if defined(__x86_64__)
-    assert(client.inbox.data() == server.outbox.data());
-    assert(client.outbox.data() == server.inbox.data());
-
-    hsa_allocate_slot_bitmap_data_free(client.inbox.data());
-    hsa_allocate_slot_bitmap_data_free(client.outbox.data());
-    hsa_allocate_slot_bitmap_data_free(client.active.data());
-    hsa_allocate_slot_bitmap_data_free(client.staging.data());
-    hsa_allocate_slot_bitmap_data_free(server.active.data());
-    hsa_allocate_slot_bitmap_data_free(server.staging.data());
-
-    assert(client.local_buffer == server.remote_buffer);
-    assert(client.remote_buffer == server.local_buffer);
-
-    if (client.local_buffer == client.remote_buffer)
-      {
-        hsa_memory_free(client.local_buffer);
-      }
-    else
-      {
-        hsa_memory_free(client.local_buffer);
-        hsa_memory_free(server.local_buffer);
-      }
-#endif
-  }
-};
+using x64_amdgcn_pair = hostrpc::x64_gcn_pair_T<
+    SZ, x64_host_amdgcn_client::fill, x64_host_amdgcn_client::use,
+    x64_host_amdgcn_client::operate, x64_host_amdgcn_client::clear,
+    counters::client_nop, counters::server_nop>;
 
 using SZ = hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
 using ty = x64_amdgcn_pair<SZ>;

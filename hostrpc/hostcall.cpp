@@ -20,6 +20,8 @@ using SZ = hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
 #if defined(__AMDGCN__)
 
 // Accessing this, sometimes, raises a page not present fault on gfx8
+// drawback of embedding in image is that multiple shared libraries will all
+// need their own copy, whereas it really should be one per gpu
 __attribute__((visibility("default")))
 hostrpc::hostcall_interface_t::client_t client_singleton[MAX_NUM_DOORBELLS];
 
