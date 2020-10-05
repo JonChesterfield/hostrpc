@@ -95,91 +95,7 @@ struct kernel_args
   void *application_args;
 };
 
-#if defined(__x86_64__)
-#include "hsa.hpp"
-#include "hsa_ext_amd.h"
-static_assert(sizeof(unsigned char *) == sizeof(hsa_queue_t *), "");
-
-void *persistent_kernel_scratch = 0;
-
-int persistent_kernel_destroy()
-{
-  if (persistent_kernel_scratch)
-    {
-      hsa_memory_free(persistent_kernel_scratch);
-      persistent_kernel_scratch = 0;
-    }
-  return 0;
-}
-int persistent_kernel_initialize(hsa::executable *ex)
-{
-  uint64_t addr = ex->get_symbol_address_by_name("hsa_queue_addresses");
-  if (addr == 0)
-    {
-      return 1;
-    }
-
-  constexpr size_t bytes = sizeof(unsigned char *) * MAX_NUM_DOORBELLS;
-  constexpr size_t words = bytes / sizeof(uint32_t);
-  static_assert(bytes == words * 4, "");
-
-  hsa_status_t rc =
-      hsa_amd_memory_fill(reinterpret_cast<void *>(addr), 0, words);
-  if (rc != HSA_STATUS_SUCCESS)
-    {
-      return 1;
-    }
-
-  hsa_region_t fine = hsa::region_fine_grained(*ex);
-
-  rc = hsa_memory_allocate(fine, 1024, &persistent_kernel_scratch);
-  if (rc != HSA_STATUS_SUCCESS)
-    {
-      return 1;
-    }
-
-  return 0;
-}
-
-int persistent_kernel_register(hsa::executable *ex, hsa_queue_t *queue)
-{
-  uint64_t addr = ex->get_symbol_address_by_name("hsa_queue_addresses");
-  if (addr == 0)
-    {
-      return 1;
-    }
-
-  uint16_t index = queue_to_index(queue);
-  if (index > MAX_NUM_DOORBELLS)
-    {
-      return 1;
-    }
-  uint64_t slot_addr = addr + index * sizeof(unsigned char *);
-
-  fprintf(stderr, "Doorbells at %lx, index %u, access %lx\n", addr, index,
-          slot_addr);
-
-  memcpy(persistent_kernel_scratch, &queue, sizeof(unsigned char *));
-
-  hsa_agent_t agent = *ex;
-  return hsa::copy_host_to_gpu(agent, reinterpret_cast<void *>(slot_addr),
-                               persistent_kernel_scratch,
-                               sizeof(unsigned char *));
-}
-
-#endif
-
 #if defined(__AMDGCN__)
-
-__attribute__((visibility("default"))) __attribute__((
-    address_space(1))) unsigned char *hsa_queue_addresses[MAX_NUM_DOORBELLS];
-
-__attribute__((address_space(1))) unsigned char *get_mutable_queue()
-{
-  // on gfx9 at least, returns same address as __builtin_amdgcn_queue_ptr
-  uint16_t index = get_queue_index();
-  return hsa_queue_addresses[index];
-}
 
 // presentlin inlined into enqueue_dispatch
 void kick_signal(uint64_t doorbell_handle)
@@ -275,6 +191,7 @@ void enqueue_dispatch(const unsigned char *src)
       // need to do a signal store
       uint64_t doorbell_handle = *(uint64_t *)((char *)my_queue + 16);
 
+      // derived from ockl
       char *ptr = (char *)doorbell_handle;
       // kind is first 8 bytes, then a union containing value in next 8 bytes
       _Atomic(uint64_t) *event_mailbox_ptr = (_Atomic(uint64_t) *)(ptr + 16);
@@ -354,11 +271,6 @@ TEST_CASE("persistent_kernel")
                               persistent_kernel_so_size);
     CHECK(ex.valid());
 
-    if (0 != persistent_kernel_initialize(&ex))
-      {
-        fprintf(stderr, "Failed to initialize persistent kernel\n");
-        exit(1);
-      }
     const char *kernel_entry = "__device_persistent_kernel.kd";
     uint64_t kernel_address = ex.get_symbol_address_by_name(kernel_entry);
 
@@ -400,11 +312,6 @@ TEST_CASE("persistent_kernel")
           exit(1);
         }
     }
-    if (0 != persistent_kernel_register(&ex, queue))
-      {
-        fprintf(stderr, "Failed to register queue\n");
-        exit(1);
-      }
 
     hsa_region_t kernarg_region = hsa::region_kernarg(kernel_agent);
     hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
@@ -474,8 +381,6 @@ TEST_CASE("persistent_kernel")
       }
 
     fprintf(stderr, "Instance set control to non-zero\n");
-
-    persistent_kernel_destroy();
   }
 }
 
