@@ -28,7 +28,6 @@ hostrpc::hostcall_interface_t::client_t *get_client_singleton(size_t i)
   return &client_singleton[i];
 }
 
-
 void hostcall_client(uint64_t data[8])
 {
   hostrpc::hostcall_interface_t::client_t *c =

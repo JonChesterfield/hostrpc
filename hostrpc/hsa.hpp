@@ -410,6 +410,7 @@ struct executable
   // wrapper is
 
   operator hsa_executable_t() { return state; }
+  operator hsa_agent_t() { return agent; }
 
   bool valid() { return reinterpret_cast<void*>(state.handle) != nullptr; }
 

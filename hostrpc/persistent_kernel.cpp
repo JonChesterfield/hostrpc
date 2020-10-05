@@ -20,6 +20,8 @@ kernel void __device_persistent_kernel(__global void *args)
 
 #if !defined __OPENCL__
 
+#include "queue_to_index.hpp"
+
 #if 1
 #if !defined(__AMDGCN__)
 #include "amd_hsa_queue.h"
@@ -86,26 +88,109 @@ struct dispatch_packet  // 64 byte aligned, probably
   uint64_t reserved1 = 0;
   uint64_t completion_signal = 0;  // no signal
 };
-
+static_assert(sizeof(dispatch_packet) == 64, "");
 struct kernel_args
 {
-  const dispatch_packet *self;
   _Atomic(uint32_t) * control;
   void *application_args;
-  void *my_queue;
 };
+
+#if defined(__x86_64__)
+#include "hsa.hpp"
+#include "hsa_ext_amd.h"
+static_assert(sizeof(unsigned char *) == sizeof(hsa_queue_t *), "");
+
+void *persistent_kernel_scratch = 0;
+
+int persistent_kernel_destroy()
+{
+  if (persistent_kernel_scratch)
+    {
+      hsa_memory_free(persistent_kernel_scratch);
+      persistent_kernel_scratch = 0;
+    }
+  return 0;
+}
+int persistent_kernel_initialize(hsa::executable *ex)
+{
+  uint64_t addr = ex->get_symbol_address_by_name("hsa_queue_addresses");
+  if (addr == 0)
+    {
+      return 1;
+    }
+
+  constexpr size_t bytes = sizeof(unsigned char *) * MAX_NUM_DOORBELLS;
+  constexpr size_t words = bytes / sizeof(uint32_t);
+  static_assert(bytes == words * 4, "");
+
+  hsa_status_t rc =
+      hsa_amd_memory_fill(reinterpret_cast<void *>(addr), 0, words);
+  if (rc != HSA_STATUS_SUCCESS)
+    {
+      return 1;
+    }
+
+  hsa_region_t fine = hsa::region_fine_grained(*ex);
+
+  rc = hsa_memory_allocate(fine, 1024, &persistent_kernel_scratch);
+  if (rc != HSA_STATUS_SUCCESS)
+    {
+      return 1;
+    }
+
+  return 0;
+}
+
+int persistent_kernel_register(hsa::executable *ex, hsa_queue_t *queue)
+{
+  uint64_t addr = ex->get_symbol_address_by_name("hsa_queue_addresses");
+  if (addr == 0)
+    {
+      return 1;
+    }
+
+  uint16_t index = queue_to_index(queue);
+  if (index > MAX_NUM_DOORBELLS)
+    {
+      return 1;
+    }
+  uint64_t slot_addr = addr + index * sizeof(unsigned char *);
+
+  fprintf(stderr, "Doorbells at %lx, index %u, access %lx\n", addr, index,
+          slot_addr);
+
+  memcpy(persistent_kernel_scratch, &queue, sizeof(unsigned char *));
+
+  hsa_agent_t agent = *ex;
+  return hsa::copy_host_to_gpu(agent, reinterpret_cast<void *>(slot_addr),
+                               persistent_kernel_scratch,
+                               sizeof(unsigned char *));
+}
+
+#endif
 
 #if defined(__AMDGCN__)
 
-static void kick_signal(uint64_t handle)
+__attribute__((visibility("default"))) __attribute__((
+    address_space(1))) unsigned char *hsa_queue_addresses[MAX_NUM_DOORBELLS];
+
+__attribute__((address_space(1))) unsigned char *get_mutable_queue()
 {
-  // uses a handle to an amd_signal_t
+  // on gfx9 at least, returns same address as __builtin_amdgcn_queue_ptr
+  uint16_t index = get_queue_index();
+  return hsa_queue_addresses[index];
+}
+
+// presentlin inlined into enqueue_dispatch
+void kick_signal(uint64_t doorbell_handle)
+{
+  // uses a doorbell_handle to an amd_signal_t
   // that's a complex type, from which we need 'value' to hit the atomic
   // there's a uint32_t event_id and a uint64_t event_mailbox_ptr
   // try to get this working roughly first to avoid working out how to
   // link in the ockl stuff
   // see hsaqs.cl
-  char *ptr = (char *)handle;
+  char *ptr = (char *)doorbell_handle;
   // kind is first 8 bytes, then a union containing value in next 8 bytes
   _Atomic(uint64_t) *event_mailbox_ptr = (_Atomic(uint64_t) *)(ptr + 16);
   uint32_t *event_id = (uint32_t *)(ptr + 24);
@@ -126,22 +211,100 @@ static void kick_signal(uint64_t handle)
     }
 }
 
-#if 0
-static unsigned char *get_dispatch_ptr()
+void enqueue_dispatch(const unsigned char *src)
 {
-  __attribute__((address_space(4))) void *vq = __builtin_amdgcn_dispatch_ptr();
-  unsigned char *q = (unsigned char *)vq;
-  return q;
-}
-#endif
+  // Somewhat hairy implementation.
 
-extern "C" void __device_persistent_kernel_call(const dispatch_packet *self,
-                                                _Atomic(uint32_t) * control,
-                                                void *application_args,
-                                                void *my_queue)
+  const size_t packet_size = 64;
+
+  // Don't think failure can be reported. The hazard is the queue being full,
+  // but the spec says one should wait for a space to open up when it is full.
+  // fetch_sub is probably not safe with multiple threads accessing the
+  // structure.
+
+  auto my_queue =
+      (__attribute__((address_space(1))) char *)__builtin_amdgcn_queue_ptr();
+
+  // Acquire an available packet id
+  using global_atomic_uint64 =
+      __attribute__((address_space(1))) _Atomic(uint64_t) *;
+  auto write_dispatch_id =
+      reinterpret_cast<global_atomic_uint64>(my_queue + 56);
+  auto read_dispatch_id =
+      reinterpret_cast<global_atomic_uint64>(my_queue + 128);
+
+  // Need to get queue->size and queue->base_address to use the packet id
+  // May want to pass this in as a _constant
+  uint32_t size = *(uint32_t *)((char *)my_queue + 24);
+
+  // Inlined platform::is_master_lane
+  // TODO: 32 wide wavefront, consider not using raw intrinsics here
+  uint64_t activemask = __builtin_amdgcn_read_exec();
+
+  // TODO: check codegen for trunc lowest_active vs expanding lane_id
+  // TODO: ffs is lifted from openmp runtime, looks like it should be ctz
+  uint32_t lowest_active = __builtin_ffsl(activemask) - 1;
+  uint32_t lane_id =
+      __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
+
+  // TODO: readfirstlane(lane_id) == lowest_active?
+  bool is_master_lane = lane_id == lowest_active;
+
+  if (is_master_lane)
+    {
+      uint64_t packet_id =
+          __opencl_atomic_fetch_add(write_dispatch_id, 1, __ATOMIC_RELAXED,
+                                    __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+
+      bool full = true;
+      while (full)
+        {
+          // May want to back off more smoothly on full queue
+          uint64_t idx =
+              __opencl_atomic_load(read_dispatch_id, __ATOMIC_ACQUIRE,
+                                   __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+          full = packet_id >= (size + idx);
+        }
+
+      const uint32_t mask = size - 1;
+      char *packet = ((char *)my_queue + 8) + (packet_id & mask);
+
+      __builtin_memcpy(packet, src, packet_size);
+      __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+
+      // need to do a signal store
+      uint64_t doorbell_handle = *(uint64_t *)((char *)my_queue + 16);
+
+      char *ptr = (char *)doorbell_handle;
+      // kind is first 8 bytes, then a union containing value in next 8 bytes
+      _Atomic(uint64_t) *event_mailbox_ptr = (_Atomic(uint64_t) *)(ptr + 16);
+      uint32_t *event_id = (uint32_t *)(ptr + 24);
+
+      assert(event_mailbox_ptr);  // I don't think this can be null
+      {
+        uint32_t id = *event_id;
+        __opencl_atomic_store(event_mailbox_ptr, id, __ATOMIC_RELEASE,
+                              __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+
+        __builtin_amdgcn_s_sendmsg(1 | (0 << 4),
+                                   __builtin_amdgcn_readfirstlane(id) & 0xff);
+      }
+    }
+}
+
+void enqueue_self()
 {
-  // The queue intrinsic returns a pointer to __constant memory, which probably
-  // can't be mutated by fetch_add. Certainly refuses to compile.
+  __attribute__((address_space(4))) void *p = __builtin_amdgcn_dispatch_ptr();
+  return enqueue_dispatch((const unsigned char *)p);
+}
+
+extern "C" void __device_persistent_kernel_call(_Atomic(uint32_t) * control,
+                                                void *application_args)
+{
+  // The queue intrinsic returns a pointer to __constant memory. Mutating it
+  // involves casting to, e.g., __global. The change may not be visible to this
+  // kernel, despite the all_svm_devices scope. Should check codegen, given this
+  // runs atomic fetch_add on it.
 
   // dispatch packet available in addr(4), __builtin_amdgcn_dispatch_ptr();
   if (*control == 0)
@@ -161,55 +324,14 @@ extern "C" void __device_persistent_kernel_call(const dispatch_packet *self,
   // Could return based on the return value of this
   __device_persistent_call(application_args);
 
-  // Acquire an available packet id
-
-  _Atomic(uint64_t) *write_dispatch_id =
-      reinterpret_cast<_Atomic(uint64_t) *>((char *)my_queue + 56);
-  _Atomic(uint64_t) *read_dispatch_id =
-      reinterpret_cast<_Atomic(uint64_t) *>((char *)my_queue + 128);
-
-  // Need to get queue->size and queue->base_address to use the packet id
-  // May want to pass this in as a _constant
-  uint32_t size = *(uint32_t *)((char *)my_queue + 24);
-
-  uint64_t packet_id = platform::critical<uint64_t>([&]() {
-    // all devices because other devices can be using the same queue
-
-    uint64_t packet_id =
-        __opencl_atomic_fetch_add(write_dispatch_id, 1, __ATOMIC_RELAXED,
-                                  __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-
-    bool full = true;
-    while (full)
-      {
-        // May want to back off more smoothly on full queue
-        uint64_t idx =
-            __opencl_atomic_load(read_dispatch_id, __ATOMIC_ACQUIRE,
-                                 __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-        full = packet_id >= (size + idx);
-      }
-    return packet_id;
-  });
-
-  const uint32_t mask = size - 1;
-  dispatch_packet *packet =
-      (dispatch_packet *)((char *)my_queue + 8) + (packet_id & mask);
-
-  *packet = *self;
-  __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-
-  // need to do a signal store
-
-  uint64_t doorbell_handle = *(uint64_t *)((char *)my_queue + 16);
-  kick_signal(doorbell_handle);
+  enqueue_self();
 }
 
 extern "C" void __device_persistent_kernel_cast(
     __attribute__((address_space(1))) void *asargs)
 {
   kernel_args *args = (kernel_args *)asargs;
-  __device_persistent_kernel_call(args->self, args->control,
-                                  args->application_args, args->my_queue);
+  __device_persistent_kernel_call(args->control, args->application_args);
 }
 
 #endif
@@ -232,6 +354,11 @@ TEST_CASE("persistent_kernel")
                               persistent_kernel_so_size);
     CHECK(ex.valid());
 
+    if (0 != persistent_kernel_initialize(&ex))
+      {
+        fprintf(stderr, "Failed to initialize persistent kernel\n");
+        exit(1);
+      }
     const char *kernel_entry = "__device_persistent_kernel.kd";
     uint64_t kernel_address = ex.get_symbol_address_by_name(kernel_entry);
 
@@ -273,6 +400,11 @@ TEST_CASE("persistent_kernel")
           exit(1);
         }
     }
+    if (0 != persistent_kernel_register(&ex, queue))
+      {
+        fprintf(stderr, "Failed to register queue\n");
+        exit(1);
+      }
 
     hsa_region_t kernarg_region = hsa::region_kernarg(kernel_agent);
     hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
@@ -298,10 +430,8 @@ TEST_CASE("persistent_kernel")
         hsa::allocate(fine_grained_region, sizeof(_Atomic(uint32_t)));
 
     kernel_args example = {
-        .self = 0,  // initialized during launch_t::launch_t
         .control = new (control_state.get()) _Atomic(uint32_t),
         .application_args = 0,  // unused for now
-        .my_queue = (void *)queue,
     };
     __opencl_atomic_store(example.control, 0, __ATOMIC_RELEASE,
                           __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
@@ -329,9 +459,6 @@ TEST_CASE("persistent_kernel")
               kernel_private_segment_fixed_size,
               kernel_group_segment_fixed_size, kernel_address, kernarg_address);
 
-      state->state->self = typed_heap;
-      state->state->my_queue = queue;
-
       // set up the first packet
       __builtin_memcpy(packet, typed_heap, sizeof(dispatch_packet));
     };
@@ -347,6 +474,8 @@ TEST_CASE("persistent_kernel")
       }
 
     fprintf(stderr, "Instance set control to non-zero\n");
+
+    persistent_kernel_destroy();
   }
 }
 

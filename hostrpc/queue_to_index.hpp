@@ -1,12 +1,14 @@
 #ifndef QUEUE_TO_INDEX_HPP_INCLUDED
 #define QUEUE_TO_INDEX_HPP_INCLUDED
 
+#include <stddef.h>
 #include <stdint.h>
 
 // There is a finite number of HSA queues supported by the driver:
 static const constexpr uint32_t MAX_NUM_DOORBELLS = 0x400;
 
-// One can therefore map a pointer to a HSA queue to an integer in [0, MAX_NUM_DOORBELLS). 
+// One can therefore map a pointer to a HSA queue to an integer in [0,
+// MAX_NUM_DOORBELLS).
 inline uint16_t queue_to_index(unsigned char *q);
 
 #if defined(__x86_64__)
@@ -32,7 +34,7 @@ inline uint16_t get_queue_index()
 
 inline uint16_t queue_to_index(unsigned char *q)
 {
-  // Given a pointer to the hsa queue, 
+  // Given a pointer to the hsa queue,
   constexpr size_t doorbell_signal_offset = 16;
 #if defined(__x86_64__)
   // avoiding #include hsa.h on the gpu
@@ -47,7 +49,10 @@ inline uint16_t queue_to_index(unsigned char *q)
   // The signal contains a kind at offset 0, expected to be -1 (non-legacy)
   int64_t kind;
   __builtin_memcpy(&kind, sig, 8);
+#ifdef assert
+  // it's an amd_signal_kind_t
   assert(kind == -1 || kind == -2);
+#endif
   (void)kind;
 
   sig += 8;  // step over kind field
@@ -73,7 +78,7 @@ inline uint16_t queue_to_index(unsigned char *q)
     }
 }
 
-#if 0   // Does not compile for gfx8, hence using the intrinsic
+#if 0  // Does not compile for gfx8, hence using the intrinsic
 static uint16_t get_queue_index_asm()
 {
   static_assert(MAX_NUM_DOORBELLS < UINT16_MAX, "");
