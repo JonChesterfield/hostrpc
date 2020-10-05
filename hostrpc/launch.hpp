@@ -92,7 +92,7 @@ struct launch_t
         return nullptr;
       }
 
-    T *mutable_arg = new (mutable_arg_state.get()) T(args);
+    mutable_arg = new (mutable_arg_state.get()) T(args);
 
     // Allocate kernarg memory, including implicit args
     void *kernarg_state =

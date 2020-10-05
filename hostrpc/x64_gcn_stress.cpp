@@ -623,6 +623,8 @@ TEST_CASE("x64_gcn_stress")
 
     p.server_counters().dump();
     p.client_counters().dump();
+    client_store.clear();  // tear down clients before closing hsa
+    hsa_queue_destroy(queue);
   }
 }
 

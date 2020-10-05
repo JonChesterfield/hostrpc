@@ -424,6 +424,10 @@ TEST_CASE("persistent_kernel")
     __c11_atomic_thread_fence(__ATOMIC_RELEASE);
 
     std::vector<launch_t<kernel_args>> l;
+    // works on r > 1, can hit interesting behaviour for large r:
+    // illegal instruction
+    // HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION
+    // memory access fault
     for (unsigned r = 0; r < 1; r++)
       {
         hsa_signal_t sig = {.handle = 0};
@@ -487,6 +491,8 @@ TEST_CASE("persistent_kernel")
 
     p.server_counters().dump();
     p.client_counters().dump();
+
+    // hsa_queue_destroy(queue); // segv, probably means better counting needed
   }
 }
 

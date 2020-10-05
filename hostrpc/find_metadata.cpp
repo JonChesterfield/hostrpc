@@ -39,6 +39,14 @@ std::pair<unsigned char *, unsigned char *> find_metadata(void *binary,
 
   // inconvenient that this takes a non-const char
   Elf *e = elf_memory(static_cast<char *>(binary), binSize);
+
+  struct raii
+  {  // unique_ptr instead?
+    Elf *e;
+    raii(Elf *e) : e(e) {}
+    ~raii() { elf_end(e); }
+  } raii(e);
+
   if (elf_kind(e) != ELF_K_ELF)
     {
       return failure;
