@@ -117,8 +117,8 @@ struct gcn_x64_t
 #if defined(__AMDGCN__)
       // Call through to a specific handler, one cache line per lane
       hostrpc::cacheline_t *l = &page->cacheline[platform::get_lane_id()];
-      l->element[0] = l->element[0] + 1;
-      l->element[1] = l->element[1] + 2;
+      l->element[0] = l->element[0] + 2;
+      l->element[1] = l->element[1] + 3;
 #else
       (void)page;
 #endif
@@ -282,21 +282,21 @@ extern "C" void __device_persistent_kernel_call(_Atomic(uint32_t) * control,
 
   // enqueue_self not working yet
 
+  uint32_t location_arg = 0;
   for (;;)
     {
-      __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
-
-      uint32_t todo = platform::critical<uint32_t>(
-          [&]() { return cas_fetch_dec(control); });
-
-      __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-
-      //    __builtin_amdgcn_s_sleep(10000000);
-
-      if (todo == 1)
+      if (server_instance[0].rpc_handle(0, 0, &location_arg))
         {
-          return;
+          uint32_t todo = platform::critical<uint32_t>(
+              [&]() { return cas_fetch_dec(control); });
+
+          if (todo == 1)
+            {
+              return;
+            }
         }
+
+      __builtin_amdgcn_s_sleep(10000000);
     }
 
   enqueue_self();
@@ -423,16 +423,28 @@ TEST_CASE("persistent_kernel")
                           __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
     __c11_atomic_thread_fence(__ATOMIC_RELEASE);
 
-    auto l = launch_t<kernel_args>(kernel_agent, queue,
-                                   /* kernel_address */ kernel_address,
-                                   kernel_private_segment_fixed_size,
-                                   kernel_group_segment_fixed_size,
-                                   /* number waves */ 1, example);
+    std::vector<launch_t<kernel_args>> l;
+    for (unsigned r = 0; r < 1; r++)
+      {
+        hsa_signal_t sig = {.handle = 0};
+
+        l.emplace_back((launch_t<kernel_args>){
+            kernel_agent, queue, std::move(sig),
+            /* kernel_address */ kernel_address,
+            kernel_private_segment_fixed_size, kernel_group_segment_fixed_size,
+            /* number waves */ 1, example});
+      }
     fprintf(stderr, "Launched instance\n");
 
-    // ...
+    hostrpc::page_t tmp;
+    memset(&tmp, 0, sizeof(tmp));
 
-    fprintf(stderr, "Stopping instance\n");
+    for (unsigned i = 0; i < init_control; i++)
+      {
+        bool r = p.rpc_invoke<true>(&tmp, &tmp);
+        fprintf(stderr, "rpc_invoke[%u] ret %u, tmp[0][0] %lu\n", i, r,
+                tmp.cacheline[0].element[0]);
+      }
 
     uint32_t ld = init_control + 1;
     while (ld != 0)

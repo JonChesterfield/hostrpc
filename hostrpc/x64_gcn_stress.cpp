@@ -553,10 +553,17 @@ TEST_CASE("x64_gcn_stress")
             {
               example.result[i] = UINT64_MAX;
             }
-          launch_t<kernel_args> tmp(kernel_agent, queue, kernel_address,
-                                    kernel_private_segment_fixed_size,
-                                    kernel_group_segment_fixed_size, MAX_WAVES,
-                                    example);
+          hsa_signal_t sig;
+          auto rc = hsa_signal_create(1, 0, NULL, &sig);
+          if (rc != HSA_STATUS_SUCCESS)
+            {
+              exit(1);
+            }
+
+          launch_t<kernel_args> tmp(
+              kernel_agent, queue, std::move(sig), kernel_address,
+              kernel_private_segment_fixed_size,
+              kernel_group_segment_fixed_size, MAX_WAVES, example);
           client_store.emplace_back(std::move(tmp));
         }
     }

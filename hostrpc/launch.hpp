@@ -117,8 +117,10 @@ struct launch_t
            (packet_id & mask);
   }
 
+  // takes ownership of signal
   launch_t(hsa_agent_t kernel_agent, hsa_queue_t *queue,
-           uint64_t kernel_address, uint32_t private_segment_fixed_size,
+           hsa_signal_t &&completion, uint64_t kernel_address,
+           uint32_t private_segment_fixed_size,
            uint32_t group_segment_fixed_size, uint64_t number_waves, T args)
 
   {
@@ -142,11 +144,7 @@ struct launch_t
 
     packet->grid_size_x = packet->workgroup_size_x * number_waves;
 
-    auto rc = hsa_signal_create(1, 0, NULL, &packet->completion_signal);
-    if (rc != HSA_STATUS_SUCCESS)
-      {
-        exit(1);
-      }
+    memcpy(&packet->completion_signal, &completion, sizeof(hsa_signal_t));
 
     packet_store_release((uint32_t *)packet,
                          header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
@@ -170,7 +168,10 @@ struct launch_t
         state->~with_implicit_args<T *>();
         hsa_memory_free(static_cast<void *>(state));
         hsa_memory_free(static_cast<void *>(mutable_arg));
-        hsa_signal_destroy(packet->completion_signal);
+        if (packet->completion_signal.handle)
+          {
+            hsa_signal_destroy(packet->completion_signal);
+          }
         state = nullptr;
       }
   }
