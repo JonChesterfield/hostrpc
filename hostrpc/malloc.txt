@@ -1,0 +1,28 @@
+Assume N independent size bins for 'small' allocations. Possibly per-queue.
+
+Allocate 2mb size + 2mb aligned block. Write header info at the top.
+
+Malloc returns pieces of one of these blocks. Mask low bits to get header info.
+
+If pointer passed to free is itself 2mb aligned, pass to munmap. Works if block size == align, or if the slots found by masking low bits are never returned from malloc. Otherwise difficult to distinguish block to free vs munmap.
+
+Header info involves a container of pointers to blocks. Care needed to insert/remove given forward progres constraints.
+
+Note - may batch small allocations per-warp. Involves a reference count as part of the allocation, fetch_sub by each active thread and dealloc by whichever saw 1.
+
+
+Note - multireader lock on uint32_t via:
+read lock -> fetch_add 2
+write lock -> cas 1
+
+Read lock involves fetch_add, check low bit, fetch_sub if set
+
+Write lock is cas 1. Considering cas 1 | (dispatch_id << n) where n is order of max live threads.
+
+Can take write lock while readers outstanding and wait for the readers to subtract.
+
+
+
+
+
+
