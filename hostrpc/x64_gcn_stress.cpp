@@ -1,18 +1,6 @@
 #define VISIBLE __attribute__((visibility("default")))
 
-#if !defined __OPENCL__
-#if defined(__AMDGCN__)
-// The toolchain shouldn't be emitting undef symbols to this.
-// Work around here for now.
-extern "C"
-{
-  __attribute__((weak)) int __cxa_atexit(void (*)(void *), void *, void *)
-  {
-    return 0;
-  }
-}
-#endif
-#endif
+#include "cxa_atexit.hpp"
 
 // Kernel entry
 #if defined __OPENCL__

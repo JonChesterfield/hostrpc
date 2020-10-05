@@ -1,5 +1,7 @@
 #define VISIBLE __attribute__((visibility("default")))
 
+#include "cxa_atexit.hpp"
+
 #if !defined __OPENCL__
 #if defined(__AMDGCN__)
 extern "C" void __device_persistent_call(void *)
@@ -203,6 +205,9 @@ struct kernel_args
 
 #if defined(__AMDGCN__)
 
+__attribute__((loader_uninitialized))
+VISIBLE hostrpc::gcn_x64_t::gcn_x64_type::server_type server_instance[1];
+
 // presentlin inlined into enqueue_dispatch
 void kick_signal(uint64_t doorbell_handle)
 {
@@ -292,6 +297,8 @@ TEST_CASE("persistent_kernel")
     const char *kernel_entry = "__device_persistent_kernel.kd";
     uint64_t kernel_address = ex.get_symbol_address_by_name(kernel_entry);
 
+    uint64_t server_address = ex.get_symbol_address_by_name("server_instance");
+
     uint32_t kernel_private_segment_fixed_size = 0;
     uint32_t kernel_group_segment_fixed_size = 0;
 
@@ -350,6 +357,23 @@ TEST_CASE("persistent_kernel")
     hostrpc::gcn_x64_t p(N, fine_grained_region.handle,
                          coarse_grained_region.handle);
 
+    {
+      auto c =
+          hsa::allocate(fine_grained_region,
+                        sizeof(hostrpc::gcn_x64_t::gcn_x64_type::server_type));
+      void *vc = c.get();
+      memcpy(vc, &p.instance.server, sizeof(p.instance.server));
+
+      int rc = hsa::copy_host_to_gpu(
+          kernel_agent, reinterpret_cast<void *>(server_address),
+          reinterpret_cast<const void *>(vc), sizeof(p.instance.server));
+      if (rc != 0)
+        {
+          fprintf(stderr, "Failed to copy server state to gpu\n");
+          exit(1);
+        }
+    }
+
     // 4 bytes in its own page isn't ideal
     auto control_state =
         hsa::allocate(fine_grained_region, sizeof(_Atomic(uint32_t)));
@@ -376,6 +400,29 @@ TEST_CASE("persistent_kernel")
       }
 
     fprintf(stderr, "Instance set control to non-zero\n");
+
+    {
+      auto c =
+          hsa::allocate(fine_grained_region,
+                        sizeof(hostrpc::gcn_x64_t::gcn_x64_type::server_type));
+      void *vc = c.get();
+
+      int rc =
+          hsa::copy_host_to_gpu(kernel_agent, reinterpret_cast<void *>(vc),
+                                reinterpret_cast<const void *>(server_address),
+
+                                sizeof(p.instance.server));
+      if (rc != 0)
+        {
+          fprintf(stderr, "Failed to copy server state back from gpu\n");
+          exit(1);
+        }
+
+      memcpy(&p.instance.server, vc, sizeof(p.instance.server));
+    }
+
+    p.server_counters().dump();
+    p.client_counters().dump();
   }
 }
 
