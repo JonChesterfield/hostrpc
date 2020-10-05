@@ -17,7 +17,6 @@ void hostcall_client_async(uint64_t data[8]);
 #include "hsa.h"
 const char *hostcall_client_symbol();
 
-// Templating this may be the way to avoid the singleton requirement
 class hostcall
 {
  public:
@@ -32,7 +31,7 @@ class hostcall
   hostcall(hostcall &&) = delete;
 
  private:
-  using state_t = hostrpc::storage<128, 8>;
+  using state_t = hostrpc::storage<80, 8>;
   state_t state;
 };
 #endif

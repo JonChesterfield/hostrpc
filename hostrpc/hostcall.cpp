@@ -1,5 +1,6 @@
 #include "hostcall.hpp"
 #include "base_types.hpp"
+#include "queue_to_index.hpp"
 #include "x64_host_gcn_client.hpp"
 
 #include <stddef.h>
@@ -62,45 +63,11 @@ struct clear
 };
 }  // namespace x64_host_amdgcn_client
 
-template <typename SZ>
+using SZ = size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
 using x64_amdgcn_pair = hostrpc::x64_gcn_pair_T<
     SZ, x64_host_amdgcn_client::fill, x64_host_amdgcn_client::use,
     x64_host_amdgcn_client::operate, x64_host_amdgcn_client::clear,
     counters::client_nop, counters::server_nop>;
-
-struct hostcall_interface_t
-{
-  using SZ = size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
-  x64_amdgcn_pair<SZ> instance;
-
-  hostcall_interface_t(uint64_t hsa_region_t_fine_handle,
-                       uint64_t hsa_region_t_coarse_handle)
-      : instance(SZ{}, hsa_region_t_fine_handle, hsa_region_t_coarse_handle)
-  {
-  }
-
-  using client_type = decltype(instance)::client_type;
-  using server_type = decltype(instance)::server_type;
-
-  ~hostcall_interface_t() {}
-  hostcall_interface_t(const hostcall_interface_t &) = delete;
-  bool valid() { return true; }
-
-  template <bool have_continuation>
-  bool rpc_invoke(void *fill, void *use) noexcept
-  {
-    return instance.client.rpc_invoke<have_continuation>(fill, use);
-  }
-
-  bool rpc_handle(void *operate_state, void *clear_state,
-                  uint32_t *location_arg) noexcept
-  {
-    return instance.server.rpc_handle(operate_state, clear_state, location_arg);
-  }
-
-  client_counters client_counters() { return instance.client.get_counters(); }
-  server_counters server_counters() { return instance.server.get_counters(); }
-};
 
 }  // namespace hostrpc
 
@@ -115,134 +82,37 @@ struct hostcall_interface_t
 #endif
 
 #include "detail/platform.hpp"  // assert
-#include "queue_to_index.hpp"
-
-using SZ = hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
 
 // a 'per queue' structure, one per gpu, is basically a global variable
 // could be factored as such
 
-template <typename T>
-struct gpu_singleton
-{
-  // data is going to be a pointer to a contiguous block of gpu memory
-  // need to allocate some coarse grain memory on the host and initalize
-  // the gpu, and the cpu, pointer with it
-  // Thinking of having two instances to this singleton, one on the host and one
-  // on the gpu
-
-#if defined(__x86_64__)
-  static T *x64_data;
-#endif
-
 #if defined(__AMDGCN__)
-  // Marking it with asm ("label") does set the name, but also puts it in comdat
-  // Seeking cleaner solution to being able to dlsym it
-  __attribute__((
-      visibility("default"))) static T *gcn_data  // asm ("predicatable")
-      ;
-#endif
-
-  static T &data()
-  {
-#if defined(__x86_64__)
-    return *x64_data;
-#endif
-#if defined(__AMDGCN__)
-    return *gcn_data;
-#endif
-  }
-
-  int construct(uint64_t hsa_handle)
-  {
-#if defined(__x86_64__)
-    hsa_region_t region = {.handle = hsa_handle};
-    void *ptr;
-    hsa_status_t rc =
-        hsa_memory_allocate(region, sizeof(T) * MAX_NUM_DOORBELLS, &ptr);
-    data() = ptr;
-
-    if (rc != HSA_STATUS_SUCCESS)
-      {
-        return 1;
-      }
-
-      // Host data now points to the memory
-
-      // Guess the name of the device pointer...
-
-#endif
-    (void)hsa_handle;
-    return 0;
-  }
-
-  // operator() cannot be a static member function
-#if defined(__AMDGCN__)
-  static T &get()
-  {
-    uint16_t index = get_queue_index();
-    return data[index];
-  }
-#endif
-
-#if defined(__x86_64__)
-  static T &get(hsa_queue_t *queue)
-  {
-    uint16_t index = queue_to_index(queue);
-    return data[index];
-  };
-#endif
-};
-
-#if defined(__AMDGCN__)
-
-template <typename T>
-T *gpu_singleton<T>::gcn_data;
 
 // Accessing this, sometimes, raises a page not present fault on gfx8
 // drawback of embedding in image is that multiple shared libraries will all
 // need their own copy, whereas it really should be one per gpu
 
 __attribute__((visibility("default")))
-hostrpc::hostcall_interface_t::client_type client_singleton[MAX_NUM_DOORBELLS];
+hostrpc::x64_amdgcn_pair::client_type client_singleton[MAX_NUM_DOORBELLS];
 
-gpu_singleton<int> hazardsi;
-gpu_singleton<float> hazardsf;
-
-int &use_data_int() { return gpu_singleton<int>::data(); }
-
-float &use_data_float() { return gpu_singleton<float>::data(); }
-
-hostrpc::hostcall_interface_t::client_type *get_client_singleton(size_t i)
+template <bool C>
+static void hostcall_impl(uint64_t data[8])
 {
-  return &client_singleton[i];
-}
-
-void hostcall_client(uint64_t data[8])
-{
-  hostrpc::hostcall_interface_t::client_type *c =
-      get_client_singleton(get_queue_index());
+  auto *c = &client_singleton[get_queue_index()];
 
   bool success = false;
-
   while (!success)
     {
       void *d = static_cast<void *>(&data[0]);
-      success = c->rpc_invoke<true>(d, d);
+      success = c->rpc_invoke<C>(d, d);
     }
 }
+
+void hostcall_client(uint64_t data[8]) { return hostcall_impl<true>(data); }
 
 void hostcall_client_async(uint64_t data[8])
 {
-  hostrpc::hostcall_interface_t::client_type *c =
-      get_client_singleton(get_queue_index());
-  bool success = false;
-
-  while (!success)
-    {
-      void *d = static_cast<void *>(&data[0]);
-      success = c->rpc_invoke<false>(d, d);
-    }
+  return hostcall_impl<false>(data);
 }
 
 #endif
@@ -252,29 +122,23 @@ void hostcall_client_async(uint64_t data[8])
 // Get the start of the array
 const char *hostcall_client_symbol() { return "client_singleton"; }
 
-hostrpc::hostcall_interface_t::server_type server_singleton[MAX_NUM_DOORBELLS];
-
-hostrpc::hostcall_interface_t *stored_pairs[MAX_NUM_DOORBELLS] = {0};
-
 class hostcall_impl
 {
+  using SZ = hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
+
  public:
   hostcall_impl(void *client_symbol_address, hsa_agent_t kernel_agent);
   hostcall_impl(hsa_executable_t executable, hsa_agent_t kernel_agent);
 
   hostcall_impl(hostcall_impl &&o)
       : clients(std::move(o.clients)),
-        servers(std::move(o.servers)),
         stored_pairs(std::move(o.stored_pairs)),
-        queue_loc(std::move(o.queue_loc)),
         threads(std::move(o.threads)),
         fine_grained_region(std::move(o.fine_grained_region)),
         coarse_grained_region(std::move(o.coarse_grained_region))
   {
-    clients = 0;
-    servers = {};
+    clients = nullptr;
     stored_pairs = {};
-    queue_loc = {};
     // threads = {};
   }
 
@@ -294,8 +158,8 @@ class hostcall_impl
       }
 
     // TODO: Avoid this heap alloc
-    hostrpc::hostcall_interface_t *res = new hostrpc::hostcall_interface_t(
-        fine_grained_region.handle, coarse_grained_region.handle);
+    hostrpc::x64_amdgcn_pair *res = new hostrpc::x64_amdgcn_pair(
+        SZ{}, fine_grained_region.handle, coarse_grained_region.handle);
     if (!res)
       {
         return 1;
@@ -305,16 +169,15 @@ class hostcall_impl
 
     if (0)
       {
-        clients[queue_id] = res->instance.client;  // fails on gfx8
+        clients[queue_id] = res->client;  // fails on gfx8
       }
     else
       {
         // should work on gfx8, possibly slowly
         hsa_region_t fine = hsa::region_fine_grained(kernel_agent);
-        using Ty = hostrpc::hostcall_interface_t::client_type;
+        using Ty = hostrpc::x64_amdgcn_pair::client_type;
         auto c = hsa::allocate(fine, sizeof(Ty));
-        auto *l =
-            new (reinterpret_cast<Ty *>(c.get())) Ty(res->instance.client);
+        auto *l = new (reinterpret_cast<Ty *>(c.get())) Ty(res->client);
 
         int rc = hsa::copy_host_to_gpu(
             kernel_agent, reinterpret_cast<void *>(&clients[queue_id]),
@@ -329,8 +192,6 @@ class hostcall_impl
             return 1;
           }
       }
-
-    servers[queue_id] = res->instance.server;
 
     stored_pairs[queue_id] = res;
 
@@ -364,13 +225,14 @@ class hostcall_impl
   int spawn_worker(uint16_t queue_id)
   {
     _Atomic(uint32_t) *control = &thread_killer;
-    hostrpc::hostcall_interface_t::server_type *server = &servers[queue_id];
-    uint32_t *ql = &queue_loc[queue_id];
+    auto server = stored_pairs[queue_id]->server;
+
     // TODO. Can't actually use std::thread because the constructor throws.
-    threads.emplace_back([control, server, ql]() {
+    threads.emplace_back([control, server]() mutable {
+      uint32_t ql = 0;
       for (;;)
         {
-          while (server->rpc_handle(nullptr, ql))
+          while (server.rpc_handle(nullptr, &ql))
             {
             }
 
@@ -379,19 +241,16 @@ class hostcall_impl
               return;
             }
 
-          // yield
+          platform::sleep_briefly();
         }
     });
     return 0;  // can't detect errors from std::thread
   }
 
   // Going to need these to be opaque
-  hostrpc::hostcall_interface_t::client_type *clients;  // statically allocated
+  hostrpc::x64_amdgcn_pair::client_type *clients;  // static, on gpu
 
-  // heap allocated, may not need the servers() instance
-  std::vector<hostrpc::hostcall_interface_t::server_type> servers;
-  std::vector<hostrpc::hostcall_interface_t *> stored_pairs;
-  std::vector<uint32_t> queue_loc;
+  std::vector<hostrpc::x64_amdgcn_pair *> stored_pairs;
 
   _Atomic(uint32_t) thread_killer = 0;
   std::vector<std::thread> threads;
@@ -404,8 +263,8 @@ class hostcall_impl
 hostcall_impl::hostcall_impl(void *client_addr, hsa_agent_t kernel_agent)
 {
   // The client_t array is per-gpu-image. Find it.
-  clients = reinterpret_cast<hostrpc::hostcall_interface_t::client_type *>(
-      client_addr);
+  clients =
+      reinterpret_cast<hostrpc::x64_amdgcn_pair::client_type *>(client_addr);
 
   // todo: error checks here
   fine_grained_region = hsa::region_fine_grained(kernel_agent);
@@ -413,9 +272,7 @@ hostcall_impl::hostcall_impl(void *client_addr, hsa_agent_t kernel_agent)
   coarse_grained_region = hsa::region_coarse_grained(kernel_agent);
 
   // probably can't use vector for exception-safety reasons
-  servers.resize(MAX_NUM_DOORBELLS);
   stored_pairs.resize(MAX_NUM_DOORBELLS);
-  queue_loc.resize(MAX_NUM_DOORBELLS);
 }
 
 hostcall_impl::hostcall_impl(hsa_executable_t executable,

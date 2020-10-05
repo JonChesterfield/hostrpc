@@ -58,6 +58,7 @@ inline uint16_t queue_to_index(unsigned char *q)
   sig += 8;  // step over kind field
 
   // kind is probably a fixed function of architecture
+  // todo: lift it from the gfxN macros
   if (kind == -1)
     {
       uint64_t ptr;
