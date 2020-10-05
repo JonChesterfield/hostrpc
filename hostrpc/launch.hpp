@@ -117,33 +117,11 @@ struct launch_t
            (packet_id & mask);
   }
 
-  template <typename PacketInitializer>
-  launch_t(hsa_agent_t kernel_agent, hsa_queue_t *queue, T args,
-           PacketInitializer initializer)
-
-  {
-    fprintf(stderr, "launch_t ctor w/ initializer\n");
-    uint64_t packet_id;
-    packet = setup_and_find_packet(kernel_agent, queue, args, &packet_id);
-    if (!packet)
-      {
-        fprintf(stderr, "failed to create launch_t\n");
-        return;
-      }
-
-    initializer(packet, state);
-    __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-
-    hsa_signal_store_release(queue->doorbell_signal, packet_id);
-    fprintf(stderr, "Signalled queue to mark packet launch\n");
-  }
-
   launch_t(hsa_agent_t kernel_agent, hsa_queue_t *queue,
            uint64_t kernel_address, uint32_t private_segment_fixed_size,
            uint32_t group_segment_fixed_size, uint64_t number_waves, T args)
 
   {
-    fprintf(stderr, "launch_t ctor hardcoded\n");
     assert(number_waves <= 8);
     uint64_t packet_id;
     packet = setup_and_find_packet(kernel_agent, queue, args, &packet_id);

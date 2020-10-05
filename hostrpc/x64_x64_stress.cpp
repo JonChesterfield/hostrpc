@@ -1,6 +1,7 @@
 #include "base_types.hpp"
 #include "catch.hpp"
-#include "interface.hpp"
+#include "test_common.hpp"
+#include "x64_host_x64_client.hpp"
 
 #include <cstring>
 #include <thread>

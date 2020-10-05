@@ -22,6 +22,145 @@ kernel void __device_persistent_kernel(__global void *args)
 
 #include "queue_to_index.hpp"
 
+#include "base_types.hpp"
+#include "enqueue_dispatch.hpp"
+
+#include <stddef.h>
+#include <stdint.h>
+
+#if defined(__x86_64__)
+#include "test_common.hpp"  // round
+#include "x64_host_x64_client.hpp"
+#endif
+
+#include "gcn_host_x64_client.hpp"
+
+namespace hostrpc
+{
+// Lifecycle management is tricky for objects which are allocated on one system
+// and copied to another, where they contain pointers into each other.
+// One owning object is created. If successful, that can construct instances of
+// a client or server class. These can be copied by memcpy, which is necessary
+// to set up the instance across pcie. The client/server objects don't own
+// memory so can be copied at will. They can be used until the owning instance
+// destructs.
+
+// Notes on the legality of the char state[] handling and aliasing.
+// Constructing an instance into state[] is done with placement new, which needs
+// the header <new> that is unavailable for amdgcn at present. Following
+// libunwind's solution discussed at D57455, operator new is added as a member
+// function to client_impl, server_impl. Combined with a reinterpret cast to
+// select the right operator new, that creates the object. Access is via
+// std::launder'ed reinterpret cast, but as one can't assume C++17 and doesn't
+// have <new> for amdgcn, this uses __builtin_launder.
+
+inline constexpr size_t client_counter_overhead()
+{
+  return client_counters::cc_total_count * sizeof(_Atomic(uint64_t));
+}
+
+inline constexpr size_t server_counter_overhead()
+{
+  return server_counters::sc_total_count * sizeof(_Atomic(uint64_t));
+}
+
+struct gcn_x64_t
+{
+#if defined(__x86_64__)
+  static void copy_page(hostrpc::page_t *dst, hostrpc::page_t *src)
+  {
+    __builtin_memcpy(dst, src, sizeof(hostrpc::page_t));
+  }
+#endif
+
+  struct fill
+  {
+    static void call(hostrpc::page_t *page, void *dv)
+    {
+#if defined(__x86_64__)
+      hostrpc::page_t *d = static_cast<hostrpc::page_t *>(dv);
+      copy_page(page, d);
+#else
+      (void)page;
+      (void)dv;
+#endif
+    };
+  };
+
+  struct use
+  {
+    static void call(hostrpc::page_t *page, void *dv)
+    {
+#if defined(__x86_64__)
+      hostrpc::page_t *d = static_cast<hostrpc::page_t *>(dv);
+      copy_page(d, page);
+#else
+      (void)page;
+      (void)dv;
+#endif
+    };
+  };
+
+#if defined(__AMDGCN__)
+  static void gcn_server_callback(hostrpc::cacheline_t *)
+  {
+    // not yet implemented, maybe take a function pointer out of [0]
+  }
+#endif
+
+  struct operate
+  {
+    static void call(hostrpc::page_t *page, void *)
+    {
+#if defined(__AMDGCN__)
+      // Call through to a specific handler, one cache line per lane
+      hostrpc::cacheline_t *l = &page->cacheline[platform::get_lane_id()];
+      gcn_server_callback(l);
+#else
+      (void)page;
+#endif
+    };
+  };
+
+  struct clear
+  {
+    static void call(hostrpc::page_t *, void *) {}
+  };
+
+  using gcn_x64_type =
+      gcn_x64_pair_T<hostrpc::size_runtime, fill, use, operate, clear>;
+
+  gcn_x64_type instance;
+
+  // for gfx906, probably want N = 2048
+  gcn_x64_t(size_t N, uint64_t hsa_region_t_fine_handle,
+            uint64_t hsa_region_t_coarse_handle)
+      : instance(hostrpc::round(N), hsa_region_t_fine_handle,
+                 hsa_region_t_coarse_handle)
+  {
+  }
+
+  gcn_x64_t(const gcn_x64_t &) = delete;
+  bool valid() { return true; }
+
+  template <bool have_continuation>
+  bool rpc_invoke(void *fill, void *use) noexcept
+  {
+    return instance.client.rpc_invoke<have_continuation>(fill, use);
+  }
+
+  bool rpc_handle(void *operate_state, void *clear_state,
+                  uint32_t *location_arg) noexcept
+  {
+    return instance.server.rpc_handle(operate_state, clear_state, location_arg);
+  }
+
+  client_counters client_counters() { return instance.client.get_counters(); }
+  server_counters server_counters() { return instance.server.get_counters(); }
+};
+
+}  // namespace hostrpc
+
 #if 1
 #if !defined(__AMDGCN__)
 #include "amd_hsa_queue.h"
@@ -55,40 +194,7 @@ void check_assumptions() {}
 #include <stdint.h>
 
 #include "detail/platform.hpp"
-#include "interface.hpp"
 
-struct dispatch_packet  // 64 byte aligned, probably
-{
-  // suspect the private & group segment size need to be set
-  dispatch_packet(uint32_t private_segment_size, uint32_t group_segment_size,
-                  uint64_t kernel_object, uint64_t kernarg_address)
-      : private_segment_size(private_segment_size),
-        group_segment_size(group_segment_size),
-        kernel_object(kernel_object),
-        kernarg_address(kernarg_address)
-  {
-    check_assumptions();
-  }
-
-  // Header also specifies memory scopes. Zero means none.
-  // One clear bit indicates no barrier, i.e. don't wait
-  uint16_t header = 2;             /*HSA_PACKET_TYPE_KERNEL_DISPATCH*/
-  uint16_t setup = 1;              // gridsize
-  uint16_t workgroup_size_x = 64;  // todo: wave32
-  uint16_t workgroup_size_y = 1;
-  uint16_t workgroup_size_z = 1;
-  uint16_t reserved0 = 0;
-  uint32_t grid_size_x = 64;
-  uint32_t grid_size_y = 1;
-  uint32_t grid_size_z = 1;
-  uint32_t private_segment_size;
-  uint32_t group_segment_size;
-  uint64_t kernel_object;
-  uint64_t kernarg_address;
-  uint64_t reserved1 = 0;
-  uint64_t completion_signal = 0;  // no signal
-};
-static_assert(sizeof(dispatch_packet) == 64, "");
 struct kernel_args
 {
   _Atomic(uint32_t) * control;
@@ -125,94 +231,6 @@ void kick_signal(uint64_t doorbell_handle)
                                      __builtin_amdgcn_readfirstlane(id) & 0xff);
         }
     }
-}
-
-void enqueue_dispatch(const unsigned char *src)
-{
-  // Somewhat hairy implementation.
-
-  const size_t packet_size = 64;
-
-  // Don't think failure can be reported. The hazard is the queue being full,
-  // but the spec says one should wait for a space to open up when it is full.
-  // fetch_sub is probably not safe with multiple threads accessing the
-  // structure.
-
-  auto my_queue =
-      (__attribute__((address_space(1))) char *)__builtin_amdgcn_queue_ptr();
-
-  // Acquire an available packet id
-  using global_atomic_uint64 =
-      __attribute__((address_space(1))) _Atomic(uint64_t) *;
-  auto write_dispatch_id =
-      reinterpret_cast<global_atomic_uint64>(my_queue + 56);
-  auto read_dispatch_id =
-      reinterpret_cast<global_atomic_uint64>(my_queue + 128);
-
-  // Need to get queue->size and queue->base_address to use the packet id
-  // May want to pass this in as a _constant
-  uint32_t size = *(uint32_t *)((char *)my_queue + 24);
-
-  // Inlined platform::is_master_lane
-  // TODO: 32 wide wavefront, consider not using raw intrinsics here
-  uint64_t activemask = __builtin_amdgcn_read_exec();
-
-  // TODO: check codegen for trunc lowest_active vs expanding lane_id
-  // TODO: ffs is lifted from openmp runtime, looks like it should be ctz
-  uint32_t lowest_active = __builtin_ffsl(activemask) - 1;
-  uint32_t lane_id =
-      __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
-
-  // TODO: readfirstlane(lane_id) == lowest_active?
-  bool is_master_lane = lane_id == lowest_active;
-
-  if (is_master_lane)
-    {
-      uint64_t packet_id =
-          __opencl_atomic_fetch_add(write_dispatch_id, 1, __ATOMIC_RELAXED,
-                                    __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-
-      bool full = true;
-      while (full)
-        {
-          // May want to back off more smoothly on full queue
-          uint64_t idx =
-              __opencl_atomic_load(read_dispatch_id, __ATOMIC_ACQUIRE,
-                                   __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-          full = packet_id >= (size + idx);
-        }
-
-      const uint32_t mask = size - 1;
-      char *packet = ((char *)my_queue + 8) + (packet_id & mask);
-
-      __builtin_memcpy(packet, src, packet_size);
-      __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-
-      // need to do a signal store
-      uint64_t doorbell_handle = *(uint64_t *)((char *)my_queue + 16);
-
-      // derived from ockl
-      char *ptr = (char *)doorbell_handle;
-      // kind is first 8 bytes, then a union containing value in next 8 bytes
-      _Atomic(uint64_t) *event_mailbox_ptr = (_Atomic(uint64_t) *)(ptr + 16);
-      uint32_t *event_id = (uint32_t *)(ptr + 24);
-
-      assert(event_mailbox_ptr);  // I don't think this can be null
-      {
-        uint32_t id = *event_id;
-        __opencl_atomic_store(event_mailbox_ptr, id, __ATOMIC_RELEASE,
-                              __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-
-        __builtin_amdgcn_s_sendmsg(1 | (0 << 4),
-                                   __builtin_amdgcn_readfirstlane(id) & 0xff);
-      }
-    }
-}
-
-void enqueue_self()
-{
-  __attribute__((address_space(4))) void *p = __builtin_amdgcn_dispatch_ptr();
-  return enqueue_dispatch((const unsigned char *)p);
 }
 
 extern "C" void __device_persistent_kernel_call(_Atomic(uint32_t) * control,
@@ -343,41 +361,18 @@ TEST_CASE("persistent_kernel")
     __opencl_atomic_store(example.control, 0, __ATOMIC_RELEASE,
                           __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
 
-    auto initializer = [&](hsa_kernel_dispatch_packet_t *packet,
-                           with_implicit_args<kernel_args *> *state) -> void {
-      fprintf(stderr, "Called initializer\n");
-      uint64_t kernarg_address;
-      __builtin_memcpy(&kernarg_address, &state, 8);
-
-      // todo: check field offsets match? can the real type be used?
-      static_assert(
-          sizeof(dispatch_packet) == sizeof(hsa_kernel_dispatch_packet_t), "");
-
-      // set up the state for future packets
-      __builtin_memcpy(&(state->state->application_args), &kernarg_address, 8);
-
-      // state.self needs to put the dispatch_packet on the heap as it refers to
-      // itself leaks for now (may be able to use intrinsic)
-      hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
-      auto heap =
-          hsa::allocate(fine_grained_region, sizeof(dispatch_packet)).release();
-      dispatch_packet *typed_heap =
-          new (reinterpret_cast<dispatch_packet *>(heap)) dispatch_packet(
-              kernel_private_segment_fixed_size,
-              kernel_group_segment_fixed_size, kernel_address, kernarg_address);
-
-      // set up the first packet
-      __builtin_memcpy(packet, typed_heap, sizeof(dispatch_packet));
-    };
-
-    auto l = launch_t<kernel_args>(kernel_agent, queue, example, initializer);
+    auto l = launch_t<kernel_args>(kernel_agent, queue,
+                                   /* kernel_address */ kernel_address,
+                                   kernel_private_segment_fixed_size,
+                                   kernel_group_segment_fixed_size,
+                                   /* number waves */ 1, example);
     fprintf(stderr, "Launch instance\n");
 
     while (__opencl_atomic_load(example.control, __ATOMIC_ACQUIRE,
                                 __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES) == 0)
       {
         fprintf(stderr, "watching control\n");
-        platform::sleep_noexcept(10000000);
+        platform::sleep_noexcept(1000000);
       }
 
     fprintf(stderr, "Instance set control to non-zero\n");

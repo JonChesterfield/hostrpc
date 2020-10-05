@@ -26,7 +26,6 @@ kernel void __device_start(__global void *args) { __device_start_cast(args); }
 #include "detail/client_impl.hpp"
 #include "detail/platform.hpp"
 #include "detail/server_impl.hpp"
-#include "interface.hpp"
 #include "timer.hpp"
 #include "x64_host_gcn_client.hpp"
 

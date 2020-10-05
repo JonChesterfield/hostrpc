@@ -2,7 +2,6 @@
 #define HOSTCALL_INTERFACE_HPP_INCLUDED
 
 #include "base_types.hpp"
-#include "interface.hpp"
 #include <stddef.h>
 #include <stdint.h>
 namespace hostrpc
