@@ -117,7 +117,8 @@ struct gcn_x64_t
 #if defined(__AMDGCN__)
       // Call through to a specific handler, one cache line per lane
       hostrpc::cacheline_t *l = &page->cacheline[platform::get_lane_id()];
-      gcn_server_callback(l);
+      l->element[0] = l->element[0] + 1;
+      l->element[1] = l->element[1] + 2;
 #else
       (void)page;
 #endif
@@ -126,7 +127,18 @@ struct gcn_x64_t
 
   struct clear
   {
-    static void call(hostrpc::page_t *, void *) {}
+    static void call(hostrpc::page_t *page, void *)
+    {
+#if defined(__AMDGCN__)
+      hostrpc::cacheline_t *l = &page->cacheline[platform::get_lane_id()];
+      for (unsigned i = 0; i < 8; i++)
+        {
+          l->element[i] = 0;
+        }
+#else
+      (void)page;
+#endif
+    }
   };
 
   using gcn_x64_type =
@@ -238,6 +250,25 @@ void kick_signal(uint64_t doorbell_handle)
     }
 }
 
+uint32_t cas_fetch_dec(_Atomic(uint32_t) * addr)
+{
+  uint32_t current = __opencl_atomic_load(
+      addr, __ATOMIC_RELAXED, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+  while (1)
+    {
+      uint32_t replace = current - 1;
+
+      bool r = __opencl_atomic_compare_exchange_weak(
+          addr, &current, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED,
+          __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+
+      if (r)
+        {
+          return current;
+        }
+    }
+}
+
 extern "C" void __device_persistent_kernel_call(_Atomic(uint32_t) * control,
                                                 void *application_args)
 {
@@ -247,22 +278,26 @@ extern "C" void __device_persistent_kernel_call(_Atomic(uint32_t) * control,
   // runs atomic fetch_add on it.
 
   // dispatch packet available in addr(4), __builtin_amdgcn_dispatch_ptr();
-  if (*control == 0)
-    {
-      __opencl_atomic_store(control, 1, __ATOMIC_RELEASE,
-                            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-      return;
-    }
-  else
-    {
-      __opencl_atomic_store(control, 2, __ATOMIC_RELEASE,
-                            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-      return;
-    }
+  (void)application_args;
 
-  // TODO: Probably call this N times before the tail call
-  // Could return based on the return value of this
-  __device_persistent_call(application_args);
+  // enqueue_self not working yet
+
+  for (;;)
+    {
+      __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
+
+      uint32_t todo = platform::critical<uint32_t>(
+          [&]() { return cas_fetch_dec(control); });
+
+      __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+
+      //    __builtin_amdgcn_s_sleep(10000000);
+
+      if (todo == 1)
+        {
+          return;
+        }
+    }
 
   enqueue_self();
 }
@@ -382,21 +417,38 @@ TEST_CASE("persistent_kernel")
         .control = new (control_state.get()) _Atomic(uint32_t),
         .application_args = 0,  // unused for now
     };
-    __opencl_atomic_store(example.control, 0, __ATOMIC_RELEASE,
+
+    const uint32_t init_control = 32;
+    __opencl_atomic_store(example.control, init_control, __ATOMIC_RELEASE,
                           __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+    __c11_atomic_thread_fence(__ATOMIC_RELEASE);
 
     auto l = launch_t<kernel_args>(kernel_agent, queue,
                                    /* kernel_address */ kernel_address,
                                    kernel_private_segment_fixed_size,
                                    kernel_group_segment_fixed_size,
                                    /* number waves */ 1, example);
-    fprintf(stderr, "Launch instance\n");
+    fprintf(stderr, "Launched instance\n");
 
-    while (__opencl_atomic_load(example.control, __ATOMIC_ACQUIRE,
-                                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES) == 0)
+    // ...
+
+    fprintf(stderr, "Stopping instance\n");
+
+    uint32_t ld = init_control + 1;
+    while (ld != 0)
       {
-        fprintf(stderr, "watching control\n");
-        platform::sleep_noexcept(1000000);
+        __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
+
+        uint32_t nld =
+            __opencl_atomic_load(example.control, __ATOMIC_ACQUIRE,
+                                 __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+
+        if (nld != ld)
+          {
+            ld = nld;
+            fprintf(stderr, "watching control, ld = %u\n", ld);
+          }
+        // platform::sleep_noexcept(100);
       }
 
     fprintf(stderr, "Instance set control to non-zero\n");

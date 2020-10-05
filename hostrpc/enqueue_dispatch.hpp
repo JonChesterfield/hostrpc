@@ -69,8 +69,22 @@ inline void enqueue_dispatch(const unsigned char *src)
 
       const uint32_t mask = size - 1;
       char *packet = ((char *)my_queue + 8) + (packet_id & mask);
-
+#if 0  // theory was memcpy on single lane failing
+      for (size_t i = 0; i < packet_size; i++)
+        {
+          packet[i] = src[i];
+        }
+#endif
       __builtin_memcpy(packet, src, packet_size);
+
+      using header_type = __attribute__((address_space(1))) _Atomic(uint32_t);
+
+      uint32_t header =
+          __opencl_atomic_load((const header_type *)(src), __ATOMIC_RELAXED,
+                               __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+      __opencl_atomic_store((header_type *)packet, header, __ATOMIC_RELEASE,
+                            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+
       __c11_atomic_thread_fence(__ATOMIC_RELEASE);
 
       // need to do a signal store
