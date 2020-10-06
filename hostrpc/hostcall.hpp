@@ -13,6 +13,7 @@ void hostcall_client_async(uint64_t data[8]);
 
 #if defined(__x86_64__)
 #include "hsa.h"
+#include <memory>
 
 // x64 host API
 
@@ -37,13 +38,14 @@ int hostcall_spawn_worker_thread(hsa_queue_t *);
 
 const char *hostcall_client_symbol();
 
+class hostcall_impl;
 class hostcall
 {
  public:
   hostcall(hsa_executable_t executable, hsa_agent_t kernel_agent);
   hostcall(void *client_symbol_address, hsa_agent_t kernel_agent);
   ~hostcall();
-  bool valid();
+  bool valid() { return state_.get() != nullptr; }
   int enable_queue(hsa_agent_t kernel_agent, hsa_queue_t *queue);
   int spawn_worker(hsa_queue_t *queue);
 
@@ -51,8 +53,7 @@ class hostcall
   hostcall(hostcall &&) = delete;
 
  private:
-  using state_t = hostrpc::storage<80, 8>;
-  state_t state;
+  std::unique_ptr<hostcall_impl> state_;
 };
 #endif
 

@@ -6,6 +6,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#if defined(__x86_64__)
+#include <new>
+#endif
+
 namespace hostrpc
 {
 namespace x64_host_amdgcn_client
@@ -75,6 +79,7 @@ using x64_amdgcn_pair = hostrpc::x64_gcn_pair_T<
 #if defined(__x86_64__)
 #include "../impl/data.h"
 #include "hsa.hpp"
+#include <array>
 #include <cassert>
 #include <thread>
 #include <vector>
@@ -94,9 +99,6 @@ using x64_amdgcn_pair = hostrpc::x64_gcn_pair_T<
 // Doesn't need to be initialized, though zeroing might help debugging
 __attribute__((visibility("default")))
 hostrpc::x64_amdgcn_pair::client_type client_singleton[MAX_NUM_DOORBELLS];
-
-__attribute__((visibility("default")))
-hostrpc::x64_amdgcn_pair::client_type *gcn_client_singleton;
 
 template <bool C>
 static void hostcall_impl(uint64_t data[8])
@@ -122,116 +124,6 @@ void hostcall_client_async(uint64_t data[8])
 
 #if defined(__x86_64__)
 
-static hostrpc::x64_amdgcn_pair::client_type *x64_client_singleton = nullptr;
-static const size_t scratch_size = 1024;
-static void *scratch = nullptr;
-
-static int x64_destroy()
-{
-  int res = 0;
-  if (x64_client_singleton)
-    {
-      hsa_status_t rc = hsa_memory_free(x64_client_singleton);
-      x64_client_singleton = nullptr;
-      if (rc != HSA_STATUS_SUCCESS)
-        {
-          res = 1;
-        }
-    }
-  if (scratch)
-    {
-      hsa_status_t rc = hsa_memory_free(scratch);
-      scratch = nullptr;
-      if (rc != HSA_STATUS_SUCCESS)
-        {
-          res = 1;
-        }
-    }
-
-  return res;
-}
-
-int hostcall_initialize(hsa_agent_t kernel_agent)
-{
-  hsa_region_t coarse_grained_region = hsa::region_coarse_grained(kernel_agent);
-  hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
-
-  size_t client_size = sizeof(hostrpc::x64_amdgcn_pair::client_type);
-  size_t bytes = client_size * MAX_NUM_DOORBELLS;
-
-  {
-    void *ptr;
-    hsa_status_t rc = hsa_memory_allocate(coarse_grained_region, bytes, &ptr);
-    if (rc != HSA_STATUS_SUCCESS)
-      {
-        goto fail;
-      }
-
-    // can't actually access this memory, as it's on the gpu
-    // can probably still go through the motions of constructing the proper
-    // type, but that seems worse than casting
-    x64_client_singleton = (hostrpc::x64_amdgcn_pair::client_type *)ptr;
-  }
-
-  {
-    void *ptr;
-    hsa_status_t rc =
-        hsa_memory_allocate(fine_grained_region, scratch_size, &ptr);
-    if (rc != HSA_STATUS_SUCCESS)
-      {
-        goto fail;
-      }
-    scratch = ptr;
-  }
-
-  return 0;
-
-fail:
-  x64_destroy();
-  return 1;
-}
-
-int hostcall_destroy(void)
-{
-  // tear down threads
-  if (x64_destroy())
-    {
-      return 1;
-    }
-  return 0;
-}
-
-int hostcall_load_executable(hsa_agent_t kernel_agent, hsa_executable_t ex)
-{
-  hsa_executable_symbol_t symbol;
-  {
-    hsa_status_t rc = hsa_executable_get_symbol_by_name(
-        ex, "gcn_client_singleton", &kernel_agent, &symbol);
-    if (rc != HSA_STATUS_SUCCESS)
-      {
-        return 1;
-      }
-  }
-
-  hsa_symbol_kind_t kind = hsa::symbol_get_info_type(symbol);
-  if (kind != HSA_SYMBOL_KIND_VARIABLE)
-    {
-      return 1;
-    }
-
-  void *addr =
-      reinterpret_cast<void *>(hsa::symbol_get_info_variable_address(symbol));
-
-  memcpy(scratch, &addr, sizeof(void *));
-  return hsa::copy_host_to_gpu(kernel_agent, addr, scratch, sizeof(void *));
-}
-
-int hostcall_unload_executable(hsa_executable_t)
-{
-  // could zero gcn_client_singleton
-  return 0;
-}
-
 // Get the start of the array
 const char *hostcall_client_symbol() { return "client_singleton"; }
 
@@ -243,17 +135,7 @@ class hostcall_impl
   hostcall_impl(void *client_symbol_address, hsa_agent_t kernel_agent);
   hostcall_impl(hsa_executable_t executable, hsa_agent_t kernel_agent);
 
-  hostcall_impl(hostcall_impl &&o)
-      : clients(std::move(o.clients)),
-        stored_pairs(std::move(o.stored_pairs)),
-        threads(std::move(o.threads)),
-        fine_grained_region(std::move(o.fine_grained_region)),
-        coarse_grained_region(std::move(o.coarse_grained_region))
-  {
-    clients = nullptr;
-    stored_pairs = {};
-    // threads = {};
-  }
+  hostcall_impl(hostcall_impl &&o) = delete;
 
   hostcall_impl(const hostcall_impl &) = delete;
 
@@ -363,7 +245,7 @@ class hostcall_impl
   // Going to need these to be opaque
   hostrpc::x64_amdgcn_pair::client_type *clients;  // static, on gpu
 
-  std::vector<hostrpc::x64_amdgcn_pair *> stored_pairs;
+  std::array<hostrpc::x64_amdgcn_pair *, MAX_NUM_DOORBELLS> stored_pairs;
 
   _Atomic(uint32_t) thread_killer = 0;
   std::vector<std::thread> threads;
@@ -384,8 +266,10 @@ hostcall_impl::hostcall_impl(void *client_addr, hsa_agent_t kernel_agent)
 
   coarse_grained_region = hsa::region_coarse_grained(kernel_agent);
 
-  // probably can't use vector for exception-safety reasons
-  stored_pairs.resize(MAX_NUM_DOORBELLS);
+  for (size_t i = 0; i < MAX_NUM_DOORBELLS; i++)
+    {
+      stored_pairs[i] = 0;
+    }
 }
 
 hostcall_impl::hostcall_impl(hsa_executable_t executable,
@@ -430,32 +314,26 @@ static void assert_size_t_equal()
 }
 
 hostcall::hostcall(hsa_executable_t executable, hsa_agent_t kernel_agent)
+    : state_(std::unique_ptr<hostcall_impl>(
+          new (std::nothrow) hostcall_impl(executable, kernel_agent)))
 {
-  assert_size_t_equal<hostcall::state_t::align(), alignof(hostcall_impl)>();
-  assert_size_t_equal<hostcall::state_t::size(), sizeof(hostcall_impl)>();
-  new (reinterpret_cast<hostcall_impl *>(state.data))
-      hostcall_impl(hostcall_impl(executable, kernel_agent));
 }
 
 hostcall::hostcall(void *client_symbol_address, hsa_agent_t kernel_agent)
+    : state_(std::unique_ptr<hostcall_impl>(new (std::nothrow) hostcall_impl(
+          client_symbol_address, kernel_agent)))
 {
-  assert_size_t_equal<hostcall::state_t::align(), alignof(hostcall_impl)>();
-  assert_size_t_equal<hostcall::state_t::size(), sizeof(hostcall_impl)>();
-  new (reinterpret_cast<hostcall_impl *>(state.data))
-      hostcall_impl(hostcall_impl(client_symbol_address, kernel_agent));
 }
 
-hostcall::~hostcall() { state.destroy<hostcall_impl>(); }
-
-bool hostcall::valid() { return true; }
+hostcall::~hostcall() {}
 
 int hostcall::enable_queue(hsa_agent_t kernel_agent, hsa_queue_t *queue)
 {
-  return state.open<hostcall_impl>()->enable_queue(kernel_agent, queue);
+  return state_->enable_queue(kernel_agent, queue);
 }
 int hostcall::spawn_worker(hsa_queue_t *queue)
 {
-  return state.open<hostcall_impl>()->spawn_worker(queue);
+  return state_->spawn_worker(queue);
 }
 
 static std::vector<std::unique_ptr<hostcall>> cstate;

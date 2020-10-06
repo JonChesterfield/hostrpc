@@ -75,6 +75,8 @@ struct x64_gcn_pair_T
     auto server_staging =
         x64_allocate_slot_bitmap_data_alloc<typename server_type::staging_t>(N);
 
+    // Should check for nullptr here
+
     server = {sz,           server_active,  recv,
               send,         server_staging, client_buffer,
               server_buffer};
