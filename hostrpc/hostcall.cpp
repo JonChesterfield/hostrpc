@@ -74,7 +74,6 @@ using x64_amdgcn_pair = hostrpc::x64_gcn_pair_T<
 // trying to get something running on gfx8
 #if defined(__x86_64__)
 #include "../impl/data.h"
-#include "hostcall.h"
 #include "hsa.hpp"
 #include <cassert>
 #include <thread>
@@ -459,7 +458,7 @@ int hostcall::spawn_worker(hsa_queue_t *queue)
   return state.open<hostcall_impl>()->spawn_worker(queue);
 }
 
-static std::vector<std::unique_ptr<hostcall>> state;
+static std::vector<std::unique_ptr<hostcall>> cstate;
 
 void spawn_hostcall_for_queue(uint32_t device_id, hsa_agent_t agent,
                               hsa_queue_t *queue, void *client_symbol_address)
@@ -467,26 +466,26 @@ void spawn_hostcall_for_queue(uint32_t device_id, hsa_agent_t agent,
   // printf("Setting up hostcall on id %u, queue %lx\n", device_id,
   // (uint64_t)queue); uint64_t * w = (uint64_t*)queue; printf("Host words at q:
   // 0x%lx 0x%lx 0x%lx 0x%lx\n", w[0],w[1],w[2],w[3]);
-  if (device_id >= state.size())
+  if (device_id >= cstate.size())
     {
-      state.resize(device_id + 1);
+      cstate.resize(device_id + 1);
     }
 
   // Only create a single instance backed by a single thread per queue at
   // present
-  if (state[device_id] != nullptr)
+  if (cstate[device_id] != nullptr)
     {
       return;
     }
 
   // make an instance for this device if there isn't already one
-  if (state[device_id] == nullptr)
+  if (cstate[device_id] == nullptr)
     {
       std::unique_ptr<hostcall> r(new hostcall(client_symbol_address, agent));
       if (r && r->valid())
         {
-          state[device_id] = std::move(r);
-          assert(state[device_id] != nullptr);
+          cstate[device_id] = std::move(r);
+          assert(cstate[device_id] != nullptr);
         }
       else
         {
@@ -494,13 +493,13 @@ void spawn_hostcall_for_queue(uint32_t device_id, hsa_agent_t agent,
         }
     }
 
-  assert(state[device_id] != nullptr);
+  assert(cstate[device_id] != nullptr);
   // enabling it for a queue repeatedly is a no-op
 
-  if (state[device_id]->enable_queue(agent, queue) == 0)
+  if (cstate[device_id]->enable_queue(agent, queue) == 0)
     {
       // spawn an additional thread
-      if (state[device_id]->spawn_worker(queue) == 0)
+      if (cstate[device_id]->spawn_worker(queue) == 0)
         {
           // printf("Success for setup on id %u, queue %lx, ptr %lx\n",
           // device_id,
@@ -512,6 +511,6 @@ void spawn_hostcall_for_queue(uint32_t device_id, hsa_agent_t agent,
   // TODO: Indicate failure
 }
 
-void free_hostcall_state() { state.clear(); }
+void free_hostcall_cstate() { cstate.clear(); }
 
 #endif
