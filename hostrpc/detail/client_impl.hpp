@@ -72,7 +72,7 @@ struct client_impl : public SZ, public Counter
         staging{}
   {
   }
-
+  ~client_impl() {}
   client_impl(SZ sz, lock_t active, inbox_t inbox, outbox_t outbox,
               staging_t staging, page_t* remote_buffer, page_t* local_buffer)
 

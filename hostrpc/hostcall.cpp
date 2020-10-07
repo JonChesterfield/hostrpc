@@ -152,35 +152,30 @@ class hostcall_impl
         return 0;
       }
 
-    // TODO: Avoid this heap alloc
-    hostrpc::x64_amdgcn_pair *res = new hostrpc::x64_amdgcn_pair(
-        SZ{}, fine_grained_region.handle, coarse_grained_region.handle);
+    // TODO: Avoid this heap alloc?
+    auto res = std::unique_ptr<hostrpc::x64_amdgcn_pair>(
+        new (std::nothrow) hostrpc::x64_amdgcn_pair(
+            SZ{}, fine_grained_region.handle, coarse_grained_region.handle));
     if (!res)
       {
         return 1;
       }
 
     // clients is on the gpu and res->client is not
-
     if (0)
       {
-        clients[queue_id] = res->client;  // fails on gfx8
+        // fails on gfx8, might need a barrier on gfx9
+        clients[queue_id] = res->client;
       }
     else
       {
-        // should work on gfx8, possibly slowly
-        hsa_region_t fine = hsa::region_fine_grained(kernel_agent);
-        using Ty = hostrpc::x64_amdgcn_pair::client_type;
-        auto c = hsa::allocate(fine, sizeof(Ty));
-        auto *l = new (reinterpret_cast<Ty *>(c.get())) Ty(res->client);
-
+        // should work on gfx8, possibly slowly. Route via fine grain memory.
+        *hsa_fine_scratch = res->client;
         int rc = hsa::copy_host_to_gpu(
             kernel_agent, reinterpret_cast<void *>(&clients[queue_id]),
-            reinterpret_cast<const void *>(l), sizeof(Ty));
-
-        // Can't destroy it here - the destructor (rightly) cleans up the
-        // memory, but the memcpy above has put those onto the gpu l->~Ty(); //
-        // this may be a bad move
+            reinterpret_cast<const void *>(hsa_fine_scratch),
+            sizeof(res->client));
+        *hsa_fine_scratch = {};
 
         if (rc != 0)
           {
@@ -188,7 +183,7 @@ class hostcall_impl
           }
       }
 
-    stored_pairs[queue_id] = res;
+    stored_pairs[queue_id] = std::move(res);
 
     return 0;
   }
@@ -210,10 +205,9 @@ class hostcall_impl
       {
         threads[i].join();
       }
-    for (size_t i = 0; i < MAX_NUM_DOORBELLS; i++)
-      {
-        delete stored_pairs[i];
-      }
+    using Ty = hostrpc::x64_amdgcn_pair::client_type;
+    hsa_fine_scratch->~Ty();
+    hsa_memory_free(hsa_fine_scratch);
   }
 
  private:
@@ -245,7 +239,9 @@ class hostcall_impl
   // Going to need these to be opaque
   hostrpc::x64_amdgcn_pair::client_type *clients;  // static, on gpu
 
-  std::array<hostrpc::x64_amdgcn_pair *, MAX_NUM_DOORBELLS> stored_pairs;
+  hostrpc::x64_amdgcn_pair::client_type *hsa_fine_scratch;
+  std::array<std::unique_ptr<hostrpc::x64_amdgcn_pair>, MAX_NUM_DOORBELLS>
+      stored_pairs;
 
   _Atomic(uint32_t) thread_killer = 0;
   std::vector<std::thread> threads;
@@ -257,19 +253,20 @@ class hostcall_impl
 
 hostcall_impl::hostcall_impl(void *client_addr, hsa_agent_t kernel_agent)
 {
+  using Ty = hostrpc::x64_amdgcn_pair::client_type;
   // The client_t array is per-gpu-image. Find it.
-  clients =
-      reinterpret_cast<hostrpc::x64_amdgcn_pair::client_type *>(client_addr);
+  clients = reinterpret_cast<Ty *>(client_addr);
 
   // todo: error checks here
   fine_grained_region = hsa::region_fine_grained(kernel_agent);
 
   coarse_grained_region = hsa::region_coarse_grained(kernel_agent);
 
-  for (size_t i = 0; i < MAX_NUM_DOORBELLS; i++)
-    {
-      stored_pairs[i] = 0;
-    }
+  void *ptr;
+  hsa_status_t r = hsa_memory_allocate(fine_grained_region, sizeof(Ty), &ptr);
+  hsa_fine_scratch = (r == HSA_STATUS_SUCCESS)
+                         ? new (reinterpret_cast<Ty *>(ptr)) Ty
+                         : nullptr;
 }
 
 hostcall_impl::hostcall_impl(hsa_executable_t executable,
@@ -335,60 +332,5 @@ int hostcall::spawn_worker(hsa_queue_t *queue)
 {
   return state_->spawn_worker(queue);
 }
-
-static std::vector<std::unique_ptr<hostcall>> cstate;
-
-void spawn_hostcall_for_queue(uint32_t device_id, hsa_agent_t agent,
-                              hsa_queue_t *queue, void *client_symbol_address)
-{
-  // printf("Setting up hostcall on id %u, queue %lx\n", device_id,
-  // (uint64_t)queue); uint64_t * w = (uint64_t*)queue; printf("Host words at q:
-  // 0x%lx 0x%lx 0x%lx 0x%lx\n", w[0],w[1],w[2],w[3]);
-  if (device_id >= cstate.size())
-    {
-      cstate.resize(device_id + 1);
-    }
-
-  // Only create a single instance backed by a single thread per queue at
-  // present
-  if (cstate[device_id] != nullptr)
-    {
-      return;
-    }
-
-  // make an instance for this device if there isn't already one
-  if (cstate[device_id] == nullptr)
-    {
-      std::unique_ptr<hostcall> r(new hostcall(client_symbol_address, agent));
-      if (r && r->valid())
-        {
-          cstate[device_id] = std::move(r);
-          assert(cstate[device_id] != nullptr);
-        }
-      else
-        {
-          fprintf(stderr, "Failed to construct a hostcall, going to assert\n");
-        }
-    }
-
-  assert(cstate[device_id] != nullptr);
-  // enabling it for a queue repeatedly is a no-op
-
-  if (cstate[device_id]->enable_queue(agent, queue) == 0)
-    {
-      // spawn an additional thread
-      if (cstate[device_id]->spawn_worker(queue) == 0)
-        {
-          // printf("Success for setup on id %u, queue %lx, ptr %lx\n",
-          // device_id,
-          //      (uint64_t)queue, (uint64_t)client_symbol_address);
-          // all good
-        }
-    }
-
-  // TODO: Indicate failure
-}
-
-void free_hostcall_cstate() { cstate.clear(); }
 
 #endif
