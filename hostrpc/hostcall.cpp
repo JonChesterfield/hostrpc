@@ -143,7 +143,7 @@ class hostcall_impl
                                       hsa_agent_t kernel_agent,
                                       const char *sym);
 
-  int enable_queue(hsa_agent_t kernel_agent, hsa_queue_t *queue)
+  int enable_queue(hsa_queue_t *queue)
   {
     uint16_t queue_id = queue_to_index(queue);
     if (stored_pairs[queue_id] != 0)
@@ -236,15 +236,18 @@ class hostcall_impl
     return 0;  // can't detect errors from std::thread
   }
 
-  // Going to need these to be opaque
-  hostrpc::x64_amdgcn_pair::client_type *clients;  // static, on gpu
+  // pointer to gpu memory
+  hostrpc::x64_amdgcn_pair::client_type *clients;
 
   hostrpc::x64_amdgcn_pair::client_type *hsa_fine_scratch;
+
   std::array<std::unique_ptr<hostrpc::x64_amdgcn_pair>, MAX_NUM_DOORBELLS>
       stored_pairs;
 
   _Atomic(uint32_t) thread_killer = 0;
   std::vector<std::thread> threads;
+
+  hsa_agent_t kernel_agent;
   hsa_region_t fine_grained_region;
   hsa_region_t coarse_grained_region;
 };
@@ -252,6 +255,7 @@ class hostcall_impl
 // todo: port to hsa.h api
 
 hostcall_impl::hostcall_impl(void *client_addr, hsa_agent_t kernel_agent)
+    : kernel_agent(kernel_agent)
 {
   using Ty = hostrpc::x64_amdgcn_pair::client_type;
   // The client_t array is per-gpu-image. Find it.
@@ -324,9 +328,9 @@ hostcall::hostcall(void *client_symbol_address, hsa_agent_t kernel_agent)
 
 hostcall::~hostcall() {}
 
-int hostcall::enable_queue(hsa_agent_t kernel_agent, hsa_queue_t *queue)
+int hostcall::enable_queue(hsa_queue_t *queue)
 {
-  return state_->enable_queue(kernel_agent, queue);
+  return state_->enable_queue(queue);
 }
 int hostcall::spawn_worker(hsa_queue_t *queue)
 {
