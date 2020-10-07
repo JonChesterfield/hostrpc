@@ -98,7 +98,7 @@ using x64_amdgcn_pair = hostrpc::x64_gcn_pair_T<
 
 // Doesn't need to be initialized, though zeroing might help debugging
 __attribute__((visibility("default")))
-hostrpc::x64_amdgcn_pair::client_type client_singleton[MAX_NUM_DOORBELLS];
+hostrpc::x64_amdgcn_pair::client_type *client_singleton;
 
 template <bool C>
 static void hostcall_impl(uint64_t data[8])
@@ -124,16 +124,12 @@ void hostcall_client_async(uint64_t data[8])
 
 #if defined(__x86_64__)
 
-// Get the start of the array
-const char *hostcall_client_symbol() { return "client_singleton"; }
-
 class hostcall_impl
 {
   using SZ = hostrpc::size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
 
  public:
-  hostcall_impl(void *client_symbol_address, hsa_agent_t kernel_agent);
-  hostcall_impl(hsa_executable_t executable, hsa_agent_t kernel_agent);
+  hostcall_impl(hsa_agent_t kernel_agent);
 
   hostcall_impl(hostcall_impl &&o) = delete;
 
@@ -142,6 +138,50 @@ class hostcall_impl
   static uint64_t find_symbol_address(hsa_executable_t &ex,
                                       hsa_agent_t kernel_agent,
                                       const char *sym);
+
+  int enable_executable(hsa_executable_t ex)
+  {
+    const char *gpu_local_ptr = "client_singleton";
+    hsa_executable_symbol_t symbol;
+    {
+      hsa_status_t rc = hsa_executable_get_symbol_by_name(
+          ex, gpu_local_ptr, &kernel_agent, &symbol);
+      if (rc != HSA_STATUS_SUCCESS)
+        {
+          return 1;
+        }
+
+      hsa_symbol_kind_t kind = hsa::symbol_get_info_type(symbol);
+      if (kind != HSA_SYMBOL_KIND_VARIABLE)
+        {
+          return 1;
+        }
+    }
+
+    void *addr =
+        reinterpret_cast<void *>(hsa::symbol_get_info_variable_address(symbol));
+
+#if 0
+    fprintf(stderr, "addr 0x%lx, passing to copy 0x%lx <- 0x%lx via 0x%lx\n",
+            (uint64_t)addr,
+            (uint64_t)&addr,
+            (uint64_t)&hsa_coarse_clients,
+            (uint64_t)hsa_fine_scratch);
+#endif
+
+    // need 8 bytes of scratch, ignores the type here
+    memcpy(hsa_fine_scratch, &hsa_coarse_clients, sizeof(void *));
+
+    int rc = hsa::copy_host_to_gpu(kernel_agent, (void *)addr,
+                                   (void *)hsa_fine_scratch, sizeof(void *));
+
+    if (rc != 0)
+      {
+        return 1;
+      }
+
+    return 0;
+  }
 
   int enable_queue(hsa_queue_t *queue)
   {
@@ -165,16 +205,14 @@ class hostcall_impl
     if (0)
       {
         // fails on gfx8, might need a barrier on gfx9
-        clients[queue_id] = res->client;
+        hsa_coarse_clients[queue_id] = res->client;
       }
     else
       {
         // should work on gfx8, possibly slowly. Route via fine grain memory.
         *hsa_fine_scratch = res->client;
         int rc = hsa::copy_host_to_gpu(
-            kernel_agent, reinterpret_cast<void *>(&clients[queue_id]),
-            reinterpret_cast<const void *>(hsa_fine_scratch),
-            sizeof(res->client));
+            kernel_agent, hsa_coarse_clients + queue_id, hsa_fine_scratch);
         *hsa_fine_scratch = {};
 
         if (rc != 0)
@@ -198,17 +236,7 @@ class hostcall_impl
     return spawn_worker(queue_id);
   }
 
-  ~hostcall_impl()
-  {
-    thread_killer = 1;
-    for (size_t i = 0; i < threads.size(); i++)
-      {
-        threads[i].join();
-      }
-    using Ty = hostrpc::x64_amdgcn_pair::client_type;
-    hsa_fine_scratch->~Ty();
-    hsa_memory_free(hsa_fine_scratch);
-  }
+  ~hostcall_impl();
 
  private:
   int spawn_worker(uint16_t queue_id)
@@ -236,8 +264,8 @@ class hostcall_impl
     return 0;  // can't detect errors from std::thread
   }
 
-  // pointer to gpu memory
-  hostrpc::x64_amdgcn_pair::client_type *clients;
+  // pointer to gpu array, allocated in coarse (per-gpu)
+  hostrpc::x64_amdgcn_pair::client_type *hsa_coarse_clients;
 
   hostrpc::x64_amdgcn_pair::client_type *hsa_fine_scratch;
 
@@ -253,33 +281,61 @@ class hostcall_impl
 };
 
 // todo: port to hsa.h api
-
-hostcall_impl::hostcall_impl(void *client_addr, hsa_agent_t kernel_agent)
+// todo: constructor function instead of constructor for error return
+hostcall_impl::hostcall_impl(hsa_agent_t kernel_agent)
     : kernel_agent(kernel_agent)
 {
   using Ty = hostrpc::x64_amdgcn_pair::client_type;
-  // The client_t array is per-gpu-image. Find it.
-  clients = reinterpret_cast<Ty *>(client_addr);
 
   // todo: error checks here
   fine_grained_region = hsa::region_fine_grained(kernel_agent);
 
   coarse_grained_region = hsa::region_coarse_grained(kernel_agent);
 
-  void *ptr;
-  hsa_status_t r = hsa_memory_allocate(fine_grained_region, sizeof(Ty), &ptr);
-  hsa_fine_scratch = (r == HSA_STATUS_SUCCESS)
-                         ? new (reinterpret_cast<Ty *>(ptr)) Ty
-                         : nullptr;
+  {
+    void *ptr;
+    hsa_status_t r = hsa_memory_allocate(fine_grained_region, sizeof(Ty), &ptr);
+    hsa_fine_scratch = (r == HSA_STATUS_SUCCESS)
+                           ? new (reinterpret_cast<Ty *>(ptr)) Ty
+                           : nullptr;
+  }
+
+  {
+    void *ptr;
+    hsa_status_t r = hsa_memory_allocate(coarse_grained_region,
+                                         sizeof(Ty) * MAX_NUM_DOORBELLS, &ptr);
+    if (r == HSA_STATUS_SUCCESS)
+      {
+        Ty *cast = reinterpret_cast<Ty *>(ptr);
+        for (size_t i = 0; i < MAX_NUM_DOORBELLS; i++)
+          {
+            new (cast + i) Ty;
+          }
+        hsa_coarse_clients = __builtin_launder(cast);
+      }
+    else
+      {
+        hsa_coarse_clients = nullptr;
+      }
+  }
 }
 
-hostcall_impl::hostcall_impl(hsa_executable_t executable,
-                             hsa_agent_t kernel_agent)
-
-    : hostcall_impl(reinterpret_cast<void *>(find_symbol_address(
-                        executable, kernel_agent, hostcall_client_symbol())),
-                    kernel_agent)
+hostcall_impl::~hostcall_impl()
 {
+  thread_killer = 1;
+  for (size_t i = 0; i < threads.size(); i++)
+    {
+      threads[i].join();
+    }
+  using Ty = hostrpc::x64_amdgcn_pair::client_type;
+  hsa_fine_scratch->~Ty();
+  hsa_memory_free(hsa_fine_scratch);
+
+  for (size_t i = 0; i < MAX_NUM_DOORBELLS; i++)
+    {
+      hsa_coarse_clients[i].~Ty();
+    }
+  hsa_memory_free(hsa_coarse_clients);
 }
 
 uint64_t hostcall_impl::find_symbol_address(hsa_executable_t &ex,
@@ -314,20 +370,18 @@ static void assert_size_t_equal()
   static_assert(expect == actual, "");
 }
 
-hostcall::hostcall(hsa_executable_t executable, hsa_agent_t kernel_agent)
-    : state_(std::unique_ptr<hostcall_impl>(
-          new (std::nothrow) hostcall_impl(executable, kernel_agent)))
-{
-}
-
-hostcall::hostcall(void *client_symbol_address, hsa_agent_t kernel_agent)
-    : state_(std::unique_ptr<hostcall_impl>(new (std::nothrow) hostcall_impl(
-          client_symbol_address, kernel_agent)))
+hostcall::hostcall(hsa_agent_t kernel_agent)
+    : state_(std::unique_ptr<hostcall_impl>(new (std::nothrow)
+                                                hostcall_impl(kernel_agent)))
 {
 }
 
 hostcall::~hostcall() {}
 
+int hostcall::enable_executable(hsa_executable_t ex)
+{
+  return state_->enable_executable(ex);
+}
 int hostcall::enable_queue(hsa_queue_t *queue)
 {
   return state_->enable_queue(queue);

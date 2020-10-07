@@ -21,31 +21,15 @@ void hostcall_client_async(uint64_t data[8]);
 // array indexed by device_id or similar. could require the caller to maintain
 // that array.
 
-// involves an array in gpu memory
-int hostcall_initialize(hsa_agent_t);
-int hostcall_destroy(void);
-
-// each executable has a pointer to that array, do the relocation manually
-int hostcall_load_executable(hsa_agent_t, hsa_executable_t);
-int hostcall_unload_executable(hsa_executable_t);
-
-// allocates memory
-int hostcall_enable_queue(hsa_agent_t, hsa_queue_t *);
-int hostcall_disable_queue(hsa_agent_t, hsa_queue_t *);
-
-// zero to close down
-int hostcall_spawn_worker_thread(hsa_queue_t *);
-
-const char *hostcall_client_symbol();
-
 class hostcall_impl;
 class hostcall
 {
  public:
-  hostcall(hsa_executable_t executable, hsa_agent_t kernel_agent);
-  hostcall(void *client_symbol_address, hsa_agent_t kernel_agent);
+  hostcall(hsa_agent_t kernel_agent);
   ~hostcall();
   bool valid() { return state_.get() != nullptr; }
+
+  int enable_executable(hsa_executable_t);
   int enable_queue(hsa_queue_t *queue);
   int spawn_worker(hsa_queue_t *queue);
 

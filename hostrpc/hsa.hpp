@@ -676,6 +676,13 @@ inline int copy_host_to_gpu(hsa_agent_t agent, void* dst, const void* src,
   return 0;
 }
 
+template <typename T>
+int copy_host_to_gpu(hsa_agent_t agent, T* dst, const T* src)
+{
+  return hsa::copy_host_to_gpu(agent, reinterpret_cast<void*>(dst),
+                               reinterpret_cast<const void*>(src), sizeof(T));
+}
+
 }  // namespace hsa
 
 #endif

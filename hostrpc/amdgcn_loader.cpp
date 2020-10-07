@@ -236,10 +236,16 @@ static int main_with_hsa(int argc, char **argv)
       }
   }
 
-  hostcall hc(ex, kernel_agent);
+  hostcall hc(kernel_agent);
   if (!hc.valid())
     {
       fprintf(stderr, "Failed to create hostcall\n");
+      exit(1);
+    }
+
+  if (hc.enable_executable(ex) != 0)
+    {
+      fprintf(stderr, "Failed to enable executable\n");
       exit(1);
     }
   if (hc.enable_queue(queue) != 0)
