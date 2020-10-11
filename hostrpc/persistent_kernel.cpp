@@ -220,36 +220,6 @@ struct kernel_args
 __attribute__((loader_uninitialized))
 VISIBLE hostrpc::gcn_x64_t::gcn_x64_type::server_type server_instance[1];
 
-// presentlin inlined into enqueue_dispatch
-void kick_signal(uint64_t doorbell_handle)
-{
-  // uses a doorbell_handle to an amd_signal_t
-  // that's a complex type, from which we need 'value' to hit the atomic
-  // there's a uint32_t event_id and a uint64_t event_mailbox_ptr
-  // try to get this working roughly first to avoid working out how to
-  // link in the ockl stuff
-  // see hsaqs.cl
-  char *ptr = (char *)doorbell_handle;
-  // kind is first 8 bytes, then a union containing value in next 8 bytes
-  _Atomic(uint64_t) *event_mailbox_ptr = (_Atomic(uint64_t) *)(ptr + 16);
-  uint32_t *event_id = (uint32_t *)(ptr + 24);
-
-  assert(event_mailbox_ptr);  // I don't think this should be null
-
-  if (platform::is_master_lane())
-    {
-      if (event_mailbox_ptr)
-        {
-          uint32_t id = *event_id;
-          __opencl_atomic_store(event_mailbox_ptr, id, __ATOMIC_RELEASE,
-                                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-
-          __builtin_amdgcn_s_sendmsg(1 | (0 << 4),
-                                     __builtin_amdgcn_readfirstlane(id) & 0xff);
-        }
-    }
-}
-
 uint32_t cas_fetch_dec(_Atomic(uint32_t) * addr)
 {
   uint32_t current = __opencl_atomic_load(
@@ -280,23 +250,17 @@ extern "C" void __device_persistent_kernel_call(_Atomic(uint32_t) * control,
   // dispatch packet available in addr(4), __builtin_amdgcn_dispatch_ptr();
   (void)application_args;
 
-  // enqueue_self not working yet
-
   uint32_t location_arg = 0;
-  for (;;)
+
+  if (server_instance[0].rpc_handle(0, 0, &location_arg))
     {
-      if (server_instance[0].rpc_handle(0, 0, &location_arg))
+      uint32_t todo = platform::critical<uint32_t>(
+          [&]() { return cas_fetch_dec(control); });
+
+      if (todo == 1)
         {
-          uint32_t todo = platform::critical<uint32_t>(
-              [&]() { return cas_fetch_dec(control); });
-
-          if (todo == 1)
-            {
-              return;
-            }
+          return;
         }
-
-      __builtin_amdgcn_s_sleep(10000000);
     }
 
   enqueue_self();

@@ -20,6 +20,11 @@ GFX=gfx906
 # RDIR=$HOME/llvm-install
 
 HSAINC="$HOME/aomp/rocr-runtime/src/inc/"
+DEVLIBINC="$HOME/aomp/rocm-device-libs/ockl/inc"
+OCKL_DIR="$HOME/rocm/aomp/amdgcn/bitcode"
+
+# todo: derive 906
+OCKL_LIBS="$OCKL_DIR/ockl.bc $OCKL_DIR/oclc_isa_version_906.bc $OCKL_DIR/oclc_wavefrontsize64_on.bc"
 
 
 HSALIBDIR="$HOME/rocm/aomp/hsa/lib/"
@@ -92,9 +97,13 @@ $CXX_GCN_LD x64_gcn_stress.gcn.bc -o x64_gcn_stress.gcn.so
 $CXX_X64 -DDERIVE_VAL=$DERIVE -I$HSAINC x64_gcn_stress.cpp -c -o x64_gcn_stress.x64.bc
 
 
-$CXX_GCN persistent_kernel.cpp -c -o persistent_kernel.gcn.code.bc
+
+# $CXX_GCN -D__HAVE_ROCR_HEADERS=1 -I$HSAINC -I$DEVLIBINC persistent_kernel.cpp -c -o persistent_kernel.gcn.code.bc
+
+$CXX_GCN -D__HAVE_ROCR_HEADERS=0 persistent_kernel.cpp -c -o persistent_kernel.gcn.code.bc
+
 $CXXCL persistent_kernel.cpp -c -o persistent_kernel.gcn.kern.bc
-$LINK persistent_kernel.gcn.code.bc persistent_kernel.gcn.kern.bc -o persistent_kernel.gcn.bc
+$LINK persistent_kernel.gcn.code.bc persistent_kernel.gcn.kern.bc $OCKL_LIBS -o persistent_kernel.gcn.bc
 $CXX_GCN_LD persistent_kernel.gcn.bc -o persistent_kernel.gcn.so
 $CXX_X64 -I$HSAINC persistent_kernel.cpp -c -o persistent_kernel.x64.bc
 
