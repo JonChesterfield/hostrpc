@@ -84,6 +84,12 @@ CXX_PTX="$HOME/.emacs.d/bin/clang++ $NVPTXFLAGS"
 
 CXX_CUDA="$CLANG -O2 $COMMONFLAGS -xcuda --cuda-path=/usr/local/cuda --cuda-gpu-arch=sm_50 -I/usr/local/cuda/include"
 
+if (($have_nvptx)); then
+# One step at a time
+clang -x cuda hello.cu -o hello --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcudart_static -ldl -lrt -pthread && ./hello 
+exit
+fi
+
 # msgpack, assumed to be checked out ../ from here
 $CXX_X64 ../impl/msgpack.cpp -c -o msgpack.bc
 $CXX_X64 find_metadata.cpp -c -o find_metadata.bc
