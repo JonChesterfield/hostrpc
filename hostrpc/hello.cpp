@@ -1,7 +1,7 @@
-#include <cuda.h>
 #include "raiifile.hpp"
-#include <stdio.h>
+#include <cuda.h>
 #include <memory>
+#include <stdio.h>
 
 #include "x64_host_ptx_client.hpp"
 
@@ -144,7 +144,7 @@ struct clear
 }  // namespace x64_host_nvptx_client
 
 static const constexpr size_t x64_host_nvptx_array_size = 2048;
-  
+
 using SZ = size_compiletime<hostrpc::x64_host_nvptx_array_size>;
 using x64_nvptx_pair = hostrpc::x64_ptx_pair_T<
     SZ, x64_host_nvptx_client::fill, x64_host_nvptx_client::use,
@@ -152,8 +152,6 @@ using x64_nvptx_pair = hostrpc::x64_ptx_pair_T<
     counters::client_nop, counters::server_nop>;
 
 }  // namespace hostrpc
-
-
 
 class hostcall_impl;
 class hostcall
@@ -173,7 +171,6 @@ class hostcall
  private:
   std::unique_ptr<hostcall_impl> state_;
 };
-
 
 int init(void *image)
 {
@@ -240,7 +237,7 @@ int init(void *image)
     [&]() { return cuModuleGetFunction(&Func, Module, "_Z10cuda_hellov"); });
 
   hostcall hc;
-  
+
   t("cuLaunchKernel", [&]() {
     return cuLaunchKernel(/* kernel */ Func,
                           /*blocks per grid */ 1,
@@ -257,8 +254,6 @@ int init(void *image)
   return t ? 0 : 1;
 }
 
-
-
 int main(int argc, char **argv)
 {
   if (argc < 2)
@@ -273,11 +268,8 @@ int main(int argc, char **argv)
       fprintf(stderr, "Failed to open file %s\n", argv[1]);
       return 1;
     }
-  
-
 
   int rc = init(file.mmapped_bytes);
-
 
   if (rc != 0)
     {

@@ -50,11 +50,11 @@ struct gcn_x64_pair_T
 
     // fine grain
     auto send =
-        hsa_allocate_slot_bitmap_data_alloc<typename server_type::inbox_t>(fine,
-                                                                           N);
+        hsa_allocate_slot_bitmap_data_alloc<typename server_type::inbox_t>(
+            fine.handle, N);
     auto recv =
         hsa_allocate_slot_bitmap_data_alloc<typename server_type::outbox_t>(
-            fine, N);
+            fine.handle, N);
 
     // only accessed by client
     auto client_active =
@@ -65,10 +65,10 @@ struct gcn_x64_pair_T
     // only accessed by server
     auto server_active =
         hsa_allocate_slot_bitmap_data_alloc<typename server_type::lock_t>(
-            coarse, N);
+            coarse.handle, N);
     auto server_staging =
         hsa_allocate_slot_bitmap_data_alloc<typename server_type::staging_t>(
-            coarse, N);
+            coarse.handle, N);
 
     client = {sz,           client_active,  recv,
               send,         client_staging, server_buffer,

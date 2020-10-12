@@ -52,19 +52,19 @@ struct x64_gcn_pair_T
 
     // fine grained area, can read/write from either client or server
     auto recv =
-        hsa_allocate_slot_bitmap_data_alloc<typename server_type::inbox_t>(fine,
-                                                                           N);
+        hsa_allocate_slot_bitmap_data_alloc<typename server_type::inbox_t>(
+            fine.handle, N);
     auto send =
         hsa_allocate_slot_bitmap_data_alloc<typename server_type::outbox_t>(
-            fine, N);
+            fine.handle, N);
 
     // only accessed by client
     auto client_active =
         hsa_allocate_slot_bitmap_data_alloc<typename client_type::lock_t>(
-            coarse, N);
+            coarse.handle, N);
     auto client_staging =
         hsa_allocate_slot_bitmap_data_alloc<typename client_type::staging_t>(
-            coarse, N);
+            coarse.handle, N);
 
     // only accessed by server
     auto server_active =
