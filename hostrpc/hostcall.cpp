@@ -201,6 +201,23 @@ class hostcall_impl
         return 1;
       }
 
+    // This is fairly ugly. May want to unconditionally call the
+    // amdgpu clear() function instead, which happens to do the same
+    // thing (if called with all lanes active)
+    uint64_t hostrpc_nop = UINT64_MAX;
+    for (uint64_t i = 0; i < res->server.size(); i++)
+      {
+        hostrpc::page_t *page = &res->server.local_buffer[i];
+        for (uint64_t c = 0; c < 64; c++)
+          {
+            hostrpc::cacheline_t *line = &page->cacheline[c];
+            for (uint64_t e = 0; e < 8; e++)
+              {
+                line->element[e] = hostrpc_nop;
+              }
+          }
+      }
+
     // clients is on the gpu and res->client is not
     if (0)
       {

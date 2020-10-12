@@ -223,7 +223,7 @@ static int main_with_hsa(int argc, char **argv)
     hsa_status_t rc = hsa_queue_create(
         kernel_agent /* make the queue on this agent */,
         131072 /* todo: size it, this hardcodes max size for vega20 */,
-        HSA_QUEUE_TYPE_SINGLE /* baseline */,
+        HSA_QUEUE_TYPE_MULTI /* baseline */,
         NULL /* called on every async event? */,
         NULL /* data passed to previous */,
         // If sizes exceed these values, things are supposed to work slowly

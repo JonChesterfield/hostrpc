@@ -1,30 +1,115 @@
 #include "detail/platform.hpp"
 #include "hostcall.hpp"
+#include <stddef.h>
+
+static const uint64_t no_op =
+    UINT64_MAX;  // Warning: Update hostcall.cpp if changing this
+static const uint64_t syscall_op = 42;
+
+static const uint64_t allocate_op = 21;
+static const uint64_t free_op = 22;
+
+// Included on amdgcn.
+#include <x86_64-linux-gnu/asm/unistd_64.h>
+
+#if defined(__x86_64__)
+#include "hsa.h"
+#include "hsa.hpp"
+
+static uint64_t syscall6(uint64_t n, uint64_t a0, uint64_t a1, uint64_t a2,
+                         uint64_t a3, uint64_t a4, uint64_t a5)
+{
+  const bool verbose = false;
+  uint64_t ret;
+  register uint64_t r10 __asm__("r10") = a3;
+  register uint64_t r8 __asm__("r8") = a4;
+  register uint64_t r9 __asm__("r9") = a5;
+
+  ret = 0;
+  __asm__ volatile("syscall"
+                   : "=a"(ret)
+                   : "a"(n), "D"(a0), "S"(a1), "d"(a2), "r"(r10), "r"(r8),
+                     "r"(r9)
+                   : "rcx", "r11", "memory");
+
+  if (verbose)
+    {
+      fprintf(stderr, "%lu <- syscall %lu %lu %lu %lu %lu %lu %lu\n", ret, n,
+              a0, a1, a2, a3, a4, a5);
+    }
+  return ret;
+}
+
+ssize_t write(unsigned int fd, const char *buf, size_t count)
+{
+  uint64_t s = 0;
+  uint64_t sr =
+      syscall6((uint64_t)fd, (uint64_t)buf, (uint64_t)count, s, s, s, s);
+  ssize_t r;
+  __builtin_memcpy(&r, &sr, 8);
+  return r;
+}
+
+#endif
 
 namespace hostcall_ops
 {
 #if defined(__x86_64__)
+
+void operate(unsigned lane, hostrpc::cacheline_t *line)
+{
+  if (line->element[0] == no_op)
+    {
+      return;
+    }
+
+  if (line->element[0] == allocate_op)
+    {
+      void *res = nullptr;
+      uint64_t size = line->element[1];
+      // todo: line up properly, check for errors
+      hsa_agent_t kernel_agent = hsa::find_a_gpu_or_exit();
+      hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
+
+      hsa_memory_allocate(fine_grained_region, size, &res);
+
+      line->element[0] = (uint64_t)res;
+      fprintf(stderr, "Alloc %lu bytes => %p\n", size, res);
+      return;
+    }
+
+  if (line->element[0] == free_op)
+    {
+      void *ptr = (void *)line->element[1];
+      hsa_memory_free(ptr);
+      line->element[0] = 0;
+
+      fprintf(stderr, "Free %p\n", ptr);
+      return;
+    }
+
+  if (line->element[0] == syscall_op)
+    {
+      line->element[0] =
+          syscall6(line->element[1], line->element[2], line->element[3],
+                   line->element[4], line->element[5], line->element[6],
+                   line->element[7]);
+      return;
+    }
+
+  if (1)
+    fprintf(stderr, "[%u] %lu %lu %lu %lu %lu %lu %lu %lu\n", lane,
+            line->element[0], line->element[1], line->element[2],
+            line->element[3], line->element[4], line->element[5],
+            line->element[6], line->element[7]);
+}
+
 void operate(hostrpc::page_t *page)
 {
-  const bool verbose = false;
-  if (verbose)
-    {
-      printf("Called operate\n");
-    }
   for (unsigned c = 0; c < 64; c++)
     {
-      hostrpc::cacheline_t &line = page->cacheline[c];
-      auto l = [&](uint64_t idx) { return line.element[idx]; };
-
-      if (verbose)
-        {
-          printf("line[%u]: %lu %lu %lu %lu %lu %lu %lu %lu\n", c, l(0), l(1),
-                 l(2), l(3), l(4), l(5), l(6), l(7));
-        }
-      for (unsigned i = 0; i < 8; i++)
-        {
-          line.element[i] = 2 * (line.element[i] + 1);
-        }
+      hostrpc::cacheline_t *line = &page->cacheline[c];
+      operate(c, line);
     }
 }
 
@@ -35,7 +120,7 @@ void clear(hostrpc::page_t *page)
       hostrpc::cacheline_t &line = page->cacheline[c];
       for (unsigned i = 0; i < 8; i++)
         {
-          line.element[i] = UINT64_MAX;
+          line.element[i] = no_op;
         }
     }
 }
@@ -43,6 +128,7 @@ void clear(hostrpc::page_t *page)
 #endif
 
 #if defined __AMDGCN__
+
 void pass_arguments(hostrpc::page_t *page, uint64_t d[8])
 {
   hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
@@ -65,49 +151,37 @@ void use_result(hostrpc::page_t *page, uint64_t d[8])
 
 #if defined __AMDGCN__
 
-extern "C"
+static uint64_t syscall6(uint64_t n, uint64_t a0, uint64_t a1, uint64_t a2,
+                         uint64_t a3, uint64_t a4, uint64_t a5)
 {
-  __attribute__((used)) void init_page(hostrpc::page_t *page, uint64_t v)
-  {
-    hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
-    for (unsigned i = 0; i < 8; i++)
-      {
-        line->element[i] = v;
-      }
-  }
+  uint64_t scratch[8];
+  scratch[0] = syscall_op;
+  scratch[1] = n;
+  scratch[2] = a0;
+  scratch[3] = a1;
+  scratch[4] = a2;
+  scratch[5] = a3;
+  scratch[6] = a4;
+  scratch[7] = a5;
+  hostcall_client(scratch);
+  return scratch[0];
+}
 
-#if 0
-  init_page:                              ; @init_page
-init_page$local:
-; %bb.0:                                ; %entry
-	s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
+static void *allocate(uint64_t size)
+{
+  uint64_t scratch[8];
+  scratch[0] = allocate_op;
+  scratch[1] = size;
+  hostcall_client(scratch);
+  return (void *)scratch[0];
+}
 
-        // Set v4 = lane id, integer in [0, 63)
-	v_mbcnt_lo_u32_b32 v4, -1, 0
-	v_mbcnt_hi_u32_b32 v4, -1, v4
-
-        // v4 = v4 << 6, i.e. v4 *= 64
-	v_lshlrev_b32_e32 v4, 6, v4
-
-        // address is in v[0:1]
-        // 64 bit addition of v4 to address
-	v_add_co_u32_e32 v0, vcc, v0, v4
-	v_addc_co_u32_e32 v1, vcc, 0, v1, vcc
-
-        // Duplicate the 64 bit integer passed in v[2:3]
-	v_mov_b32_e32 v4, v2
-	v_mov_b32_e32 v5, v3
-
-        // v[0:1] contains address for each lane to write to
-        // v[2:5] contains (the same) 128 bit data to write
-	flat_store_dwordx4 v[0:1], v[2:5]
-	flat_store_dwordx4 v[0:1], v[2:5] offset:16
-	flat_store_dwordx4 v[0:1], v[2:5] offset:32
-	flat_store_dwordx4 v[0:1], v[2:5] offset:48
-
-        // Wait for something
-
-#endif
+static void deallocate(void *ptr)
+{
+  uint64_t scratch[8];
+  scratch[0] = free_op;
+  scratch[1] = (uint64_t)ptr;
+  hostcall_client(scratch);
 }
 
 extern "C" __attribute__((visibility("default"))) int main(int argc,
@@ -115,42 +189,31 @@ extern "C" __attribute__((visibility("default"))) int main(int argc,
 {
   (void)argc;
   (void)argv;
-  int differ = 0;
 
-  uint64_t initial_value = 7;
+  // Sometimes seeing:
+  // fatal error: error in backend: Error while trying to spill SGPR4_SGPR5 from
+  // class SReg_64: Cannot
+  //     scavenge register without an emergency spill slot!
 
-  hostrpc::page_t page;
+  // The hostrpc buffer is zero init, but no_op is not zero. Can somewhat bodge
+  // that by an initial no_op call, but really should zero all the buffer.
 
-  // Initialize it as if by calling clear
-  hostrpc::cacheline_t &line = page.cacheline[platform::get_lane_id()];
-  for (unsigned e = 0; e < 8; e++)
+  if (platform::get_lane_id() == 0)
     {
-      line.element[e] = UINT64_MAX;
+      char *buf = (char *)allocate(16);
+
+      buf[0] = 'h';
+      buf[1] = 'i';
+      buf[2] = '\n';
+      buf[3] = '\0';
+
+      syscall6(__NR_write, 2, (uint64_t)buf, 3, 0, 0, 0);
+
+      syscall6(__NR_fsync, 2, 0, 0, 0, 0, 0);
+
+      deallocate(buf);
     }
 
-  unsigned rep = 0;
-  // for (unsigned rep = 0; rep < 64000; rep++)
-  {
-    {
-      if (platform::get_lane_id() % 2 == 0)
-        {
-          for (unsigned e = 0; e < 8; e++)
-            {
-              line.element[e] =
-                  initial_value + platform::get_lane_id() + e + rep;
-              // expect.element[e] = 2 * (line.element[e] + 1);
-            }
-
-          hostcall_client(&line.element[0]);
-
-          for (unsigned e = 0; e < 8; e++)
-            {
-              // differ += (line.element[e] != expect.element[e]);
-            }
-        }
-    }
-  }
-
-  return differ;
+  return 0;
 }
 #endif
