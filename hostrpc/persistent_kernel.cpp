@@ -104,9 +104,12 @@ struct gcn_x64_t
   };
 
 #if defined(__AMDGCN__)
-  static void gcn_server_callback(hostrpc::cacheline_t *)
+  static void gcn_server_callback(hostrpc::cacheline_t *line)
   {
     // not yet implemented, maybe take a function pointer out of [0]
+    uint64_t l01 = line->element[0] * line->element[1];
+    uint64_t l23 = line->element[2] * line->element[3];
+    line->element[0] = l01 * l23;
   }
 #endif
 
@@ -117,8 +120,7 @@ struct gcn_x64_t
 #if defined(__AMDGCN__)
       // Call through to a specific handler, one cache line per lane
       hostrpc::cacheline_t *l = &page->cacheline[platform::get_lane_id()];
-      l->element[0] = l->element[0] + 2;
-      l->element[1] = l->element[1] + 3;
+      gcn_server_callback(l);
 #else
       (void)page;
 #endif
@@ -409,7 +411,30 @@ TEST_CASE("persistent_kernel")
 
     for (unsigned i = 0; i < init_control; i++)
       {
+        uint64_t expect[64] = {0};
+        for (unsigned j = 0; j < 64; j++)
+          {
+            hostrpc::cacheline_t *t = &tmp.cacheline[j];
+            t->element[0] = i;
+            t->element[1] = i + 2;
+            t->element[2] = i * 3;
+            t->element[3] = i - 1;
+
+            expect[j] =
+                t->element[0] * t->element[1] * t->element[2] * t->element[3];
+          }
+
         bool r = p.rpc_invoke<true>(&tmp, &tmp);
+
+        for (unsigned j = 0; j < 64; j++)
+          {
+            if (tmp.cacheline[j].element[0] != expect[j])
+              {
+                fprintf(stderr, "Run[%u], fail at %u: %lu != %lu\n", i, j,
+                        tmp.cacheline[j].element[0], expect[j]);
+              }
+          }
+
         fprintf(stderr, "rpc_invoke[%u] ret %u, tmp[0][0] %lu\n", i, r,
                 tmp.cacheline[0].element[0]);
       }
@@ -428,7 +453,6 @@ TEST_CASE("persistent_kernel")
             ld = nld;
             fprintf(stderr, "watching control, ld = %u\n", ld);
           }
-        // platform::sleep_noexcept(100);
       }
 
     fprintf(stderr, "Instance set control to non-zero\n");
