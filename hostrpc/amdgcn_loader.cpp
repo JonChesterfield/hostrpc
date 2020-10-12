@@ -76,15 +76,14 @@ static int main_with_hsa(int argc, char **argv)
 
   hsa_agent_t kernel_agent = hsa::find_a_gpu_or_exit();
 
-  // Load argv[1]
-  FILE *fh = fopen(argv[1], "rb");
-  int fn = fh ? fileno(fh) : -1;
-  if (fn < 0)
+  raiifile file(argv[1]);
+  if (!file.mmapped_bytes)
     {
       fprintf(stderr, "Failed to open file %s\n", argv[1]);
       return 1;
     }
-  hsa::executable ex(kernel_agent, fn);
+
+  hsa::executable ex(kernel_agent, file.mmapped_bytes, file.mmapped_size);
   if (!ex.valid())
     {
       fprintf(stderr, "HSA failed to load contents of %s\n", argv[1]);

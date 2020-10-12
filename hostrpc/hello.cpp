@@ -1,7 +1,5 @@
+#include "raiifile.hpp"
 #include <cuda.h>
-#include <sys/mman.h>  // mmap and fstat
-#include <sys/stat.h>
-
 #include <stdio.h>
 
 #define DEBUGP(prefix, ...)             \
@@ -50,79 +48,106 @@ bool checkResult(CUresult Err, const char *ErrMsg)
 }
 }  // namespace
 
-void init(void *image)
+struct error_tracker
 {
-  int NumberOfDevices;
+  CUresult Err = CUDA_SUCCESS;
+  template <typename F>
+  void operator()(const char *ErrMsg, F f)
+  {
+    if (Err != CUDA_SUCCESS)
+      {
+        return;
+      }
 
-  CUresult Err = cuInit(0);
+    Err = f();
+    if (Err != CUDA_SUCCESS)
+      {
+        DP("%s\n", ErrMsg);
+        CUDA_ERR_STRING(Err);
+      }
+  }
 
-  if (!checkResult(Err, "Error returned from cuInit\n"))
-    {
-      return;
-    }
+  explicit operator bool() const { return Err == CUDA_SUCCESS; }
+};
 
-  Err = cuDeviceGetCount(&NumberOfDevices);
-  if (!checkResult(Err, "Error returned from cuDeviceGetCount\n")) return;
+int init(void *image)
+{
+  error_tracker t;
 
-  if (NumberOfDevices == 0)
-    {
-      DP("There are no devices supporting CUDA.\n");
-      return;
-    }
+  t("cuInit", []() { return cuInit(0); });
 
-  fprintf(stderr, "Found %d devices\n", NumberOfDevices);
+  int NumberOfDevices = 0;
+  t("cuDeviceGetCount", [&]() {
+    CUresult Err = cuDeviceGetCount(&NumberOfDevices);
+    if (Err == CUDA_SUCCESS)
+      {
+        if (NumberOfDevices == 0)
+          {
+            return CUDA_ERROR_NO_DEVICE;
+          }
+      }
+    return Err;
+  });
 
   CUdevice Device;
   int DeviceId = 0;
-  Err = cuDeviceGet(&Device, DeviceId);
-  if (!checkResult(Err, "Error returned from cuDeviceGet\n")) return;
+
+  t("cuDeviceGet", [&]() { return cuDeviceGet(&Device, DeviceId); });
 
   // rtl does some get state calls here, maybe cuda doesn't clean up on exit?
   // TODO: Google CU_CTX_SCHED_BLOCKING_SYNC
   CUcontext Context = nullptr;
 
-  Err = cuDevicePrimaryCtxRetain(&Context, Device);
-  if (!checkResult(Err, "Error returned from cuDevicePrimaryCtxRetain\n"))
-    return;
+  t("cuDevicePrimaryCtxRetain",
+    [&]() { return cuDevicePrimaryCtxRetain(&Context, Device); });
 
-  Err = cuCtxSetCurrent(Context);
-  if (!checkResult(Err, "Error returned from cuCtxSetCurrent\n")) return;
+  t("cuCtxSetCurrent", [&]() { return cuCtxSetCurrent(Context); });
 
   CUstream stream;
-  Err = cuStreamCreate(&stream, CU_STREAM_NON_BLOCKING);
-  if (!checkResult(Err, "Error returned from cuStreamCreate")) return;
+
+  t("cuStreamCreate",
+    [&]() { return cuStreamCreate(&stream, CU_STREAM_NON_BLOCKING); });
 
   // Some checking of number of threads
 
-  int WarpSize;
-  Err = cuDeviceGetAttribute(&WarpSize, CU_DEVICE_ATTRIBUTE_WARP_SIZE, Device);
-  if (Err != CUDA_SUCCESS || WarpSize != 32)
-    {
-      return;
-    }
+  t("warpsize", [&]() {
+    int WarpSize;
+    CUresult Err =
+        cuDeviceGetAttribute(&WarpSize, CU_DEVICE_ATTRIBUTE_WARP_SIZE, Device);
+    if (Err != CUDA_SUCCESS)
+      {
+        return Err;
+      }
+    if (WarpSize != 32)
+      {
+        return CUDA_ERROR_ILLEGAL_STATE;
+      }
+
+    return CUDA_SUCCESS;
+  });
 
   CUmodule Module;
-  Err = cuModuleLoadDataEx(&Module, image, 0, nullptr, nullptr);
-  if (!checkResult(Err, "Error returned from cuModuleLoadDataEx\n")) return;
+  t("cuModuleLoadDataEx",
+    [&]() { return cuModuleLoadDataEx(&Module, image, 0, nullptr, nullptr); });
 
   CUfunction Func;
-  Err = cuModuleGetFunction(&Func, Module, "_Z10cuda_hellov");
-  if (!checkResult(Err, "Error returned from cuModuleGetFunction\n")) return;
+  t("cuModuleGetFunction",
+    [&]() { return cuModuleGetFunction(&Func, Module, "_Z10cuda_hellov"); });
 
-  Err = cuLaunchKernel(/* kernel */ Func,
-                       /*blocks per grid */ 1,
-                       /*gridDimY */ 1,
-                       /*gridDimZ*/ 1,
-                       /* threads per block */ 32,
-                       /* blockDimY */ 1,
-                       /* blockDimZ */ 1,
-                       /* sharedMemBytes */ 0, stream, nullptr, nullptr);
-  if (!checkResult(Err, "Error returned from cuLaunchKernel\n")) return;
+  t("cuLaunchKernel", [&]() {
+    return cuLaunchKernel(/* kernel */ Func,
+                          /*blocks per grid */ 1,
+                          /*gridDimY */ 1,
+                          /*gridDimZ*/ 1,
+                          /* threads per block */ 32,
+                          /* blockDimY */ 1,
+                          /* blockDimZ */ 1,
+                          /* sharedMemBytes */ 0, stream, nullptr, nullptr);
+  });
 
-  Err = cuStreamSynchronize(stream);
-  if (!checkResult(Err, "Error returned from stream synchronize\n")) return;
+  t("cuStreamSynchronize", [&]() { return cuStreamSynchronize(stream); });
 
-  fprintf(stderr, "Reached end of init\n");
+  return t ? 0 : 1;
 }
 
 int main(int argc, char **argv)
@@ -133,41 +158,19 @@ int main(int argc, char **argv)
       return 1;
     }
 
-  // Load argv[1]
-  FILE *fh = fopen(argv[1], "rb");  // todo: close
-  int fn = fh ? fileno(fh) : -1;
-  if (fn < 0)
+  raiifile file(argv[1]);
+  if (!file.mmapped_bytes)
     {
       fprintf(stderr, "Failed to open file %s\n", argv[1]);
       return 1;
     }
 
-  void *mmapped_bytes = nullptr;
-  size_t mmapped_length = 0;
-  {
-    struct stat buf;
-    int rc = fstat(fn, &buf);
-    if (rc == 0)
-      {
-        size_t l = buf.st_size;
-        void *m = mmap(NULL, l, PROT_READ, MAP_PRIVATE, fn, 0);
-        if (m != MAP_FAILED)
-          {
-            mmapped_bytes = m;
-            mmapped_length = l;
-          }
-      }
-  }
+  int rc = init(file.mmapped_bytes);
 
-  if (!mmapped_bytes)
+  if (rc != 0)
     {
       return 1;
     }
 
-  init(mmapped_bytes);
-
-  if (mmapped_bytes != nullptr)
-    {
-      munmap(mmapped_bytes, mmapped_length);
-    }
+  return 0;
 }

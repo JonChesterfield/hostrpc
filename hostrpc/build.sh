@@ -91,7 +91,7 @@ if (($have_nvptx)); then
 # hello.o is an executable elf, may be able to load it from cuda
 clang -x cuda hello.cu --cuda-device-only -c -o hello.o --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda -I/usr/local/cuda/include
 
-clang hello.cpp --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -o a.out && ./a.out hello.o
+clang++ hello.cpp --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -o a.out && ./a.out hello.o
 
 exit
 fi
