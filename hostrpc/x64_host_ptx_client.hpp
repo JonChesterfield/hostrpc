@@ -81,7 +81,8 @@ T ptx_allocate_slot_bitmap_data_alloc(size_t size, std::vector<void *> &to_free)
 #endif
 
 template <typename SZ, typename Fill, typename Use, typename Operate,
-          typename Clear>
+          typename Clear, typename ClientCounter = counters::client,
+          typename ServerCounter = counters::server>
 struct x64_ptx_pair_T
 {
   using Copy = copy_functor_given_alias;
@@ -89,9 +90,9 @@ struct x64_ptx_pair_T
 
   using Word = uint32_t;
   using client_type =
-      client_impl<Word, SZ, Copy, Fill, Use, Step, counters::client>;
+      client_impl<Word, SZ, Copy, Fill, Use, Step, ClientCounter>;
   using server_type =
-      server_impl<Word, SZ, Copy, Operate, Clear, Step, counters::server>;
+      server_impl<Word, SZ, Copy, Operate, Clear, Step, ServerCounter>;
 
   client_type client;
   server_type server;

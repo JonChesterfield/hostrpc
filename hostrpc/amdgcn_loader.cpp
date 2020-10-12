@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include "hostcall.hpp"
+#include "raiifile.hpp"
 
 namespace
 {
@@ -83,7 +84,7 @@ static int main_with_hsa(int argc, char **argv)
       return 1;
     }
 
-  hsa::executable ex(kernel_agent, file.mmapped_bytes, file.mmapped_size);
+  hsa::executable ex(kernel_agent, file.mmapped_bytes, file.mmapped_length);
   if (!ex.valid())
     {
       fprintf(stderr, "HSA failed to load contents of %s\n", argv[1]);

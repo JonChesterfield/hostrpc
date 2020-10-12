@@ -132,7 +132,6 @@ class hostcall_impl
   hostcall_impl(hsa_agent_t kernel_agent);
 
   hostcall_impl(hostcall_impl &&o) = delete;
-
   hostcall_impl(const hostcall_impl &) = delete;
 
   static uint64_t find_symbol_address(hsa_executable_t &ex,

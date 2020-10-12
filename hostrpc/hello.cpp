@@ -1,6 +1,9 @@
-#include "raiifile.hpp"
 #include <cuda.h>
+#include "raiifile.hpp"
 #include <stdio.h>
+#include <memory>
+
+#include "x64_host_ptx_client.hpp"
 
 #define DEBUGP(prefix, ...)             \
   {                                     \
@@ -70,6 +73,108 @@ struct error_tracker
   explicit operator bool() const { return Err == CUDA_SUCCESS; }
 };
 
+// Implementation api. This construct is a singleton.
+namespace hostcall_ops
+{
+#if defined(__x86_64__)
+void operate(hostrpc::page_t *page);
+void clear(hostrpc::page_t *page);
+#endif
+#if defined(__AMDGCN__) || defined(__CUDACC__)
+void pass_arguments(hostrpc::page_t *page, uint64_t data[8]);
+void use_result(hostrpc::page_t *page, uint64_t data[8]);
+#endif
+}  // namespace hostcall_ops
+
+namespace hostrpc
+{
+namespace x64_host_nvptx_client
+{
+struct fill
+{
+  static void call(hostrpc::page_t *page, void *dv)
+  {
+#if defined(__AMDGCN__)
+    uint64_t *d = static_cast<uint64_t *>(dv);
+    hostcall_ops::pass_arguments(page, d);
+#else
+    (void)page;
+    (void)dv;
+#endif
+  };
+};
+
+struct use
+{
+  static void call(hostrpc::page_t *page, void *dv)
+  {
+#if defined(__AMDGCN__)
+    uint64_t *d = static_cast<uint64_t *>(dv);
+    hostcall_ops::use_result(page, d);
+#else
+    (void)page;
+    (void)dv;
+#endif
+  };
+};
+
+struct operate
+{
+  static void call(hostrpc::page_t *page, void *)
+  {
+#if defined(__x86_64__)
+    hostcall_ops::operate(page);
+#else
+    (void)page;
+#endif
+  }
+};
+
+struct clear
+{
+  static void call(hostrpc::page_t *page, void *)
+  {
+#if defined(__x86_64__)
+    hostcall_ops::clear(page);
+#else
+    (void)page;
+#endif
+  }
+};
+}  // namespace x64_host_nvptx_client
+
+static const constexpr size_t x64_host_nvptx_array_size = 2048;
+  
+using SZ = size_compiletime<hostrpc::x64_host_nvptx_array_size>;
+using x64_nvptx_pair = hostrpc::x64_ptx_pair_T<
+    SZ, x64_host_nvptx_client::fill, x64_host_nvptx_client::use,
+    x64_host_nvptx_client::operate, x64_host_nvptx_client::clear,
+    counters::client_nop, counters::server_nop>;
+
+}  // namespace hostrpc
+
+
+
+class hostcall_impl;
+class hostcall
+{
+ public:
+  hostcall();
+  ~hostcall();
+  bool valid() { return state_.get() != nullptr; }
+
+  int enable_executable();
+  int enable_queue();
+  int spawn_worker();
+
+  hostcall(const hostcall &) = delete;
+  hostcall(hostcall &&) = delete;
+
+ private:
+  std::unique_ptr<hostcall_impl> state_;
+};
+
+
 int init(void *image)
 {
   error_tracker t;
@@ -134,6 +239,8 @@ int init(void *image)
   t("cuModuleGetFunction",
     [&]() { return cuModuleGetFunction(&Func, Module, "_Z10cuda_hellov"); });
 
+  hostcall hc;
+  
   t("cuLaunchKernel", [&]() {
     return cuLaunchKernel(/* kernel */ Func,
                           /*blocks per grid */ 1,
@@ -150,6 +257,8 @@ int init(void *image)
   return t ? 0 : 1;
 }
 
+
+
 int main(int argc, char **argv)
 {
   if (argc < 2)
@@ -164,8 +273,11 @@ int main(int argc, char **argv)
       fprintf(stderr, "Failed to open file %s\n", argv[1]);
       return 1;
     }
+  
+
 
   int rc = init(file.mmapped_bytes);
+
 
   if (rc != 0)
     {
