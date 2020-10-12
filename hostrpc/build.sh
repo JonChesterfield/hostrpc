@@ -11,7 +11,21 @@ RDIR=$HOME/rocm/aomp
 
 # Needs to resolve to gfx906, gfx1010 or similar
 GFX=`$RDIR/bin/mygpu`
-GFX=gfx906
+
+have_nvptx=0
+if [ -e "/dev/nvidiactl" ]; then
+    have_nvptx=1
+fi
+
+have_amdgcn=0
+if [ -e "/dev/kfd" ]; then
+    have_amdgcn=1
+fi
+
+if ((!$have_amdgcn)); then
+    # Compile for a gfx906 as a credible default
+    GFX=gfx906
+fi
 
 # A poorly named amd-stg-open, does not hang
 # RDIR=$HOME/rocm-3.5-llvm-install
@@ -23,15 +37,18 @@ HSAINC="$HOME/aomp/rocr-runtime/src/inc/"
 DEVLIBINC="$HOME/aomp/rocm-device-libs/ockl/inc"
 OCKL_DIR="$HOME/rocm/aomp/amdgcn/bitcode"
 
-# todo: derive 906
-OCKL_LIBS="$OCKL_DIR/ockl.bc $OCKL_DIR/oclc_isa_version_906.bc $OCKL_DIR/oclc_wavefrontsize64_on.bc"
-
+GFXNUM=`echo $GFX | sed 's$gfx$$'`
+if (($have_amdgcn)); then
+OCKL_LIBS="$OCKL_DIR/ockl.bc $OCKL_DIR/oclc_isa_version_$GFXNUM.bc $OCKL_DIR/oclc_wavefrontsize64_on.bc"
+else
+OCKL_LIBS=""
+fi
 
 HSALIBDIR="$HOME/rocm/aomp/hsa/lib/"
 HSALIB="$HSALIBDIR/libhsa-runtime64.so" # $RDIR/lib/libomptarget.rtl.hsa.so"
 
 # Shouldn't need these, but copying across from initial for reference 
-# DLIBS="$RDIR/lib/libdevice/libhostcall-amdgcn-$GFX.bc $RDIR/lib/ockl.amdgcn.bc $RDIR/lib/oclc_wavefrontsize64_on.amdgcn.bc $RDIR/lib/oclc_isa_version_906.amdgcn.bc"
+# DLIBS="$RDIR/lib/libdevice/libhostcall-amdgcn-$GFX.bc $RDIR/lib/ockl.amdgcn.bc $RDIR/lib/oclc_wavefrontsize64_on.amdgcn.bc $RDIR/lib/oclc_isa_version_$GFXNUM.amdgcn.bc"
 
 CLANG="$RDIR/bin/clang++"
 LLC="$RDIR/bin/llc"
@@ -63,7 +80,7 @@ CXX_GCN_LD="$CXX $GCNFLAGS"
 
 CXXCL="$CLANG -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 -emit-llvm -D__OPENCL__ -ffreestanding $AMDGPU"
 
-CXX_PTX="/home/amd/.emacs.d/bin/clang++ $NVPTXFLAGS"
+CXX_PTX="$HOME/.emacs.d/bin/clang++ $NVPTXFLAGS"
 
 CXX_CUDA="$CLANG -O2 $COMMONFLAGS -xcuda --cuda-path=/usr/local/cuda --cuda-gpu-arch=sm_50 -I/usr/local/cuda/include"
 
@@ -90,13 +107,12 @@ $CXX_X64 -I$HSAINC memory.cpp -c -o memory.x64.bc
 $CXX_X64 -I$HSAINC tests.cpp -c -o tests.x64.bc
 $CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc
 
+
 $CXX_GCN -DDERIVE_VAL=$DERIVE x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.code.bc
 $CXXCL -DDERIVE_VAL=$DERIVE x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.kern.bc
 $LINK x64_gcn_stress.gcn.code.bc x64_gcn_stress.gcn.kern.bc dispatch_id.ll -o x64_gcn_stress.gcn.bc
 $CXX_GCN_LD x64_gcn_stress.gcn.bc -o x64_gcn_stress.gcn.so
 $CXX_X64 -DDERIVE_VAL=$DERIVE -I$HSAINC x64_gcn_stress.cpp -c -o x64_gcn_stress.x64.bc
-
-
 
 # $CXX_GCN -D__HAVE_ROCR_HEADERS=1 -I$HSAINC -I$DEVLIBINC persistent_kernel.cpp -c -o persistent_kernel.gcn.code.bc
 
@@ -107,22 +123,26 @@ $LINK persistent_kernel.gcn.code.bc persistent_kernel.gcn.kern.bc $OCKL_LIBS -o 
 $CXX_GCN_LD persistent_kernel.gcn.bc -o persistent_kernel.gcn.so
 $CXX_X64 -I$HSAINC persistent_kernel.cpp -c -o persistent_kernel.x64.bc
 
+
+
 # TODO: Sort out script to ignore this when there's no ptx device
-# $CXX_CUDA --cuda-device-only detail/platform.cu -c -emit-llvm -o detail/platform.ptx.bc
-# $CXX_CUDA --cuda-host-only x64_host_ptx_client.cu  -c -emit-llvm -o x64_host_ptx_client.x64.bc
-# $CXX_PTX codegen/client.cpp -c -o codegen/client.ptx.bc
-# $CXX_PTX codegen/server.cpp -c -o codegen/server.ptx.bc
-# $CXX_PTX x64_ptx_stress.cpp -c -o x64_ptx_stress.gcn.code.bc
-# $CXX_X64 -I$HSAINC x64_ptx_stress.cpp -c -o x64_ptx_stress.x64.bc
+if (($have_nvptx)); then
+ $CXX_CUDA --cuda-device-only detail/platform.cu -c -emit-llvm -o detail/platform.ptx.bc
+ $CXX_CUDA --cuda-host-only x64_host_ptx_client.cu  -c -emit-llvm -o x64_host_ptx_client.x64.bc
+ $CXX_PTX codegen/client.cpp -c -o codegen/client.ptx.bc
+ $CXX_PTX codegen/server.cpp -c -o codegen/server.ptx.bc
+ $CXX_PTX x64_ptx_stress.cpp -c -o x64_ptx_stress.ptx.code.bc
+ $CXX_X64 -I$HSAINC x64_ptx_stress.cpp -c -o x64_ptx_stress.x64.bc
+else
+ echo "Skipping ptx"
+fi
 
 $CXX_GCN hostcall.cpp -c -o hostcall.gcn.bc
 $CXX_X64 -I$HSAINC hostcall.cpp -c -o hostcall.x64.bc
 
-
 # Build the device code that uses said library
 $CXX_X64 -I$HSAINC amdgcn_main.cpp -c -o amdgcn_main.x64.bc
 $CXX_GCN amdgcn_main.cpp -c -o amdgcn_main.gcn.bc
-
 
 # Build the device loader that assumes the device library is linked into the application
 # TODO: Embed it directly in the loader by patching call to main, as the loader doesn't do it
@@ -178,15 +198,21 @@ $CXX_X64_LD tests.x64.bc catch.o memory.x64.bc  $LDFLAGS -o tests.exe
 
 $CXX_X64_LD persistent_kernel.x64.bc catch.o memory.x64.bc $LDFLAGS -o persistent_kernel.exe
 
+if (($have_amdgcn)); then
 time ./persistent_kernel.exe
+fi
 
 time ./tests.exe
 time ./x64_x64_stress.exe
 
+if (($have_amdgcn)); then
 echo "Call hostcall/loader executable"
 time ./a.out ; echo $?
+fi
 
+if (($have_amdgcn)); then
 echo "Call x64_gcn_stress: Derive $DERIVE"
 time ./x64_gcn_stress.exe
+fi
 
 # time valgrind --leak-check=full --fair-sched=yes ./states.exe hazard
