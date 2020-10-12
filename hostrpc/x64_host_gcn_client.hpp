@@ -47,8 +47,6 @@ struct x64_gcn_pair_T
         N);
     hostrpc::page_t *server_buffer = client_buffer;
 
-    // may be prudent to zero init the buffer here
-
     // allocating in coarse is probably not sufficient, likely to need to mark
     // the pointer with an address space
 

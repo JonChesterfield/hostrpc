@@ -24,6 +24,12 @@ void *allocate_gpu(size_t size)
       return nullptr;
     }
 
+  rc = cudaDeviceSynchronize();
+  if (rc != cudaSuccess)
+    {
+      return nullptr;
+    }
+
   return ptr;
 }
 

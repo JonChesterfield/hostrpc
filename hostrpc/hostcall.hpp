@@ -5,11 +5,24 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// amdgcn client api
-#if defined(__AMDGCN__)
+// gpu client api
+#if defined(__AMDGCN__) || defined(__CUDACC__)
 void hostcall_client(uint64_t data[8]);
 void hostcall_client_async(uint64_t data[8]);
 #endif
+
+// Implementation api. This construct is a singleton.
+namespace hostcall_ops
+{
+#if defined(__x86_64__)
+void operate(hostrpc::page_t *page);
+void clear(hostrpc::page_t *page);
+#endif
+#if defined(__AMDGCN__) || defined(__CUDACC__)
+void pass_arguments(hostrpc::page_t *page, uint64_t data[8]);
+void use_result(hostrpc::page_t *page, uint64_t data[8]);
+#endif
+}  // namespace hostcall_ops
 
 #if defined(__x86_64__)
 #include "hsa.h"
@@ -40,19 +53,6 @@ class hostcall
   std::unique_ptr<hostcall_impl> state_;
 };
 #endif
-
-// Implementation api. This construct is a singleton.
-namespace hostcall_ops
-{
-#if defined(__x86_64__)
-void operate(hostrpc::page_t *page);
-void clear(hostrpc::page_t *page);
-#endif
-#if defined __AMDGCN__
-void pass_arguments(hostrpc::page_t *page, uint64_t data[8]);
-void use_result(hostrpc::page_t *page, uint64_t data[8]);
-#endif
-}  // namespace hostcall_ops
 
 // TODO: runtime
 namespace hostrpc
