@@ -86,12 +86,12 @@ CXX_CUDA="$CLANG -O2 $COMMONFLAGS -xcuda --cuda-path=/usr/local/cuda --cuda-gpu-
 
 if (($have_nvptx)); then
 # One step at a time
-    clang -x cuda hello.cu -o hello --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcudart_static -ldl -lrt -pthread
+    clang -x cuda hello.cu -o hello --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcudart_static -ldl -lrt -pthread && ./hello
 
 # hello.o is an executable elf, may be able to load it from cuda
 clang -x cuda hello.cu --cuda-device-only -c -o hello.o --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda -I/usr/local/cuda/include
 
-clang hello.cpp --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcudart_static -o a.out
+clang hello.cpp --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -o a.out && ./a.out hello.o
 
 exit
 fi
