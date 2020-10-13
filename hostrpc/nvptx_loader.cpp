@@ -1,5 +1,7 @@
 #include "raiifile.hpp"
 #include <cuda.h>
+#include <cuda_runtime.h>
+
 #include <memory>
 #include <stdio.h>
 
@@ -177,6 +179,13 @@ int init(void *image)
 
   t("cuInit", []() { return cuInit(0); });
 
+  if (0) t("setDeviceFlags", []() {
+                        cudaError_t err =cudaSetDeviceFlags(cudaDeviceMapHost);
+                        fprintf(stderr, "setDeviceFlags returned %s\n", cudaGetErrorString(err));
+                        if (err == cudaSuccess) { return CUDA_SUCCESS; }
+                        return CUDA_ERROR_ILLEGAL_STATE;
+                      });
+  
   int NumberOfDevices = 0;
   t("cuDeviceGetCount", [&]() {
     CUresult Err = cuDeviceGetCount(&NumberOfDevices);

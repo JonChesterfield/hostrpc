@@ -33,9 +33,10 @@ struct x64_ptx_pair
     if (void_x64_buffer)
       {
         tofree.push_back(p);
-        void *void_ptx_buffer = cuda::device_ptr_from_host_ptr(void_x64_buffer);
+        void *void_ptx_buffer = cuda::device_ptr_from_host_ptr(p);
         if (void_ptx_buffer)
           {
+            void_ptx_buffer = cuda::align_pointer_up(void_ptx_buffer, align);
             x64 =
                 hostrpc::careful_array_cast<T>(void_x64_buffer, element_count);
             assert(x64);

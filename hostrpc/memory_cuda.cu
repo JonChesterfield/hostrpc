@@ -69,7 +69,7 @@ void *device_ptr_from_host_ptr(void *host)
 {
   void *device;
   unsigned int flags = 0;
-  cudaError_t rc = cudaHostGetDevicePointer(&device, &host, flags);
+  cudaError_t rc = cudaHostGetDevicePointer(&device, host, flags);
   if (rc != cudaSuccess)
     {
       return nullptr;
