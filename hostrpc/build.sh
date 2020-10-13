@@ -95,12 +95,17 @@ fi
 
 $CXX_X64 states.cpp -c -o states.x64.bc
 
-# TODO: Drop hsainc from x64 code
 
-$CXX_X64 -I$HSAINC codegen/client.cpp -c -o codegen/client.x64.bc
-$CXX_X64 -I$HSAINC codegen/server.cpp -c -o codegen/server.x64.bc
-$CXX_GCN codegen/client.cpp -c -o codegen/client.gcn.bc
-$CXX_GCN codegen/server.cpp -c -o codegen/server.gcn.bc
+
+# Sanity check that the client and server compile successfully
+# and provide an example of the generated IR
+# TODO: Get these building with cuda, hip, openmp-ptx, openmp-gcn too
+$CXX_X64 codegen/client.cpp -S -o codegen/client.x64.ll
+$CXX_X64 codegen/server.cpp -S -o codegen/server.x64.ll
+$CXX_GCN codegen/client.cpp -S -o codegen/client.gcn.ll
+$CXX_GCN codegen/server.cpp -S -o codegen/server.gcn.ll
+$CXX_PTX codegen/client.cpp -S -o codegen/client.ptx.ll
+$CXX_PTX codegen/server.cpp -S -o codegen/server.ptx.ll
 
 
 $CXX_X64 memory_host.cpp -c -o memory_host.x64.bc
@@ -145,8 +150,6 @@ $CXX_X64 -I$HSAINC persistent_kernel.cpp -c -o persistent_kernel.x64.bc
 if (($have_nvptx)); then
  $CXX_CUDA --cuda-device-only detail/platform.cu -c -emit-llvm -o detail/platform.ptx.bc
  $CXX_CUDA --cuda-host-only memory_cuda.cu  -c -emit-llvm -o memory_cuda.x64.bc
- $CXX_PTX codegen/client.cpp -c -o codegen/client.ptx.bc
- $CXX_PTX codegen/server.cpp -c -o codegen/server.ptx.bc
  $CXX_PTX x64_ptx_stress.cpp -c -o x64_ptx_stress.ptx.code.bc
  $CXX_X64 -I$HSAINC x64_ptx_stress.cpp -c -o x64_ptx_stress.x64.bc
 else
