@@ -83,18 +83,31 @@ __attribute__((always_inline)) inline int __inline_printf()
 
 #endif
 
+// HIP seems to want every function to be explicitly marked device or host
+// even when it's only compiling for, say, device
+// That may mean every single function needs a MACRO_ANNOTATION for hip to
+// work as intended.
+// Cuda does not appear to require this. TODO: See if openmp does
+
+#if HOSTRPC_AMDGCN && defined (__HIP__)
+#define BODGE_HIP __attribute__((device))
+#else
+#define BODGE_HIP
+#endif
+
 #if HOSTRPC_AMDGCN
 
 namespace platform
 {
-inline void sleep_briefly(void) { __builtin_amdgcn_s_sleep(0); }
-inline void sleep(void) { __builtin_amdgcn_s_sleep(100); }
+  
+BODGE_HIP  inline void sleep_briefly(void) { __builtin_amdgcn_s_sleep(0); }
+BODGE_HIP inline void sleep(void) { __builtin_amdgcn_s_sleep(100); }
 
-__attribute__((always_inline)) inline uint32_t get_lane_id(void)
+BODGE_HIP __attribute__((always_inline)) inline uint32_t get_lane_id(void)
 {
   return __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
 }
-__attribute__((always_inline)) inline bool is_master_lane(void)
+BODGE_HIP __attribute__((always_inline)) inline bool is_master_lane(void)
 {
   // TODO: 32 wide wavefront, consider not using raw intrinsics here
   uint64_t activemask = __builtin_amdgcn_read_exec();
@@ -109,7 +122,7 @@ __attribute__((always_inline)) inline bool is_master_lane(void)
 }
 namespace detail
 {
-__attribute__((always_inline)) inline int32_t __impl_shfl_down_sync(
+BODGE_HIP __attribute__((always_inline)) inline int32_t __impl_shfl_down_sync(
     int32_t var, uint32_t laneDelta)
 {
   // derived from openmp runtime
@@ -121,12 +134,12 @@ __attribute__((always_inline)) inline int32_t __impl_shfl_down_sync(
 }
 }  // namespace detail
 
-__attribute__((always_inline)) inline uint32_t broadcast_master(uint32_t x)
+BODGE_HIP __attribute__((always_inline)) inline uint32_t broadcast_master(uint32_t x)
 {
   return __builtin_amdgcn_readfirstlane(x);
 }
 
-inline uint32_t client_start_slot()
+BODGE_HIP inline uint32_t client_start_slot()
 {
   // Ideally would return something < size
   // Attempt to distibute clients roughly across the array
@@ -190,7 +203,7 @@ namespace platform
 // Related functions derived from the platform specific ones
 
 #if (HOSTRPC_AMDGCN || HOSTRPC_NVPTX)
-__attribute__((always_inline)) inline uint32_t reduction_sum(uint32_t x)
+BODGE_HIP __attribute__((always_inline)) inline uint32_t reduction_sum(uint32_t x)
 {
   // could implement shfl_down for x64 and drop the macro
   x += detail::__impl_shfl_down_sync(x, 32);
