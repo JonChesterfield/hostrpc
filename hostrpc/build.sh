@@ -112,10 +112,9 @@ $CXX_PTX codegen/server.cpp -S -o codegen/server.ptx.ll
 $CLANG $XCUDA -std=c++14 --cuda-device-only codegen/client.cpp -S -o codegen/client.cuda.ptx.ll
 $CLANG $XCUDA -std=c++14 --cuda-host-only codegen/client.cpp -S -o codegen/client.cuda.x64.ll
 
-$CLANG $XHIP -std=c++14 --cuda-device-only codegen/client.cpp -S -o codegen/client.hip.gcn.ll
-$CLANG $XHIP -std=c++14 --cuda-host-only codegen/client.cpp -S -o codegen/client.hip.x64.ll
-
-exit
+# HIP has excessive requirements on function annotation that cuda does not, ignore for now
+# $CLANG $XHIP -std=c++14 --cuda-device-only codegen/client.cpp -S -o codegen/client.hip.gcn.ll
+# $CLANG $XHIP -std=c++14 --cuda-host-only codegen/client.cpp -S -o codegen/client.hip.x64.ll
 
 $CXX_X64 memory_host.cpp -c -o memory_host.x64.bc
 
@@ -123,20 +122,6 @@ $CXX_X64 -I$HSAINC memory_hsa.cpp -c -o memory_hsa.x64.bc
 
 $CXX_X64 -I$HSAINC tests.cpp -c -o tests.x64.bc
 $CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc
-
-
-if (($have_nvptx)); then
-# One step at a time
-    $CLANG $XCUDA hello.cu -o hello -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcudart_static -ldl -lrt -pthread && ./hello
-
-# hello.o is an executable elf, may be able to load it from cuda
-$CLANG $XCUDA hello.cu --cuda-device-only -c -o hello.o  -I/usr/local/cuda/include
-
-$CLANG hello.cpp --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -o a.out memory_host.x64.bc && ./a.out hello.o
-
-exit
-fi
-
 
 $CXX_GCN -DDERIVE_VAL=$DERIVE x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.code.bc
 $CXXCL -DDERIVE_VAL=$DERIVE x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.kern.bc
@@ -157,13 +142,26 @@ $CXX_X64 -I$HSAINC persistent_kernel.cpp -c -o persistent_kernel.x64.bc
 
 # TODO: Sort out script to ignore this when there's no ptx device
 if (($have_nvptx)); then
- $CXX_CUDA --cuda-device-only detail/platform.cu -c -emit-llvm -o detail/platform.ptx.bc
- $CXX_CUDA --cuda-host-only memory_cuda.cu  -c -emit-llvm -o memory_cuda.x64.bc
+ $CXX_CUDA -std=c++14 --cuda-device-only detail/platform.cu -c -emit-llvm -o detail/platform.ptx.bc
+ $CXX_CUDA -std=c++14 --cuda-host-only memory_cuda.cu  -c -emit-llvm -o memory_cuda.x64.bc
  $CXX_PTX x64_ptx_stress.cpp -c -o x64_ptx_stress.ptx.code.bc
  $CXX_X64 -I$HSAINC x64_ptx_stress.cpp -c -o x64_ptx_stress.x64.bc
 else
  echo "Skipping ptx"
 fi
+
+if (($have_nvptx)); then
+# One step at a time
+    $CLANG $XCUDA hello.cu -o hello -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcudart_static -ldl -lrt -pthread && ./hello
+
+# hello.o is an executable elf, may be able to load it from cuda
+$CLANG $XCUDA -std=c++14 hello.cu --cuda-device-only -c -o hello.o  -I/usr/local/cuda/include
+
+$CLANG nvptx_loader.cpp memory_host.x64.bc memory_cuda.x64.bc --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -lcudart -o nvptx_loader.exe && ./nvptx_loader.exe hello.o
+
+exit
+fi
+
 
 $CXX_GCN hostcall.cpp -c -o hostcall.gcn.bc
 $CXX_X64 -I$HSAINC hostcall.cpp -c -o hostcall.x64.bc
