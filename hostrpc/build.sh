@@ -10,7 +10,8 @@ DERIVE=${1:-4}
 RDIR=$HOME/rocm/aomp
 
 # Needs to resolve to gfx906, gfx1010 or similar
-GFX=`$RDIR/bin/mygpu`
+GFX=`$RDIR/bin/mygpu -d gfx906` # lost the entry for gfx750 at some point
+
 
 have_nvptx=0
 if [ -e "/dev/nvidiactl" ]; then
@@ -95,7 +96,8 @@ fi
 
 $CXX_X64 states.cpp -c -o states.x64.bc
 
-
+XCUDA="-x cuda --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda"
+XHIP="-x hip --cuda-gpu-arch=gfx906 -nogpulib -nogpuinc"
 
 # Sanity check that the client and server compile successfully
 # and provide an example of the generated IR
@@ -107,6 +109,13 @@ $CXX_GCN codegen/server.cpp -S -o codegen/server.gcn.ll
 $CXX_PTX codegen/client.cpp -S -o codegen/client.ptx.ll
 $CXX_PTX codegen/server.cpp -S -o codegen/server.ptx.ll
 
+$CLANG $XCUDA -std=c++14 --cuda-device-only codegen/client.cpp -S -o codegen/client.cuda.ptx.ll
+$CLANG $XCUDA -std=c++14 --cuda-host-only codegen/client.cpp -S -o codegen/client.cuda.x64.ll
+
+$CLANG $XHIP -std=c++14 --cuda-device-only codegen/client.cpp -S -o codegen/client.hip.gcn.ll
+$CLANG $XHIP -std=c++14 --cuda-host-only codegen/client.cpp -S -o codegen/client.hip.x64.ll
+
+exit
 
 $CXX_X64 memory_host.cpp -c -o memory_host.x64.bc
 
@@ -118,10 +127,10 @@ $CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc
 
 if (($have_nvptx)); then
 # One step at a time
-    $CLANG -x cuda hello.cu -o hello --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcudart_static -ldl -lrt -pthread && ./hello
+    $CLANG $XCUDA hello.cu -o hello -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcudart_static -ldl -lrt -pthread && ./hello
 
 # hello.o is an executable elf, may be able to load it from cuda
-$CLANG -x cuda hello.cu --cuda-device-only -c -o hello.o --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda -I/usr/local/cuda/include
+$CLANG $XCUDA hello.cu --cuda-device-only -c -o hello.o  -I/usr/local/cuda/include
 
 $CLANG hello.cpp --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -o a.out memory_host.x64.bc && ./a.out hello.o
 

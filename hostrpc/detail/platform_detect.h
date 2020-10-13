@@ -9,19 +9,25 @@
 #define HOSTRPC_NVPTX 0
 #define HOSTRPC_HOST 0
 
+#if !defined (__NVPTX__) & !defined(__AMDGCN__)
+// TODO: Consider simplifying the following based on this
+#undef HOSTRPC_HOST
+#define HOSTRPC_HOST 1
+#endif
+
 #if defined(_OPENMP)
   #if defined (__AMDGCN__)
-    #warning "OpenMP gcn gpu"
+    //#warning "OpenMP gcn gpu"
     #undef HOSTRPC_AMDGCN
     #define HOSTRPC_AMDGCN 1
   #endif
   #if defined (__NVPTX__)
-    #warning "OpenMP ptx gpu"
+    //#warning "OpenMP ptx gpu"
     #undef HOSTRPC_NVPTX
     #define HOSTRPC_NVPTX 1
   #endif
   #if !defined (__AMDGCN__) && !defined (__NVPTX__)
-    #warning "OpenMP host"
+    //#warning "OpenMP host"
     #undef HOSTRPC_HOST
     #define HOSTRPC_HOST 1
   #endif
@@ -31,16 +37,16 @@
 #if !defined(_OPENMP) && defined(__NVPTX__)
   #if defined (__CUDA__)
     #if defined(__CUDA_ARCH__)
-      #warning "Cuda gpu"
+      //#warning "Cuda gpu"
       #undef HOSTRPC_NVPTX
       #define HOSTRPC_NVPTX 1
     #else
-      #warning "Cuda host"
+      //#warning "Cuda host"
       #undef HOSTRPC_HOST
       #define HOSTRPC_HOST 1
     #endif
   #else
-    #warning "Ptx freestanding"
+    //#warning "Ptx freestanding"
     #undef HOSTRPC_NVPTX
     #define HOSTRPC_NVPTX 1
   #endif
@@ -49,16 +55,16 @@
 #if !defined(_OPENMP) && defined (__AMDGCN__)
   #if defined(__HIP__)
     #if defined(__HIP_DEVICE_COMPILE__)
-      #warning "Hip gpu"
+      //#warning "Hip gpu"
       #undef HOSTRPC_AMDGCN
       #define HOSTRPC_AMDGCN 1
     #else
-      #warning "Hip host"
+      //#warning "Hip host"
       #undef HOSTRPC_HOST
       #define HOSTRPC_HOST 1
     #endif
   #else
-    #warning "GCN freestanding"
+    //#warning "GCN freestanding"
     #undef HOSTRPC_AMDGCN
     #define HOSTRPC_AMDGCN 1
   #endif

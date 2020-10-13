@@ -4,13 +4,14 @@
 #include <stdint.h>
 
 #include "../base_types.hpp"  // page_t
+#include "platform_detect.h"
 
 namespace platform
 {
 void sleep_briefly(void);
 }
 
-#if defined(__x86_64__)
+#if HOSTRPC_HOST
 #include <chrono>
 #include <unistd.h>
 
@@ -44,7 +45,7 @@ inline uint32_t client_start_slot() { return 0; }
 }  // namespace platform
 #endif
 
-#if defined(__AMDGCN__) || defined(__CUDACC__)
+#if (HOSTRPC_AMDGCN || HOSTRPC_NVPTX)
 // Enough of assert.h, derived from musl
 #ifdef NDEBUG
 #define assert(x) (void)0
@@ -82,7 +83,7 @@ __attribute__((always_inline)) inline int __inline_printf()
 
 #endif
 
-#if defined(__AMDGCN__)
+#if HOSTRPC_AMDGCN
 
 namespace platform
 {
@@ -152,7 +153,7 @@ inline uint32_t client_start_slot()
 }  // namespace platform
 #endif  // defined(__AMDGCN__)
 
-#if defined(__CUDACC__)
+#if HOSTRPC_NVPTX
 namespace platform
 {
 inline void sleep_briefly(void) {}
@@ -188,7 +189,7 @@ namespace platform
 {
 // Related functions derived from the platform specific ones
 
-#if defined(__AMDGCN__) || defined(__CUDACC__)
+#if (HOSTRPC_AMDGCN || HOSTRPC_NVPTX)
 __attribute__((always_inline)) inline uint32_t reduction_sum(uint32_t x)
 {
   // could implement shfl_down for x64 and drop the macro
