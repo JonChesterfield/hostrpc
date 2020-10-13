@@ -9,21 +9,11 @@
 #include "test_common.hpp"
 
 #if defined(__x86_64__)
-#include "x64_host_ptx_client_cuda.hpp"
+#include "memory_cuda.hpp"
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
 
-namespace hostrpc
-{
-namespace cuda
-{
-// allocates and zero fills
-void *allocate_gpu(size_t align, size_t size, void **to_free);
-void *allocate_shared(size_t align, size_t size, void **to_free);
-
-}  // namespace cuda
-}  // namespace hostrpc
 
 #endif
 

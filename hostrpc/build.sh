@@ -84,18 +84,6 @@ CXX_PTX="$HOME/.emacs.d/bin/clang++ $NVPTXFLAGS"
 
 CXX_CUDA="$CLANG -O2 $COMMONFLAGS -xcuda --cuda-path=/usr/local/cuda --cuda-gpu-arch=sm_50 -I/usr/local/cuda/include"
 
-if (($have_nvptx)); then
-# One step at a time
-    clang -x cuda hello.cu -o hello --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcudart_static -ldl -lrt -pthread && ./hello
-
-# hello.o is an executable elf, may be able to load it from cuda
-clang -x cuda hello.cu --cuda-device-only -c -o hello.o --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda -I/usr/local/cuda/include
-
-clang++ hello.cpp --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -o a.out && ./a.out hello.o
-
-exit
-fi
-
 # msgpack, assumed to be checked out ../ from here
 $CXX_X64 ../impl/msgpack.cpp -c -o msgpack.bc
 $CXX_X64 find_metadata.cpp -c -o find_metadata.bc
@@ -115,9 +103,25 @@ $CXX_GCN codegen/client.cpp -c -o codegen/client.gcn.bc
 $CXX_GCN codegen/server.cpp -c -o codegen/server.gcn.bc
 
 
-$CXX_X64 -I$HSAINC memory.cpp -c -o memory.x64.bc
+$CXX_X64 memory_host.cpp -c -o memory_host.x64.bc
+
+$CXX_X64 -I$HSAINC memory_hsa.cpp -c -o memory_hsa.x64.bc
+
 $CXX_X64 -I$HSAINC tests.cpp -c -o tests.x64.bc
 $CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc
+
+
+if (($have_nvptx)); then
+# One step at a time
+    $CLANG -x cuda hello.cu -o hello --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcudart_static -ldl -lrt -pthread && ./hello
+
+# hello.o is an executable elf, may be able to load it from cuda
+$CLANG -x cuda hello.cu --cuda-device-only -c -o hello.o --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda -I/usr/local/cuda/include
+
+$CLANG hello.cpp --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -o a.out memory_host.x64.bc && ./a.out hello.o
+
+exit
+fi
 
 
 $CXX_GCN -DDERIVE_VAL=$DERIVE x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.code.bc
@@ -140,7 +144,7 @@ $CXX_X64 -I$HSAINC persistent_kernel.cpp -c -o persistent_kernel.x64.bc
 # TODO: Sort out script to ignore this when there's no ptx device
 if (($have_nvptx)); then
  $CXX_CUDA --cuda-device-only detail/platform.cu -c -emit-llvm -o detail/platform.ptx.bc
- $CXX_CUDA --cuda-host-only x64_host_ptx_client.cu  -c -emit-llvm -o x64_host_ptx_client.x64.bc
+ $CXX_CUDA --cuda-host-only memory_cuda.cu  -c -emit-llvm -o memory_cuda.x64.bc
  $CXX_PTX codegen/client.cpp -c -o codegen/client.ptx.bc
  $CXX_PTX codegen/server.cpp -c -o codegen/server.ptx.bc
  $CXX_PTX x64_ptx_stress.cpp -c -o x64_ptx_stress.ptx.code.bc
@@ -160,7 +164,7 @@ $CXX_GCN amdgcn_main.cpp -c -o amdgcn_main.gcn.bc
 # TODO: Embed it directly in the loader by patching call to main, as the loader doesn't do it
 $CXX_X64 -I$HSAINC amdgcn_loader.cpp -c -o amdgcn_loader.x64.bc
 
-$CXX_X64_LD $LDFLAGS amdgcn_loader.x64.bc memory.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o ../amdgcn_loader.exe
+$CXX_X64_LD $LDFLAGS amdgcn_loader.x64.bc memory_host.x64.bc memory_hsa.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o ../amdgcn_loader.exe
 
 # Build the device library that calls into main()
 $CXXCL loader/amdgcn_loader_entry.cl -c -o loader/amdgcn_loader_entry.gcn.bc
@@ -199,16 +203,16 @@ $CXX_GCN_LD executable_device.gcn.bc -o a.out
 #     $CXX_GCN_LD -c $ll -o $obj
 # done
 
-$CXX_X64_LD tests.x64.bc x64_x64_stress.x64.bc states.x64.bc catch.o memory.x64.bc $LDFLAGS -o states.exe
+$CXX_X64_LD tests.x64.bc x64_x64_stress.x64.bc states.x64.bc catch.o memory_host.x64.bc $LDFLAGS -o states.exe
 
-$CXX_X64_LD x64_x64_stress.x64.bc catch.o memory.x64.bc $LDFLAGS -o x64_x64_stress.exe
+$CXX_X64_LD x64_x64_stress.x64.bc catch.o memory_host.x64.bc $LDFLAGS -o x64_x64_stress.exe
 
-$CXX_X64_LD x64_gcn_stress.x64.bc catch.o memory.x64.bc $LDFLAGS -o x64_gcn_stress.exe
+$CXX_X64_LD x64_gcn_stress.x64.bc catch.o memory_host.x64.bc memory_hsa.x64.bc $LDFLAGS -o x64_gcn_stress.exe
 
-$CXX_X64_LD tests.x64.bc catch.o memory.x64.bc  $LDFLAGS -o tests.exe
+$CXX_X64_LD tests.x64.bc catch.o memory_host.x64.bc  $LDFLAGS -o tests.exe
 
 
-$CXX_X64_LD persistent_kernel.x64.bc catch.o memory.x64.bc $LDFLAGS -o persistent_kernel.exe
+$CXX_X64_LD persistent_kernel.x64.bc catch.o memory_host.x64.bc memory_hsa.x64.bc $LDFLAGS -o persistent_kernel.exe
 
 if (($have_amdgcn)); then
 time ./persistent_kernel.exe

@@ -143,11 +143,10 @@ struct clear
 };
 }  // namespace x64_host_nvptx_client
 
-static const constexpr size_t x64_host_nvptx_array_size = 2048;
 
-using SZ = size_compiletime<hostrpc::x64_host_nvptx_array_size>;
 using x64_nvptx_pair = hostrpc::x64_ptx_pair_T<
-    SZ, x64_host_nvptx_client::fill, x64_host_nvptx_client::use,
+  hostrpc::size_runtime,
+  x64_host_nvptx_client::fill, x64_host_nvptx_client::use,
     x64_host_nvptx_client::operate, x64_host_nvptx_client::clear,
     counters::client_nop, counters::server_nop>;
 
@@ -236,8 +235,9 @@ int init(void *image)
   t("cuModuleGetFunction",
     [&]() { return cuModuleGetFunction(&Func, Module, "_Z10cuda_hellov"); });
 
-  hostcall hc;
 
+  hostrpc:: x64_nvptx_pair state (128); // hostrpc::size_runtime(128));
+  
   t("cuLaunchKernel", [&]() {
     return cuLaunchKernel(/* kernel */ Func,
                           /*blocks per grid */ 1,

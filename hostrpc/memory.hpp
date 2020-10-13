@@ -1,31 +1,17 @@
-#ifndef HOSTRPC_MEMORY_HPP
-#define HOSTRPC_MEMORY_HPP
+#ifndef HOSTRPC_MEMORY_HPP_INCLUDED
+#define HOSTRPC_MEMORY_HPP_INCLUDED
 
 #include <stddef.h>
 #include <stdint.h>
 
 #if defined(__x86_64__)
-// strictly, should test for presence of <new>.
-// currently x64_64 is a hosted implementation and amdgcn is freestanding
-// without headers.
+#include "memory_hsa.hpp"
+#include "memory_host.hpp"
+
 #include <new>
-#endif
 
 namespace hostrpc
 {
-namespace x64_native
-{
-void* allocate(size_t align, size_t bytes);
-void deallocate(void*);
-}  // namespace x64_native
-
-namespace hsa_amdgpu
-{
-void* allocate(uint64_t hsa_region_t_handle, size_t align, size_t bytes);
-void deallocate(void*);
-}  // namespace hsa_amdgpu
-
-#if defined(__x86_64__)
 template <typename T>
 T* careful_array_cast(void* data, size_t N)
 {
@@ -61,7 +47,8 @@ T careful_cast_to_bitmap(void* memory, size_t size)
   return {m};
 }
 
+}
+
 #endif
-}  // namespace hostrpc
 
 #endif

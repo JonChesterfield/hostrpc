@@ -1,4 +1,4 @@
-#include "x64_host_ptx_client_cuda.hpp"
+#include "memory_cuda.hpp"
 
 #include <cuda.h>
 #include <cuda_runtime.h>
