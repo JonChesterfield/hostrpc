@@ -6,7 +6,10 @@
 #define DEVICE __device__
 
 #define WARPSIZE 32
-DEVICE uint32_t get_lane_id(void) { return threadIdx.x & (WARPSIZE - 1); }
+DEVICE uint32_t get_lane_id(void)
+{
+  return __nvvm_read_ptx_sreg_tid_x() /*threadIdx.x*/ & (WARPSIZE - 1);
+}
 
 namespace detail
 {

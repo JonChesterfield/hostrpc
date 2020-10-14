@@ -71,19 +71,26 @@ COMMONFLAGS="-Wall -Wextra -emit-llvm " # -DNDEBUG -Wno-type-limits "
 X64FLAGS=" -O2 -pthread -g"
 GCNFLAGS=" -O2 -ffreestanding -fno-exceptions $AMDGPU"
 # atomic alignment objection seems reasonable - may want 32 wide atomics on nvptx
-NVPTXFLAGS="-g -O2 -emit-llvm -ffreestanding -fno-exceptions -Wno-atomic-alignment $NVGPU "
+NVPTXFLAGS="-g -O2 -ffreestanding -fno-exceptions -Wno-atomic-alignment -emit-llvm $NVGPU "
 
 CXX_X64="$CLANG -std=c++14 $COMMONFLAGS $X64FLAGS"
 CXX_GCN="$CLANG -std=c++14 $COMMONFLAGS $GCNFLAGS"
 
-CXX_X64_LD="$CXX"
-CXX_GCN_LD="$CXX $GCNFLAGS"
 
-CXXCL="$CLANG -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 -emit-llvm -D__OPENCL__ -ffreestanding $AMDGPU"
+CXXCL="$CLANG -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 -D__OPENCL__"
+CXXCL_GCN="$CXXCL -emit-llvm -ffreestanding $AMDGPU"
+CXXCL_PTX="$CXXCL -emit-llvm -ffreestanding $NVGPU"
 
 CXX_PTX="$HOME/.emacs.d/bin/clang++ $NVPTXFLAGS"
 
-CXX_CUDA="$CLANG -O2 $COMMONFLAGS -xcuda --cuda-path=/usr/local/cuda --cuda-gpu-arch=sm_50 -I/usr/local/cuda/include"
+XCUDA="-x cuda --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda"
+XHIP="-x hip --cuda-gpu-arch=gfx906 -nogpulib -nogpuinc"
+
+
+CXX_CUDA="$CLANG -O2 $COMMONFLAGS $XCUDA -I/usr/local/cuda/include"
+
+CXX_X64_LD="$CXX"
+CXX_GCN_LD="$CXX $GCNFLAGS"
 
 # msgpack, assumed to be checked out ../ from here
 $CXX_X64 ../impl/msgpack.cpp -c -o msgpack.bc
@@ -96,8 +103,6 @@ fi
 
 $CXX_X64 states.cpp -c -o states.x64.bc
 
-XCUDA="-x cuda --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda"
-XHIP="-x hip --cuda-gpu-arch=gfx906 -nogpulib -nogpuinc"
 
 # Sanity check that the client and server compile successfully
 # and provide an example of the generated IR
@@ -124,7 +129,7 @@ $CXX_X64 -I$HSAINC tests.cpp -c -o tests.x64.bc
 $CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc
 
 $CXX_GCN -DDERIVE_VAL=$DERIVE x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.code.bc
-$CXXCL -DDERIVE_VAL=$DERIVE x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.kern.bc
+$CXXCL_GCN -DDERIVE_VAL=$DERIVE x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.kern.bc
 $LINK x64_gcn_stress.gcn.code.bc x64_gcn_stress.gcn.kern.bc dispatch_id.ll -o x64_gcn_stress.gcn.bc
 $CXX_GCN_LD x64_gcn_stress.gcn.bc -o x64_gcn_stress.gcn.so
 $CXX_X64 -DDERIVE_VAL=$DERIVE -I$HSAINC x64_gcn_stress.cpp -c -o x64_gcn_stress.x64.bc
@@ -133,11 +138,10 @@ $CXX_X64 -DDERIVE_VAL=$DERIVE -I$HSAINC x64_gcn_stress.cpp -c -o x64_gcn_stress.
 
 $CXX_GCN -D__HAVE_ROCR_HEADERS=0 persistent_kernel.cpp -c -o persistent_kernel.gcn.code.bc
 
-$CXXCL persistent_kernel.cpp -c -o persistent_kernel.gcn.kern.bc
+$CXXCL_GCN persistent_kernel.cpp -c -o persistent_kernel.gcn.kern.bc
 $LINK persistent_kernel.gcn.code.bc persistent_kernel.gcn.kern.bc $OCKL_LIBS -o persistent_kernel.gcn.bc
 $CXX_GCN_LD persistent_kernel.gcn.bc -o persistent_kernel.gcn.so
 $CXX_X64 -I$HSAINC persistent_kernel.cpp -c -o persistent_kernel.x64.bc
-
 
 
 # TODO: Sort out script to ignore this when there's no ptx device
@@ -146,6 +150,9 @@ if (($have_nvptx)); then
  $CXX_CUDA -std=c++14 --cuda-host-only memory_cuda.cu  -c -emit-llvm -o memory_cuda.x64.bc
  $CXX_PTX x64_ptx_stress.cpp -c -o x64_ptx_stress.ptx.code.bc
  $CXX_X64 -I$HSAINC x64_ptx_stress.cpp -c -o x64_ptx_stress.x64.bc
+
+ $CXX_CUDA -std=c++14 --cuda-device-only loader/nvptx_loader_entry.cu -c -emit-llvm -o loader/nvptx_loader_entry.cu.ptx.bc
+
 else
  echo "Skipping ptx"
 fi
@@ -159,7 +166,6 @@ $CLANG $XCUDA -std=c++14 hello.cu --cuda-device-only -c -o hello.o  -I/usr/local
 
 $CLANG nvptx_loader.cpp memory_host.x64.bc memory_cuda.x64.bc --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -lcudart -o nvptx_loader.exe && ./nvptx_loader.exe hello.o
 
-exit
 fi
 
 
@@ -170,6 +176,10 @@ $CXX_X64 -I$HSAINC hostcall.cpp -c -o hostcall.x64.bc
 $CXX_X64 -I$HSAINC amdgcn_main.cpp -c -o amdgcn_main.x64.bc
 $CXX_GCN amdgcn_main.cpp -c -o amdgcn_main.gcn.bc
 
+
+$CXX_X64 nvptx_main.cpp -c -o nvptx_main.x64.bc
+$CXX_PTX nvptx_main.cpp -c -o nvptx_main.ptx.bc
+
 # Build the device loader that assumes the device library is linked into the application
 # TODO: Embed it directly in the loader by patching call to main, as the loader doesn't do it
 $CXX_X64 -I$HSAINC amdgcn_loader.cpp -c -o amdgcn_loader.x64.bc
@@ -177,17 +187,29 @@ $CXX_X64 -I$HSAINC amdgcn_loader.cpp -c -o amdgcn_loader.x64.bc
 $CXX_X64_LD $LDFLAGS amdgcn_loader.x64.bc memory_host.x64.bc memory_hsa.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o ../amdgcn_loader.exe
 
 # Build the device library that calls into main()
-$CXXCL loader/amdgcn_loader_entry.cl -c -o loader/amdgcn_loader_entry.gcn.bc
-$CXX_GCN loader/amdgcn_loader_cast.cpp -c -o loader/amdgcn_loader_cast.gcn.bc
 
-$LINK loader/amdgcn_loader_entry.gcn.bc loader/amdgcn_loader_cast.gcn.bc | $OPT -O2 -o amdgcn_loader_device.gcn.bc
+# Loader library
+$CXXCL_GCN loader/amdgcn_loader_entry.cl -c -o loader/amdgcn_loader_entry.gcn.bc
+$CXX_GCN loader/opencl_loader_cast.cpp -c -o loader/opencl_loader_cast.gcn.bc
 
+$LINK loader/amdgcn_loader_entry.gcn.bc loader/opencl_loader_cast.gcn.bc | $OPT -O2 -o amdgcn_loader_device.gcn.bc
 
+$CXXCL_PTX loader/nvptx_loader_entry.cl -c -o loader/nvptx_loader_entry.ptx.bc
+$CXX_PTX loader/opencl_loader_cast.cpp -c -o loader/opencl_loader_cast.ptx.bc
+
+$LINK loader/nvptx_loader_entry.ptx.bc loader/opencl_loader_cast.ptx.bc | $OPT -O2 -o nvptx_loader_device.ptx.bc
 
 $LINK amdgcn_main.gcn.bc amdgcn_loader_device.gcn.bc  hostcall.gcn.bc  -o executable_device.gcn.bc
+# $LINK nvptx_main.ptx.bc nvptx_loader_device.ptx.bc  -o executable_device.ptx.bc
+$LINK nvptx_main.ptx.bc loader/nvptx_loader_entry.cu.ptx.bc -o executable_device.ptx.bc
 
 # Link the device image
-$CXX_GCN_LD executable_device.gcn.bc -o a.out
+$CXX_GCN_LD executable_device.gcn.bc -o a.gcn.out
+$CXX --target=nvptx64-nvidia-cuda -march=sm_50 executable_device.ptx.bc -S -o executable_device.ptx.s
+
+/usr/local/cuda/bin/ptxas -m64 -O0 --gpu-name sm_50 executable_device.ptx.s -o a.ptx.out
+
+./nvptx_loader.exe a.ptx.out
 
 # Register amdhsa elf magic with kernel
 # One off
@@ -233,7 +255,7 @@ time ./x64_x64_stress.exe
 
 if (($have_amdgcn)); then
 echo "Call hostcall/loader executable"
-time ./a.out ; echo $?
+time ./a.gcn.out ; echo $?
 fi
 
 if (($have_amdgcn)); then

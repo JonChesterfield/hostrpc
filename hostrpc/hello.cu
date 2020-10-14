@@ -1,11 +1,14 @@
 
 #include <stdio.h>
 
-__global__ void cuda_hello() { printf("Hello world from cuda\n"); }
+__global__ extern "C" void __device_start(int, char**, int*)
+{
+  printf("Hello world from cuda\n");
+}
 
 int main()
 {
-  cuda_hello<<<1, 1>>>();
+  __device_start<<<1, 1>>>(0, 0, 0);
   cudaDeviceSynchronize();
 
   cudaDeviceReset();

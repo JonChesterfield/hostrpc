@@ -208,6 +208,8 @@ int init(void *image)
 
   // rtl does some get state calls here, maybe cuda doesn't clean up on exit?
   // TODO: Google CU_CTX_SCHED_BLOCKING_SYNC
+  // todo: cuModuleUnload(module),  cuCtxDestroy(Context),
+
   CUcontext Context = nullptr;
 
   t("cuDevicePrimaryCtxRetain",
@@ -244,19 +246,63 @@ int init(void *image)
 
   CUfunction Func;
   t("cuModuleGetFunction",
-    [&]() { return cuModuleGetFunction(&Func, Module, "_Z10cuda_hellov"); });
+    [&]() { return cuModuleGetFunction(&Func, Module, "__device_start"); });
 
   hostrpc::x64_nvptx_pair state(128);  // hostrpc::size_runtime(128));
 
   t("cuLaunchKernel", [&]() {
-    return cuLaunchKernel(/* kernel */ Func,
-                          /*blocks per grid */ 1,
-                          /*gridDimY */ 1,
-                          /*gridDimZ*/ 1,
-                          /* threads per block */ 32,
-                          /* blockDimY */ 1,
-                          /* blockDimZ */ 1,
-                          /* sharedMemBytes */ 0, stream, nullptr, nullptr);
+    error_tracker t;
+
+    int hostArgc = 0;
+    void *hostArgv = NULL;  // todo: generalise the argv marshalling
+    int hostRes[32];
+
+    CUdeviceptr devArgc;
+    CUdeviceptr devArgv;
+    CUdeviceptr devRes;
+
+    t("alloc", [&]() { return cuMemAlloc(&devArgc, sizeof(hostArgc)); });
+
+    t("alloc", [&]() { return cuMemAlloc(&devArgv, sizeof(hostArgv)); });
+    t("alloc", [&]() { return cuMemAlloc(&devRes, sizeof(hostRes)); });
+
+    t("copy",
+      [&]() { return cuMemcpyHtoD(devArgc, &hostArgc, sizeof(hostArgc)); });
+
+    t("copy",
+      [&]() { return cuMemcpyHtoD(devArgv, &hostArgv, sizeof(hostArgv)); });
+
+    t("sync", [&]() { return cuStreamSynchronize(stream); });
+
+    void *params[]{
+        &devArgc,
+        &devArgv,
+        &devRes,
+    };
+
+    t("launch", [&]() {
+      return cuLaunchKernel(/* kernel */ Func,
+                            /*blocks per grid */ 1,
+                            /*gridDimY */ 1,
+                            /*gridDimZ*/ 1,
+                            /* threads per block */ 32,
+                            /* blockDimY */ 1,
+                            /* blockDimZ */ 1,
+                            /* sharedMemBytes */ 0, stream, params, nullptr);
+    });
+
+    t("copy",
+      [&]() { return cuMemcpyDtoH(&hostRes, devRes, sizeof(hostRes)); });
+
+    t("sync", [&]() { return cuStreamSynchronize(stream); });
+
+    fprintf(stderr, "hostRes[0] = %u\n", hostRes[0]);
+
+    t("free", [&]() { return cuMemFree(devArgc); });
+    t("free", [&]() { return cuMemFree(devArgv); });
+    t("free", [&]() { return cuMemFree(devRes); });
+
+    return t.Err;
   });
 
   t("cuStreamSynchronize", [&]() { return cuStreamSynchronize(stream); });
