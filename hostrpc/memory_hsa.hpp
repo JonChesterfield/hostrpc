@@ -6,11 +6,11 @@
 
 namespace hostrpc
 {
-  namespace hsa_amdgpu
-  {
-    void* allocate(uint64_t hsa_region_t_handle, size_t align, size_t bytes);
-    void deallocate(void*);
-  }
-}
+namespace hsa_amdgpu
+{
+void* allocate(uint64_t hsa_region_t_handle, size_t align, size_t bytes);
+void deallocate(void*);
+}  // namespace hsa_amdgpu
+}  // namespace hostrpc
 
 #endif

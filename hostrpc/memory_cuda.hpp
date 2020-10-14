@@ -20,14 +20,13 @@ void deallocate_shared(void *);
 
 void *device_ptr_from_host_ptr(void *);
 
-
-inline void * align_pointer_up(void * ptr, size_t align)
+inline void *align_pointer_up(void *ptr, size_t align)
 {
   uint64_t top_misaligned = (uint64_t)ptr + align - 1;
   uint64_t aligned = top_misaligned & ~(align - 1);
-  return (void*)aligned;
+  return (void *)aligned;
 }
-  
+
 template <void *(*F)(size_t)>
 inline void *aligned_allocate(size_t align, size_t size, void **to_free)
 {

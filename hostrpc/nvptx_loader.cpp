@@ -145,12 +145,10 @@ struct clear
 };
 }  // namespace x64_host_nvptx_client
 
-
 using x64_nvptx_pair = hostrpc::x64_ptx_pair_T<
-  hostrpc::size_runtime,
-  x64_host_nvptx_client::fill, x64_host_nvptx_client::use,
-    x64_host_nvptx_client::operate, x64_host_nvptx_client::clear,
-    counters::client_nop, counters::server_nop>;
+    hostrpc::size_runtime, x64_host_nvptx_client::fill,
+    x64_host_nvptx_client::use, x64_host_nvptx_client::operate,
+    x64_host_nvptx_client::clear, counters::client_nop, counters::server_nop>;
 
 }  // namespace hostrpc
 
@@ -179,13 +177,17 @@ int init(void *image)
 
   t("cuInit", []() { return cuInit(0); });
 
-  if (0) t("setDeviceFlags", []() {
-                        cudaError_t err =cudaSetDeviceFlags(cudaDeviceMapHost);
-                        fprintf(stderr, "setDeviceFlags returned %s\n", cudaGetErrorString(err));
-                        if (err == cudaSuccess) { return CUDA_SUCCESS; }
-                        return CUDA_ERROR_ILLEGAL_STATE;
-                      });
-  
+  if (0)
+    t("setDeviceFlags", []() {
+      cudaError_t err = cudaSetDeviceFlags(cudaDeviceMapHost);
+      fprintf(stderr, "setDeviceFlags returned %s\n", cudaGetErrorString(err));
+      if (err == cudaSuccess)
+        {
+          return CUDA_SUCCESS;
+        }
+      return CUDA_ERROR_ILLEGAL_STATE;
+    });
+
   int NumberOfDevices = 0;
   t("cuDeviceGetCount", [&]() {
     CUresult Err = cuDeviceGetCount(&NumberOfDevices);
@@ -244,9 +246,8 @@ int init(void *image)
   t("cuModuleGetFunction",
     [&]() { return cuModuleGetFunction(&Func, Module, "_Z10cuda_hellov"); });
 
+  hostrpc::x64_nvptx_pair state(128);  // hostrpc::size_runtime(128));
 
-  hostrpc:: x64_nvptx_pair state (128); // hostrpc::size_runtime(128));
-  
   t("cuLaunchKernel", [&]() {
     return cuLaunchKernel(/* kernel */ Func,
                           /*blocks per grid */ 1,

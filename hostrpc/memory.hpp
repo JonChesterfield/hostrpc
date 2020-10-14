@@ -5,8 +5,8 @@
 #include <stdint.h>
 
 #if defined(__x86_64__)
-#include "memory_hsa.hpp"
 #include "memory_host.hpp"
+#include "memory_hsa.hpp"
 
 #include <new>
 
@@ -47,7 +47,7 @@ T careful_cast_to_bitmap(void* memory, size_t size)
   return {m};
 }
 
-}
+}  // namespace hostrpc
 
 #endif
 

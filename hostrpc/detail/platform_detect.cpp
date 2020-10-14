@@ -36,7 +36,6 @@
 
 #endif
 
-
 #if 0
 
 CLANG=$HOME/rocm/aomp/bin/clang++
@@ -68,8 +67,7 @@ echo '#warning "Hip gpu"'
 echo '#warning "Hip host"'
 $CLANG -x hip --cuda-gpu-arch=gfx906 -nogpuinc -nogpulib  platform_detect.cpp -c -o /dev/null
 
-
-# // cuda-host-only / cuda-device-only (or gpu) appear to be ignored in openmp
+#// cuda-host-only / cuda-device-only (or gpu) appear to be ignored in openmp
 
 echo '#warning "OpenMP host"'
 echo '#warning "OpenMP gcn gpu"'
@@ -78,6 +76,5 @@ $CLANG -std=c++14 -emit-llvm -O2 -fno-exceptions -fopenmp -fopenmp-targets=amdgc
 echo '#warning "OpenMP host"'
 echo '#warning "OpenMP ptx gpu"'
 $CLANG -std=c++14 -emit-llvm -O2 -fno-exceptions -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50  -nogpulib platform_detect.cpp -c -o /dev/null
-
 
 #endif

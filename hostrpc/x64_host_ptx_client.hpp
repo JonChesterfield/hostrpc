@@ -14,7 +14,6 @@
 #include <cstdlib>
 #include <vector>
 
-
 #endif
 
 namespace hostrpc

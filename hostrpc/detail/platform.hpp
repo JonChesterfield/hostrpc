@@ -89,7 +89,7 @@ __attribute__((always_inline)) inline int __inline_printf()
 // work as intended.
 // Cuda does not appear to require this. TODO: See if openmp does
 
-#if HOSTRPC_AMDGCN && defined (__HIP__)
+#if HOSTRPC_AMDGCN && defined(__HIP__)
 #define BODGE_HIP __attribute__((device))
 #else
 #define BODGE_HIP
@@ -99,8 +99,7 @@ __attribute__((always_inline)) inline int __inline_printf()
 
 namespace platform
 {
-  
-BODGE_HIP  inline void sleep_briefly(void) { __builtin_amdgcn_s_sleep(0); }
+BODGE_HIP inline void sleep_briefly(void) { __builtin_amdgcn_s_sleep(0); }
 BODGE_HIP inline void sleep(void) { __builtin_amdgcn_s_sleep(100); }
 
 BODGE_HIP __attribute__((always_inline)) inline uint32_t get_lane_id(void)
@@ -134,7 +133,8 @@ BODGE_HIP __attribute__((always_inline)) inline int32_t __impl_shfl_down_sync(
 }
 }  // namespace detail
 
-BODGE_HIP __attribute__((always_inline)) inline uint32_t broadcast_master(uint32_t x)
+BODGE_HIP __attribute__((always_inline)) inline uint32_t broadcast_master(
+    uint32_t x)
 {
   return __builtin_amdgcn_readfirstlane(x);
 }
@@ -203,7 +203,8 @@ namespace platform
 // Related functions derived from the platform specific ones
 
 #if (HOSTRPC_AMDGCN || HOSTRPC_NVPTX)
-BODGE_HIP __attribute__((always_inline)) inline uint32_t reduction_sum(uint32_t x)
+BODGE_HIP __attribute__((always_inline)) inline uint32_t reduction_sum(
+    uint32_t x)
 {
   // could implement shfl_down for x64 and drop the macro
   x += detail::__impl_shfl_down_sync(x, 32);

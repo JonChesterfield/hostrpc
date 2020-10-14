@@ -21,5 +21,4 @@ void *allocate(size_t align, size_t bytes)
 void deallocate(void *d) { free(d); }
 }  // namespace x64_native
 
-
 }  // namespace hostrpc
