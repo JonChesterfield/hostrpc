@@ -114,8 +114,11 @@ $CXX_GCN codegen/server.cpp -S -o codegen/server.gcn.ll
 $CXX_PTX codegen/client.cpp -S -o codegen/client.ptx.ll
 $CXX_PTX codegen/server.cpp -S -o codegen/server.ptx.ll
 
-$CLANG $XCUDA -std=c++14 --cuda-device-only codegen/client.cpp -S -o codegen/client.cuda.ptx.ll
-$CLANG $XCUDA -std=c++14 --cuda-host-only codegen/client.cpp -S -o codegen/client.cuda.x64.ll
+if (($have_nvptx)); then
+    # wx/aomp toolchain doesn't have the nvptx64 target
+$CLANG $XCUDA -std=c++14 --cuda-device-only -nocudainc -nocudalib codegen/client.cpp -S -o codegen/client.cuda.ptx.ll
+$CLANG $XCUDA -std=c++14 --cuda-host-only -nocudainc -nocudalib codegen/client.cpp -S -o codegen/client.cuda.x64.ll
+fi
 
 # HIP has excessive requirements on function annotation that cuda does not, ignore for now
 # $CLANG $XHIP -std=c++14 --cuda-device-only codegen/client.cpp -S -o codegen/client.hip.gcn.ll
@@ -178,7 +181,7 @@ $CXX_GCN amdgcn_main.cpp -c -o amdgcn_main.gcn.bc
 
 
 $CXX_X64 nvptx_main.cpp -c -o nvptx_main.x64.bc
-$CXX_PTX nvptx_main.cpp -c -o nvptx_main.ptx.bc
+$CXX_PTX nvptx_main.cpp -ffreestanding -c -o nvptx_main.ptx.bc
 
 # Build the device loader that assumes the device library is linked into the application
 # TODO: Embed it directly in the loader by patching call to main, as the loader doesn't do it
@@ -200,16 +203,19 @@ $CXX_PTX loader/opencl_loader_cast.cpp -c -o loader/opencl_loader_cast.ptx.bc
 $LINK loader/nvptx_loader_entry.ptx.bc loader/opencl_loader_cast.ptx.bc | $OPT -O2 -o nvptx_loader_device.ptx.bc
 
 $LINK amdgcn_main.gcn.bc amdgcn_loader_device.gcn.bc  hostcall.gcn.bc  -o executable_device.gcn.bc
-# $LINK nvptx_main.ptx.bc nvptx_loader_device.ptx.bc  -o executable_device.ptx.bc
-$LINK nvptx_main.ptx.bc loader/nvptx_loader_entry.cu.ptx.bc -o executable_device.ptx.bc
 
 # Link the device image
 $CXX_GCN_LD executable_device.gcn.bc -o a.gcn.out
+
+if (($have_nvptx)); then
+# $LINK nvptx_main.ptx.bc nvptx_loader_device.ptx.bc  -o executable_device.ptx.bc
+$LINK nvptx_main.ptx.bc loader/nvptx_loader_entry.cu.ptx.bc -o executable_device.ptx.bc
+
 $CXX --target=nvptx64-nvidia-cuda -march=sm_50 executable_device.ptx.bc -S -o executable_device.ptx.s
-
 /usr/local/cuda/bin/ptxas -m64 -O0 --gpu-name sm_50 executable_device.ptx.s -o a.ptx.out
-
 ./nvptx_loader.exe a.ptx.out
+
+fi
 
 # Register amdhsa elf magic with kernel
 # One off
