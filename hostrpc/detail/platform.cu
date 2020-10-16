@@ -3,13 +3,20 @@
 // Intent is to use the cuda calls initially, then transform to clang intrinsics
 // and move into platform.hpp
 
-#define DEVICE __device__
+#define DEVICE __device__ __attribute__((always_inline))
 
 #define WARPSIZE 32
+
+namespace platform
+{
 DEVICE uint32_t get_lane_id(void)
 {
   return __nvvm_read_ptx_sreg_tid_x() /*threadIdx.x*/ & (WARPSIZE - 1);
 }
+
+#ifndef CUDA_VERSION
+#error "Require CUDA_VERSION definition"
+#endif
 
 namespace detail
 {
@@ -54,3 +61,4 @@ DEVICE uint32_t broadcast_master(uint32_t x)
   return __shfl(x, master_id);
 #endif
 }
+}  // namespace platform

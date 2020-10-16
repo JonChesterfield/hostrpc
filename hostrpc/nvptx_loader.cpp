@@ -79,12 +79,28 @@ struct error_tracker
 namespace hostcall_ops
 {
 #if defined(__x86_64__)
-void operate(hostrpc::page_t *page);
-void clear(hostrpc::page_t *page);
+void operate(hostrpc::page_t *page) { fprintf(stderr, "Hit operate!\n"); }
+void clear(hostrpc::page_t *page) { fprintf(stderr, "Hit clear!\n"); };
 #endif
 #if defined(__AMDGCN__) || defined(__CUDACC__)
-void pass_arguments(hostrpc::page_t *page, uint64_t data[8]);
-void use_result(hostrpc::page_t *page, uint64_t data[8]);
+// from openmp_hostcall (amdgcn)
+void pass_arguments(hostrpc::page_t *page, uint64_t data[8])
+{
+  hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
+  for (unsigned i = 0; i < 8; i++)
+    {
+      line->element[i] = d[i];
+    }
+}
+void use_result(hostrpc::page_t *page, uint64_t data[8])
+{
+  hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
+  for (unsigned i = 0; i < 8; i++)
+    {
+      d[i] = line->element[i];
+    }
+}
+
 #endif
 }  // namespace hostcall_ops
 
@@ -152,6 +168,13 @@ using x64_nvptx_pair = hostrpc::x64_ptx_pair_T<
 
 }  // namespace hostrpc
 
+#if defined(__x86_64__)
+hostrpc::x64_nvptx_pair x64_nvptx_state(128);
+#else
+hostrpc::x64_nvptx_pair *x64_nvptx_state;
+#endif
+
+#if 0  // Not yet implemented
 class hostcall_impl;
 class hostcall
 {
@@ -170,6 +193,7 @@ class hostcall
  private:
   std::unique_ptr<hostcall_impl> state_;
 };
+#endif
 
 int init(void *image)
 {
@@ -248,7 +272,7 @@ int init(void *image)
   t("cuModuleGetFunction",
     [&]() { return cuModuleGetFunction(&Func, Module, "__device_start"); });
 
-  hostrpc::x64_nvptx_pair state(128);  // hostrpc::size_runtime(128));
+  // hostrpc::size_runtime(128));
 
   t("cuLaunchKernel", [&]() {
     error_tracker t;

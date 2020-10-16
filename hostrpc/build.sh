@@ -81,7 +81,8 @@ CXXCL="$CLANG -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 -D__OPENCL__"
 CXXCL_GCN="$CXXCL -emit-llvm -ffreestanding $AMDGPU"
 CXXCL_PTX="$CXXCL -emit-llvm -ffreestanding $NVGPU"
 
-CXX_PTX="$HOME/.emacs.d/bin/clang++ $NVPTXFLAGS"
+TRUNKBIN="$HOME/.emacs.d/bin"
+CXX_PTX="$TRUNKBIN/clang++ $NVPTXFLAGS"
 
 XCUDA="-x cuda --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda"
 XHIP="-x hip --cuda-gpu-arch=gfx906 -nogpulib -nogpuinc"
@@ -209,9 +210,9 @@ $CXX_GCN_LD executable_device.gcn.bc -o a.gcn.out
 
 if (($have_nvptx)); then
 # $LINK nvptx_main.ptx.bc nvptx_loader_device.ptx.bc  -o executable_device.ptx.bc
-$LINK nvptx_main.ptx.bc loader/nvptx_loader_entry.cu.ptx.bc -o executable_device.ptx.bc
+"$TRUNKBIN/llvm-link" nvptx_main.ptx.bc loader/nvptx_loader_entry.cu.ptx.bc detail/platform.ptx.bc -o executable_device.ptx.bc
 
-$CXX --target=nvptx64-nvidia-cuda -march=sm_50 executable_device.ptx.bc -S -o executable_device.ptx.s
+"$TRUNKBIN/clang++" --target=nvptx64-nvidia-cuda -march=sm_50 executable_device.ptx.bc -S -o executable_device.ptx.s
 /usr/local/cuda/bin/ptxas -m64 -O0 --gpu-name sm_50 executable_device.ptx.s -o a.ptx.out
 ./nvptx_loader.exe a.ptx.out
 

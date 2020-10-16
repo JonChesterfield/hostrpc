@@ -186,7 +186,7 @@ int32_t __impl_shfl_down_sync(int32_t var, uint32_t laneDelta);
 
 uint32_t get_lane_id(void);
 
-bool is_master_lane(void)
+__attribute__((always_inline)) bool is_master_lane(void)
 {
   return get_lane_id() == detail::get_master_lane_id();
 }
