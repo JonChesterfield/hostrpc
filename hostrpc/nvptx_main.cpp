@@ -1,6 +1,7 @@
 #include "base_types.hpp"
 #include "detail/platform_detect.h"
 #include "x64_host_ptx_client.hpp"
+#include "x64_nvptx_pair.hpp"
 
 // Implementation api. This construct is a singleton.
 namespace hostcall_ops
@@ -40,12 +41,24 @@ void use_result(hostrpc::page_t *page, uint64_t d[8])
 }  // namespace hostcall_ops
 
 #if (HOSTRPC_GPU)
+
+// __attribute__((visibility("default")))
+// By value errors, 'Module has a nontrivial global ctor, which NVPTX does not
+// support.'
+hostrpc::x64_nvptx_pair::client_type *x64_nvptx_client_state = nullptr;
+
+hostrpc::page_t scratch;
 extern "C" __attribute__((visibility("default"))) int main(int argc,
                                                            char **argv)
 {
   (void)argc;
   (void)argv;
 
-  return 42;
+  // won't work, just looking for the compile
+  void *vp = static_cast<void *>(&scratch);
+
+  bool r = x64_nvptx_client_state->rpc_invoke<true>(vp, vp);
+
+  return 0;
 }
 #endif

@@ -78,13 +78,6 @@ struct error_tracker
   explicit operator bool() const { return Err == CUDA_SUCCESS; }
 };
 
-#if defined(__x86_64__)
-hostrpc::x64_nvptx_pair x64_nvptx_state(128);
-#else
-hostrpc::x64_nvptx_pair x64_nvptx_state;
-
-#endif
-
 int init(void *image)
 {
   error_tracker t;
@@ -162,7 +155,46 @@ int init(void *image)
   t("cuModuleGetFunction",
     [&]() { return cuModuleGetFunction(&Func, Module, "__device_start"); });
 
-  // hostrpc::size_runtime(128));
+  hostrpc::x64_nvptx_pair x64_nvptx_state(128);
+
+  {
+    error_tracker t;
+
+    CUdeviceptr devPtr;
+    size_t devSz;
+    CUresult err =
+        cuModuleGetGlobal(&devPtr, &devSz, Module, "x64_nvptx_client_state");
+
+    if (err == CUDA_SUCCESS)
+      {
+        fprintf(stderr, "found state at %llu\n", devPtr);
+
+        CUdeviceptr mem;
+        t("alloc", [&]() {
+          return cuMemAlloc(&mem, sizeof(hostrpc::x64_nvptx_pair::client_type));
+        });
+
+        t("copy client", [&]() {
+          return cuMemcpyHtoD(mem, &x64_nvptx_state,
+                              sizeof(hostrpc::x64_nvptx_pair::client_type));
+        });
+
+        t("copy pointer", [&]() { return cuMemcpyHtoD(devPtr, &mem, 8); });
+
+        if (t)
+          {
+            fprintf(stderr, "Is ok\n");
+          }
+        else
+          {
+            fprintf(stderr, "Is fail\n");
+          }
+      }
+    else
+      {
+        fprintf(stderr, "get symbol address failed, ret %u\n", err);
+      }
+  }
 
   t("cuLaunchKernel", [&]() {
     error_tracker t;
