@@ -65,7 +65,9 @@ LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR hsa_support.bc -lelf"
 AMDGPU="--target=amdgcn-amd-amdhsa -march=$GFX -mcpu=$GFX -mllvm -amdgpu-fixed-function-abi -nogpulib"
 
 # Not sure why CUDACC isn't being set by clang here, probably a bad sign
-NVGPU="--target=nvptx64-nvidia-cuda -march=sm_50 -D__CUDACC__"
+PTX_VER="-Xclang -target-feature -Xclang +ptx63"
+
+NVGPU="--target=nvptx64-nvidia-cuda -march=sm_50 $PTX_VER -D__CUDACC__"
 
 COMMONFLAGS="-Wall -Wextra -emit-llvm " # -DNDEBUG -Wno-type-limits "
 X64FLAGS=" -O2 -pthread -g"
@@ -84,7 +86,8 @@ CXXCL_PTX="$CXXCL -emit-llvm -ffreestanding $NVGPU"
 TRUNKBIN="$HOME/.emacs.d/bin"
 CXX_PTX="$TRUNKBIN/clang++ $NVPTXFLAGS"
 
-XCUDA="-x cuda --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda"
+
+XCUDA="-x cuda --cuda-gpu-arch=sm_50 $PTX_VER --cuda-path=/usr/local/cuda"
 XHIP="-x hip --cuda-gpu-arch=gfx906 -nogpulib -nogpuinc"
 
 
@@ -212,7 +215,7 @@ if (($have_nvptx)); then
 # $LINK nvptx_main.ptx.bc nvptx_loader_device.ptx.bc  -o executable_device.ptx.bc
 "$TRUNKBIN/llvm-link" nvptx_main.ptx.bc loader/nvptx_loader_entry.cu.ptx.bc detail/platform.ptx.bc -o executable_device.ptx.bc
 
-"$TRUNKBIN/clang++" --target=nvptx64-nvidia-cuda -march=sm_50 executable_device.ptx.bc -S -o executable_device.ptx.s
+"$TRUNKBIN/clang++" --target=nvptx64-nvidia-cuda -march=sm_50 $PTX_VER executable_device.ptx.bc -S -o executable_device.ptx.s
 /usr/local/cuda/bin/ptxas -m64 -O0 --gpu-name sm_50 executable_device.ptx.s -o a.ptx.out
 ./nvptx_loader.exe a.ptx.out
 

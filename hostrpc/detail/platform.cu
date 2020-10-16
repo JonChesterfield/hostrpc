@@ -18,6 +18,10 @@ DEVICE uint32_t get_lane_id(void)
 #error "Require CUDA_VERSION definition"
 #endif
 
+// Something strange here. CUDA_VERSION picks activemask, but
+// sm_50 maps onto ptx 4.0 by default which doesn't support that
+// Compiling with cuda overrides to ptx 6.3, passing Xclang to match.
+
 namespace detail
 {
 static DEVICE uint32_t ballot()
