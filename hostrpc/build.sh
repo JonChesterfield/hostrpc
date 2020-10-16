@@ -87,7 +87,7 @@ TRUNKBIN="$HOME/.emacs.d/bin"
 CXX_PTX="$TRUNKBIN/clang++ $NVPTXFLAGS"
 
 
-XCUDA="-x cuda --cuda-gpu-arch=sm_50 $PTX_VER --cuda-path=/usr/local/cuda"
+XCUDA="-x cuda --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda"
 XHIP="-x hip --cuda-gpu-arch=gfx906 -nogpulib -nogpuinc"
 
 
@@ -171,7 +171,10 @@ if (($have_nvptx)); then
 # hello.o is an executable elf, may be able to load it from cuda
 $CLANG $XCUDA -std=c++14 hello.cu --cuda-device-only -c -o hello.o  -I/usr/local/cuda/include
 
-$CLANG nvptx_loader.cpp memory_host.x64.bc memory_cuda.x64.bc --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -lcudart -o nvptx_loader.exe && ./nvptx_loader.exe hello.o
+$CXX_X64 nvptx_main.cpp -c -o nvptx_main.x64.bc
+$CXX_PTX nvptx_main.cpp -ffreestanding -c -o nvptx_main.ptx.bc
+
+$CLANG nvptx_loader.cpp memory_host.x64.bc memory_cuda.x64.bc nvptx_main.x64.bc --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -lcudart -o nvptx_loader.exe && ./nvptx_loader.exe hello.o
 
 fi
 
@@ -183,9 +186,6 @@ $CXX_X64 -I$HSAINC hostcall.cpp -c -o hostcall.x64.bc
 $CXX_X64 -I$HSAINC amdgcn_main.cpp -c -o amdgcn_main.x64.bc
 $CXX_GCN amdgcn_main.cpp -c -o amdgcn_main.gcn.bc
 
-
-$CXX_X64 nvptx_main.cpp -c -o nvptx_main.x64.bc
-$CXX_PTX nvptx_main.cpp -ffreestanding -c -o nvptx_main.ptx.bc
 
 # Build the device loader that assumes the device library is linked into the application
 # TODO: Embed it directly in the loader by patching call to main, as the loader doesn't do it

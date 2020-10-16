@@ -2,6 +2,7 @@
 #include "detail/common.hpp"
 #include "detail/platform.hpp"
 #include "hostcall.hpp"
+#include "hostcall_hsa.hpp"
 
 #if defined(__x86_64__)
 

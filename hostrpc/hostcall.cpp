@@ -1,5 +1,6 @@
 #include "hostcall.hpp"
 #include "base_types.hpp"
+#include "hostcall_hsa.hpp"
 #include "queue_to_index.hpp"
 #include "x64_host_gcn_client.hpp"
 

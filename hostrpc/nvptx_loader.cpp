@@ -1,3 +1,5 @@
+#include "x64_nvptx_pair.hpp"
+
 #include "raiifile.hpp"
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -5,7 +7,8 @@
 #include <memory>
 #include <stdio.h>
 
-#include "x64_host_ptx_client.hpp"
+#include "hostcall.hpp"
+#include "x64_nvptx_pair.hpp"
 
 #define DEBUGP(prefix, ...)             \
   {                                     \
@@ -75,124 +78,11 @@ struct error_tracker
   explicit operator bool() const { return Err == CUDA_SUCCESS; }
 };
 
-// Implementation api. This construct is a singleton.
-namespace hostcall_ops
-{
-#if defined(__x86_64__)
-void operate(hostrpc::page_t *page) { fprintf(stderr, "Hit operate!\n"); }
-void clear(hostrpc::page_t *page) { fprintf(stderr, "Hit clear!\n"); };
-#endif
-#if defined(__AMDGCN__) || defined(__CUDACC__)
-// from openmp_hostcall (amdgcn)
-void pass_arguments(hostrpc::page_t *page, uint64_t data[8])
-{
-  hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
-  for (unsigned i = 0; i < 8; i++)
-    {
-      line->element[i] = d[i];
-    }
-}
-void use_result(hostrpc::page_t *page, uint64_t data[8])
-{
-  hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
-  for (unsigned i = 0; i < 8; i++)
-    {
-      d[i] = line->element[i];
-    }
-}
-
-#endif
-}  // namespace hostcall_ops
-
-namespace hostrpc
-{
-namespace x64_host_nvptx_client
-{
-struct fill
-{
-  static void call(hostrpc::page_t *page, void *dv)
-  {
-#if defined(__AMDGCN__)
-    uint64_t *d = static_cast<uint64_t *>(dv);
-    hostcall_ops::pass_arguments(page, d);
-#else
-    (void)page;
-    (void)dv;
-#endif
-  };
-};
-
-struct use
-{
-  static void call(hostrpc::page_t *page, void *dv)
-  {
-#if defined(__AMDGCN__)
-    uint64_t *d = static_cast<uint64_t *>(dv);
-    hostcall_ops::use_result(page, d);
-#else
-    (void)page;
-    (void)dv;
-#endif
-  };
-};
-
-struct operate
-{
-  static void call(hostrpc::page_t *page, void *)
-  {
-#if defined(__x86_64__)
-    hostcall_ops::operate(page);
-#else
-    (void)page;
-#endif
-  }
-};
-
-struct clear
-{
-  static void call(hostrpc::page_t *page, void *)
-  {
-#if defined(__x86_64__)
-    hostcall_ops::clear(page);
-#else
-    (void)page;
-#endif
-  }
-};
-}  // namespace x64_host_nvptx_client
-
-using x64_nvptx_pair = hostrpc::x64_ptx_pair_T<
-    hostrpc::size_runtime, x64_host_nvptx_client::fill,
-    x64_host_nvptx_client::use, x64_host_nvptx_client::operate,
-    x64_host_nvptx_client::clear, counters::client_nop, counters::server_nop>;
-
-}  // namespace hostrpc
-
 #if defined(__x86_64__)
 hostrpc::x64_nvptx_pair x64_nvptx_state(128);
 #else
-hostrpc::x64_nvptx_pair *x64_nvptx_state;
-#endif
+hostrpc::x64_nvptx_pair x64_nvptx_state;
 
-#if 0  // Not yet implemented
-class hostcall_impl;
-class hostcall
-{
- public:
-  hostcall();
-  ~hostcall();
-  bool valid() { return state_.get() != nullptr; }
-
-  int enable_executable();
-  int enable_queue();
-  int spawn_worker();
-
-  hostcall(const hostcall &) = delete;
-  hostcall(hostcall &&) = delete;
-
- private:
-  std::unique_ptr<hostcall_impl> state_;
-};
 #endif
 
 int init(void *image)

@@ -70,6 +70,8 @@
   #endif
 #endif
 
+#define HOSTRPC_GPU (HOSTRPC_AMDGCN | HOSTRPC_NVPTX)
+
 #if (HOSTRPC_AMDGCN + HOSTRPC_NVPTX + HOSTRPC_HOST) != 1
 #error "Platform detection failed"
 #endif

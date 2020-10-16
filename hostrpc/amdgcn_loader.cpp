@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include "hostcall.hpp"
+#include "hostcall_hsa.hpp"
 #include "raiifile.hpp"
 
 namespace
