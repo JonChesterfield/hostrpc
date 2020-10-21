@@ -2,8 +2,9 @@
 #include "hostcall.hpp"
 #include <stddef.h>
 
-static const uint64_t no_op =
+__attribute__((unused)) static const uint64_t no_op =
     UINT64_MAX;  // Warning: Update hostcall.cpp if changing this
+
 static const uint64_t syscall_op = 42;
 
 static const uint64_t allocate_op = 21;

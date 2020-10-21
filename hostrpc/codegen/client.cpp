@@ -1,5 +1,7 @@
 #include "../detail/client_impl.hpp"
 
+#include "../allocator.hpp"
+
 using SZ = hostrpc::size_compiletime<128>;
 
 struct copy_functor_nop
