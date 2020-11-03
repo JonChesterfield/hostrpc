@@ -2,7 +2,8 @@
 
 int main()
 {
-  hostrpc::allocator::hsa_ex instance;
+  uint64_t handle = 42;
+  hostrpc::allocator::hsa_ex instance(handle);
 
   auto a = instance.allocate(4, 4);
   auto l = a.local();

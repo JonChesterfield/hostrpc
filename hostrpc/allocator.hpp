@@ -16,7 +16,13 @@ namespace hostrpc
 {
 namespace allocator
 {
-template <typename Derived>
+typedef enum
+{
+  success = 0,
+  failure = 1,
+} status;
+
+template <typename Base>
 struct interface
 {
   struct local_t
@@ -31,34 +37,110 @@ struct interface
     void *ptr;
   };
 
+  struct raw;
+  raw allocate(size_t A, size_t N)
+  {
+    return static_cast<Base *>(this)->allocate(A, N);
+  }
+
   struct raw
   {
-    raw() : ptr(0) {}
+    raw(void *p) : ptr(p) {}
+    int destroy() { return Base::destroy(*this); }
+    local_t local() { return Base::local(*this); }
+    remote_t remote() { return Base::remote(*this); }
     void *ptr;
-    int destroy() { return Derived::destroy_impl(*this); }
-    local_t local() { return Derived::local_impl(*this); }
-    remote_t remote() { return Derived::remote_impl(*this); }
   };
 
-  raw allocate(size_t A, size_t N) { return derived().allocate_impl(A, N); }
-
-  Derived &derived() { return *static_cast<Derived *>(this); }
+ private:
+  // The raw/local/remote conversion is a no-op for most allocators
+  static local_t local(raw x) { return x.ptr; }
+  static remote_t remote(raw x) { return x.ptr; }
 };
 
 struct hsa_ex : public interface<hsa_ex>
 {
-  raw allocate_impl(size_t, size_t) { return {}; }
+  uint64_t hsa_region_t_handle;
+  hsa_ex(uint64_t hsa_region_t_handle)
+      : hsa_region_t_handle(hsa_region_t_handle)
+  {
+  }
 
-  static int destroy_impl(raw) { return 0; }
-  static local_t local_impl(raw x) { return x.ptr; }
-  static remote_t remote_impl(raw x) { return x.ptr; }
+  raw allocate(size_t A, size_t N)
+  {
+    assert(A >= 64);
+    assert(A <= 4096);  // todo
+    (void)A;
+    hsa_region_t region{.handle = hsa_region_t_handle};
+
+    size_t bytes = 4 * ((N + 3) / 4);  // fill uses a multiple of four
+
+    void *memory;
+    if (HSA_STATUS_SUCCESS == hsa_memory_allocate(region, bytes, &memory))
+      {
+        // probably want memset for fine grain, may want it for gfx9
+        // memset(memory, 0, bytes);
+        // warning: This is likely to be relied on by bitmap
+        hsa_status_t r = hsa_amd_memory_fill(memory, 0, bytes / 4);
+        if (HSA_STATUS_SUCCESS == r)
+          {
+            return {memory};
+          }
+      }
+
+    return {nullptr};
+  }
+
+  static status destroy(raw x)
+  {
+    return (hsa_memory_free(x.ptr) == HSA_STATUS_SUCCESS) ? success : failure;
+  }
 };
 
-typedef enum
+struct host_libc_ex : public interface<host_libc_ex>
 {
-  success = 0,
-  failure = 1,
-} status;
+  host_libc_ex() {}
+  raw allocate(size_t A, size_t N) { return {aligned_alloc(A, N)}; }
+  status deallocate_impl(raw x)
+  {
+    free(x.ptr);
+    return success;
+  }
+};
+
+struct cuda_shared_ex : public interface<cuda_shared_ex>
+{
+  cuda_shared_ex() {}
+  raw allocate(size_t A, size_t N)
+  {
+    assert(A != 0);
+    assert((A & (A - 1)) == 0);  // align is power two
+
+    size_t adj = N + A - 1;
+    return {hostrpc::cuda::allocate_shared(adj)};
+  }
+  status deallocate_impl(raw x)
+  {
+    return hostrpc::cuda::deallocate_shared(x.ptr) == 0 ? success : failure;
+  }
+
+  static local_t local(raw x)
+  {
+    // needs to know the alignment
+    return x.ptr;
+  }
+  static remote_t remote(raw x)
+  {
+    if (x.ptr == nullptr)
+      {
+        return {0};
+      }
+    void *dev = hostrpc::cuda::device_ptr_from_host_ptr(x.ptr);
+    // align it
+    (void)dev;
+    return {nullptr};
+  }
+};
 
 struct res_t
 {
@@ -147,7 +229,6 @@ struct hsa : public scalar<hsa>
   {
     assert(A >= 64);
     assert(A <= 4096);  // todo
-
     (void)A;
     hsa_region_t region{.handle = hsa_region_t_handle};
 
@@ -212,7 +293,8 @@ status deallocate(void *ptr)
 }
 }  // namespace cuda
 
-struct cuda_shared : scalar<cuda_shared>
+#if 0
+  struct cuda_shared : scalar<cuda_shared>
 {
   res_t allocate_impl(size_t A, size_t N)
   {
@@ -252,6 +334,7 @@ int use()
   (void)r;
   return 0;
 }
+#endif
 
 }  // namespace allocator
 

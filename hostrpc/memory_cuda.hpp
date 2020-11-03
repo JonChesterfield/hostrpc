@@ -13,10 +13,10 @@ namespace cuda
 // docs claim 'free' can return errors from unrelated launches (??), so I guess
 // that should be propagated up
 void *allocate_gpu(size_t size);
-void deallocate_gpu(void *);
+int deallocate_gpu(void *);
 
 void *allocate_shared(size_t size);
-void deallocate_shared(void *);
+int deallocate_shared(void *);
 
 void *device_ptr_from_host_ptr(void *);
 

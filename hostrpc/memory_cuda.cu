@@ -33,10 +33,10 @@ void *allocate_gpu(size_t size)
   return ptr;
 }
 
-void deallocate_gpu(void *ptr)
+int deallocate_gpu(void *ptr)
 {
   cudaError_t rc = cudaFree(ptr);
-  (void)rc;
+  return rc == cudaSuccess ? 0 : 1;
 }
 
 void *allocate_shared(size_t size)
@@ -59,10 +59,10 @@ void *allocate_shared(size_t size)
   return ptr;
 }
 
-void deallocate_shared(void *ptr)
+int deallocate_shared(void *ptr)
 {
   cudaError_t rc = cudaFreeHost(ptr);
-  (void)rc;
+  return rc == cudaSuccess ? 0 : 1;
 }
 
 void *device_ptr_from_host_ptr(void *host)
