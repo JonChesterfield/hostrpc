@@ -16,6 +16,44 @@ namespace hostrpc
 {
 namespace allocator
 {
+template <typename Derived>
+struct interface
+{
+  struct local_t
+  {
+    local_t(void *p) : ptr(p) {}
+    void *ptr;
+  };
+
+  struct remote_t
+  {
+    remote_t(void *p) : ptr(p) {}
+    void *ptr;
+  };
+
+  struct raw
+  {
+    raw() : ptr(0) {}
+    void *ptr;
+    int destroy() { return Derived::destroy_impl(*this); }
+    local_t local() { return Derived::local_impl(*this); }
+    remote_t remote() { return Derived::remote_impl(*this); }
+  };
+
+  raw allocate(size_t A, size_t N) { return derived().allocate_impl(A, N); }
+
+  Derived &derived() { return *static_cast<Derived *>(this); }
+};
+
+struct hsa_ex : public interface<hsa_ex>
+{
+  raw allocate_impl(size_t, size_t) { return {}; }
+
+  static int destroy_impl(raw) { return 0; }
+  static local_t local_impl(raw x) { return x.ptr; }
+  static remote_t remote_impl(raw x) { return x.ptr; }
+};
+
 typedef enum
 {
   success = 0,
