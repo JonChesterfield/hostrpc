@@ -1,16 +1,47 @@
 #include "allocator.hpp"
 
-int main()
+void instantiate_hsa()
 {
   uint64_t handle = 42;
-  hostrpc::allocator::hsa_ex instance(handle);
+  hostrpc::allocator::hsa<64> instance(handle);
 
-  auto a = instance.allocate(4, 4);
-  auto l = a.local();
-  auto r = a.remote();
+  auto a = instance.allocate(4);
+  (void)a.local();
+  (void)a.remote();
+  (void)a.destroy();
+}
 
-  int rc = a.destroy();
-  (void)rc;
-  (void)l;
-  (void)r;
+void instantiate_libc()
+{
+  hostrpc::allocator::host_libc<64> instance;
+  auto a = instance.allocate(8);
+  (void)a.local();
+  (void)a.remote();
+  (void)a.destroy();
+}
+
+void instantiate_cuda_shared()
+{
+  hostrpc::allocator::cuda_shared<128> instance;
+  auto a = instance.allocate(16);
+  (void)a.local();
+  (void)a.remote();
+  (void)a.destroy();
+}
+
+void instantiate_cuda_gpu()
+{
+  hostrpc::allocator::cuda_gpu<256> instance;
+  auto a = instance.allocate(32);
+  (void)a.local();
+  (void)a.remote();
+  (void)a.destroy();
+}
+
+int main()
+{
+  instantiate_hsa();
+  instantiate_libc();
+  instantiate_cuda_shared();
+  instantiate_cuda_gpu();
 }
