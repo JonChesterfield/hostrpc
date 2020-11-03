@@ -1,4 +1,6 @@
-#include "allocator.hpp"
+#include "allocator_cuda.hpp"
+#include "allocator_hsa.hpp"
+#include "allocator_libc.hpp"
 
 void instantiate_hsa()
 {
