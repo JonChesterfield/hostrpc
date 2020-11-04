@@ -217,7 +217,7 @@ struct client_impl : public SZ, public Counter
     Word i = inbox.load_word(size(), w);
     Word o = staging.load_word(size(), w);
     Word a = active.load_word(size(), w);
-    __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
+    platform::fence_acquire();
 
     // inbox == outbox == 0 => available for use
     Word available = ~i & ~o & ~a;
@@ -262,7 +262,7 @@ struct client_impl : public SZ, public Counter
     const uint32_t size = this->size();
     Word i = inbox.load_word(size, element);
     Word o = staging.load_word(size, element);
-    __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
+    platform::fence_acquire();
 
     // Called with a lock. The corresponding slot can be:
     //  inbox outbox    state  action outbox'
@@ -282,7 +282,7 @@ struct client_impl : public SZ, public Counter
 
     if (garbage_todo)
       {
-        __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+        platform::fence_release();
         uint64_t cas_fail_count = 0;
         uint64_t cas_help_count = 0;
         platform::critical<uint32_t>([&]() {
@@ -318,7 +318,7 @@ struct client_impl : public SZ, public Counter
 
     // wave_publish work
     {
-      __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+      platform::fence_release();
       uint64_t cas_fail_count = 0;
       uint64_t cas_help_count = 0;
       platform::critical<uint32_t>([&]() {
@@ -369,7 +369,7 @@ struct client_impl : public SZ, public Counter
             platform::sleep();
           }
 
-        __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
+        platform::fence_acquire();
 
         step(__LINE__, fill_application_state, use_application_state);
         Copy::pull_to_client_from_server(&local_buffer[slot],
@@ -394,7 +394,7 @@ struct client_impl : public SZ, public Counter
         // leaving the visible one. In that case the update may be transfered
         // for free, or it may never become visible in which case the server
         // won't realise the slot is no longer in use
-        __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+        platform::fence_release();
         uint64_t cas_fail_count = 0;
         uint64_t cas_help_count = 0;
         platform::critical<uint32_t>([&]() {

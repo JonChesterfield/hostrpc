@@ -174,7 +174,7 @@ inline void enqueue_dispatch(const unsigned char *src)
       __opencl_atomic_store((header_type *)packet, header, __ATOMIC_RELEASE,
                             __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
 
-      __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+      platform::fence_release();
 
       // storing is excitingly architecture specific. Implementing for gfx >=
       // 900 which can write directly to hardware_doorbell_ptr

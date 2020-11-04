@@ -112,7 +112,7 @@ struct server_impl : public SZ, public Counter
     Word i = inbox.load_word(size, w);
     Word o = staging.load_word(size, w);
     Word a = active.load_word(size, w);
-    __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
+    platform::fence_acquire();
 
     Word work = i & ~o;
     Word garbage = ~i & o;
@@ -225,7 +225,7 @@ struct server_impl : public SZ, public Counter
 
     Word i = inbox.load_word(size, element);
     Word o = staging.load_word(size, element);
-    __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
+    platform::fence_acquire();
 
     // Called with a lock. The corresponding slot can be:
     //  inbox outbox    state  action outbox'
@@ -257,7 +257,7 @@ struct server_impl : public SZ, public Counter
         Copy::push_from_server_to_client(&remote_buffer[slot],
                                          &local_buffer[slot]);
 
-        __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+        platform::fence_release();
         uint64_t cas_fail_count = 0;
         uint64_t cas_help_count = 0;
         platform::critical<uint32_t>([&]() {
@@ -299,7 +299,7 @@ struct server_impl : public SZ, public Counter
 
     // publish result
     {
-      __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+      platform::fence_release();
       uint64_t cas_fail_count = 0;
       uint64_t cas_help_count = 0;
       platform::critical<uint32_t>([&]() {

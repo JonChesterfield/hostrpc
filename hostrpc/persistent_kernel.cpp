@@ -387,7 +387,7 @@ TEST_CASE("persistent_kernel")
     const uint32_t init_control = 32;
     __opencl_atomic_store(example.control, init_control, __ATOMIC_RELEASE,
                           __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-    __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+    platform::fence_release();
 
     std::vector<launch_t<kernel_args>> l;
     // works on r > 1, can hit interesting behaviour for large r:
@@ -442,7 +442,7 @@ TEST_CASE("persistent_kernel")
     uint32_t ld = init_control + 1;
     while (ld != 0)
       {
-        __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
+        platform::fence_acquire();
 
         uint32_t nld =
             __opencl_atomic_load(example.control, __ATOMIC_ACQUIRE,

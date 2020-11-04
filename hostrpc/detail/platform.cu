@@ -65,4 +65,10 @@ DEVICE uint32_t broadcast_master(uint32_t x)
   return __shfl(x, master_id);
 #endif
 }
+
+
+// TODO: Check the differences between threadfence, threadfence_block, threadfence_system
+DEVICE void fence_acquire() { __threadfence_system(); }
+DEVICE void fence_release() { __threadfence_system(); }
+
 }  // namespace platform

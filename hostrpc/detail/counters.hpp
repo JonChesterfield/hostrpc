@@ -63,7 +63,7 @@ struct client_impl : public B
   // defined in base_types
   client_counters get()
   {
-    __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+    platform::fence_release();
     client_counters res;
     for (unsigned i = 0; i < client_counters::cc_total_count; i++)
       {
@@ -128,7 +128,7 @@ struct server_impl : public B
 
   server_counters get()
   {
-    __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+    platform::fence_release();
     server_counters res;
     for (unsigned i = 0; i < server_counters::sc_total_count; i++)
       {
