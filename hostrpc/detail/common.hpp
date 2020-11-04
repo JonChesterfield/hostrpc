@@ -383,15 +383,14 @@ struct slot_bitmap
       {
         // load and atomic cas have similar cost across pcie, may be faster to
         // use a (usually wrong) initial guess instead of a load
-        Word current = __opencl_atomic_load(
-            addr, __ATOMIC_RELAXED, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+        Word current = __opencl_atomic_load(addr, __ATOMIC_RELAXED, scope);
         while (1)
           {
             Word replace = current & mask;
 
             bool r = __opencl_atomic_compare_exchange_weak(
                 addr, &current, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED,
-                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+                scope);
 
             if (r)
               {
@@ -410,15 +409,14 @@ struct slot_bitmap
       }
     else
       {
-        Word current = __opencl_atomic_load(
-            addr, __ATOMIC_RELAXED, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+        Word current = __opencl_atomic_load(addr, __ATOMIC_RELAXED, scope);
         while (1)
           {
             Word replace = current | mask;
 
             bool r = __opencl_atomic_compare_exchange_weak(
                 addr, &current, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED,
-                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+                scope);
             if (r)
               {
                 return current;
