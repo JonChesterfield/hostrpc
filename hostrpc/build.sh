@@ -28,6 +28,18 @@ if ((!$have_amdgcn)); then
     GFX=gfx906
 fi
 
+
+if (($have_nvptx)); then
+    # Clang looks for this file, but cuda stopped shipping it
+    if [ -e /usr/local/cuda/version.txt ]; then
+        VER=`cat /usr/local/cuda/version.txt`
+        echo "Found version: $VER"
+    else
+        VER=`/usr/local/cuda/bin/nvcc  --version | awk '/Cuda compilation/ {print $6}'`
+        echo "CUDA Version $VER" > /usr/local/cuda/version.txt
+    fi
+fi
+
 # A poorly named amd-stg-open, does not hang
 # RDIR=$HOME/rocm-3.5-llvm-install
 
@@ -91,7 +103,7 @@ XCUDA="-x cuda --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda"
 XHIP="-x hip --cuda-gpu-arch=gfx906 -nogpulib -nogpuinc"
 
 
-CXX_CUDA="$CLANG -O2 $COMMONFLAGS $XCUDA -I/usr/local/cuda/include"
+CXX_CUDA="$CLANG -O2 $COMMONFLAGS $XCUDA -I/usr/local/cuda/include -nocudalib"
 
 CXX_X64_LD="$CXX"
 CXX_GCN_LD="$CXX $GCNFLAGS"
@@ -151,9 +163,9 @@ $CXX_GCN_LD persistent_kernel.gcn.bc -o persistent_kernel.gcn.so
 $CXX_X64 -I$HSAINC persistent_kernel.cpp -c -o persistent_kernel.x64.bc
 
 
-# TODO: Sort out script to ignore this when there's no ptx device
 if (($have_nvptx)); then
- $CXX_CUDA -std=c++14 --cuda-device-only detail/platform.cu -c -emit-llvm -o detail/platform.ptx.bc
+ $CXX_CUDA -std=c++14 --cuda-device-only $PTX_VER detail/platform.cu -c -emit-llvm -o detail/platform.ptx.bc
+
  $CXX_CUDA -std=c++14 --cuda-host-only memory_cuda.cu  -c -emit-llvm -o memory_cuda.x64.bc
  $CXX_PTX x64_ptx_stress.cpp -c -o x64_ptx_stress.ptx.code.bc
  $CXX_X64 -I$HSAINC x64_ptx_stress.cpp -c -o x64_ptx_stress.x64.bc
@@ -169,7 +181,7 @@ if (($have_nvptx)); then
     $CLANG $XCUDA hello.cu -o hello -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcudart_static -ldl -lrt -pthread && ./hello
 
 # hello.o is an executable elf, may be able to load it from cuda
-$CLANG $XCUDA -std=c++14 hello.cu --cuda-device-only -c -o hello.o  -I/usr/local/cuda/include
+$CLANG $XCUDA -std=c++14 hello.cu --cuda-device-only $PTX_VER -c -o hello.o  -I/usr/local/cuda/include
 
 $CXX_X64 nvptx_main.cpp -c -o nvptx_main.x64.bc
 $CXX_PTX nvptx_main.cpp -ffreestanding -c -o nvptx_main.ptx.bc

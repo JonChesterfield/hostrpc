@@ -31,10 +31,7 @@ struct host_client_t
   static_assert(AllocInboxOutbox::align == 64, "");
 
   using storage_type =
-      raw_store_t<typename AllocBuffer::raw, typename AllocInboxOutbox::raw,
-                  typename AllocInboxOutbox::raw, typename AllocLocal::raw,
-                  typename AllocLocal::raw, typename AllocRemote::raw,
-                  typename AllocRemote::raw>;
+      store_impl<AllocBuffer, AllocInboxOutbox, AllocLocal, AllocRemote>;
 
   storage_type host_client_t(AllocBuffer alloc_buffer,
                              AllocInboxOutbox alloc_inbox_outbox,

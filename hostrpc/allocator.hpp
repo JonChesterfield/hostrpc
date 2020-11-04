@@ -4,9 +4,6 @@
 #include "detail/platform_detect.h"
 
 #include <stddef.h>
-#if (HOSTRPC_HOST)
-#include <tuple>
-#endif
 
 namespace hostrpc
 {
@@ -59,38 +56,60 @@ struct interface
 };
 
 #if (HOSTRPC_HOST)
-template <typename... Args>
-struct raw_store_t
+
+template <typename AllocBuffer, typename AllocInboxOutbox, typename AllocLocal,
+          typename AllocRemote>
+struct store_impl
 {
-  raw_store_t(Args... args) : s(std::forward<Args>(args)...){};
-
-  status destroy() { return destroy_impl(s); }
-
  private:
-  std::tuple<Args...> s;
+  typename AllocBuffer::raw buffer;
+  typename AllocInboxOutbox::raw recv;
+  typename AllocInboxOutbox::raw send;
+  typename AllocLocal::raw local_lock;
+  typename AllocLocal::raw local_staging;
+  typename AllocRemote::raw remote_lock;
+  typename AllocRemote::raw remote_staging;
 
-  template <size_t I = 0, typename... P>
-  typename std::enable_if<I == sizeof...(P), status>::type destroy_impl(
-      std::tuple<Args...> &)
+ public:
+  store_impl(typename AllocBuffer::raw buffer,
+             typename AllocInboxOutbox::raw recv,
+             typename AllocInboxOutbox::raw send,
+             typename AllocLocal::raw local_lock,
+             typename AllocLocal::raw local_staging,
+             typename AllocRemote::raw remote_lock,
+             typename AllocRemote::raw remote_staging)
+      : buffer(buffer),
+        recv(recv),
+        send(send),
+        local_lock(local_lock),
+        local_staging(local_staging),
+        remote_lock(remote_lock),
+        remote_staging(remote_staging)
   {
-    return success;
   }
 
-  template <size_t I = 0, typename... P>
-      typename std::enable_if <
-      I<sizeof...(P), status>::type destroy_impl(std::tuple<Args...> &args)
+  status destroy()
   {
-    status car = std::get<I>(args).destroy();
-    status cdr = destroy_impl<I + 1>(args);
-    return (car == success && cdr == success) ? success : failure;
+    status rc = success;
+    rc = destroy_help(buffer, rc);
+    rc = destroy_help(recv, rc);
+    rc = destroy_help(send, rc);
+    rc = destroy_help(local_lock, rc);
+    rc = destroy_help(local_staging, rc);
+    rc = destroy_help(remote_lock, rc);
+    rc = destroy_help(remote_staging, rc);
+    return rc;
+  }
+
+ private:
+  template <typename T>
+  status destroy_help(T raw, status acc)
+  {
+    status rc = raw.destroy();
+    return (acc == success && rc == success) ? success : failure;
   }
 };
 
-template <typename... Args>
-raw_store_t<Args...> raw_store(Args... args)
-{
-  return raw_store_t<Args...>(std::forward<Args>(args)...);
-}
 #endif
 }  // namespace allocator
 }  // namespace hostrpc
