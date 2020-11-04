@@ -141,9 +141,15 @@ BODGE_HIP __attribute__((always_inline)) inline uint32_t broadcast_master(
   return __builtin_amdgcn_readfirstlane(x);
 }
 
-BODGE_HIP inline void fence_acquire() { __c11_atomic_thread_fence(__ATOMIC_ACQUIRE); }
-BODGE_HIP inline void fence_release() { __c11_atomic_thread_fence(__ATOMIC_RELEASE); }
-  
+BODGE_HIP inline void fence_acquire()
+{
+  __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
+}
+BODGE_HIP inline void fence_release()
+{
+  __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+}
+
 BODGE_HIP inline uint32_t client_start_slot()
 {
   // Ideally would return something < size
