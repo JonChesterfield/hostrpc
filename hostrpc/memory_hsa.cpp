@@ -33,7 +33,10 @@ void *allocate(uint64_t hsa_region_t_handle, size_t align, size_t bytes)
   return nullptr;
 }
 
-void deallocate(void *d) { hsa_memory_free(d); }
+int deallocate(void *d)
+{
+  return (hsa_memory_free(d) == HSA_STATUS_SUCCESS) ? 0 : 1;
+}
 }  // namespace hsa_amdgpu
 
 }  // namespace hostrpc

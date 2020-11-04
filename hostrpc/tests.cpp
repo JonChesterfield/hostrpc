@@ -9,6 +9,8 @@
 #include <thread>
 #include <unistd.h>
 
+#include "memory_host.hpp"
+
 struct x64_alloc_deleter
 {
   struct D

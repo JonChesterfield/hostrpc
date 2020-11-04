@@ -5,6 +5,7 @@
 #include "detail/common.hpp"
 #include "detail/server_impl.hpp"
 #include "memory.hpp"
+#include "memory_host.hpp"
 
 namespace hostrpc
 {

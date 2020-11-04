@@ -5,8 +5,6 @@
 #include <stdint.h>
 
 #if defined(__x86_64__)
-#include "memory_host.hpp"
-#include "memory_hsa.hpp"
 
 #include <new>
 

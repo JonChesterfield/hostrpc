@@ -4,6 +4,8 @@
 // functions that are useful for multiple tests but not necessarily worth
 // including in the library
 #include "memory.hpp"
+#include "memory_host.hpp"
+#include "memory_hsa.hpp"
 
 namespace hostrpc
 {
