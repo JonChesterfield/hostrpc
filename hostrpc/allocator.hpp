@@ -1,8 +1,12 @@
 #ifndef ALLOCATOR_HPP_INCLUDED
 #define ALLOCATOR_HPP_INCLUDED
 
+#include "detail/platform_detect.h"
+
 #include <stddef.h>
+#if (HOSTRPC_HOST)
 #include <tuple>
+#endif
 
 namespace hostrpc
 {
@@ -23,6 +27,7 @@ struct interface
   // some data is cache line aligned. hsa page aligns by default.
   _Static_assert((Align >= 64) && (Align <= 4096), "Current assumption");
 
+  static const constexpr size_t align = Align;
   struct local_t
   {
     local_t(void *p) : ptr(p) {}
@@ -36,10 +41,7 @@ struct interface
   };
 
   struct raw;
-  raw allocate(size_t A, size_t N)
-  {
-    return static_cast<Base *>(this)->allocate(A, N);
-  }
+  raw allocate(size_t N) { return static_cast<Base *>(this)->allocate(N); }
 
   struct raw
   {
@@ -56,6 +58,7 @@ struct interface
   static remote_t remote(raw x) { return x.ptr; }
 };
 
+#if (HOSTRPC_HOST)
 template <typename... Args>
 struct raw_store_t
 {
@@ -88,7 +91,7 @@ raw_store_t<Args...> raw_store(Args... args)
 {
   return raw_store_t<Args...>(std::forward<Args>(args)...);
 }
-
+#endif
 }  // namespace allocator
 }  // namespace hostrpc
 
