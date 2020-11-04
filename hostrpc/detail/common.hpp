@@ -768,13 +768,13 @@ void staged_release_slot(uint32_t size, uint32_t i,
 
 inline void step(_Atomic(uint64_t) * steps_left)
 {
-  if (__opencl_atomic_load(steps_left, __ATOMIC_SEQ_CST,
+  if (__opencl_atomic_load(steps_left, __ATOMIC_ACQUIRE,
                            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES) == UINT64_MAX)
     {
       // Disable stepping
       return;
     }
-  while (__opencl_atomic_load(steps_left, __ATOMIC_SEQ_CST,
+  while (__opencl_atomic_load(steps_left, __ATOMIC_ACQUIRE,
                               __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES) == 0)
     {
       // Don't burn all the cpu waiting for a step
