@@ -2,6 +2,7 @@
 #define ALLOCATOR_HPP_INCLUDED
 
 #include <stddef.h>
+#include <tuple>
 
 namespace hostrpc
 {
@@ -54,6 +55,39 @@ struct interface
   static local_t local(raw x) { return x.ptr; }
   static remote_t remote(raw x) { return x.ptr; }
 };
+
+template <typename... Args>
+struct raw_store_t
+{
+  raw_store_t(Args... args) : s(std::forward<Args>(args)...){};
+
+  status destroy() { return destroy_impl(s); }
+
+ private:
+  std::tuple<Args...> s;
+
+  template <size_t I = 0, typename... P>
+  typename std::enable_if<I == sizeof...(P), status>::type destroy_impl(
+      std::tuple<Args...> &)
+  {
+    return success;
+  }
+
+  template <size_t I = 0, typename... P>
+      typename std::enable_if <
+      I<sizeof...(P), status>::type destroy_impl(std::tuple<Args...> &args)
+  {
+    status car = std::get<I>(args).destroy();
+    status cdr = destroy_impl<I + 1>(args);
+    return (car == success && cdr == success) ? success : failure;
+  }
+};
+
+template <typename... Args>
+raw_store_t<Args...> raw_store(Args... args)
+{
+  return raw_store_t<Args...>(std::forward<Args>(args)...);
+}
 
 }  // namespace allocator
 }  // namespace hostrpc

@@ -1,6 +1,7 @@
 #ifndef X64_HOST_X64_CLIENT_HPP_INCLUDED
 #define X64_HOST_X64_CLIENT_HPP_INCLUDED
 
+#include "allocator_libc.hpp"
 #include "detail/client_impl.hpp"
 #include "detail/common.hpp"
 #include "detail/server_impl.hpp"
@@ -39,6 +40,9 @@ struct x64_x64_pair_T
   {
     size_t N = sz.N();
     size_t buffer_size = sizeof(page_t) * N;
+
+    hostrpc::allocator::host_libc<alignof(page_t)> alloc_page;
+    hostrpc::allocator::host_libc<64> alloc_cacheline;
 
     hostrpc::page_t *client_buffer = hostrpc::careful_array_cast<page_t>(
         x64_native::allocate(alignof(page_t), buffer_size), N);

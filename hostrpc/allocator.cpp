@@ -46,4 +46,16 @@ int main()
   instantiate_libc();
   instantiate_cuda_shared();
   instantiate_cuda_gpu();
+
+  auto s = hostrpc::allocator::cuda_shared<128>{}.allocate(16);
+  auto g = hostrpc::allocator::cuda_gpu<256>{}.allocate(48);
+
+  hostrpc::allocator::raw_store().destroy();
+  raw_store(s);
+  raw_store(s, s);
+  raw_store(s, s, g, s);
+
+  auto st = raw_store(s, g);
+  auto r = st.destroy();
+  (void)r;
 }
