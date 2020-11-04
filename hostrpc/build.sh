@@ -85,7 +85,8 @@ COMMONFLAGS="-Wall -Wextra -emit-llvm " # -DNDEBUG -Wno-type-limits "
 X64FLAGS=" -O2 -pthread -g"
 GCNFLAGS=" -O2 -ffreestanding -fno-exceptions $AMDGPU"
 # atomic alignment objection seems reasonable - may want 32 wide atomics on nvptx
-NVPTXFLAGS="-g -O2 -ffreestanding -fno-exceptions -Wno-atomic-alignment -emit-llvm $NVGPU "
+# clang/ptx back end is crashing in llvm::DwarfDebug::constructCallSiteEntryDIEs
+NVPTXFLAGS=" -O2 -ffreestanding -fno-exceptions -Wno-atomic-alignment -emit-llvm $NVGPU "
 
 CXX_X64="$CLANG -std=c++14 $COMMONFLAGS $X64FLAGS"
 CXX_GCN="$CLANG -std=c++14 $COMMONFLAGS $GCNFLAGS"
