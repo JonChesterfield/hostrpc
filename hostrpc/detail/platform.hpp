@@ -8,47 +8,41 @@
 
 namespace platform
 {
-void sleep_briefly(void);
-}
-
-#if HOSTRPC_HOST
-#include <chrono>
-#include <unistd.h>
-
-#include <cassert>
-#include <cstdio>
+// Functions implemented for each platform
+void sleep_briefly();
+void sleep();
+bool is_master_lane();
+uint32_t get_lane_id();
+uint32_t broadcast_master(uint32_t);
+uint32_t reduction_sum(uint32_t);
+uint32_t client_start_slot();
+void fence_acquire();
+void fence_release();
+}  // namespace platform
 
 namespace platform
 {
-// local toolchain thinks usleep might throw. That induces a bunch of exception
-// control flow where there otherwise wouldn't be any. Will fix by calling into
-// std::chrono, bodge for now
-static __attribute__((noinline)) void sleep_noexcept(unsigned int t) noexcept
+// related functions derived from the above
+uint32_t reduction_sum(uint32_t);
+uint64_t broadcast_master(uint64_t);
+
+template <typename U, typename F>
+U critical(F f)
 {
-  usleep(t);
+  U res = {};
+  if (is_master_lane())
+    {
+      res = f();
+    }
+  res = broadcast_master(res);
+  return res;
 }
 
-inline void sleep_briefly(void)
-{
-  // <thread> conflicts with <stdatomic.h>
-  // stdatomic is no longer in use so may be able to use <thread> again
-  // std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  sleep_noexcept(10);
-}
-inline void sleep(void) { sleep_noexcept(1000); }
-
-inline bool is_master_lane(void) { return true; }
-inline uint32_t get_lane_id(void) { return 0; }
-inline uint32_t broadcast_master(uint32_t x) { return x; }
-inline uint32_t reduction_sum(uint32_t x) { return x; }
-inline uint32_t client_start_slot() { return 0; }
-inline void fence_acquire() { __c11_atomic_thread_fence(__ATOMIC_ACQUIRE); }
-inline void fence_release() { __c11_atomic_thread_fence(__ATOMIC_RELEASE); }
 }  // namespace platform
-#endif
 
+// Jury rig some pieces of libc for freestanding
+// Assert is based on the implementation in musl
 #if (HOSTRPC_AMDGCN || HOSTRPC_NVPTX)
-// Enough of assert.h, derived from musl
 #ifdef NDEBUG
 #define assert(x) (void)0
 #else
@@ -60,7 +54,9 @@ inline void fence_release() { __c11_atomic_thread_fence(__ATOMIC_RELEASE); }
                   0)))
 #endif
 
+#ifdef static_assert
 #undef static_assert
+#endif
 #define static_assert _Static_assert
 
 __attribute__((always_inline)) inline void __assert_fail(const char *str,
@@ -85,6 +81,42 @@ __attribute__((always_inline)) inline int __inline_printf()
 
 #endif
 
+#if HOSTRPC_HOST
+#include <chrono>
+#include <unistd.h>
+
+#include <cassert>
+#include <cstdio>
+
+namespace platform
+{
+// local toolchain thinks usleep might throw. That induces a bunch of exception
+// control flow where there otherwise wouldn't be any. Will fix by calling into
+// std::chrono, bodge for now
+static __attribute__((noinline)) void sleep_noexcept(unsigned int t) noexcept
+{
+  usleep(t);
+}
+
+inline void sleep_briefly()
+{
+  // <thread> conflicts with <stdatomic.h>
+  // stdatomic is no longer in use so may be able to use <thread> again
+  // std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  sleep_noexcept(10);
+}
+inline void sleep() { sleep_noexcept(1000); }
+
+inline bool is_master_lane() { return true; }
+inline uint32_t get_lane_id() { return 0; }
+inline uint32_t broadcast_master(uint32_t x) { return x; }
+inline uint32_t reduction_sum(uint32_t x) { return x; }
+inline uint32_t client_start_slot() { return 0; }
+inline void fence_acquire() { __c11_atomic_thread_fence(__ATOMIC_ACQUIRE); }
+inline void fence_release() { __c11_atomic_thread_fence(__ATOMIC_RELEASE); }
+}  // namespace platform
+#endif
+
 // HIP seems to want every function to be explicitly marked device or host
 // even when it's only compiling for, say, device
 // That may mean every single function needs a MACRO_ANNOTATION for hip to
@@ -101,26 +133,6 @@ __attribute__((always_inline)) inline int __inline_printf()
 
 namespace platform
 {
-BODGE_HIP inline void sleep_briefly(void) { __builtin_amdgcn_s_sleep(0); }
-BODGE_HIP inline void sleep(void) { __builtin_amdgcn_s_sleep(100); }
-
-BODGE_HIP __attribute__((always_inline)) inline uint32_t get_lane_id(void)
-{
-  return __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
-}
-BODGE_HIP __attribute__((always_inline)) inline bool is_master_lane(void)
-{
-  // TODO: 32 wide wavefront, consider not using raw intrinsics here
-  uint64_t activemask = __builtin_amdgcn_read_exec();
-
-  // TODO: check codegen for trunc lowest_active vs expanding lane_id
-  // TODO: ffs is lifted from openmp runtime, looks like it should be ctz
-  uint32_t lowest_active = __builtin_ffsl(activemask) - 1;
-  uint32_t lane_id = get_lane_id();
-
-  // TODO: readfirstlane(lane_id) == lowest_active?
-  return lane_id == lowest_active;
-}
 namespace detail
 {
 BODGE_HIP __attribute__((always_inline)) inline int32_t __impl_shfl_down_sync(
@@ -134,6 +146,27 @@ BODGE_HIP __attribute__((always_inline)) inline int32_t __impl_shfl_down_sync(
   return __builtin_amdgcn_ds_bpermute(index << 2, var);
 }
 }  // namespace detail
+
+BODGE_HIP inline void sleep_briefly() { __builtin_amdgcn_s_sleep(0); }
+BODGE_HIP inline void sleep() { __builtin_amdgcn_s_sleep(100); }
+
+BODGE_HIP __attribute__((always_inline)) inline uint32_t get_lane_id()
+{
+  return __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
+}
+BODGE_HIP __attribute__((always_inline)) inline bool is_master_lane()
+{
+  // TODO: 32 wide wavefront, consider not using raw intrinsics here
+  uint64_t activemask = __builtin_amdgcn_read_exec();
+
+  // TODO: check codegen for trunc lowest_active vs expanding lane_id
+  // TODO: ffs is lifted from openmp runtime, looks like it should be ctz
+  uint32_t lowest_active = __builtin_ffsl(activemask) - 1;
+  uint32_t lane_id = get_lane_id();
+
+  // TODO: readfirstlane(lane_id) == lowest_active?
+  return lane_id == lowest_active;
+}
 
 BODGE_HIP __attribute__((always_inline)) inline uint32_t broadcast_master(
     uint32_t x)
@@ -180,8 +213,8 @@ BODGE_HIP inline uint32_t client_start_slot()
 #if HOSTRPC_NVPTX
 namespace platform
 {
-inline void sleep_briefly(void) {}
-inline void sleep(void) {}
+inline void sleep_briefly() {}
+inline void sleep() {}
 
 namespace detail
 {
@@ -189,15 +222,15 @@ namespace detail
 // intrinsics. Can't compile the majority of the code as cuda, so moving the
 // platform functions out of line.
 
-uint32_t get_master_lane_id(void);
+uint32_t get_master_lane_id();
 
 int32_t __impl_shfl_down_sync(int32_t var, uint32_t laneDelta);
 
 }  // namespace detail
 
-uint32_t get_lane_id(void);
+uint32_t get_lane_id();
 
-__attribute__((always_inline)) bool is_master_lane(void)
+__attribute__((always_inline)) bool is_master_lane()
 {
   return get_lane_id() == detail::get_master_lane_id();
 }
@@ -238,18 +271,6 @@ __attribute__((always_inline)) inline uint64_t broadcast_master(uint64_t x)
   lo = broadcast_master(lo);
   hi = broadcast_master(hi);
   return ((uint64_t)hi << 32u) | lo;
-}
-
-template <typename U, typename F>
-U critical(F f)
-{
-  U res = {};
-  if (is_master_lane())
-    {
-      res = f();
-    }
-  res = broadcast_master(res);
-  return res;
 }
 
 }  // namespace platform

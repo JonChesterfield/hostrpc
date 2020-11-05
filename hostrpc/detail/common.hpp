@@ -355,8 +355,7 @@ struct slot_bitmap
 
     // this cas function is not used across devices by this library
     bool r = __opencl_atomic_compare_exchange_weak(
-        addr, &expect, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED,
-        scope);
+        addr, &expect, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED, scope);
 
     // on success, bits in memory have been set to replace
     // on failure, value found is now in expect
