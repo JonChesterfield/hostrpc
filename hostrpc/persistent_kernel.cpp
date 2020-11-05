@@ -231,9 +231,10 @@ uint32_t cas_fetch_dec(HOSTRPC_ATOMIC(uint32_t) * addr)
     {
       uint32_t replace = current - 1;
 
-      bool r = __opencl_atomic_compare_exchange_weak(
-          addr, &current, replace, __ATOMIC_ACQ_REL, __ATOMIC_ACQ_REL,
-          __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+      uint32_t loaded;
+      bool r = platform::atomic_compare_exchange_weak<
+          uint32_t, __ATOMIC_ACQ_REL, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+          addr, current, replace, &loaded);
 
       if (r)
         {

@@ -58,5 +58,17 @@ HOSTRPC_PLATFORM_ATOMIC_FUNCTION_ATTRIBUTE T atomic_fetch_or(
   return __opencl_atomic_fetch_or(addr, value, memorder, scope);
 }
 
+template <typename T, size_t memorder, size_t scope>
+HOSTRPC_PLATFORM_ATOMIC_FUNCTION_ATTRIBUTE bool atomic_compare_exchange_weak(
+    HOSTRPC_PLATFORM_ATOMIC_ADDRSPACE_ATTRIBUTE HOSTRPC_ATOMIC(T) * addr,
+    T expected, T desired, T *loaded)
+{
+  static_assert(detail::atomic_params_readmodifywrite<memorder, scope>(), "");
+  bool r = __opencl_atomic_compare_exchange_weak(addr, &expected, desired,
+                                                 memorder, memorder, scope);
+  *loaded = expected;
+  return r;
+}
+
 #undef HOSTRPC_PLATFORM_ATOMIC_FUNCTION_ATTRIBUTE
 #undef HOSTRPC_PLATFORM_ATOMIC_ADDRSPACE_ATTRIBUTE

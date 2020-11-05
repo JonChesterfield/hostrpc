@@ -97,10 +97,20 @@ namespace detail
                                   __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES); \
   }
 
-#define HOSTRPC_STAMP_FETCH_OPS(TYPE)  \
-  HOSTRPC_STAMP_FETCH(TYPE, fetch_add) \
-  HOSTRPC_STAMP_FETCH(TYPE, fetch_and) \
-  HOSTRPC_STAMP_FETCH(TYPE, fetch_or)
+#define HOSTRPC_STAMP_FETCH_OPS(TYPE)                                 \
+  HOSTRPC_STAMP_FETCH(TYPE, fetch_add)                                \
+  HOSTRPC_STAMP_FETCH(TYPE, fetch_and)                                \
+  HOSTRPC_STAMP_FETCH(TYPE, fetch_or)                                 \
+  DEVICE bool atomic_compare_exchange_weak_relaxed(                   \
+      volatile _Atomic(TYPE) * addr, TYPE expected, TYPE desired,     \
+      TYPE * loaded)                                                  \
+  {                                                                   \
+    bool r = __opencl_atomic_compare_exchange_weak(                   \
+        addr, &expected, desired, __ATOMIC_RELAXED, __ATOMIC_RELAXED, \
+        __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);                       \
+    *loaded = expected;                                               \
+    return r;                                                         \
+  }
 
 HOSTRPC_STAMP_MEMORY(uint8_t)
 HOSTRPC_STAMP_MEMORY(uint16_t)

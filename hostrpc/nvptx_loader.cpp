@@ -181,13 +181,9 @@ int init(void *image)
 
         t("copy pointer", [&]() { return cuMemcpyHtoD(devPtr, &mem, 8); });
 
-        if (t)
+        if (!t)
           {
-            fprintf(stderr, "Is ok\n");
-          }
-        else
-          {
-            fprintf(stderr, "Is fail\n");
+            fprintf(stderr, "Failed to copy state to device\n");
           }
       }
     else
@@ -227,6 +223,7 @@ int init(void *image)
     };
 
     t("launch", [&]() {
+      fprintf(stderr, "Launching kernel\n");
       return cuLaunchKernel(/* kernel */ Func,
                             /*blocks per grid */ 1,
                             /*gridDimY */ 1,
@@ -236,6 +233,8 @@ int init(void *image)
                             /* blockDimZ */ 1,
                             /* sharedMemBytes */ 0, stream, params, nullptr);
     });
+
+    t("more sync", [&]() { return cuStreamSynchronize(stream); });
 
     t("copy",
       [&]() { return cuMemcpyDtoH(&hostRes, devRes, sizeof(hostRes)); });

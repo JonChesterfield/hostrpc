@@ -354,16 +354,9 @@ struct slot_bitmap
     Ty *addr = &a[element];
 
     // this cas function is not used across devices by this library
-    bool r = __opencl_atomic_compare_exchange_weak(
-        addr, &expect, replace, __ATOMIC_ACQ_REL, __ATOMIC_ACQ_REL, scope);
-
-    // on success, bits in memory have been set to replace
-    // on failure, value found is now in expect
-    // if cas succeeded, the bits in memory matched what was expected and now
-    // match replace if it failed, the above call wrote the bits found in memory
-    // into expect
-    *loaded = expect;
-    return r;
+    return platform::atomic_compare_exchange_weak<Word, __ATOMIC_ACQ_REL,
+                                                  scope>(addr, expect, replace,
+                                                         loaded);
   }
 
   // returns value from before the and/or
@@ -389,13 +382,15 @@ struct slot_bitmap
           {
             Word replace = current & mask;
 
-            bool r = __opencl_atomic_compare_exchange_weak(
-                addr, &current, replace, __ATOMIC_ACQ_REL, __ATOMIC_ACQ_REL,
-                scope);
+            Word loaded;
+            bool r =
+                platform::atomic_compare_exchange_weak<Word, __ATOMIC_ACQ_REL,
+                                                       scope>(addr, current,
+                                                              replace, &loaded);
 
             if (r)
               {
-                return current;
+                return loaded;
               }
           }
       }
@@ -417,12 +412,15 @@ struct slot_bitmap
           {
             Word replace = current | mask;
 
-            bool r = __opencl_atomic_compare_exchange_weak(
-                addr, &current, replace, __ATOMIC_ACQ_REL, __ATOMIC_ACQ_REL,
-                scope);
+            Word loaded;
+            bool r =
+                platform::atomic_compare_exchange_weak<Word, __ATOMIC_ACQ_REL,
+                                                       scope>(addr, current,
+                                                              replace, &loaded);
+
             if (r)
               {
-                return current;
+                return loaded;
               }
           }
       }
@@ -527,19 +525,10 @@ struct lock_bitmap
   bool cas(uint32_t element, Word expect, Word replace, Word *loaded)
   {
     Ty *addr = &a[element];
-
     // this cas function is not used across devices by this library
-    bool r = __opencl_atomic_compare_exchange_weak(
-        addr, &expect, replace, __ATOMIC_ACQ_REL, __ATOMIC_ACQ_REL,
-        __OPENCL_MEMORY_SCOPE_DEVICE);
-
-    // on success, bits in memory have been set to replace
-    // on failure, value found is now in expect
-    // if cas succeeded, the bits in memory matched what was expected and now
-    // match replace if it failed, the above call wrote the bits found in memory
-    // into expect
-    *loaded = expect;
-    return r;
+    return platform::atomic_compare_exchange_weak<Word, __ATOMIC_ACQ_REL,
+                                                  __OPENCL_MEMORY_SCOPE_DEVICE>(
+        addr, expect, replace, loaded);
   }
 };
 

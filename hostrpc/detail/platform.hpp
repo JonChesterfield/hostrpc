@@ -43,6 +43,11 @@ T atomic_fetch_and(HOSTRPC_ATOMIC(T) *, T);
 template <typename T, size_t memorder, size_t scope>
 T atomic_fetch_or(HOSTRPC_ATOMIC(T) *, T);
 
+// single memorder used for success and failure cases
+template <typename T, size_t memorder, size_t scope>
+bool atomic_compare_exchange_weak(HOSTRPC_ATOMIC(T) *, T expected, T desired,
+                                  T *loaded);
+
 }  // namespace platform
 
 // This is exciting. Nvptx doesn't implement atomic, so one must use volatile +
@@ -339,7 +344,9 @@ namespace detail
 #define HOSTRPC_STAMP_FETCH_OPS(TYPE)                                     \
   TYPE atomic_fetch_add_relaxed(HOSTRPC_ATOMIC(TYPE) * addr, TYPE value); \
   TYPE atomic_fetch_and_relaxed(HOSTRPC_ATOMIC(TYPE) * addr, TYPE value); \
-  TYPE atomic_fetch_or_relaxed(HOSTRPC_ATOMIC(TYPE) * addr, TYPE value)
+  TYPE atomic_fetch_or_relaxed(HOSTRPC_ATOMIC(TYPE) * addr, TYPE value);  \
+  bool atomic_compare_exchange_weak_relaxed(                              \
+      HOSTRPC_ATOMIC(TYPE) * addr, TYPE expected, TYPE desired, TYPE * loaded)
 
 HOSTRPC_STAMP_MEMORY(uint8_t);
 HOSTRPC_STAMP_MEMORY(uint16_t);
@@ -351,15 +358,6 @@ HOSTRPC_STAMP_FETCH_OPS(uint64_t);
 
 #undef HOSTRPC_STAMP_MEMORY
 #undef HOSTRPC_STAMP_FETCH_OPS
-
-uint64_t atomic_load_relaxed(HOSTRPC_ATOMIC(uint64_t) const *addr);
-void atomic_store_relaxed(HOSTRPC_ATOMIC(uint64_t) * addr, uint64_t);
-uint64_t atomic_fetch_add_relaxed(HOSTRPC_ATOMIC(uint64_t) * addr,
-                                  uint64_t value);
-uint64_t atomic_fetch_and_relaxed(HOSTRPC_ATOMIC(uint64_t) * addr,
-                                  uint64_t value);
-uint64_t atomic_fetch_or_relaxed(HOSTRPC_ATOMIC(uint64_t) * addr,
-                                 uint64_t value);
 
 template <typename T, T (*op)(HOSTRPC_ATOMIC(T) *, T), size_t memorder,
           size_t scope>
@@ -428,6 +426,28 @@ T atomic_fetch_or(HOSTRPC_ATOMIC(T) * addr, T value)
   static_assert(detail::atomic_params_readmodifywrite<memorder, scope>(), "");
   return detail::atomic_fetch_op<T, detail::atomic_fetch_or_relaxed, memorder,
                                  scope>(addr, value);
+}
+
+template <typename T, size_t memorder, size_t scope>
+bool atomic_compare_exchange_weak(HOSTRPC_ATOMIC(T) * addr, T expected,
+                                  T desired, T *loaded)
+{
+  static_assert(detail::atomic_params_readmodifywrite<memorder, scope>(), "");
+
+  if (memorder == __ATOMIC_ACQ_REL)
+    {
+      fence_release();
+    }
+
+  bool res = detail::atomic_compare_exchange_weak_relaxed(addr, expected,
+                                                          desired, loaded);
+
+  if (memorder == __ATOMIC_ACQ_REL)
+    {
+      fence_acquire();
+    }
+
+  return res;
 }
 
 inline uint32_t client_start_slot() { return 0; }

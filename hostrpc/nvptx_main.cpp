@@ -57,6 +57,7 @@ extern "C" __attribute__((visibility("default"))) int main(int argc,
   // won't work, just looking for the compile
   void *vp = static_cast<void *>(&scratch);
 
+  // times out - no server running
   bool r = x64_nvptx_client_state->rpc_invoke<true>(vp, vp);
 
   return 0;
