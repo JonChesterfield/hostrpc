@@ -378,6 +378,8 @@ T atomic_fetch_op(HOSTRPC_ATOMIC(T) * addr, T value)
     {
       fence_acquire();
     }
+
+  return res;
 }
 }  // namespace detail
 

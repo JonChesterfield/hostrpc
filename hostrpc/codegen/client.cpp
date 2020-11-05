@@ -47,16 +47,3 @@ extern "C" __attribute__((noinline)) void client_instance_from_aliasing(
   aliasing_client_type* c = reinterpret_cast<aliasing_client_type*>(from);
   client_instance_direct(*c);
 }
-
-uint32_t atomic_fetch_add_cl(_Atomic(uint32_t) * addr, uint32_t value)
-{
-  return __opencl_atomic_fetch_add(addr, value, __ATOMIC_RELAXED,
-                                   __OPENCL_MEMORY_SCOPE_DEVICE);
-}
-
-uint32_t atomic_fetch_add_cl_vol(volatile uint32_t* addr, uint32_t value)
-{
-  return __opencl_atomic_fetch_add((volatile _Atomic(uint32_t)*)addr, value,
-                                   __ATOMIC_RELAXED,
-                                   __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
-}

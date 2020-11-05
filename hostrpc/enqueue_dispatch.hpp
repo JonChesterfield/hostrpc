@@ -135,8 +135,9 @@ inline void enqueue_dispatch(const unsigned char *src)
   if (platform::is_master_lane())
     {
       uint64_t packet_id =
-          __opencl_atomic_fetch_add(write_dispatch_id, 1, __ATOMIC_RELAXED,
-                                    __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+          platform::atomic_fetch_add<uint64_t, __ATOMIC_RELAXED,
+                                     __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+              write_dispatch_id, 1);
 
       bool full = true;
       while (full)

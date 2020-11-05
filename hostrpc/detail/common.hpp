@@ -376,7 +376,8 @@ struct slot_bitmap
     if (Prop::hasFetchOp())
       {
         // This seems to work on amdgcn, but only with acquire. acq/rel fails
-        return __opencl_atomic_fetch_and(addr, mask, __ATOMIC_ACQ_REL, scope);
+        return platform::atomic_fetch_and<Word, __ATOMIC_ACQ_REL, scope>(addr,
+                                                                         mask);
       }
     else
       {
@@ -405,7 +406,8 @@ struct slot_bitmap
     Ty *addr = &a[element];
     if (Prop::hasFetchOp())
       {
-        return __opencl_atomic_fetch_or(addr, mask, __ATOMIC_ACQ_REL, scope);
+        return platform::atomic_fetch_or<Word, __ATOMIC_ACQ_REL, scope>(addr,
+                                                                        mask);
       }
     else
       {
@@ -508,8 +510,8 @@ struct lock_bitmap
     Word mask = ~bits::setnthbit((Word)0, subindex);
 
     Ty *addr = &a[w];
-    __opencl_atomic_fetch_and(addr, mask, __ATOMIC_ACQ_REL,
-                              __OPENCL_MEMORY_SCOPE_DEVICE);
+    platform::atomic_fetch_and<Word, __ATOMIC_ACQ_REL,
+                               __OPENCL_MEMORY_SCOPE_DEVICE>(addr, mask);
   }
 
   Word load_word(uint32_t size, uint32_t w) const

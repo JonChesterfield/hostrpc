@@ -156,8 +156,8 @@ struct stateful
     HOSTRPC_ATOMIC(uint64_t)* addr = &state[c];
     if (platform::is_master_lane())
       {
-        __opencl_atomic_fetch_add(addr, v, __ATOMIC_RELAXED,
-                                  __OPENCL_MEMORY_SCOPE_DEVICE);
+        platform::atomic_fetch_add<uint64_t, __ATOMIC_RELAXED,
+                                   __OPENCL_MEMORY_SCOPE_DEVICE>(addr, v);
       }
   }
 };
