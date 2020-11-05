@@ -24,7 +24,7 @@ struct x64_x64_t
 {
   // This probably can't be copied, but could be movable
   x64_x64_t(size_t minimum_number_slots)
-      : instance(hostrpc::size_runtime(hostrpc::round(minimum_number_slots)))
+      : instance(hostrpc::size_runtime(hostrpc::round64(minimum_number_slots)))
   {
   }
 

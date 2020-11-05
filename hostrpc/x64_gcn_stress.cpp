@@ -72,7 +72,7 @@ struct x64_gcn_t
 
   x64_gcn_t(size_t N, uint64_t hsa_region_t_fine_handle,
             uint64_t hsa_region_t_coarse_handle)
-      : instance(hostrpc::round(N), hsa_region_t_fine_handle,
+      : instance(hostrpc::round64(N), hsa_region_t_fine_handle,
                  hsa_region_t_coarse_handle)
 
   {

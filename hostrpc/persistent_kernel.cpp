@@ -150,7 +150,7 @@ struct gcn_x64_t
   // for gfx906, probably want N = 2048
   gcn_x64_t(size_t N, uint64_t hsa_region_t_fine_handle,
             uint64_t hsa_region_t_coarse_handle)
-      : instance(hostrpc::round(N), hsa_region_t_fine_handle,
+      : instance(hostrpc::round64(N), hsa_region_t_fine_handle,
                  hsa_region_t_coarse_handle)
   {
   }

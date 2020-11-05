@@ -9,17 +9,6 @@
 
 namespace hostrpc
 {
-static constexpr size_t round(size_t x) { return 64u * ((x + 63u) / 64u); }
-_Static_assert(0 == round(0), "");
-_Static_assert(64 == round(1), "");
-_Static_assert(64 == round(2), "");
-_Static_assert(64 == round(63), "");
-_Static_assert(64 == round(64), "");
-_Static_assert(128 == round(65), "");
-_Static_assert(128 == round(127), "");
-_Static_assert(128 == round(128), "");
-_Static_assert(192 == round(129), "");
-
 #if defined(__x86_64__)
 namespace
 {

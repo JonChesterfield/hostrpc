@@ -6,6 +6,15 @@
 
 namespace hostrpc
 {
+template <typename T>
+constexpr size_t bytes_for_N_slots(size_t N)
+{
+  constexpr size_t bps = T::bits_per_slot();
+  static_assert(bps == 1 || bps == 8, "");
+  constexpr size_t bits = round8(N * bps);
+  return bits / 8;
+}
+
 // local, remote are instances of client_impl, server_impl
 template <typename LocalType, typename RemoteType, typename AllocBuffer,
           typename AllocInboxOutbox, typename AllocLocal, typename AllocRemote>
@@ -40,32 +49,29 @@ struct host_client_t
   {
     // check SZ has same type as local/remote
     size_t N = sz.N();
-    auto page_buffer = alloc_buffer.allocate(N * sizeof(page_t));
 
-    auto recv =
-        AllocInboxOutbox.allocate(N * local_type::inbox_t::bits_per_slot());
-    auto send =
-        AllocInboxOutbox.allocate(N * local_type::outbox_t::bits_per_slot());
+    storage_type res = {
+        AllocInboxOutbox.allocate(bytes_for_N_slots<local_type::inbox_t>(N)),
+        AllocInboxOutbox.allocate(bytes_for_N_slots<local_type::outbox_t>(N)),
+        AllocLocal.allocate(bytes_for_N_slots<local_type::lock_t>(N)),
+        AllocLocal.allocate(bytes_for_N_slots<local_type::staging_t>(N)),
+        AllocLocal.allocate(bytes_for_N_slots<remote_type::lock_t>(N)),
+        AllocLocal.allocate(bytes_for_N_slots<remote_type::staging_t>(N))};
 
-    auto local_lock =
-        AllocLocal.allocate(N * local_type::lock_t::bits_per_slot());
-    auto local_staging =
-        AllocLocal.allocate(N * local_type::staging_t::bits_per_slot());
-
-    auto remote_lock =
-        AllocLocal.allocate(N * remote_type::lock_t::bits_per_slot());
-    auto remote_staging =
-        AllocLocal.allocate(N * remote_type::staging_t::bits_per_slot());
+    // if any allocation failed, deallocate the others. may want to report
+    if (!res.valid())
+      {
+        status rc = res.destroy();
+        (void)rc;
+        return res;
+      }
 
     hostrpc::page_t* local_buffer =
-        hostrpc::careful_array_cast<page_t>(page_buffer.local());
+        hostrpc::careful_array_cast<page_t>(res.buffer.local());
     hostrpc::page_t* remote_buffer =
-        hostrpc::careful_array_cast<page_t>(page_buffer.remote());
+        hostrpc::careful_array_cast<page_t>(res.buffer.remote());
 
     // write to local/remote pointer, should factor out the casts
-
-    storage_type res = {page_buffer,   recv,        send,          local_lock,
-                        local_staging, remote_lock, remote_staging};
 
     return res;
   }

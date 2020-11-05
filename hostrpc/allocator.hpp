@@ -43,6 +43,7 @@ struct interface
   struct raw
   {
     raw(void *p) : ptr(p) {}
+    bool valid() { return ptr != nullptr; }
     int destroy() { return Base::destroy(*this); }
     local_t local() { return Base::local(*this); }
     remote_t remote() { return Base::remote(*this); }
@@ -55,13 +56,10 @@ struct interface
   static remote_t remote(raw x) { return x.ptr; }
 };
 
-#if (HOSTRPC_HOST)
-
 template <typename AllocBuffer, typename AllocInboxOutbox, typename AllocLocal,
           typename AllocRemote>
 struct store_impl
 {
- private:
   typename AllocBuffer::raw buffer;
   typename AllocInboxOutbox::raw recv;
   typename AllocInboxOutbox::raw send;
@@ -70,7 +68,6 @@ struct store_impl
   typename AllocRemote::raw remote_lock;
   typename AllocRemote::raw remote_staging;
 
- public:
   store_impl(typename AllocBuffer::raw buffer,
              typename AllocInboxOutbox::raw recv,
              typename AllocInboxOutbox::raw send,
@@ -86,6 +83,13 @@ struct store_impl
         remote_lock(remote_lock),
         remote_staging(remote_staging)
   {
+  }
+
+  bool valid()
+  {
+    return buffer.valid() && recv.valid() && send.valid() &&
+           local_lock.valid() && local_staging.valid() && remote_lock.valid() &&
+           remote_staging.valid();
   }
 
   status destroy()
@@ -105,12 +109,11 @@ struct store_impl
   template <typename T>
   status destroy_help(T raw, status acc)
   {
-    status rc = raw.destroy();
+    status rc = raw.valid() ? raw.destroy() : success;
     return (acc == success && rc == success) ? success : failure;
   }
 };
 
-#endif
 }  // namespace allocator
 }  // namespace hostrpc
 
