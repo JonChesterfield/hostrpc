@@ -66,8 +66,7 @@ T careful_cast_to_bitmap(void* memory, size_t size)
 {
   constexpr size_t bps = T::bits_per_slot();
   static_assert(bps == 1 || bps == 8, "");
-  typename T::Ty* m =
-      hostrpc::careful_array_cast<typename T::Ty>(memory, size * bps);
+  typename T::Ty* m = hostrpc::careful_array_cast<typename T::Ty>(memory, size);
   return {m};
 }
 

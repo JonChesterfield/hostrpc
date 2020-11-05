@@ -67,10 +67,9 @@ struct clear
 };
 }  // namespace x64_host_nvptx_client
 
-using x64_nvptx_pair = hostrpc::x64_ptx_pair_T<
-    hostrpc::size_runtime, x64_host_nvptx_client::fill,
-    x64_host_nvptx_client::use, x64_host_nvptx_client::operate,
-    x64_host_nvptx_client::clear, counters::client_nop, counters::server_nop>;
+using x64_nvptx_pair =
+    hostrpc::x64_ptx_pair_T<hostrpc::size_runtime, counters::client_nop,
+                            counters::server_nop>;
 
 }  // namespace hostrpc
 

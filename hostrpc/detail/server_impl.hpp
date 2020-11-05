@@ -40,10 +40,12 @@ enum class server_state : uint8_t
   result_with_thread = 0b111,
 };
 
-template <typename Word, typename SZ, typename Copy, typename Step,
+template <typename WordT, typename SZT, typename Copy, typename Step,
           typename Counter = counters::server>
-struct server_impl : public SZ, public Counter
+struct server_impl : public SZT, public Counter
 {
+  using Word = WordT;
+  using SZ = SZT;
   using lock_t = lock_bitmap<Word>;
   using inbox_t = message_bitmap<Word>;
   using outbox_t = message_bitmap<Word>;

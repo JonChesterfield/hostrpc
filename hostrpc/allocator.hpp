@@ -28,12 +28,14 @@ struct interface
   struct local_t
   {
     local_t(void *p) : ptr(p) {}
+    operator void *() { return ptr; }
     void *ptr;
   };
 
   struct remote_t
   {
     remote_t(void *p) : ptr(p) {}
+    operator void *() { return ptr; }
     void *ptr;
   };
 
@@ -44,7 +46,7 @@ struct interface
   {
     raw(void *p) : ptr(p) {}
     bool valid() { return ptr != nullptr; }
-    int destroy() { return Base::destroy(*this); }
+    status destroy() { return Base::destroy(*this); }
     local_t local() { return Base::local(*this); }
     remote_t remote() { return Base::remote(*this); }
     void *ptr;
@@ -109,6 +111,7 @@ struct store_impl
   template <typename T>
   status destroy_help(T raw, status acc)
   {
+    // destroy on nullptr considered success
     status rc = raw.valid() ? raw.destroy() : success;
     return (acc == success && rc == success) ? success : failure;
   }

@@ -1,10 +1,7 @@
 
 #include "x64_host_ptx_client.hpp"
 
-using x64_ptx_type =
-    hostrpc::x64_ptx_pair_T<hostrpc::size_runtime, hostrpc::indirect::fill,
-                            hostrpc::indirect::use, hostrpc::indirect::operate,
-                            hostrpc::indirect::clear>;
+using x64_ptx_type = hostrpc::x64_ptx_pair_T<hostrpc::size_runtime>;
 
 #if defined(__CUDACC__)
 

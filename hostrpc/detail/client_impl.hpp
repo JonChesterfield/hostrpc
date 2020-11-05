@@ -41,10 +41,12 @@ enum class client_state : uint8_t
 // criteria for the slot to be awaiting gc?
 
 // enabling counters breaks codegen for amdgcn,
-template <typename Word, typename SZ, typename Copy, typename Step,
+template <typename WordT, typename SZT, typename Copy, typename Step,
           typename Counter = counters::client>
-struct client_impl : public SZ, public Counter
+struct client_impl : public SZT, public Counter
 {
+  using Word = WordT;
+  using SZ = SZT;
   using lock_t = lock_bitmap<Word>;
   using inbox_t = message_bitmap<Word>;
   using outbox_t = message_bitmap<Word>;

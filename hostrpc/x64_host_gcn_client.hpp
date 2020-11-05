@@ -12,6 +12,11 @@
 // May want this header to be free of hsa stuff, following the nvptx layout
 #include "hsa.h"
 #include <stdlib.h>
+
+#include "allocator_hsa.hpp"
+#include "allocator_libc.hpp"
+#include "host_client.hpp"  // can be gcn/ptx if type_traits dropped
+
 #endif
 
 namespace hostrpc
@@ -33,6 +38,18 @@ struct x64_gcn_pair_T
   x64_gcn_pair_T(SZ sz, uint64_t fine_handle, uint64_t coarse_handle)
   {
 #if defined(__x86_64__)
+
+    auto alloc_buffer = hostrpc::allocator::hsa<alignof(page_t)>(fine_handle);
+    auto alloc_inbox_outbox = hostrpc::allocator::hsa<64>(fine_handle);
+
+    auto alloc_local = hostrpc::allocator::host_libc<64>();
+    auto alloc_remote = hostrpc::allocator::hsa<64>(coarse_handle);
+
+    auto storage = host_client(alloc_buffer, alloc_inbox_outbox, alloc_local,
+                               alloc_remote, sz, &server, &client);
+
+    storage.destroy();
+
     size_t N = sz.N();
     hsa_region_t fine = {.handle = fine_handle};
     hsa_region_t coarse = {.handle = coarse_handle};

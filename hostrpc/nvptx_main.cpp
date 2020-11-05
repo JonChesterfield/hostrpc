@@ -58,7 +58,9 @@ extern "C" __attribute__((visibility("default"))) int main(int argc,
   void *vp = static_cast<void *>(&scratch);
 
   // times out - no server running
-  bool r = x64_nvptx_client_state->rpc_invoke<true>(vp, vp);
+  bool r = x64_nvptx_client_state
+               ->rpc_invoke<hostrpc::x64_host_nvptx_client::fill,
+                            hostrpc::x64_host_nvptx_client::use, true>(vp, vp);
 
   return 0;
 }
