@@ -39,7 +39,9 @@ struct x64_x64_t
   template <bool have_continuation>
   bool rpc_invoke(void *fill, void *use) noexcept
   {
-    return instance.client.rpc_invoke<have_continuation>(fill, use);
+    return instance.client
+        .rpc_invoke<indirect::fill, indirect::use, have_continuation>(fill,
+                                                                      use);
   }
 
   bool rpc_handle(void *operate_state, void *clear_state) noexcept
@@ -56,8 +58,8 @@ struct x64_x64_t
   client_counters client_counters() { return instance.client.get_counters(); }
 
  private:
-  hostrpc::x64_x64_pair_T<hostrpc::size_runtime, indirect::fill, indirect::use,
-                          indirect::operate, indirect::clear>
+  hostrpc::x64_x64_pair_T<hostrpc::size_runtime, indirect::operate,
+                          indirect::clear>
       instance;
 };
 }  // namespace hostrpc

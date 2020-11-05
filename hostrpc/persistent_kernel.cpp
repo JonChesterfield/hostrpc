@@ -143,8 +143,7 @@ struct gcn_x64_t
     }
   };
 
-  using gcn_x64_type =
-      gcn_x64_pair_T<hostrpc::size_runtime, fill, use, operate, clear>;
+  using gcn_x64_type = gcn_x64_pair_T<hostrpc::size_runtime, operate, clear>;
 
   gcn_x64_type instance;
 
@@ -160,9 +159,9 @@ struct gcn_x64_t
   bool valid() { return true; }
 
   template <bool have_continuation>
-  bool rpc_invoke(void *fill, void *use) noexcept
+  bool rpc_invoke(void *f, void *u) noexcept
   {
-    return instance.client.rpc_invoke<have_continuation>(fill, use);
+    return instance.client.rpc_invoke<fill, use, have_continuation>(f, u);
   }
 
   bool rpc_handle(void *operate_state, void *clear_state,

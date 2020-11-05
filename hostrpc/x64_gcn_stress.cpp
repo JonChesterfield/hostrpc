@@ -65,7 +65,7 @@ struct use
 namespace hostrpc
 {
 using x64_gcn_type =
-    hostrpc::x64_gcn_pair_T<hostrpc::size_runtime, fill, use, indirect::operate,
+    hostrpc::x64_gcn_pair_T<hostrpc::size_runtime, indirect::operate,
                             indirect::clear>;
 
 struct x64_gcn_t
@@ -87,7 +87,7 @@ struct x64_gcn_t
   template <bool have_continuation>
   bool rpc_invoke(void *fill, void *use) noexcept
   {
-    return instance.client.rpc_invoke<have_continuation>(fill, use);
+    return instance.client.rpc_invoke<fill, use, have_continuation>(fill, use);
   }
 
   bool rpc_handle(void *operate_state, void *clear_state,
@@ -231,7 +231,7 @@ uint64_t gpu_call(hostrpc::x64_gcn_type::client_type *client, uint32_t id,
       bool rb = false;
       do
         {
-          rb = client->rpc_invoke<true>(vp, vp);
+          rb = client->rpc_invoke<fill, use, true>(vp, vp);
         }
       while (rb == false);
 

@@ -69,10 +69,10 @@ struct clear
 }  // namespace x64_host_amdgcn_client
 
 using SZ = size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
-using x64_amdgcn_pair = hostrpc::x64_gcn_pair_T<
-    SZ, x64_host_amdgcn_client::fill, x64_host_amdgcn_client::use,
-    x64_host_amdgcn_client::operate, x64_host_amdgcn_client::clear,
-    counters::client_nop, counters::server_nop>;
+using x64_amdgcn_pair =
+    hostrpc::x64_gcn_pair_T<SZ, x64_host_amdgcn_client::operate,
+                            x64_host_amdgcn_client::clear, counters::client_nop,
+                            counters::server_nop>;
 
 }  // namespace hostrpc
 
@@ -110,7 +110,8 @@ static void hostcall_impl(uint64_t data[8])
   while (!success)
     {
       void *d = static_cast<void *>(&data[0]);
-      success = c->rpc_invoke<C>(d, d);
+      success = c->rpc_invoke<hostrpc::x64_host_amdgcn_client::fill,
+                              hostrpc::x64_host_amdgcn_client::use, C>(d, d);
     }
 }
 

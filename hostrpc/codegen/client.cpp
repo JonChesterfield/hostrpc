@@ -10,15 +10,15 @@ struct copy_functor_nop
 };
 
 using client_type =
-    hostrpc::client_impl<uint32_t, SZ, copy_functor_nop, hostrpc::fill_nop,
-                         hostrpc::use_nop, hostrpc::nop_stepper>;
+    hostrpc::client_impl<uint32_t, SZ, copy_functor_nop, hostrpc::nop_stepper>;
 
 extern "C" __attribute__((noinline)) void client_instance_direct(client_type& c)
 {
   for (;;)
     {
-      c.rpc_invoke<true>(nullptr, nullptr);
-      c.rpc_invoke<false>(nullptr, nullptr);
+      c.rpc_invoke<hostrpc::fill_nop, hostrpc::use_nop, true>(nullptr, nullptr);
+      c.rpc_invoke<hostrpc::fill_nop, hostrpc::use_nop, false>(nullptr,
+                                                               nullptr);
     }
 }
 

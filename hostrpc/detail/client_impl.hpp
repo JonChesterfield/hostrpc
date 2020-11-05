@@ -41,8 +41,8 @@ enum class client_state : uint8_t
 // criteria for the slot to be awaiting gc?
 
 // enabling counters breaks codegen for amdgcn,
-template <typename Word, typename SZ, typename Copy, typename Fill,
-          typename Use, typename Step, typename Counter = counters::client>
+template <typename Word, typename SZ, typename Copy, typename Step,
+          typename Counter = counters::client>
 struct client_impl : public SZ, public Counter
 {
   using lock_t = lock_bitmap<Word>;
@@ -132,7 +132,7 @@ struct client_impl : public SZ, public Counter
   client_counters get_counters() { return Counter::get(); }
 
   // Returns true if it successfully launched the task
-  template <bool have_continuation>
+  template <typename Fill, typename Use, bool have_continuation>
   bool rpc_invoke(void* fill_application_state,
                   void* use_application_state) noexcept
   {
@@ -185,7 +185,7 @@ struct client_impl : public SZ, public Counter
               {
                 // Success, got the lock.
                 Counter::cas_lock_fail(cas_fail_count);
-                bool r = rpc_invoke_given_slot<have_continuation>(
+                bool r = rpc_invoke_given_slot<Fill, Use, have_continuation>(
                     fill_application_state, use_application_state, slot);
 
                 // wave release slot
@@ -250,7 +250,7 @@ struct client_impl : public SZ, public Counter
 
   // true if it successfully made a call, false if no work to do or only gc
   // If there's no continuation, shouldn't require a use_application_state
-  template <bool have_continuation>
+  template <typename Fill, typename Use, bool have_continuation>
   bool rpc_invoke_given_slot(void* fill_application_state,
                              void* use_application_state,
                              uint32_t slot) noexcept
@@ -447,10 +447,6 @@ struct use
 };
 
 }  // namespace indirect
-
-template <typename Word, typename SZ, typename Copy, typename Step>
-using client_indirect_impl =
-    client_impl<Word, SZ, Copy, indirect::fill, indirect::use, Step>;
 
 }  // namespace hostrpc
 

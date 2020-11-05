@@ -119,7 +119,7 @@ TEST_CASE("set up single word system")
   hostrpc::copy_functor_memcpy_pull cp;
 
   using Word = uint64_t;
-  using client_type = client_impl<Word, SZ, decltype(cp), fill, use, stepper>;
+  using client_type = client_impl<Word, SZ, decltype(cp), stepper>;
 
   using server_type =
       server_impl<Word, SZ, decltype(cp), operate, clear, stepper>;
@@ -151,13 +151,13 @@ TEST_CASE("set up single word system")
 
       while (calls_launched < calls_planned)
         {
-          if (cl.rpc_invoke<false>(application_state_ptr,
-                                   application_state_ptr))
+          if (cl.rpc_invoke<fill, use, false>(application_state_ptr,
+                                              application_state_ptr))
             {
               calls_launched++;
             }
-          if (false &&
-              cl.rpc_invoke<true>(application_state_ptr, application_state_ptr))
+          if (false && cl.rpc_invoke<fill, use, true>(application_state_ptr,
+                                                      application_state_ptr))
             {
               calls_launched++;
             }
