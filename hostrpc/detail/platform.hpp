@@ -25,16 +25,11 @@ uint32_t client_start_slot();
 void fence_acquire();
 void fence_release();
 
-template <size_t memorder, size_t scope>
-constexpr bool atomic_params_ok()
-{
-  return ((memorder == __ATOMIC_RELAXED) || (memorder == __ATOMIC_ACQUIRE)) &&
-         ((scope == __OPENCL_MEMORY_SCOPE_DEVICE) ||
-          (scope == __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES));
-}
-
 template <typename T, size_t memorder, size_t scope>
 T atomic_load(HOSTRPC_ATOMIC(T) const *);
+
+template <typename T, size_t memorder, size_t scope>
+void atomic_store(HOSTRPC_ATOMIC(T) *, T);
 
 }  // namespace platform
 
@@ -61,6 +56,32 @@ U critical(F f)
   return res;
 }
 
+}  // namespace platform
+
+namespace platform
+{
+namespace detail
+{
+template <size_t scope>
+constexpr bool atomic_params_scope()
+{
+  return (scope == __OPENCL_MEMORY_SCOPE_DEVICE) ||
+         (scope == __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+}
+template <size_t memorder, size_t scope>
+constexpr bool atomic_params_load()
+{
+  return (atomic_params_scope<scope>() &&
+          ((memorder == __ATOMIC_RELAXED) || (memorder == __ATOMIC_ACQUIRE)));
+}
+
+template <size_t memorder, size_t scope>
+constexpr bool atomic_params_store()
+{
+  return (atomic_params_scope<scope>() &&
+          ((memorder == __ATOMIC_RELAXED) || (memorder == __ATOMIC_RELEASE)));
+}
+}  // namespace detail
 }  // namespace platform
 
 // Jury rig some pieces of libc for freestanding
@@ -141,8 +162,15 @@ inline void fence_release() { __c11_atomic_thread_fence(__ATOMIC_RELEASE); }
 template <typename T, size_t memorder, size_t scope>
 T atomic_load(HOSTRPC_ATOMIC(T) const *addr)
 {
-  static_assert(atomic_params_ok<memorder, scope>(), "");
+  static_assert(detail::atomic_params_load<memorder, scope>(), "");
   return __opencl_atomic_load(addr, memorder, scope);
+}
+
+template <typename T, size_t memorder, size_t scope>
+void atomic_store(HOSTRPC_ATOMIC(T) * addr, T value)
+{
+  static_assert(detail::atomic_params_store<memorder, scope>(), "");
+  return __opencl_atomic_store(addr, value, memorder, scope);
 }
 
 }  // namespace platform
@@ -215,18 +243,33 @@ BODGE_HIP inline void fence_release()
 }
 
 template <typename T, size_t memorder, size_t scope>
-BODGE_HIP T atomic_load(__attribute__((address_space(1))) HOSTRPC_ATOMIC(T)
-                            const *addr)
+BODGE_HIP T atomic_load(HOSTRPC_ATOMIC(T) const *addr)
 {
-  static_assert(atomic_params_ok<memorder, scope>(), "");
+  static_assert(detail::atomic_params_load<memorder, scope>(), "");
   return __opencl_atomic_load(addr, memorder, scope);
 }
 
 template <typename T, size_t memorder, size_t scope>
-BODGE_HIP T atomic_load(HOSTRPC_ATOMIC(T) const *addr)
+BODGE_HIP T atomic_load(__attribute__((address_space(1))) HOSTRPC_ATOMIC(T)
+                            const *addr)
 {
-  static_assert(atomic_params_ok<memorder, scope>(), "");
+  static_assert(detail::atomic_params_load<memorder, scope>(), "");
   return __opencl_atomic_load(addr, memorder, scope);
+}
+
+template <typename T, size_t memorder, size_t scope>
+BODGE_HIP void atomic_store(HOSTRPC_ATOMIC(T) * addr, T value)
+{
+  static_assert(detail::atomic_params_store<memorder, scope>(), "");
+  return __opencl_atomic_store(addr, value, memorder, scope);
+}
+
+template <typename T, size_t memorder, size_t scope>
+BODGE_HIP void atomic_store(
+    __attribute__((address_space(1))) HOSTRPC_ATOMIC(T) * addr, T value)
+{
+  static_assert(detail::atomic_params_store<memorder, scope>(), "");
+  return __opencl_atomic_store(addr, value, memorder, scope);
 }
 
 BODGE_HIP inline uint32_t client_start_slot()
@@ -289,13 +332,26 @@ void fence_release();
 template <typename T, size_t memorder, size_t scope>
 T atomic_load(HOSTRPC_ATOMIC(T) const *addr)
 {
-  static_assert(atomic_params_ok<memorder, scope>(), "");
-
+  static_assert(detail::atomic_params_load<memorder, scope>(), "");
   // if T is _Atomic, this calls into a non-existent library
   // if T is volatile, emits a volatile load
   T res = *addr;
-  fence_acquire();
+  if (memorder == __ATOMIC_ACQUIRE)
+    {
+      fence_acquire();
+    }
   return res;
+}
+
+template <typename T, size_t memorder, size_t scope>
+void atomic_store(HOSTRPC_ATOMIC(T) * addr, T value)
+{
+  static_assert(detail::atomic_params_store<memorder, scope>(), "");
+  if (memorder == __ATOMIC_RELEASE)
+    {
+      fence_release();
+    }
+  *addr = value;
 }
 
 inline uint32_t client_start_slot() { return 0; }

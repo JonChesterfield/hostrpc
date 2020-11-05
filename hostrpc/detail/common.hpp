@@ -600,8 +600,8 @@ struct slot_bytemap
     (void)size;
     assert(i < size);
 #if SLOT_BYTEMAP_ATOMIC
-    __opencl_atomic_store(&a[i], v, __ATOMIC_RELAXED,
-                          __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+    platform::atomic_store<uint8_t, __ATOMIC_RELAXED,
+                           __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(&a[i], v);
 #else
     a[i] = v;
 #endif

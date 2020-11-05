@@ -387,8 +387,9 @@ TEST_CASE("persistent_kernel")
     };
 
     const uint32_t init_control = 32;
-    __opencl_atomic_store(example.control, init_control, __ATOMIC_RELEASE,
-                          __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+    platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
+                           __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+        example.control, init_control);
     platform::fence_release();
 
     std::vector<launch_t<kernel_args>> l;

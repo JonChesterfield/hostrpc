@@ -174,8 +174,10 @@ inline void enqueue_dispatch(const unsigned char *src)
           platform::atomic_load<uint32_t, __ATOMIC_RELAXED,
                                 __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
               (const header_type *)(src));
-      __opencl_atomic_store((header_type *)packet, header, __ATOMIC_RELEASE,
-                            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+
+      platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
+                             __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+          (header_type *)packet, header);
 
       platform::fence_release();
 
@@ -195,9 +197,9 @@ inline void enqueue_dispatch(const unsigned char *src)
                          doorbell_handle + offset::hardware_doorbell(),
                          sizeof(HOSTRPC_ATOMIC(uint64_t *)));
 
-        __opencl_atomic_store(hardware_doorbell_ptr, packet_id,
-                              __ATOMIC_RELEASE,
-                              __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+        platform::atomic_store<uint64_t, __ATOMIC_RELEASE,
+                               __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+            hardware_doorbell_ptr, packet_id);
       }
 #else
       {
