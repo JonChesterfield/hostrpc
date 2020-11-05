@@ -46,21 +46,21 @@ struct x64_x64_t
 
   bool rpc_handle(void *operate_state, void *clear_state) noexcept
   {
-    return instance.server.rpc_handle(operate_state, clear_state);
+    return instance.server.rpc_handle<indirect::operate, indirect::clear>(
+        operate_state, clear_state);
   }
 
   bool rpc_handle(void *operate_state, void *clear_state,
                   uint32_t *location_arg) noexcept
   {
-    return instance.server.rpc_handle(operate_state, clear_state, location_arg);
+    return instance.server.rpc_handle<indirect::operate, indirect::clear>(
+        operate_state, clear_state, location_arg);
   }
 
   client_counters client_counters() { return instance.client.get_counters(); }
 
  private:
-  hostrpc::x64_x64_pair_T<hostrpc::size_runtime, indirect::operate,
-                          indirect::clear>
-      instance;
+  hostrpc::x64_x64_pair_T<hostrpc::size_runtime> instance;
 };
 }  // namespace hostrpc
 #endif

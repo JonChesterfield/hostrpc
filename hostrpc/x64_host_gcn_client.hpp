@@ -16,8 +16,7 @@
 
 namespace hostrpc
 {
-template <typename SZ, typename Operate, typename Clear,
-          typename ClientCounter = counters::client,
+template <typename SZ, typename ClientCounter = counters::client,
           typename ServerCounter = counters::server>
 struct x64_gcn_pair_T
 {
@@ -26,8 +25,7 @@ struct x64_gcn_pair_T
   using Word = uint64_t;
 
   using client_type = client_impl<Word, SZ, Copy, Step, ClientCounter>;
-  using server_type =
-      server_impl<Word, SZ, Copy, Operate, Clear, Step, ServerCounter>;
+  using server_type = server_impl<Word, SZ, Copy, Step, ServerCounter>;
 
   client_type client;
   server_type server;

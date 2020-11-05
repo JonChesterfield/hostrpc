@@ -121,8 +121,7 @@ TEST_CASE("set up single word system")
   using Word = uint64_t;
   using client_type = client_impl<Word, SZ, decltype(cp), stepper>;
 
-  using server_type =
-      server_impl<Word, SZ, decltype(cp), operate, clear, stepper>;
+  using server_type = server_impl<Word, SZ, decltype(cp), stepper>;
 
   auto send = x64_alloc<client_type::outbox_t>(N, &store);
   auto recv = x64_alloc<client_type::inbox_t>(N, &store);
@@ -182,8 +181,8 @@ TEST_CASE("set up single word system")
       uint32_t loc_arg = 0;
       for (;;)
         {
-          if (sv.rpc_handle(application_state_ptr, application_state_ptr,
-                            &loc_arg))
+          if (sv.rpc_handle<operate, clear>(application_state_ptr,
+                                            application_state_ptr, &loc_arg))
 
             {
               calls_handled++;

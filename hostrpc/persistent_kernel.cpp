@@ -143,7 +143,7 @@ struct gcn_x64_t
     }
   };
 
-  using gcn_x64_type = gcn_x64_pair_T<hostrpc::size_runtime, operate, clear>;
+  using gcn_x64_type = gcn_x64_pair_T<hostrpc::size_runtime>;
 
   gcn_x64_type instance;
 
@@ -167,7 +167,8 @@ struct gcn_x64_t
   bool rpc_handle(void *operate_state, void *clear_state,
                   uint32_t *location_arg) noexcept
   {
-    return instance.server.rpc_handle(operate_state, clear_state, location_arg);
+    return instance.server.rpc_handle<operate, clear>(
+        operate_state, clear_state, location_arg);
   }
 
   client_counters client_counters() { return instance.client.get_counters(); }
@@ -256,7 +257,9 @@ extern "C" void __device_persistent_kernel_call(HOSTRPC_ATOMIC(uint32_t) *
 
   uint32_t location_arg = 0;
 
-  if (server_instance[0].rpc_handle(0, 0, &location_arg))
+  if (server_instance[0]
+          .rpc_handle<hostrpc::gcn_x64_t::operate, hostrpc::gcn_x64_t::clear>(
+              0, 0, &location_arg))
     {
       uint32_t todo = platform::critical<uint32_t>(
           [&]() { return cas_fetch_dec(control); });

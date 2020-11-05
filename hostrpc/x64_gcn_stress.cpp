@@ -64,9 +64,7 @@ struct use
 
 namespace hostrpc
 {
-using x64_gcn_type =
-    hostrpc::x64_gcn_pair_T<hostrpc::size_runtime, indirect::operate,
-                            indirect::clear>;
+using x64_gcn_type = hostrpc::x64_gcn_pair_T<hostrpc::size_runtime>;
 
 struct x64_gcn_t
 {
@@ -93,19 +91,13 @@ struct x64_gcn_t
   bool rpc_handle(void *operate_state, void *clear_state,
                   uint32_t *location_arg) noexcept
   {
-    return instance.server.rpc_handle(operate_state, clear_state, location_arg);
+    return instance.server.rpc_handle<indirect::operate, indirect::clear>(
+        operate_state, clear_state, location_arg);
   }
 
   client_counters client_counters() { return instance.client.get_counters(); }
   server_counters server_counters() { return instance.server.get_counters(); }
 };
-}  // namespace hostrpc
-
-namespace hostrpc
-{
-using ty = x64_gcn_pair_T<hostrpc::size_runtime, fill, use, indirect::operate,
-                          indirect::clear>;
-
 }  // namespace hostrpc
 
 #define MAXCLIENT (8 * 1024)  // lazy memory management, could malloc it

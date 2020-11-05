@@ -40,8 +40,8 @@ enum class server_state : uint8_t
   result_with_thread = 0b111,
 };
 
-template <typename Word, typename SZ, typename Copy, typename Operate,
-          typename Clear, typename Step, typename Counter = counters::server>
+template <typename Word, typename SZ, typename Copy, typename Step,
+          typename Counter = counters::server>
 struct server_impl : public SZ, public Counter
 {
   using lock_t = lock_bitmap<Word>;
@@ -122,15 +122,17 @@ struct server_impl : public SZ, public Counter
   }
 
   // Returns true if it handled one task. Does not attempt multiple tasks
+  template <typename Operate, typename Clear>
   __attribute__((always_inline)) bool rpc_handle(
       void* operate_application_state, void* clear_application_state) noexcept
   {
     uint32_t location = 0;
-    return rpc_handle(operate_application_state, clear_application_state,
-                      &location);
+    return rpc_handle<Operate, Clear>(operate_application_state,
+                                      clear_application_state, &location);
   }
 
   // location != NULL, used to round robin across slots
+  template <typename Operate, typename Clear>
   __attribute__((always_inline)) bool rpc_handle(
       void* operate_application_state, void* clear_application_state,
       uint32_t* location_arg) noexcept
@@ -175,8 +177,8 @@ struct server_impl : public SZ, public Counter
                 // Success, got the lock. Aim location_arg at next slot
                 *location_arg = slot + 1;
 
-                bool r = rpc_handle_given_slot(operate_application_state,
-                                               clear_application_state, slot);
+                bool r = rpc_handle_given_slot<Operate, Clear>(
+                    operate_application_state, clear_application_state, slot);
 
                 step(__LINE__, operate_application_state,
                      clear_application_state);
@@ -207,6 +209,7 @@ struct server_impl : public SZ, public Counter
   }
 
  private:
+  template <typename Operate, typename Clear>
   __attribute__((always_inline)) bool rpc_handle_given_slot(
       void* operate_application_state, void* clear_application_state,
       uint32_t slot)
@@ -338,10 +341,6 @@ struct clear
   }
 };
 }  // namespace indirect
-
-template <typename Word, typename SZ, typename Copy, typename Step>
-using server_indirect_impl =
-    server_impl<Word, SZ, Copy, indirect::operate, indirect::clear, Step>;
 
 }  // namespace hostrpc
 #endif

@@ -44,7 +44,6 @@ struct clear_direct
 
 using server_type_direct =
     hostrpc::server_impl<uint32_t, SZ, hostrpc::copy_functor_memcpy_pull,
-                         hostrpc::operate_direct, hostrpc::clear_direct,
                          hostrpc::nop_stepper>;
 
 extern "C" void server_instance_direct(server_type_direct::inbox_t inbox,
@@ -61,13 +60,13 @@ extern "C" void server_instance_direct(server_type_direct::inbox_t inbox,
 
   for (;;)
     {
-      s.rpc_handle(state_arg, state_arg);
+      s.rpc_handle<hostrpc::operate_direct, hostrpc::clear_direct>(state_arg,
+                                                                   state_arg);
     }
 }
 
 using server_type_indirect =
     hostrpc::server_impl<uint32_t, SZ, hostrpc::copy_functor_memcpy_pull,
-                         hostrpc::operate_indirect, hostrpc::clear_indirect,
                          hostrpc::nop_stepper>;
 
 extern "C" void server_instance_indirect(
@@ -84,6 +83,7 @@ extern "C" void server_instance_indirect(
 
   for (;;)
     {
-      s.rpc_handle(static_cast<void *>(&arg), static_cast<void *>(&arg));
+      s.rpc_handle<hostrpc::operate_indirect, hostrpc::clear_indirect>(
+          static_cast<void *>(&arg), static_cast<void *>(&arg));
     }
 }

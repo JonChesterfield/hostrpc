@@ -19,7 +19,7 @@
 
 namespace hostrpc
 {
-template <typename SZ, typename Operate, typename Clear>
+template <typename SZ>
 struct gcn_x64_pair_T
 {
   using Copy = copy_functor_given_alias;
@@ -27,7 +27,7 @@ struct gcn_x64_pair_T
   using Word = uint64_t;
 
   using client_type = client_impl<Word, SZ, Copy, Step>;
-  using server_type = server_impl<Word, SZ, Copy, Operate, Clear, Step>;
+  using server_type = server_impl<Word, SZ, Copy, Step>;
 
   client_type client;
   server_type server;

@@ -70,9 +70,7 @@ struct clear
 
 using SZ = size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
 using x64_amdgcn_pair =
-    hostrpc::x64_gcn_pair_T<SZ, x64_host_amdgcn_client::operate,
-                            x64_host_amdgcn_client::clear, counters::client_nop,
-                            counters::server_nop>;
+    hostrpc::x64_gcn_pair_T<SZ, counters::client_nop, counters::server_nop>;
 
 }  // namespace hostrpc
 
@@ -267,7 +265,9 @@ class hostcall_impl
       uint32_t ql = 0;
       for (;;)
         {
-          while (server.rpc_handle(nullptr, &ql))
+          while (server.rpc_handle<hostrpc::x64_host_amdgcn_client::operate,
+                                   hostrpc::x64_host_amdgcn_client::clear>(
+              nullptr, &ql))
             {
             }
 

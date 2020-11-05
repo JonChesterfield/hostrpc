@@ -23,14 +23,14 @@ static T x64_alloc(size_t size)
   return {m};
 }
 
-template <typename SZ, typename Operate, typename Clear>
+template <typename SZ>
 struct x64_x64_pair_T
 {
   using Copy = copy_functor_memcpy_pull;
   using Step = nop_stepper;
   using Word = uint32_t;
   using client_type = client_impl<Word, SZ, Copy, Step>;
-  using server_type = server_impl<Word, SZ, Copy, Operate, Clear, Step>;
+  using server_type = server_impl<Word, SZ, Copy, Step>;
 
   client_type client;
   server_type server;
