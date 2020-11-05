@@ -143,8 +143,9 @@ inline void enqueue_dispatch(const unsigned char *src)
         {
           // May want to back off more smoothly on full queue
           uint64_t idx =
-              __opencl_atomic_load(read_dispatch_id, __ATOMIC_ACQUIRE,
-                                   __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+              platform::atomic_load<uint64_t, __ATOMIC_ACQUIRE,
+                                    __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+                  read_dispatch_id);
           full = packet_id >= (size + idx);
         }
 
@@ -170,8 +171,9 @@ inline void enqueue_dispatch(const unsigned char *src)
           __attribute__((address_space(1))) HOSTRPC_ATOMIC(uint32_t);
 
       uint32_t header =
-          __opencl_atomic_load((const header_type *)(src), __ATOMIC_RELAXED,
-                               __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+          platform::atomic_load<uint32_t, __ATOMIC_RELAXED,
+                                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+              (const header_type *)(src));
       __opencl_atomic_store((header_type *)packet, header, __ATOMIC_RELEASE,
                             __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
 

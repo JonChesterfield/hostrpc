@@ -224,8 +224,9 @@ VISIBLE hostrpc::gcn_x64_t::gcn_x64_type::server_type server_instance[1];
 
 uint32_t cas_fetch_dec(HOSTRPC_ATOMIC(uint32_t) * addr)
 {
-  uint32_t current = __opencl_atomic_load(
-      addr, __ATOMIC_RELAXED, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+  uint32_t current =
+      platform::atomic_load<uint32_t, __ATOMIC_RELAXED,
+                            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(addr);
   while (1)
     {
       uint32_t replace = current - 1;
@@ -446,8 +447,9 @@ TEST_CASE("persistent_kernel")
         platform::fence_acquire();
 
         uint32_t nld =
-            __opencl_atomic_load(example.control, __ATOMIC_ACQUIRE,
-                                 __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
+            platform::atomic_load<uint32_t, __ATOMIC_ACQUIRE,
+                                  __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+                example.control);
 
         if (nld != ld)
           {

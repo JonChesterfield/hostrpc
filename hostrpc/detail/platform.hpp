@@ -6,6 +6,12 @@
 #include "../base_types.hpp"  // page_t
 #include "platform_detect.h"
 
+#if HOSTRPC_NVPTX
+#define HOSTRPC_ATOMIC(X) _Atomic(X)  // will be volatile
+#else
+#define HOSTRPC_ATOMIC(X) _Atomic(X)
+#endif
+
 namespace platform
 {
 // Functions implemented for each platform
@@ -18,18 +24,24 @@ uint32_t reduction_sum(uint32_t);
 uint32_t client_start_slot();
 void fence_acquire();
 void fence_release();
+
+template <size_t memorder, size_t scope>
+constexpr bool atomic_params_ok()
+{
+  return ((memorder == __ATOMIC_RELAXED) || (memorder == __ATOMIC_ACQUIRE)) &&
+         ((scope == __OPENCL_MEMORY_SCOPE_DEVICE) ||
+          (scope == __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES));
+}
+
+template <typename T, size_t memorder, size_t scope>
+T atomic_load(HOSTRPC_ATOMIC(T) const *);
+
 }  // namespace platform
 
-// This is exciting. Nvptx doesn't implement atomic, so one must use volatile + fences
-// C++ doesn't let one write operator new() for a volatile pointer
-// Net effect is that we can't have code that conforms to the C++ object model and volatile
-// qualifies the underlying object
-
-#if HOSTRPC_NVPTX
-#define HOSTRPC_ATOMIC(X) _Atomic(X) // will be volatile
-#else
-#define HOSTRPC_ATOMIC(X) _Atomic(X)
-#endif
+// This is exciting. Nvptx doesn't implement atomic, so one must use volatile +
+// fences C++ doesn't let one write operator new() for a volatile pointer Net
+// effect is that we can't have code that conforms to the C++ object model and
+// volatile qualifies the underlying object
 
 namespace platform
 {
@@ -125,6 +137,14 @@ inline uint32_t reduction_sum(uint32_t x) { return x; }
 inline uint32_t client_start_slot() { return 0; }
 inline void fence_acquire() { __c11_atomic_thread_fence(__ATOMIC_ACQUIRE); }
 inline void fence_release() { __c11_atomic_thread_fence(__ATOMIC_RELEASE); }
+
+template <typename T, size_t memorder, size_t scope>
+T atomic_load(HOSTRPC_ATOMIC(T) const *addr)
+{
+  static_assert(atomic_params_ok<memorder, scope>(), "");
+  return __opencl_atomic_load(addr, memorder, scope);
+}
+
 }  // namespace platform
 #endif
 
@@ -194,6 +214,21 @@ BODGE_HIP inline void fence_release()
   __c11_atomic_thread_fence(__ATOMIC_RELEASE);
 }
 
+template <typename T, size_t memorder, size_t scope>
+BODGE_HIP T atomic_load(__attribute__((address_space(1))) HOSTRPC_ATOMIC(T)
+                            const *addr)
+{
+  static_assert(atomic_params_ok<memorder, scope>(), "");
+  return __opencl_atomic_load(addr, memorder, scope);
+}
+
+template <typename T, size_t memorder, size_t scope>
+BODGE_HIP T atomic_load(HOSTRPC_ATOMIC(T) const *addr)
+{
+  static_assert(atomic_params_ok<memorder, scope>(), "");
+  return __opencl_atomic_load(addr, memorder, scope);
+}
+
 BODGE_HIP inline uint32_t client_start_slot()
 {
   // Ideally would return something < size
@@ -250,6 +285,18 @@ uint32_t broadcast_master(uint32_t x);
 
 void fence_acquire();
 void fence_release();
+
+template <typename T, size_t memorder, size_t scope>
+T atomic_load(HOSTRPC_ATOMIC(T) const *addr)
+{
+  static_assert(atomic_params_ok<memorder, scope>(), "");
+
+  // if T is _Atomic, this calls into a non-existent library
+  // if T is volatile, emits a volatile load
+  T res = *addr;
+  fence_acquire();
+  return res;
+}
 
 inline uint32_t client_start_slot() { return 0; }
 

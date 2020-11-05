@@ -346,7 +346,7 @@ struct slot_bitmap
   {
     (void)size;
     assert(w < (size / (8 * sizeof(Word))));
-    return __opencl_atomic_load(&a[w], __ATOMIC_RELAXED, scope);
+    return platform::atomic_load<Word, __ATOMIC_RELAXED, scope>(&a[w]);
   }
 
   bool cas(Word element, Word expect, Word replace, Word *loaded)
@@ -382,7 +382,8 @@ struct slot_bitmap
       {
         // load and atomic cas have similar cost across pcie, may be faster to
         // use a (usually wrong) initial guess instead of a load
-        Word current = __opencl_atomic_load(addr, __ATOMIC_RELAXED, scope);
+        Word current =
+            platform::atomic_load<Word, __ATOMIC_RELAXED, scope>(addr);
         while (1)
           {
             Word replace = current & mask;
@@ -408,7 +409,8 @@ struct slot_bitmap
       }
     else
       {
-        Word current = __opencl_atomic_load(addr, __ATOMIC_RELAXED, scope);
+        Word current =
+            platform::atomic_load<Word, __ATOMIC_RELAXED, scope>(addr);
         while (1)
           {
             Word replace = current | mask;
@@ -514,8 +516,9 @@ struct lock_bitmap
   {
     (void)size;
     assert(w < (size / (8 * sizeof(Word))));
-    return __opencl_atomic_load(&a[w], __ATOMIC_RELAXED,
-                                __OPENCL_MEMORY_SCOPE_DEVICE);
+
+    return platform::atomic_load<Word, __ATOMIC_RELAXED,
+                                 __OPENCL_MEMORY_SCOPE_DEVICE>(&a[w]);
   }
 
  private:
@@ -767,14 +770,16 @@ void staged_release_slot(uint32_t size, uint32_t i,
 
 inline void step(HOSTRPC_ATOMIC(uint64_t) * steps_left)
 {
-  if (__opencl_atomic_load(steps_left, __ATOMIC_ACQUIRE,
-                           __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES) == UINT64_MAX)
+  if (platform::atomic_load<uint64_t, __ATOMIC_ACQUIRE,
+                            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+          steps_left) == UINT64_MAX)
     {
       // Disable stepping
       return;
     }
-  while (__opencl_atomic_load(steps_left, __ATOMIC_ACQUIRE,
-                              __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES) == 0)
+  while (platform::atomic_load<uint64_t, __ATOMIC_ACQUIRE,
+                               __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+             steps_left) == 0)
     {
       // Don't burn all the cpu waiting for a step
       platform::sleep_briefly();
