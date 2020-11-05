@@ -1,5 +1,5 @@
-#ifndef PLATFORM_HPP_INCLUDED
-#define PLATFORM_HPP_INCLUDED
+#ifndef HOSTRPC_PLATFORM_HPP_INCLUDED
+#define HOSTRPC_PLATFORM_HPP_INCLUDED
 
 #include <stdint.h>
 
@@ -25,11 +25,23 @@ uint32_t client_start_slot();
 void fence_acquire();
 void fence_release();
 
+// atomics are also be overloaded on different address spaces for some platforms
+// implemented for a slight superset of the subset of T that are presently in
+// use
 template <typename T, size_t memorder, size_t scope>
 T atomic_load(HOSTRPC_ATOMIC(T) const *);
 
 template <typename T, size_t memorder, size_t scope>
 void atomic_store(HOSTRPC_ATOMIC(T) *, T);
+
+template <typename T, size_t memorder, size_t scope>
+T atomic_fetch_add(HOSTRPC_ATOMIC(T) *, T);
+
+template <typename T, size_t memorder, size_t scope>
+T atomic_fetch_and(HOSTRPC_ATOMIC(T) *, T);
+
+template <typename T, size_t memorder, size_t scope>
+T atomic_fetch_or(HOSTRPC_ATOMIC(T) *, T);
 
 }  // namespace platform
 
@@ -81,6 +93,14 @@ constexpr bool atomic_params_store()
   return (atomic_params_scope<scope>() &&
           ((memorder == __ATOMIC_RELAXED) || (memorder == __ATOMIC_RELEASE)));
 }
+
+template <size_t memorder, size_t scope>
+constexpr bool atomic_params_readmodifywrite()
+{
+  return (atomic_params_scope<scope>() &&
+          ((memorder == __ATOMIC_RELAXED) || (memorder == __ATOMIC_ACQ_REL)));
+}
+
 }  // namespace detail
 }  // namespace platform
 
@@ -159,19 +179,9 @@ inline uint32_t client_start_slot() { return 0; }
 inline void fence_acquire() { __c11_atomic_thread_fence(__ATOMIC_ACQUIRE); }
 inline void fence_release() { __c11_atomic_thread_fence(__ATOMIC_RELEASE); }
 
-template <typename T, size_t memorder, size_t scope>
-T atomic_load(HOSTRPC_ATOMIC(T) const *addr)
-{
-  static_assert(detail::atomic_params_load<memorder, scope>(), "");
-  return __opencl_atomic_load(addr, memorder, scope);
-}
-
-template <typename T, size_t memorder, size_t scope>
-void atomic_store(HOSTRPC_ATOMIC(T) * addr, T value)
-{
-  static_assert(detail::atomic_params_store<memorder, scope>(), "");
-  return __opencl_atomic_store(addr, value, memorder, scope);
-}
+#define HOSTRPC_PLATFORM_ATOMIC_FUNCTION_ATTRIBUTE
+#define HOSTRPC_PLATFORM_ATOMIC_ADDRSPACE_ATTRIBUTE
+#include "platform_atomic.inc"
 
 }  // namespace platform
 #endif
@@ -242,35 +252,14 @@ BODGE_HIP inline void fence_release()
   __c11_atomic_thread_fence(__ATOMIC_RELEASE);
 }
 
-template <typename T, size_t memorder, size_t scope>
-BODGE_HIP T atomic_load(HOSTRPC_ATOMIC(T) const *addr)
-{
-  static_assert(detail::atomic_params_load<memorder, scope>(), "");
-  return __opencl_atomic_load(addr, memorder, scope);
-}
+#define HOSTRPC_PLATFORM_ATOMIC_FUNCTION_ATTRIBUTE BODGE_HIP
+#define HOSTRPC_PLATFORM_ATOMIC_ADDRSPACE_ATTRIBUTE
+#include "platform_atomic.inc"
 
-template <typename T, size_t memorder, size_t scope>
-BODGE_HIP T atomic_load(__attribute__((address_space(1))) HOSTRPC_ATOMIC(T)
-                            const *addr)
-{
-  static_assert(detail::atomic_params_load<memorder, scope>(), "");
-  return __opencl_atomic_load(addr, memorder, scope);
-}
-
-template <typename T, size_t memorder, size_t scope>
-BODGE_HIP void atomic_store(HOSTRPC_ATOMIC(T) * addr, T value)
-{
-  static_assert(detail::atomic_params_store<memorder, scope>(), "");
-  return __opencl_atomic_store(addr, value, memorder, scope);
-}
-
-template <typename T, size_t memorder, size_t scope>
-BODGE_HIP void atomic_store(
-    __attribute__((address_space(1))) HOSTRPC_ATOMIC(T) * addr, T value)
-{
-  static_assert(detail::atomic_params_store<memorder, scope>(), "");
-  return __opencl_atomic_store(addr, value, memorder, scope);
-}
+#define HOSTRPC_PLATFORM_ATOMIC_FUNCTION_ATTRIBUTE BODGE_HIP
+#define HOSTRPC_PLATFORM_ATOMIC_ADDRSPACE_ATTRIBUTE \
+  __attribute__((address_space(1)))
+#include "platform_atomic.inc"
 
 BODGE_HIP inline uint32_t client_start_slot()
 {
@@ -352,6 +341,65 @@ void atomic_store(HOSTRPC_ATOMIC(T) * addr, T value)
       fence_release();
     }
   *addr = value;
+}
+
+// The cuda/ptx compiler lowers opencl intrinsics to IR atomics if compiling as
+// cuda. If compiling as C++, it leaves them as external function calls. As
+// cuda, the scope parameter is presently ignored. Memory order acq_rel is
+// accepted, but as cuda only provides relaxed semantics, assuming it is at risk
+// of miscompilation
+
+namespace detail
+{
+uint32_t atomic_fetch_add_relaxed(volatile uint32_t *addr, uint32_t value);
+uint32_t atomic_fetch_and_relaxed(volatile uint32_t *addr, uint32_t value);
+uint32_t atomic_fetch_or_relaxed(volatile uint32_t *addr, uint32_t value);
+
+uint64_t atomic_fetch_add_relaxed(volatile uint64_t *addr, uint64_t value);
+uint64_t atomic_fetch_and_relaxed(volatile uint64_t *addr, uint64_t value);
+uint64_t atomic_fetch_or_relaxed(volatile uint64_t *addr, uint64_t value);
+
+template <typename T, T (*op)(volatile T *, T), size_t memorder, size_t scope>
+T atomic_fetch_op(HOSTRPC_ATOMIC(T) * addr, T value)
+{
+  static_assert(detail::atomic_params_readmodifywrite<memorder, scope>(), "");
+
+  if (memorder == __ATOMIC_ACQ_REL)
+    {
+      fence_release();
+    }
+
+  T res = op(addr, value);
+
+  if (memorder == __ATOMIC_ACQ_REL)
+    {
+      fence_acquire();
+    }
+}
+}  // namespace detail
+
+template <typename T, size_t memorder, size_t scope>
+T atomic_fetch_add(HOSTRPC_ATOMIC(T) * addr, T value)
+{
+  static_assert(detail::atomic_params_readmodifywrite<memorder, scope>(), "");
+  return detail::atomic_fetch_op<T, detail::atomic_fetch_add_relaxed, memorder,
+                                 scope>(addr, value);
+}
+
+template <typename T, size_t memorder, size_t scope>
+T atomic_fetch_and(HOSTRPC_ATOMIC(T) * addr, T value)
+{
+  static_assert(detail::atomic_params_readmodifywrite<memorder, scope>(), "");
+  return detail::atomic_fetch_op<T, detail::atomic_fetch_and_relaxed, memorder,
+                                 scope>(addr, value);
+}
+
+template <typename T, size_t memorder, size_t scope>
+T atomic_fetch_or(HOSTRPC_ATOMIC(T) * addr, T value)
+{
+  static_assert(detail::atomic_params_readmodifywrite<memorder, scope>(), "");
+  return detail::atomic_fetch_op<T, detail::atomic_fetch_or_relaxed, memorder,
+                                 scope>(addr, value);
 }
 
 inline uint32_t client_start_slot() { return 0; }

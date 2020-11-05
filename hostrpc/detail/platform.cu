@@ -71,4 +71,25 @@ DEVICE uint32_t broadcast_master(uint32_t x)
 DEVICE void fence_acquire() { __threadfence_system(); }
 DEVICE void fence_release() { __threadfence_system(); }
 
+namespace detail
+{
+// Might be able to use volatile _Atomic as the top level type if
+// opencl load/store is compiled correctly when called from cuda
+#define STAMP(TYPE, NAME)                                                 \
+  DEVICE TYPE atomic_##NAME##_relaxed(volatile TYPE *addr, TYPE value)    \
+  {                                                                       \
+    return __opencl_atomic_##NAME((volatile _Atomic(TYPE) *)addr, value,  \
+                                  __ATOMIC_RELAXED,                       \
+                                  __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES); \
+  }
+
+STAMP(uint32_t, fetch_add)
+STAMP(uint32_t, fetch_and)
+STAMP(uint32_t, fetch_or)
+STAMP(uint64_t, fetch_add)
+STAMP(uint64_t, fetch_and)
+STAMP(uint64_t, fetch_or)
+
+}  // namespace detail
+
 }  // namespace platform

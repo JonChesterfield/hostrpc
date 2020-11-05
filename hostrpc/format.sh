@@ -10,5 +10,9 @@ for i in `find . -type f -iname "*.cu"`; do
     clang-format -i $i
 done
 
+for i in `find . -type f -iname "*.inc"`; do
+    echo "Formatting $i"
+    clang-format -i $i
+done
 
 exit
