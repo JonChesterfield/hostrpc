@@ -355,7 +355,7 @@ struct slot_bitmap
 
     // this cas function is not used across devices by this library
     bool r = __opencl_atomic_compare_exchange_weak(
-        addr, &expect, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED, scope);
+        addr, &expect, replace, __ATOMIC_ACQ_REL, __ATOMIC_ACQ_REL, scope);
 
     // on success, bits in memory have been set to replace
     // on failure, value found is now in expect
@@ -390,7 +390,7 @@ struct slot_bitmap
             Word replace = current & mask;
 
             bool r = __opencl_atomic_compare_exchange_weak(
-                addr, &current, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED,
+                addr, &current, replace, __ATOMIC_ACQ_REL, __ATOMIC_ACQ_REL,
                 scope);
 
             if (r)
@@ -418,7 +418,7 @@ struct slot_bitmap
             Word replace = current | mask;
 
             bool r = __opencl_atomic_compare_exchange_weak(
-                addr, &current, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED,
+                addr, &current, replace, __ATOMIC_ACQ_REL, __ATOMIC_ACQ_REL,
                 scope);
             if (r)
               {
@@ -530,7 +530,7 @@ struct lock_bitmap
 
     // this cas function is not used across devices by this library
     bool r = __opencl_atomic_compare_exchange_weak(
-        addr, &expect, replace, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED,
+        addr, &expect, replace, __ATOMIC_ACQ_REL, __ATOMIC_ACQ_REL,
         __OPENCL_MEMORY_SCOPE_DEVICE);
 
     // on success, bits in memory have been set to replace
