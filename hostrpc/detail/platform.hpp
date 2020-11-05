@@ -7,7 +7,7 @@
 #include "platform_detect.h"
 
 #if HOSTRPC_NVPTX
-#define HOSTRPC_ATOMIC(X) _Atomic(X)  // will be volatile
+#define HOSTRPC_ATOMIC(X) volatile _Atomic(X)  // will be volatile
 #else
 #define HOSTRPC_ATOMIC(X) _Atomic(X)
 #endif
@@ -318,31 +318,6 @@ uint32_t broadcast_master(uint32_t x);
 void fence_acquire();
 void fence_release();
 
-template <typename T, size_t memorder, size_t scope>
-T atomic_load(HOSTRPC_ATOMIC(T) const *addr)
-{
-  static_assert(detail::atomic_params_load<memorder, scope>(), "");
-  // if T is _Atomic, this calls into a non-existent library
-  // if T is volatile, emits a volatile load
-  T res = *addr;
-  if (memorder == __ATOMIC_ACQUIRE)
-    {
-      fence_acquire();
-    }
-  return res;
-}
-
-template <typename T, size_t memorder, size_t scope>
-void atomic_store(HOSTRPC_ATOMIC(T) * addr, T value)
-{
-  static_assert(detail::atomic_params_store<memorder, scope>(), "");
-  if (memorder == __ATOMIC_RELEASE)
-    {
-      fence_release();
-    }
-  *addr = value;
-}
-
 // The cuda/ptx compiler lowers opencl intrinsics to IR atomics if compiling as
 // cuda. If compiling as C++, it leaves them as external function calls. As
 // cuda, the scope parameter is presently ignored. Memory order acq_rel is
@@ -351,15 +326,43 @@ void atomic_store(HOSTRPC_ATOMIC(T) * addr, T value)
 
 namespace detail
 {
-uint32_t atomic_fetch_add_relaxed(volatile uint32_t *addr, uint32_t value);
-uint32_t atomic_fetch_and_relaxed(volatile uint32_t *addr, uint32_t value);
-uint32_t atomic_fetch_or_relaxed(volatile uint32_t *addr, uint32_t value);
+#ifdef HOSTRPC_STAMP_MEMORY
+#error "HOSTRPC_STAMP_MEMORY already defined"
+#endif
+#define HOSTRPC_STAMP_MEMORY(TYPE)                            \
+  TYPE atomic_load_relaxed(HOSTRPC_ATOMIC(TYPE) const *addr); \
+  void atomic_store_relaxed(HOSTRPC_ATOMIC(TYPE) * addr, TYPE)
 
-uint64_t atomic_fetch_add_relaxed(volatile uint64_t *addr, uint64_t value);
-uint64_t atomic_fetch_and_relaxed(volatile uint64_t *addr, uint64_t value);
-uint64_t atomic_fetch_or_relaxed(volatile uint64_t *addr, uint64_t value);
+#ifdef HOSTRPC_STAMP_FETCH_OPS
+#error "HOSTRPC_STAMP_FETCH_OPS already defined"
+#endif
+#define HOSTRPC_STAMP_FETCH_OPS(TYPE)                                     \
+  TYPE atomic_fetch_add_relaxed(HOSTRPC_ATOMIC(TYPE) * addr, TYPE value); \
+  TYPE atomic_fetch_and_relaxed(HOSTRPC_ATOMIC(TYPE) * addr, TYPE value); \
+  TYPE atomic_fetch_or_relaxed(HOSTRPC_ATOMIC(TYPE) * addr, TYPE value)
 
-template <typename T, T (*op)(volatile T *, T), size_t memorder, size_t scope>
+HOSTRPC_STAMP_MEMORY(uint8_t);
+HOSTRPC_STAMP_MEMORY(uint16_t);
+HOSTRPC_STAMP_MEMORY(uint32_t);
+HOSTRPC_STAMP_MEMORY(uint64_t);
+
+HOSTRPC_STAMP_FETCH_OPS(uint32_t);
+HOSTRPC_STAMP_FETCH_OPS(uint64_t);
+
+#undef HOSTRPC_STAMP_MEMORY
+#undef HOSTRPC_STAMP_FETCH_OPS
+
+uint64_t atomic_load_relaxed(HOSTRPC_ATOMIC(uint64_t) const *addr);
+void atomic_store_relaxed(HOSTRPC_ATOMIC(uint64_t) * addr, uint64_t);
+uint64_t atomic_fetch_add_relaxed(HOSTRPC_ATOMIC(uint64_t) * addr,
+                                  uint64_t value);
+uint64_t atomic_fetch_and_relaxed(HOSTRPC_ATOMIC(uint64_t) * addr,
+                                  uint64_t value);
+uint64_t atomic_fetch_or_relaxed(HOSTRPC_ATOMIC(uint64_t) * addr,
+                                 uint64_t value);
+
+template <typename T, T (*op)(HOSTRPC_ATOMIC(T) *, T), size_t memorder,
+          size_t scope>
 T atomic_fetch_op(HOSTRPC_ATOMIC(T) * addr, T value)
 {
   static_assert(detail::atomic_params_readmodifywrite<memorder, scope>(), "");
@@ -377,6 +380,29 @@ T atomic_fetch_op(HOSTRPC_ATOMIC(T) * addr, T value)
     }
 }
 }  // namespace detail
+
+template <typename T, size_t memorder, size_t scope>
+T atomic_load(HOSTRPC_ATOMIC(T) const *addr)
+{
+  static_assert(detail::atomic_params_load<memorder, scope>(), "");
+  T res = detail::atomic_load_relaxed(addr);
+  if (memorder == __ATOMIC_ACQUIRE)
+    {
+      fence_acquire();
+    }
+  return res;
+}
+
+template <typename T, size_t memorder, size_t scope>
+void atomic_store(HOSTRPC_ATOMIC(T) * addr, T value)
+{
+  static_assert(detail::atomic_params_store<memorder, scope>(), "");
+  if (memorder == __ATOMIC_RELEASE)
+    {
+      fence_release();
+    }
+  detail::atomic_store_relaxed(addr, value);
+}
 
 template <typename T, size_t memorder, size_t scope>
 T atomic_fetch_add(HOSTRPC_ATOMIC(T) * addr, T value)

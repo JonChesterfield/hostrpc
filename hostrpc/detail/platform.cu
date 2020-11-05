@@ -75,20 +75,44 @@ namespace detail
 {
 // Might be able to use volatile _Atomic as the top level type if
 // opencl load/store is compiled correctly when called from cuda
-#define STAMP(TYPE, NAME)                                                 \
-  DEVICE TYPE atomic_##NAME##_relaxed(volatile TYPE *addr, TYPE value)    \
+
+#define HOSTRPC_STAMP_MEMORY(TYPE)                                            \
+  DEVICE TYPE atomic_load_relaxed(volatile _Atomic(TYPE) const *addr)         \
+  {                                                                           \
+    return __opencl_atomic_load(addr, __ATOMIC_RELAXED,                       \
+                                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);       \
+  }                                                                           \
+                                                                              \
+  DEVICE void atomic_store_relaxed(volatile _Atomic(TYPE) * addr, TYPE value) \
+  {                                                                           \
+    return __opencl_atomic_store(addr, value, __ATOMIC_RELAXED,               \
+                                 __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);      \
+  }
+
+#define HOSTRPC_STAMP_FETCH(TYPE, NAME)                                   \
+  DEVICE TYPE atomic_##NAME##_relaxed(volatile _Atomic(TYPE) * addr,      \
+                                      TYPE value)                         \
   {                                                                       \
-    return __opencl_atomic_##NAME((volatile _Atomic(TYPE) *)addr, value,  \
-                                  __ATOMIC_RELAXED,                       \
+    return __opencl_atomic_##NAME(addr, value, __ATOMIC_RELAXED,          \
                                   __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES); \
   }
 
-STAMP(uint32_t, fetch_add)
-STAMP(uint32_t, fetch_and)
-STAMP(uint32_t, fetch_or)
-STAMP(uint64_t, fetch_add)
-STAMP(uint64_t, fetch_and)
-STAMP(uint64_t, fetch_or)
+#define HOSTRPC_STAMP_FETCH_OPS(TYPE)  \
+  HOSTRPC_STAMP_FETCH(TYPE, fetch_add) \
+  HOSTRPC_STAMP_FETCH(TYPE, fetch_and) \
+  HOSTRPC_STAMP_FETCH(TYPE, fetch_or)
+
+HOSTRPC_STAMP_MEMORY(uint8_t)
+HOSTRPC_STAMP_MEMORY(uint16_t)
+HOSTRPC_STAMP_MEMORY(uint32_t)
+HOSTRPC_STAMP_MEMORY(uint64_t)
+
+HOSTRPC_STAMP_FETCH_OPS(uint32_t)
+HOSTRPC_STAMP_FETCH_OPS(uint64_t)
+
+#undef HOSTRPC_STAMP_MEMORY
+#undef HOSTRPC_STAMP_FETCH
+#undef HOSTRPC_STAMP_FETCH_OPS
 
 }  // namespace detail
 
