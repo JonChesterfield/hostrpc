@@ -149,11 +149,11 @@ template <unsigned cap>
 struct stateful
 {
   uint64_t get(unsigned c) { return state[c]; }
-  _Atomic(uint64_t) state[client_counters::cc_total_count] = {0u};
+  HOSTRPC_ATOMIC(uint64_t) state[client_counters::cc_total_count] = {0u};
 
   void add(unsigned c, uint64_t v)
   {
-    _Atomic(uint64_t)* addr = &state[c];
+    HOSTRPC_ATOMIC(uint64_t)* addr = &state[c];
     if (platform::is_master_lane())
       {
         __opencl_atomic_fetch_add(addr, v, __ATOMIC_RELAXED,

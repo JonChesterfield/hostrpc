@@ -327,7 +327,7 @@ TEST_CASE("x64_gcn_stress")
         }
     }
 
-    _Atomic(bool) server_live(true);
+    HOSTRPC_ATOMIC(bool) server_live(true);
     size_t N = 1920;
     hostrpc::x64_gcn_t p(N, fine_grained_region.handle,
                          coarse_grained_region.handle);

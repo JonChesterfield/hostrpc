@@ -258,7 +258,7 @@ class hostcall_impl
  private:
   int spawn_worker(uint16_t queue_id)
   {
-    _Atomic(uint32_t) *control = &thread_killer;
+    HOSTRPC_ATOMIC(uint32_t) *control = &thread_killer;
     auto server = stored_pairs[queue_id]->server;
 
     // TODO. Can't actually use std::thread because the constructor throws.
@@ -289,7 +289,7 @@ class hostcall_impl
   std::array<std::unique_ptr<hostrpc::x64_amdgcn_pair>, MAX_NUM_DOORBELLS>
       stored_pairs;
 
-  _Atomic(uint32_t) thread_killer = 0;
+  HOSTRPC_ATOMIC(uint32_t) thread_killer = 0;
   std::vector<std::thread> threads;
 
   hsa_agent_t kernel_agent;

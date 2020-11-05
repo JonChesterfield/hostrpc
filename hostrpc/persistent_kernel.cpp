@@ -58,12 +58,12 @@ namespace hostrpc
 
 inline constexpr size_t client_counter_overhead()
 {
-  return client_counters::cc_total_count * sizeof(_Atomic(uint64_t));
+  return client_counters::cc_total_count * sizeof(HOSTRPC_ATOMIC(uint64_t));
 }
 
 inline constexpr size_t server_counter_overhead()
 {
-  return server_counters::sc_total_count * sizeof(_Atomic(uint64_t));
+  return server_counters::sc_total_count * sizeof(HOSTRPC_ATOMIC(uint64_t));
 }
 
 struct gcn_x64_t
@@ -213,7 +213,7 @@ void check_assumptions() {}
 
 struct kernel_args
 {
-  _Atomic(uint32_t) * control;
+  HOSTRPC_ATOMIC(uint32_t) * control;
   void *application_args;
 };
 
@@ -222,7 +222,7 @@ struct kernel_args
 __attribute__((loader_uninitialized))
 VISIBLE hostrpc::gcn_x64_t::gcn_x64_type::server_type server_instance[1];
 
-uint32_t cas_fetch_dec(_Atomic(uint32_t) * addr)
+uint32_t cas_fetch_dec(HOSTRPC_ATOMIC(uint32_t) * addr)
 {
   uint32_t current = __opencl_atomic_load(
       addr, __ATOMIC_RELAXED, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);
@@ -241,7 +241,8 @@ uint32_t cas_fetch_dec(_Atomic(uint32_t) * addr)
     }
 }
 
-extern "C" void __device_persistent_kernel_call(_Atomic(uint32_t) * control,
+extern "C" void __device_persistent_kernel_call(HOSTRPC_ATOMIC(uint32_t) *
+                                                    control,
                                                 void *application_args)
 {
   // The queue intrinsic returns a pointer to __constant memory. Mutating it
@@ -377,10 +378,10 @@ TEST_CASE("persistent_kernel")
 
     // 4 bytes in its own page isn't ideal
     auto control_state =
-        hsa::allocate(fine_grained_region, sizeof(_Atomic(uint32_t)));
+        hsa::allocate(fine_grained_region, sizeof(HOSTRPC_ATOMIC(uint32_t)));
 
     kernel_args example = {
-        .control = new (control_state.get()) _Atomic(uint32_t),
+        .control = new (control_state.get()) HOSTRPC_ATOMIC(uint32_t),
         .application_args = 0,  // unused for now
     };
 

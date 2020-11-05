@@ -52,19 +52,19 @@ TEST_CASE("set up single word system")
 
   const bool show_step = false;
 
-  _Atomic(uint64_t) client_steps(0);
-  _Atomic(uint64_t) server_steps(0);
+  HOSTRPC_ATOMIC(uint64_t) client_steps(0);
+  HOSTRPC_ATOMIC(uint64_t) server_steps(0);
 
-  _Atomic(uint64_t) val(UINT64_MAX);
+  HOSTRPC_ATOMIC(uint64_t) val(UINT64_MAX);
 
   struct application_state_t
   {
-    application_state_t(_Atomic(uint64_t) * val, _Atomic(uint64_t) * steps,
-                        bool show_step)
+    application_state_t(HOSTRPC_ATOMIC(uint64_t) * val,
+                        HOSTRPC_ATOMIC(uint64_t) * steps, bool show_step)
         : val(val), stepper(steps, show_step)
     {
     }
-    _Atomic(uint64_t) * val;
+    HOSTRPC_ATOMIC(uint64_t) * val;
     default_stepper_state stepper;
   };
 
@@ -132,8 +132,8 @@ TEST_CASE("set up single word system")
   auto server_staging = x64_alloc<server_type::staging_t>(N, &store);
 
   const uint64_t calls_planned = 1024;
-  _Atomic(uint64_t) calls_launched(0);
-  _Atomic(uint64_t) calls_handled(0);
+  HOSTRPC_ATOMIC(uint64_t) calls_launched(0);
+  HOSTRPC_ATOMIC(uint64_t) calls_handled(0);
 
   {
     safe_thread cl_thrd([&]() {

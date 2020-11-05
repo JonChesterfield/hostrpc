@@ -20,6 +20,17 @@ void fence_acquire();
 void fence_release();
 }  // namespace platform
 
+// This is exciting. Nvptx doesn't implement atomic, so one must use volatile + fences
+// C++ doesn't let one write operator new() for a volatile pointer
+// Net effect is that we can't have code that conforms to the C++ object model and volatile
+// qualifies the underlying object
+
+#if HOSTRPC_NVPTX
+#define HOSTRPC_ATOMIC(X) _Atomic(X) // will be volatile
+#else
+#define HOSTRPC_ATOMIC(X) _Atomic(X)
+#endif
+
 namespace platform
 {
 // related functions derived from the above

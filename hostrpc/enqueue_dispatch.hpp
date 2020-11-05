@@ -111,7 +111,7 @@ inline void enqueue_dispatch(const unsigned char *src)
 
   // Acquire an available packet id
   using global_atomic_uint64 =
-      __attribute__((address_space(1))) _Atomic(uint64_t) *;
+      __attribute__((address_space(1))) HOSTRPC_ATOMIC(uint64_t) *;
   auto write_dispatch_id = reinterpret_cast<global_atomic_uint64>(
       my_queue + offset::write_dispatch_id());
   auto read_dispatch_id = reinterpret_cast<global_atomic_uint64>(
@@ -166,7 +166,8 @@ inline void enqueue_dispatch(const unsigned char *src)
 
       __builtin_memcpy(packet, src, packet_size);
 
-      using header_type = __attribute__((address_space(1))) _Atomic(uint32_t);
+      using header_type =
+          __attribute__((address_space(1))) HOSTRPC_ATOMIC(uint32_t);
 
       uint32_t header =
           __opencl_atomic_load((const header_type *)(src), __ATOMIC_RELAXED,
@@ -187,10 +188,10 @@ inline void enqueue_dispatch(const unsigned char *src)
         __builtin_memcpy(&doorbell_handle, my_queue + offset::doorbell_signal(),
                          sizeof(uint64_t));
 
-        _Atomic(uint64_t) * hardware_doorbell_ptr;
+        HOSTRPC_ATOMIC(uint64_t) * hardware_doorbell_ptr;
         __builtin_memcpy(&hardware_doorbell_ptr,
                          doorbell_handle + offset::hardware_doorbell(),
-                         sizeof(_Atomic(uint64_t *)));
+                         sizeof(HOSTRPC_ATOMIC(uint64_t *)));
 
         __opencl_atomic_store(hardware_doorbell_ptr, packet_id,
                               __ATOMIC_RELEASE,

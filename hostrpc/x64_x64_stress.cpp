@@ -101,7 +101,7 @@ TEST_CASE("x64_x64_stress")
       }
   };
 
-  _Atomic(bool) server_live(true);
+  HOSTRPC_ATOMIC(bool) server_live(true);
 
   auto server_worker = [&](unsigned id) {
     my_id = id;

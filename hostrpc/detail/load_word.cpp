@@ -6,10 +6,10 @@
 #include <stdio.h>
 #include <x86intrin.h>
 
-typedef __attribute__((aligned(64))) _Atomic(uint8_t) aligned_byte;
+typedef __attribute__((aligned(64))) HOSTRPC_ATOMIC(uint8_t) aligned_byte;
 
-typedef __attribute__((aligned(64)))
-__attribute__((may_alias)) _Atomic(uint64_t) aligned_word;
+typedef __attribute__((aligned(64))) __attribute__((may_alias))
+HOSTRPC_ATOMIC(uint64_t) aligned_word;
 
 typedef unsigned char uchar8 __attribute__((ext_vector_type(8)));
 
@@ -303,7 +303,7 @@ void dump(aligned_byte *d)
 
 void round_trip_words()
 {
-  alignas(64) _Atomic(uint8_t) tmp[64];
+  alignas(64) HOSTRPC_ATOMIC(uint8_t) tmp[64];
 
   for (unsigned s = 0; s < 64; s++)
     {

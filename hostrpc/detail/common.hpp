@@ -218,17 +218,17 @@ struct base
 template <typename Word>
 struct fine_grain : public base<false>
 {
-  using Ty = __attribute__((aligned(64))) _Atomic(Word);
+  using Ty = __attribute__((aligned(64))) HOSTRPC_ATOMIC(Word);
 };
 
 template <typename Word>
 struct coarse_grain : public base<true>
 {
 #if defined(__AMDGCN__)
-  using Ty = __attribute__((aligned(64)))
-  __attribute__((address_space(1))) _Atomic(Word);
+  using Ty = __attribute__((aligned(64))) __attribute__((address_space(1)))
+  HOSTRPC_ATOMIC(Word);
 #else
-  using Ty = __attribute__((aligned(64))) _Atomic(Word);
+  using Ty = __attribute__((aligned(64))) HOSTRPC_ATOMIC(Word);
 #endif
 };
 
@@ -255,9 +255,9 @@ struct slot_bitmap
 
   constexpr size_t wordBits() { return 8 * sizeof(Word); }
 
-  static_assert(sizeof(Word) == sizeof(_Atomic(Word)), "");
+  static_assert(sizeof(Word) == sizeof(HOSTRPC_ATOMIC(Word)), "");
   static_assert(sizeof(Word *) == 8, "");
-  static_assert(sizeof(_Atomic(Word) *) == 8, "");
+  static_assert(sizeof(HOSTRPC_ATOMIC(Word) *) == 8, "");
 
   Ty *a;
   static constexpr uint32_t bits_per_slot() { return 1; }
@@ -429,8 +429,8 @@ template <typename Word>
 struct lock_bitmap
 {
   using Ty = typename properties::coarse_grain<Word>::Ty;
-  static_assert(sizeof(Word) == sizeof(_Atomic(Word)), "");
-  static_assert(sizeof(_Atomic(Word) *) == 8, "");
+  static_assert(sizeof(Word) == sizeof(HOSTRPC_ATOMIC(Word)), "");
+  static_assert(sizeof(HOSTRPC_ATOMIC(Word) *) == 8, "");
   Ty *a;
   static constexpr size_t bits_per_slot() { return 1; }
 
@@ -547,11 +547,11 @@ struct slot_bytemap
   // assumes sizeof a is a multiple of 64, may be worth passing size to the
   // constructor and asserting
 #if SLOT_BYTEMAP_ATOMIC
-  using Ty = __attribute__((aligned(64))) _Atomic(uint8_t);
-  using AliasingWordTy = __attribute__((aligned(64)))
-  __attribute__((may_alias)) _Atomic(Word);
-  static_assert(sizeof(uint8_t) == sizeof(_Atomic(uint8_t)), "");
-  static_assert(sizeof(_Atomic(uint8_t)) == 1, "");
+  using Ty = __attribute__((aligned(64))) HOSTRPC_ATOMIC(uint8_t);
+  using AliasingWordTy = __attribute__((aligned(64))) __attribute__((may_alias))
+  HOSTRPC_ATOMIC(Word);
+  static_assert(sizeof(uint8_t) == sizeof(HOSTRPC_ATOMIC(uint8_t)), "");
+  static_assert(sizeof(HOSTRPC_ATOMIC(uint8_t)) == 1, "");
 #else
   using Ty = __attribute__((aligned(64))) uint8_t;
   using AliasingWordTy =
@@ -765,7 +765,7 @@ void staged_release_slot(uint32_t size, uint32_t i,
                                     cas_help_count);
 }
 
-inline void step(_Atomic(uint64_t) * steps_left)
+inline void step(HOSTRPC_ATOMIC(uint64_t) * steps_left)
 {
   if (__opencl_atomic_load(steps_left, __ATOMIC_ACQUIRE,
                            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES) == UINT64_MAX)
@@ -790,13 +790,13 @@ struct nop_stepper
 
 struct default_stepper_state
 {
-  default_stepper_state(_Atomic(uint64_t) * val, bool show_step = false,
+  default_stepper_state(HOSTRPC_ATOMIC(uint64_t) * val, bool show_step = false,
                         const char *name = "unknown")
       : val(val), show_step(show_step), name(name)
   {
   }
 
-  _Atomic(uint64_t) * val;
+  HOSTRPC_ATOMIC(uint64_t) * val;
   bool show_step;
   const char *name;
 };
