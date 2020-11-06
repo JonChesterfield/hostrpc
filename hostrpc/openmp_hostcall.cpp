@@ -6,7 +6,8 @@
 
 #if defined(__x86_64__)
 
-extern "C" void hostrpc_execute_service(uint32_t service, uint64_t *payload);
+extern "C" void hostrpc_execute_service(uint32_t service, uint32_t device_id,
+                                        uint64_t *payload);
 
 #endif
 
@@ -26,7 +27,9 @@ void operate(hostrpc::page_t *page)
       // A bit dubious in that the existing code expects payload to have
       // length 8 and we're passing one of length 7, but nothing yet
       // implemented goes beyond [3]
-      hostrpc_execute_service(static_cast<uint32_t>(service_id), payload);
+      uint32_t device_id = 0;  // todo
+      hostrpc_execute_service(static_cast<uint32_t>(service_id), device_id,
+                              payload);
     }
 }
 void clear(hostrpc::page_t *page)
