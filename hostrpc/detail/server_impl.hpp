@@ -49,7 +49,7 @@ struct server_impl : public SZT, public Counter
   using lock_t = lock_bitmap<Word>;
   using inbox_t = message_bitmap<Word>;
   using outbox_t = message_bitmap<Word>;
-  using staging_t = slot_bitmap_coarse<Word>;
+  using staging_t = slot_bitmap_device_local<Word>;
 
   constexpr size_t wordBits() const { return 8 * sizeof(Word); }
   // may want to rename this, number-slots?

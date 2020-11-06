@@ -226,7 +226,7 @@ struct fine_grain : public base<false>
 };
 
 template <typename Word>
-struct coarse_grain : public base<true>
+struct device_local : base<true, true>
 {
 #if defined(__AMDGCN__)
   using Ty = __attribute__((aligned(64))) __attribute__((address_space(1)))
@@ -255,8 +255,8 @@ using message_bitmap = slot_bytemap<Word>;
 #endif
 
 template <typename Word>
-using slot_bitmap_coarse = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_DEVICE,
-                                       properties::coarse_grain<Word>>;
+using slot_bitmap_device_local = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_DEVICE,
+                                             properties::device_local<Word>>;
 
 template <typename Word, size_t scope, typename Prop>
 struct slot_bitmap
@@ -443,7 +443,7 @@ struct slot_bitmap
 template <typename Word>
 struct lock_bitmap
 {
-  using Ty = typename properties::coarse_grain<Word>::Ty;
+  using Ty = typename properties::device_local<Word>::Ty;
   static_assert(sizeof(Word) == sizeof(HOSTRPC_ATOMIC(Word)), "");
   static_assert(sizeof(HOSTRPC_ATOMIC(Word) *) == 8, "");
   Ty *a;

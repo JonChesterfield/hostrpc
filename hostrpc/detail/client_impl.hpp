@@ -50,7 +50,7 @@ struct client_impl : public SZT, public Counter
   using lock_t = lock_bitmap<Word>;
   using inbox_t = message_bitmap<Word>;
   using outbox_t = message_bitmap<Word>;
-  using staging_t = slot_bitmap_coarse<Word>;
+  using staging_t = slot_bitmap_device_local<Word>;
   constexpr size_t wordBits() const { return 8 * sizeof(Word); }
   uint32_t size() const { return SZ::N(); }
   uint32_t words() const { return size() / wordBits(); }
