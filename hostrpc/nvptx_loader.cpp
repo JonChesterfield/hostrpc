@@ -2,6 +2,8 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 
+#include <thread>
+
 #include <memory>
 #include <stdio.h>
 
@@ -187,6 +189,7 @@ int init(void *image)
     else
       {
         fprintf(stderr, "get symbol address failed, ret %u\n", err);
+        exit(1);
       }
   }
 
@@ -220,6 +223,36 @@ int init(void *image)
         &devRes,
     };
 
+    struct operate_test
+    {
+      static void call(hostrpc::page_t *, void *)
+      {
+        fprintf(stderr, "Invoked operate\n");
+      }
+    };
+    struct clear_test
+    {
+      static void call(hostrpc::page_t *, void *)
+      {
+        fprintf(stderr, "Invoked clear\n");
+      }
+    };
+
+    std::thread serv([&]() {
+      uint32_t location = 0;
+
+      for (unsigned i = 0; i < 32; i++)
+        {
+          bool r = x64_nvptx_state.server.rpc_handle<operate_test, clear_test>(
+              nullptr, nullptr, &location);
+          fprintf(stderr, "server ret %u\n", r);
+          for (unsigned j = 0; j < 1000; j++)
+            {
+              platform::sleep();
+            }
+        }
+    });
+
     t("launch", [&]() {
       fprintf(stderr, "Launching kernel\n");
       return cuLaunchKernel(/* kernel */ Func,
@@ -232,6 +265,9 @@ int init(void *image)
                             /* sharedMemBytes */ 0, stream, params, nullptr);
     });
 
+    fprintf(stderr, "Kernel launched\n");
+    // times out here
+
     t("more sync", [&]() { return cuStreamSynchronize(stream); });
 
     t("copy",
@@ -240,6 +276,8 @@ int init(void *image)
     t("sync", [&]() { return cuStreamSynchronize(stream); });
 
     fprintf(stderr, "hostRes[0] = %u\n", hostRes[0]);
+
+    serv.join();
 
     t("free", [&]() { return cuMemFree(devArgc); });
     t("free", [&]() { return cuMemFree(devArgv); });

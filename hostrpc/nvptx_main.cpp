@@ -5,18 +5,6 @@
 // Implementation api. This construct is a singleton.
 namespace hostcall_ops
 {
-#if (HOSTRPC_HOST)
-void operate(hostrpc::page_t *page)
-{
-  (void)page;
-  fprintf(stderr, "Hit operate!\n");
-}
-void clear(hostrpc::page_t *page)
-{
-  (void)page;
-  fprintf(stderr, "Hit clear!\n");
-};
-#endif
 #if (HOSTRPC_GPU)
 // from openmp_hostcall (amdgcn)
 void pass_arguments(hostrpc::page_t *page, uint64_t d[8])
@@ -53,13 +41,17 @@ extern "C" __attribute__((visibility("default"))) int main(int argc,
   (void)argc;
   (void)argv;
 
-  // won't work, just looking for the compile
-  void *vp = static_cast<void *>(&scratch);
-
-  // times out - no server running
-  bool r = x64_nvptx_client_state
-               ->rpc_invoke<hostrpc::fill_nop, hostrpc::use_nop, true>(vp, vp);
-
+  // times out
+  for (;;)
+    {
+      bool r =
+          x64_nvptx_client_state
+              ->rpc_invoke<hostrpc::fill_nop, hostrpc::use_nop, true>(0, 0);
+      if (r == true)
+        {
+          return 0;
+        }
+    }
   return 0;
 }
 #endif

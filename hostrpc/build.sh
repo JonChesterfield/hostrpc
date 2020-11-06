@@ -185,7 +185,8 @@ $CLANG $XCUDA -std=c++14 hello.cu --cuda-device-only $PTX_VER -c -o hello.o  -I/
 $CXX_X64 nvptx_main.cpp -c -o nvptx_main.x64.bc
 $CXX_PTX nvptx_main.cpp -ffreestanding -c -o nvptx_main.ptx.bc
 
-$CLANG nvptx_loader.cpp memory_host.x64.bc memory_cuda.x64.bc nvptx_main.x64.bc --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -lcudart -o nvptx_loader.exe && ./nvptx_loader.exe hello.o
+$CLANG nvptx_loader.cpp memory_host.x64.bc memory_cuda.x64.bc nvptx_main.x64.bc --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -lcudart -pthread -o nvptx_loader.exe
+# ./nvptx_loader.exe hello.o
 
 fi
 
