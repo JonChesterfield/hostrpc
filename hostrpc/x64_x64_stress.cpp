@@ -1,7 +1,6 @@
 #include "base_types.hpp"
 #include "catch.hpp"
 #include "test_common.hpp"
-#include "x64_host_x64_client.hpp"
 
 #include <cstring>
 #include <thread>
@@ -18,17 +17,55 @@ static void init_page(hostrpc::page_t *page, uint64_t v)
 }
 
 #if defined(__x86_64__)
+
+#include "allocator_libc.hpp"
+#include "host_client.hpp"
+#include "detail/client_impl.hpp"
+#include "detail/server_impl.hpp"
+
 namespace hostrpc
 {
 struct x64_x64_t
 {
+  using SZ = hostrpc::size_runtime;
+  using Copy = copy_functor_given_alias;
+  using Step = nop_stepper;
+  using Word = uint32_t;
+  using client_type = client_impl<Word, SZ, Copy, Step>;
+  using server_type = server_impl<Word, SZ, Copy, Step>;
+
+
+  client_type client;
+  server_type server;
+
+  using AllocBuffer = hostrpc::allocator::host_libc<alignof(page_t)>;
+  using AllocInboxOutbox = hostrpc::allocator::host_libc<64>;
+
+  using AllocLocal = hostrpc::allocator::host_libc<64>;
+  using AllocRemote = hostrpc::allocator::host_libc<64>;
+
+  using storage_type = allocator::store_impl<AllocBuffer, AllocInboxOutbox,
+                                             AllocLocal, AllocRemote>;
+
+  storage_type storage;
+  
   // This probably can't be copied, but could be movable
   x64_x64_t(size_t minimum_number_slots)
-      : instance(hostrpc::size_runtime(hostrpc::round64(minimum_number_slots)))
   {
+    size_t N = hostrpc::round64(minimum_number_slots);
+    AllocBuffer alloc_buffer;
+    AllocInboxOutbox alloc_inbox_outbox;
+    AllocLocal alloc_local;
+    AllocRemote alloc_remote;
+
+    SZ sz(N);
+    storage = host_client(alloc_buffer, alloc_inbox_outbox, alloc_local,
+                          alloc_remote, sz, &server, &client);
+
+    
   }
 
-  ~x64_x64_t() {}
+  ~x64_x64_t() {storage.destroy();}
 
   x64_x64_t(const x64_x64_t &) = delete;
   bool valid()
@@ -39,28 +76,27 @@ struct x64_x64_t
   template <bool have_continuation>
   bool rpc_invoke(void *fill, void *use) noexcept
   {
-    return instance.client
+    return client
         .rpc_invoke<indirect::fill, indirect::use, have_continuation>(fill,
                                                                       use);
   }
 
   bool rpc_handle(void *operate_state, void *clear_state) noexcept
   {
-    return instance.server.rpc_handle<indirect::operate, indirect::clear>(
+    return server.rpc_handle<indirect::operate, indirect::clear>(
         operate_state, clear_state);
   }
 
   bool rpc_handle(void *operate_state, void *clear_state,
                   uint32_t *location_arg) noexcept
   {
-    return instance.server.rpc_handle<indirect::operate, indirect::clear>(
+    return server.rpc_handle<indirect::operate, indirect::clear>(
         operate_state, clear_state, location_arg);
   }
 
-  client_counters client_counters() { return instance.client.get_counters(); }
+  client_counters client_counters() { return client.get_counters(); }
 
- private:
-  hostrpc::x64_x64_pair_T<hostrpc::size_runtime> instance;
+
 };
 }  // namespace hostrpc
 #endif

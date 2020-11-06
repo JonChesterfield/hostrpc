@@ -30,11 +30,7 @@ kernel void __device_persistent_kernel(__global void *args)
 #include <stddef.h>
 #include <stdint.h>
 
-#if defined(__x86_64__)
-#include "test_common.hpp"  // round
-#include "x64_host_x64_client.hpp"
-#endif
-
+#include "memory.hpp"
 #include "gcn_host_x64_client.hpp"
 
 namespace hostrpc
