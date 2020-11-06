@@ -6,7 +6,7 @@
 #include <stdio.h>
 
 #include "hostcall.hpp"
-#include "x64_nvptx_type.hpp"
+#include "x64_ptx_type.hpp"
 
 #define DEBUGP(prefix, ...)             \
   {                                     \
@@ -153,7 +153,7 @@ int init(void *image)
   t("cuModuleGetFunction",
     [&]() { return cuModuleGetFunction(&Func, Module, "__device_start"); });
 
-  hostrpc::x64_nvptx_pair x64_nvptx_state(128);
+  hostrpc::x64_ptx_type x64_nvptx_state(128);
 
   {
     error_tracker t;
@@ -169,12 +169,12 @@ int init(void *image)
 
         CUdeviceptr mem;
         t("alloc", [&]() {
-          return cuMemAlloc(&mem, sizeof(hostrpc::x64_nvptx_pair::client_type));
+          return cuMemAlloc(&mem, sizeof(hostrpc::x64_ptx_type::client_type));
         });
 
         t("copy client", [&]() {
           return cuMemcpyHtoD(mem, &x64_nvptx_state,
-                              sizeof(hostrpc::x64_nvptx_pair::client_type));
+                              sizeof(hostrpc::x64_ptx_type::client_type));
         });
 
         t("copy pointer", [&]() { return cuMemcpyHtoD(devPtr, &mem, 8); });

@@ -5,12 +5,6 @@
 
 #include "detail/platform_detect.h"
 
-#if (HOSTRPC_HOST)
-
-#include <stdlib.h>
-#include <string.h>
-#include <utility>
-
 #include "memory_cuda.hpp"
 
 namespace hostrpc
@@ -60,5 +54,4 @@ using cuda_gpu = cuda_shared_gpu<false, Align>;
 }  // namespace allocator
 }  // namespace hostrpc
 
-#endif
 #endif

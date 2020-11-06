@@ -6,8 +6,10 @@
 #include "detail/platform_detect.h"
 #include "detail/server_impl.hpp"
 
+#include "memory.hpp"
 #include "allocator_cuda.hpp"
 #include "allocator_libc.hpp"
+#include "host_client.hpp"
 
 namespace hostrpc
 {

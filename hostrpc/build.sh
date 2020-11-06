@@ -168,8 +168,6 @@ if (($have_nvptx)); then
  $CXX_CUDA -std=c++14 --cuda-device-only $PTX_VER detail/platform.cu -c -emit-llvm -o detail/platform.ptx.bc
 
  $CXX_CUDA -std=c++14 --cuda-host-only memory_cuda.cu  -c -emit-llvm -o memory_cuda.x64.bc
- $CXX_PTX x64_ptx_stress.cpp -c -o x64_ptx_stress.ptx.code.bc
- $CXX_X64 -I$HSAINC x64_ptx_stress.cpp -c -o x64_ptx_stress.x64.bc
 
  $CXX_CUDA -std=c++14 --cuda-device-only loader/nvptx_loader_entry.cu -c -emit-llvm -o loader/nvptx_loader_entry.cu.ptx.bc
 

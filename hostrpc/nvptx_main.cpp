@@ -1,6 +1,6 @@
 #include "base_types.hpp"
 #include "detail/platform_detect.h"
-#include "x64_nvptx_type.hpp"
+#include "x64_ptx_type.hpp"
 
 // Implementation api. This construct is a singleton.
 namespace hostcall_ops
@@ -44,7 +44,7 @@ void use_result(hostrpc::page_t *page, uint64_t d[8])
 // __attribute__((visibility("default")))
 // By value errors, 'Module has a nontrivial global ctor, which NVPTX does not
 // support.'
-hostrpc::x64_nvptx_pair::client_type *x64_nvptx_client_state = nullptr;
+hostrpc::x64_ptx_type::client_type *x64_nvptx_client_state = nullptr;
 
 hostrpc::page_t scratch;
 extern "C" __attribute__((visibility("default"))) int main(int argc,
@@ -58,8 +58,8 @@ extern "C" __attribute__((visibility("default"))) int main(int argc,
 
   // times out - no server running
   bool r = x64_nvptx_client_state
-               ->rpc_invoke<hostrpc::x64_host_nvptx_client::fill,
-                            hostrpc::x64_host_nvptx_client::use, true>(vp, vp);
+               ->rpc_invoke<hostrpc::fill_nop,
+                            hostrpc::use_nop, true>(vp, vp);
 
   return 0;
 }
