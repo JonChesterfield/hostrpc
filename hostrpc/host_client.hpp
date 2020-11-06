@@ -2,7 +2,7 @@
 #define HOSTRPC_HOST_CLIENT_HPP_INCLUDED
 
 #include "allocator.hpp"
-#include <type_traits>
+#include "memory.hpp"
 
 namespace hostrpc
 {
@@ -15,6 +15,19 @@ size_t bytes_for_N_slots(size_t N)
   return bits / 8;
 }
 
+template <typename T, typename U>
+struct is_same
+{
+  static constexpr bool value = false;
+};
+
+template <typename T>
+struct is_same<T, T>
+
+{
+  static constexpr bool value = true;
+};
+
 // local, remote are instances of client_impl, server_impl
 template <typename SZ, typename LocalType, typename RemoteType,
           typename AllocBuffer, typename AllocInboxOutbox, typename AllocLocal,
@@ -26,44 +39,41 @@ host_client(AllocBuffer alloc_buffer, AllocInboxOutbox alloc_inbox_outbox,
 {
   // consistency constraints
   static_assert(
-      std::is_same<typename LocalType::Word, typename RemoteType::Word>::value,
-      "");
-  static_assert(
-      std::is_same<typename LocalType::SZ, typename RemoteType::SZ>::value, "");
-
-  static_assert(std::is_same<typename LocalType::inbox_t,
-                             typename RemoteType::outbox_t>::value,
+      is_same<typename LocalType::Word, typename RemoteType::Word>::value, "");
+  static_assert(is_same<typename LocalType::SZ, typename RemoteType::SZ>::value,
                 "");
 
-  static_assert(std::is_same<typename LocalType::outbox_t,
-                             typename RemoteType::inbox_t>::value,
+  static_assert(is_same<typename LocalType::inbox_t,
+                        typename RemoteType::outbox_t>::value,
+                "");
+
+  static_assert(is_same<typename LocalType::outbox_t,
+                        typename RemoteType::inbox_t>::value,
                 "");
 
   static_assert(AllocBuffer::align == alignof(page_t), "");
   static_assert(AllocInboxOutbox::align == 64, "");
-
-  // check SZ has same type as local/remote
-  size_t N = sz.N();
 
   // hazard - there is no requirement from the standard that memory which is
   // initially zero will remain to after placement new over it. Similarly,
   // should probably placement new into the remote memory, despite it being
   // inaccessible.
 
-  allocator::store_impl<AllocBuffer, AllocInboxOutbox, AllocLocal, AllocRemote>
-      res = {alloc_buffer.allocate(sizeof(page_t) * N),
-             alloc_inbox_outbox.allocate(
-                 bytes_for_N_slots<typename LocalType::inbox_t>(N)),
-             alloc_inbox_outbox.allocate(
-                 bytes_for_N_slots<typename LocalType::outbox_t>(N)),
-             alloc_local.allocate(
-                 bytes_for_N_slots<typename LocalType::lock_t>(N)),
-             alloc_local.allocate(
-                 bytes_for_N_slots<typename LocalType::staging_t>(N)),
-             alloc_remote.allocate(
-                 bytes_for_N_slots<typename RemoteType::lock_t>(N)),
-             alloc_remote.allocate(
-                 bytes_for_N_slots<typename RemoteType::staging_t>(N))};
+  using res_ty = allocator::store_impl<AllocBuffer, AllocInboxOutbox,
+                                       AllocLocal, AllocRemote>;
+#if (HOSTRPC_HOST)
+  size_t N = sz.N();
+  res_ty res = {
+      alloc_buffer.allocate(sizeof(page_t) * N),
+      alloc_inbox_outbox.allocate(
+          bytes_for_N_slots<typename LocalType::inbox_t>(N)),
+      alloc_inbox_outbox.allocate(
+          bytes_for_N_slots<typename LocalType::outbox_t>(N)),
+      alloc_local.allocate(bytes_for_N_slots<typename LocalType::lock_t>(N)),
+      alloc_local.allocate(bytes_for_N_slots<typename LocalType::staging_t>(N)),
+      alloc_remote.allocate(bytes_for_N_slots<typename RemoteType::lock_t>(N)),
+      alloc_remote.allocate(
+          bytes_for_N_slots<typename RemoteType::staging_t>(N))};
 
   // if any allocation failed, deallocate the others. may want to report
   if (!res.valid())
@@ -111,7 +121,17 @@ host_client(AllocBuffer alloc_buffer, AllocInboxOutbox alloc_inbox_outbox,
                            send,         remote_staging, remote_buffer,
                            remote_buffer};
   }
-
+#else
+  // not yet implemented, need to do something with address space overloading
+  (void)alloc_buffer;
+  (void)alloc_inbox_outbox;
+  (void)alloc_local;
+  (void)alloc_remote;
+  (void)sz;
+  (void)local;
+  (void)remote;
+  res_ty res;
+#endif
   return res;
 }
 

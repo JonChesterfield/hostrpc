@@ -48,6 +48,8 @@ struct x64_gcn_pair_T
     auto storage = host_client(alloc_buffer, alloc_inbox_outbox, alloc_local,
                                alloc_remote, sz, &server, &client);
 
+    return;
+
     storage.destroy();
 
     size_t N = sz.N();

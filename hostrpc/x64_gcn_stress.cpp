@@ -13,13 +13,17 @@ kernel void __device_start(__global void *args) { __device_start_cast(args); }
 #include "base_types.hpp"
 #include "detail/client_impl.hpp"
 #include "detail/platform.hpp"
+#include "detail/platform_detect.h"
 #include "detail/server_impl.hpp"
 #include "timer.hpp"
-#include "x64_host_gcn_client.hpp"
 
-#if defined(__x86_64__)
+#if (HOSTRPC_HOST)
 #include "hsa.h"
 #endif
+
+#include "allocator_hsa.hpp"
+#include "allocator_libc.hpp"
+#include "host_client.hpp"
 
 #if defined(__AMDGCN__)
 static void copy_page(hostrpc::page_t *dst, hostrpc::page_t *src)
@@ -64,39 +68,64 @@ struct use
 
 namespace hostrpc
 {
-using x64_gcn_type = hostrpc::x64_gcn_pair_T<hostrpc::size_runtime>;
-
-struct x64_gcn_t
+struct x64_gcn_type
 {
-  x64_gcn_type instance;
+  using SZ = hostrpc::size_runtime;
+  using Copy = copy_functor_given_alias;
+  using Step = nop_stepper;
+  using Word = uint64_t;
+  using client_type = client_impl<Word, SZ, Copy, Step, counters::client>;
+  using server_type = server_impl<Word, SZ, Copy, Step, counters::server>;
 
-  x64_gcn_t(size_t N, uint64_t hsa_region_t_fine_handle,
-            uint64_t hsa_region_t_coarse_handle)
-      : instance(hostrpc::round64(N), hsa_region_t_fine_handle,
-                 hsa_region_t_coarse_handle)
+  client_type client;
+  server_type server;
 
+  using AllocBuffer = hostrpc::allocator::hsa<alignof(page_t)>;
+  using AllocInboxOutbox = hostrpc::allocator::hsa<64>;
+
+  using AllocLocal = hostrpc::allocator::host_libc<64>;
+  using AllocRemote = hostrpc::allocator::hsa<64>;
+
+  using storage_type = allocator::store_impl<AllocBuffer, AllocInboxOutbox,
+                                             AllocLocal, AllocRemote>;
+
+  storage_type storage;
+  x64_gcn_type(size_t N, uint64_t hsa_region_t_fine_handle,
+               uint64_t hsa_region_t_coarse_handle)
   {
+    uint64_t fine_handle = hsa_region_t_fine_handle;
+    uint64_t coarse_handle = hsa_region_t_coarse_handle;
+
+    AllocBuffer alloc_buffer(fine_handle);
+    AllocInboxOutbox alloc_inbox_outbox(fine_handle);
+
+    AllocLocal alloc_local;
+    AllocRemote alloc_remote(coarse_handle);
+
+    SZ sz(N);
+    storage = host_client(alloc_buffer, alloc_inbox_outbox, alloc_local,
+                          alloc_remote, sz, &server, &client);
   }
 
-  ~x64_gcn_t() {}
-  x64_gcn_t(const x64_gcn_t &) = delete;
+  ~x64_gcn_type() { storage.destroy(); }
+  x64_gcn_type(const x64_gcn_type &) = delete;
   bool valid() { return true; }  // true if construction succeeded
 
   template <bool have_continuation>
   bool rpc_invoke(void *fill, void *use) noexcept
   {
-    return instance.client.rpc_invoke<fill, use, have_continuation>(fill, use);
+    return client.rpc_invoke<fill, use, have_continuation>(fill, use);
   }
 
   bool rpc_handle(void *operate_state, void *clear_state,
                   uint32_t *location_arg) noexcept
   {
-    return instance.server.rpc_handle<indirect::operate, indirect::clear>(
+    return server.rpc_handle<indirect::operate, indirect::clear>(
         operate_state, clear_state, location_arg);
   }
 
-  client_counters client_counters() { return instance.client.get_counters(); }
-  server_counters server_counters() { return instance.server.get_counters(); }
+  client_counters client_counters() { return client.get_counters(); }
+  server_counters server_counters() { return server.get_counters(); }
 };
 }  // namespace hostrpc
 
@@ -321,8 +350,8 @@ TEST_CASE("x64_gcn_stress")
 
     HOSTRPC_ATOMIC(bool) server_live(true);
     size_t N = 1920;
-    hostrpc::x64_gcn_t p(N, fine_grained_region.handle,
-                         coarse_grained_region.handle);
+    hostrpc::x64_gcn_type p(N, fine_grained_region.handle,
+                            coarse_grained_region.handle);
 
     // Great error from valgrind on gfx1010:
     // Address 0x8e08000 is in a --- mapped file /dev/dri/renderD128 segment
@@ -334,7 +363,7 @@ TEST_CASE("x64_gcn_stress")
       auto c = hsa::allocate(fine_grained_region,
                              sizeof(hostrpc::x64_gcn_type::client_type));
       void *vc = c.get();
-      memcpy(vc, &p.instance.client, sizeof(p.instance.client));
+      memcpy(vc, &p.client, sizeof(p.client));
 
       int rc = hsa::copy_host_to_gpu(
           kernel_agent, reinterpret_cast<void *>(client_address),
@@ -355,7 +384,7 @@ TEST_CASE("x64_gcn_stress")
     // call
 
     auto page_to_index = [&](hostrpc::page_t *page) -> int64_t {
-      hostrpc::page_t *base = p.instance.client.remote_buffer;
+      hostrpc::page_t *base = p.client.remote_buffer;
 
       intptr_t d = page - base;
       // fprintf(stderr,"base %lx, page %lx, diff %ld\n", (uint64_t)base,
@@ -610,7 +639,7 @@ TEST_CASE("x64_gcn_stress")
           exit(1);
         }
 
-      memcpy(&p.instance.client, vc, sizeof(p.instance.client));
+      memcpy(&p.client, vc, sizeof(p.client));
     }
 
     p.server_counters().dump();

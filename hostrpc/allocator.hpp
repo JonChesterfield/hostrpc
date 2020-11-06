@@ -44,6 +44,7 @@ struct interface
 
   struct raw
   {
+    raw() : ptr(nullptr) {}
     raw(void *p) : ptr(p) {}
     bool valid() { return ptr != nullptr; }
     status destroy() { return Base::destroy(*this); }
@@ -69,6 +70,8 @@ struct store_impl
   typename AllocLocal::raw local_staging;
   typename AllocRemote::raw remote_lock;
   typename AllocRemote::raw remote_staging;
+
+  store_impl() = default;
 
   store_impl(typename AllocBuffer::raw buffer,
              typename AllocInboxOutbox::raw recv,

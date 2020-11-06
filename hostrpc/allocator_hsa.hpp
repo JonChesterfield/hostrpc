@@ -7,8 +7,6 @@
 
 #include "memory_hsa.hpp"
 
-#if (HOSTRPC_HOST)
-
 namespace hostrpc
 {
 namespace allocator
@@ -33,5 +31,4 @@ struct hsa : public interface<Align, hsa<Align>>
 }  // namespace allocator
 }  // namespace hostrpc
 
-#endif
 #endif

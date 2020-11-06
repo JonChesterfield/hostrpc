@@ -30,12 +30,16 @@ _Static_assert(128 == round64(128), "");
 _Static_assert(192 == round64(129), "");
 }  // namespace hostrpc
 
-#if defined(__x86_64__)
-
-#include <new>
+// TODO: Put these somewhere else  or include <new> and restrict to HOST
+inline void* operator new(size_t, _Atomic(uint32_t) * p) { return p; }
+inline void* operator new(size_t, _Atomic(uint64_t) * p) { return p; }
+inline void* operator new(size_t, hostrpc::page_t* p) { return p; }
 
 namespace hostrpc
 {
+// likely to need address_space(1) overloads. Can't placement new into it, so
+// will be reinterpret_cast.
+
 template <typename T>
 T* careful_array_cast(void* data, size_t N)
 {
@@ -71,7 +75,5 @@ T careful_cast_to_bitmap(void* memory, size_t size)
 }
 
 }  // namespace hostrpc
-
-#endif
 
 #endif
