@@ -611,6 +611,16 @@ struct slot_bytemap
     return r;
   }
 
+  uint8_t pack_word(uint32_t x) const
+  {
+    // x = 0000000d 0000000c 0000000b 0000000a
+    uint32_t m = x * UINT64_C(0x10204080);
+    // m = dcba---- -------- -------- --------
+    uint32_t r = m >> 28u;
+    // r = 00000000 00000000 00000000 0000dcba
+    return r;
+  }
+
   uint64_t pack_words(Ty *data) const
   {
     static_assert(sizeof(Word) == 8, "");
