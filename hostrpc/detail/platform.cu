@@ -112,13 +112,24 @@ namespace detail
     return r;                                                         \
   }
 
+// Cuda maps uint64_t onto unsigned long while mangling, but it seems
+// c++/ptx maps uint64_t onto unsigned long long
+// Code calls:
+//   platform::detail::atomic_load_relaxed(unsigned long long _Atomic const volatile*)
+// and this file implements:
+//   platform::detail::atomic_load_relaxed(unsigned long _Atomic const volatile*)
+// despite both referring to uint64_t as their type
+// hacking around here, but may be safer to use extern C symbols for all of these
+
 HOSTRPC_STAMP_MEMORY(uint8_t)
 HOSTRPC_STAMP_MEMORY(uint16_t)
 HOSTRPC_STAMP_MEMORY(uint32_t)
 HOSTRPC_STAMP_MEMORY(uint64_t)
-
+HOSTRPC_STAMP_MEMORY(unsigned long long)
+  
 HOSTRPC_STAMP_FETCH_OPS(uint32_t)
 HOSTRPC_STAMP_FETCH_OPS(uint64_t)
+HOSTRPC_STAMP_FETCH_OPS(unsigned long long)
 
 #undef HOSTRPC_STAMP_MEMORY
 #undef HOSTRPC_STAMP_FETCH

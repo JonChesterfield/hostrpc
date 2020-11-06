@@ -384,6 +384,7 @@ T atomic_fetch_op(HOSTRPC_ATOMIC(T) * addr, T value)
 template <typename T, size_t memorder, size_t scope>
 T atomic_load(HOSTRPC_ATOMIC(T) const *addr)
 {
+  static_assert(sizeof(T) <= 8,"");
   static_assert(detail::atomic_params_load<memorder, scope>(), "");
   T res = detail::atomic_load_relaxed(addr);
   if (memorder == __ATOMIC_ACQUIRE)
