@@ -58,8 +58,7 @@ extern "C" __attribute__((visibility("default"))) int main(int argc,
 
   // times out - no server running
   bool r = x64_nvptx_client_state
-               ->rpc_invoke<hostrpc::fill_nop,
-                            hostrpc::use_nop, true>(vp, vp);
+               ->rpc_invoke<hostrpc::fill_nop, hostrpc::use_nop, true>(vp, vp);
 
   return 0;
 }

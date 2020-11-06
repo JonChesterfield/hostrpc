@@ -51,6 +51,14 @@ struct interface
     local_t local() { return Base::local(*this); }
     remote_t remote() { return Base::remote(*this); }
     void *ptr;
+    void dump(const char *str)
+    {
+#if HOSTRPC_HOST
+      fprintf(stderr, "%s: %p (%p, %p)\n", str, ptr, local().ptr, remote().ptr);
+#else
+      (void)str;
+#endif
+    }
   };
 
  private:
@@ -95,6 +103,17 @@ struct store_impl
     return buffer.valid() && recv.valid() && send.valid() &&
            local_lock.valid() && local_staging.valid() && remote_lock.valid() &&
            remote_staging.valid();
+  }
+
+  void dump()
+  {
+    buffer.dump("buffer");
+    recv.dump("recv");
+    send.dump("send");
+    local_lock.dump("local_lock");
+    local_staging.dump("local_staging");
+    remote_lock.dump("remote_lock");
+    remote_staging.dump("remote_staging");
   }
 
   status destroy()

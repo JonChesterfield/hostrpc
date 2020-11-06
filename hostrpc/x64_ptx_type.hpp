@@ -6,10 +6,15 @@
 #include "detail/platform_detect.h"
 #include "detail/server_impl.hpp"
 
-#include "memory.hpp"
 #include "allocator_cuda.hpp"
 #include "allocator_libc.hpp"
 #include "host_client.hpp"
+#include "memory.hpp"
+
+#if HOSTRPC_HOST
+#include <stdio.h>
+#include <stdlib.h>
+#endif
 
 namespace hostrpc
 {
@@ -46,6 +51,17 @@ struct x64_ptx_type
     SZ sz(N);
     storage = host_client(alloc_buffer, alloc_inbox_outbox, alloc_local,
                           alloc_remote, sz, &server, &client);
+    if (!storage.valid())
+      {
+#if HOSTRPC_HOST
+        fprintf(stderr, "x64_ptx_type construction failed\n");
+        exit(1);
+#endif
+      }
+    else
+      {
+        storage.dump();
+      }
   }
 
   ~x64_ptx_type() { storage.destroy(); }

@@ -11,24 +11,24 @@ namespace hostrpc
 {
 namespace allocator
 {
-template <bool Shared, size_t Align>
-struct cuda_shared_gpu : public interface<Align, cuda_shared_gpu<Shared, Align>>
+template <size_t Align>
+struct cuda_shared : public interface<Align, cuda_shared<Align>>
 {
-  using Base = interface<Align, cuda_shared_gpu<Shared, Align>>;
+  // allocate a pointer on the host and derive a device one from it
+  using Base = interface<Align, cuda_shared<Align>>;
   using typename Base::local_t;
   using typename Base::raw;
   using typename Base::remote_t;
 
-  cuda_shared_gpu() {}
+  cuda_shared() {}
   raw allocate(size_t N)
   {
     size_t adj = N + Align - 1;
-    return {hostrpc::cuda::dispatch<Shared>::allocate(adj)};  // zeros
+    return {hostrpc::cuda::allocate_shared(adj)};  // zeros
   }
   static status destroy(raw x)
   {
-    return hostrpc::cuda::dispatch<Shared>::deallocate(x.ptr) == 0 ? success
-                                                                   : failure;
+    return hostrpc::cuda::deallocate_shared(x.ptr) == 0 ? success : failure;
   }
   static local_t local(raw x)
   {
@@ -46,10 +46,33 @@ struct cuda_shared_gpu : public interface<Align, cuda_shared_gpu<Shared, Align>>
 };
 
 template <size_t Align>
-using cuda_shared = cuda_shared_gpu<true, Align>;
+struct cuda_gpu : public interface<Align, cuda_gpu<Align>>
+{
+  using Base = interface<Align, cuda_gpu<Align>>;
+  using typename Base::local_t;
+  using typename Base::raw;
+  using typename Base::remote_t;
 
-template <size_t Align>
-using cuda_gpu = cuda_shared_gpu<false, Align>;
+  cuda_gpu() {}
+  raw allocate(size_t N)
+  {
+    size_t adj = N + Align - 1;
+    return {hostrpc::cuda::allocate_gpu(adj)};  // zeros
+  }
+  static status destroy(raw x)
+  {
+    return hostrpc::cuda::deallocate_gpu(x.ptr) == 0 ? success : failure;
+  }
+  static local_t local(raw)
+  {
+    // local is on the host (as only have a host cuda allocator at present)
+    return {0};
+  }
+  static remote_t remote(raw x)
+  {
+    return {hostrpc::cuda::align_pointer_up(x.ptr, Align)};
+  }
+};
 
 }  // namespace allocator
 }  // namespace hostrpc
