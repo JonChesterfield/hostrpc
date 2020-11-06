@@ -1,7 +1,6 @@
 #include "base_types.hpp"
 #include "detail/platform_detect.h"
-#include "x64_host_ptx_client.hpp"
-#include "x64_nvptx_pair.hpp"
+#include "x64_nvptx_type.hpp"
 
 // Implementation api. This construct is a singleton.
 namespace hostcall_ops

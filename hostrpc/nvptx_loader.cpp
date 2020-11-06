@@ -1,5 +1,3 @@
-#include "x64_nvptx_pair.hpp"
-
 #include "raiifile.hpp"
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -8,7 +6,7 @@
 #include <stdio.h>
 
 #include "hostcall.hpp"
-#include "x64_nvptx_pair.hpp"
+#include "x64_nvptx_type.hpp"
 
 #define DEBUGP(prefix, ...)             \
   {                                     \
