@@ -43,7 +43,7 @@ struct clear_direct
 }  // namespace hostrpc
 
 using server_type_direct =
-    hostrpc::server_impl<uint32_t, SZ, hostrpc::copy_functor_memcpy_pull,
+    hostrpc::server_impl<uint64_t, SZ, hostrpc::copy_functor_memcpy_pull,
                          hostrpc::nop_stepper>;
 
 extern "C" void server_instance_direct(server_type_direct::inbox_t inbox,
@@ -66,7 +66,7 @@ extern "C" void server_instance_direct(server_type_direct::inbox_t inbox,
 }
 
 using server_type_indirect =
-    hostrpc::server_impl<uint32_t, SZ, hostrpc::copy_functor_memcpy_pull,
+    hostrpc::server_impl<uint64_t, SZ, hostrpc::copy_functor_memcpy_pull,
                          hostrpc::nop_stepper>;
 
 extern "C" void server_instance_indirect(

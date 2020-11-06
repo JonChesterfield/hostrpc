@@ -209,10 +209,14 @@ namespace properties
 // perspective. Can downgrade to swap fairly easily, which will be roughly as
 // expensive as a load & store.
 
-template <bool HasFetchOpArg>
+// x64 has cas, fetch op
+// amdgcn has cas, fetch on gpu and cas on pcie
+// nvptx has cas, fetch on gpu
+template <bool HasFetchOpArg, bool HasCasOpArg = true>
 struct base
 {
   static constexpr bool hasFetchOp() { return HasFetchOpArg; }
+  static constexpr bool hasCasOp() { return HasCasOpArg; }
 };
 
 template <typename Word>
@@ -238,8 +242,17 @@ template <typename Word, size_t scope, typename Prop>
 struct slot_bitmap;
 
 template <typename Word>
+struct slot_bytemap;
+
+#if 1
+// bytemap is working for persistent kernel but not for loader executable
+template <typename Word>
 using message_bitmap = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
                                    properties::fine_grain<Word>>;
+#else
+template <typename Word>
+using message_bitmap = slot_bytemap<Word>;
+#endif
 
 template <typename Word>
 using slot_bitmap_coarse = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_DEVICE,
@@ -582,6 +595,15 @@ struct slot_bytemap
     uint32_t i = w * wordBits();
     assert(i < size);
     return pack_words(&a[i]);
+  }
+
+  bool operator()(uint32_t size, uint32_t i, Word *loaded) const
+  {
+    // TODO: Works iff load_word matches bitmap
+    uint32_t w = index_to_element<Word>(i);
+    Word d = load_word(size, w);
+    *loaded = d;
+    return bits::nthbitset(d, index_to_subindex<Word>(i));
   }
 
  private:
