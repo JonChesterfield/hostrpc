@@ -19,9 +19,9 @@ static void init_page(hostrpc::page_t *page, uint64_t v)
 #if defined(__x86_64__)
 
 #include "allocator_libc.hpp"
-#include "host_client.hpp"
 #include "detail/client_impl.hpp"
 #include "detail/server_impl.hpp"
+#include "host_client.hpp"
 
 namespace hostrpc
 {
@@ -33,7 +33,6 @@ struct x64_x64_t
   using Word = uint32_t;
   using client_type = client_impl<Word, SZ, Copy, Step>;
   using server_type = server_impl<Word, SZ, Copy, Step>;
-
 
   client_type client;
   server_type server;
@@ -48,7 +47,7 @@ struct x64_x64_t
                                              AllocLocal, AllocRemote>;
 
   storage_type storage;
-  
+
   // This probably can't be copied, but could be movable
   x64_x64_t(size_t minimum_number_slots)
   {
@@ -61,11 +60,9 @@ struct x64_x64_t
     SZ sz(N);
     storage = host_client(alloc_buffer, alloc_inbox_outbox, alloc_local,
                           alloc_remote, sz, &server, &client);
-
-    
   }
 
-  ~x64_x64_t() {storage.destroy();}
+  ~x64_x64_t() { storage.destroy(); }
 
   x64_x64_t(const x64_x64_t &) = delete;
   bool valid()
@@ -76,15 +73,14 @@ struct x64_x64_t
   template <bool have_continuation>
   bool rpc_invoke(void *fill, void *use) noexcept
   {
-    return client
-        .rpc_invoke<indirect::fill, indirect::use, have_continuation>(fill,
-                                                                      use);
+    return client.rpc_invoke<indirect::fill, indirect::use, have_continuation>(
+        fill, use);
   }
 
   bool rpc_handle(void *operate_state, void *clear_state) noexcept
   {
-    return server.rpc_handle<indirect::operate, indirect::clear>(
-        operate_state, clear_state);
+    return server.rpc_handle<indirect::operate, indirect::clear>(operate_state,
+                                                                 clear_state);
   }
 
   bool rpc_handle(void *operate_state, void *clear_state,
@@ -95,8 +91,6 @@ struct x64_x64_t
   }
 
   client_counters client_counters() { return client.get_counters(); }
-
-
 };
 }  // namespace hostrpc
 #endif

@@ -30,8 +30,8 @@ kernel void __device_persistent_kernel(__global void *args)
 #include <stddef.h>
 #include <stdint.h>
 
-#include "memory.hpp"
 #include "gcn_host_x64_client.hpp"
+#include "memory.hpp"
 
 namespace hostrpc
 {
