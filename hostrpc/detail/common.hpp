@@ -212,7 +212,7 @@ namespace properties
 // x64 has cas, fetch op
 // amdgcn has cas, fetch on gpu and cas on pcie
 // nvptx has cas, fetch on gpu
-template <bool HasFetchOpArg, bool HasCasOpArg = true>
+template <bool HasFetchOpArg, bool HasCasOpArg>
 struct base
 {
   static constexpr bool hasFetchOp() { return HasFetchOpArg; }
@@ -220,7 +220,7 @@ struct base
 };
 
 template <typename Word>
-struct fine_grain : public base<false>
+struct fine_grain : public base<false, true>
 {
   using Ty = __attribute__((aligned(64))) HOSTRPC_ATOMIC(Word);
 };
@@ -246,6 +246,7 @@ struct slot_bytemap;
 
 #if 1
 // bytemap is working for persistent kernel but not for loader executable
+// see: SLOT_BYTEMAP_ATOMIC
 template <typename Word>
 using message_bitmap = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
                                    properties::fine_grain<Word>>;
@@ -443,9 +444,12 @@ struct slot_bitmap
 template <typename Word>
 struct lock_bitmap
 {
-  using Ty = typename properties::device_local<Word>::Ty;
+  using Prop = typename properties::device_local<Word>;
+  using Ty = typename Prop::Ty;
   static_assert(sizeof(Word) == sizeof(HOSTRPC_ATOMIC(Word)), "");
   static_assert(sizeof(HOSTRPC_ATOMIC(Word) *) == 8, "");
+  static_assert(Prop::hasFetchOp(), "");
+  static_assert(Prop::hasCasOp(), "");
   Ty *a;
   static constexpr size_t bits_per_slot() { return 1; }
 
@@ -549,6 +553,7 @@ template <typename Word>
 struct slot_bytemap
 {
   static_assert(sizeof(Word) == 8, "Unimplemented for uint32_t");
+  // gcn back end fails to select AtomicStore<(store syncscope("one-as")
 #define SLOT_BYTEMAP_ATOMIC 0
 
   // assumes sizeof a is a multiple of 64, may be worth passing size to the
