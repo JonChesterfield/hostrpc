@@ -41,17 +41,14 @@ extern "C" __attribute__((visibility("default"))) int main(int argc,
   (void)argc;
   (void)argv;
 
-  // times out
-  for (;;)
+  int s = 0;
+
+  for (unsigned i = 0; i < 4; i++)
     {
-      bool r =
-          x64_nvptx_client_state
-              ->rpc_invoke<hostrpc::fill_nop, hostrpc::use_nop, true>(0, 0);
-      if (r == true)
-        {
-          return 0;
-        }
+      s += x64_nvptx_client_state
+               ->rpc_invoke<hostrpc::fill_nop, hostrpc::use_nop, true>(0, 0);
     }
-  return 0;
+
+  return s;
 }
 #endif

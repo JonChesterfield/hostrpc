@@ -241,7 +241,7 @@ int init(void *image)
     std::thread serv([&]() {
       uint32_t location = 0;
 
-      for (unsigned i = 0; i < 32; i++)
+      for (unsigned i = 0; i < 16; i++)
         {
           bool r = x64_nvptx_state.server.rpc_handle<operate_test, clear_test>(
               nullptr, nullptr, &location);
@@ -269,6 +269,7 @@ int init(void *image)
     // times out here
 
     t("more sync", [&]() { return cuStreamSynchronize(stream); });
+    fprintf(stderr, "Sync finished\n");
 
     t("copy",
       [&]() { return cuMemcpyDtoH(&hostRes, devRes, sizeof(hostRes)); });
