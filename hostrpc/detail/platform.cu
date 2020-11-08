@@ -51,6 +51,16 @@ DEVICE int32_t __impl_shfl_down_sync(int32_t var, uint32_t laneDelta)
   return __shfl_down_sync(UINT32_MAX, var, laneDelta, WARPSIZE);
 }
 
+DEVICE
+void assert_fail(const char *str, const char *file, unsigned int line,
+                 const char *func)
+{
+  uint32_t lane_id = get_lane_id();
+    asm("// Assert fail " ::"r"(line), "r"(str));
+    printf("Assert fail[%u]: %s (%s: %s)\n",  lane_id, str, file, func);
+  __builtin_trap();
+}
+  
 }  // namespace detail
 
 DEVICE uint32_t broadcast_master(uint32_t x)

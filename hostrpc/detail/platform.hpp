@@ -112,30 +112,6 @@ constexpr bool atomic_params_readmodifywrite()
 // Jury rig some pieces of libc for freestanding
 // Assert is based on the implementation in musl
 #if (HOSTRPC_AMDGCN || HOSTRPC_NVPTX)
-#ifdef NDEBUG
-#define assert(x) (void)0
-#else
-#define assert_str(x) assert_str_1(x)
-#define assert_str_1(x) #x
-#define assert(x)                                                           \
-  ((void)((x) || (__assert_fail("L:" assert_str(__LINE__) " " #x, __FILE__, \
-                                __LINE__, __func__),                        \
-                  0)))
-#endif
-
-#ifdef static_assert
-#undef static_assert
-#endif
-#define static_assert _Static_assert
-
-__attribute__((always_inline)) inline void __assert_fail(const char *str,
-                                                         const char *,
-                                                         unsigned int line,
-                                                         const char *)
-{
-  asm("// Assert fail " ::"r"(line), "r"(str));
-  __builtin_trap();
-}
 
 // stub printf for now
 // aomp clang currently rewrites any variadic function to a pair of
@@ -148,7 +124,48 @@ __attribute__((always_inline)) inline int __inline_printf()
   return 0;
 }
 
+#ifdef NDEBUG
+#define assert(x) (void)0
+#else
+#define assert_str(x) assert_str_1(x)
+#define assert_str_1(x) #x
+#define assert(x)                                                          \
+  ((void)((x) ||                                                           \
+          (platform::detail::assert_fail("L:" assert_str(__LINE__) " " #x, \
+                                         __FILE__, __LINE__, __func__),    \
+           0)))
 #endif
+
+#ifdef static_assert
+#undef static_assert
+#endif
+#define static_assert _Static_assert
+
+#endif
+
+namespace platform
+{
+namespace detail
+{
+#if (HOSTRPC_AMDGCN)
+__attribute__((always_inline)) inline void assert_fail(const char *str,
+                                                       const char *,
+                                                       unsigned int line,
+                                                       const char *)
+{
+  asm("// Assert fail " ::"r"(line), "r"(str));
+  __builtin_trap();
+}
+#endif
+
+#if (HOSTRPC_NVPTX)
+void assert_fail(const char *str, const char *, unsigned int line,
+                 const char *);
+
+#endif
+
+}  // namespace detail
+}  // namespace platform
 
 #if HOSTRPC_HOST
 #include <chrono>
