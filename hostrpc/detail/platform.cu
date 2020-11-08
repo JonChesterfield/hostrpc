@@ -52,15 +52,23 @@ DEVICE int32_t __impl_shfl_down_sync(int32_t var, uint32_t laneDelta)
 }
 
 DEVICE
+void(debug)(const char *file, unsigned int line, const char *func,
+            unsigned long long value)
+{
+  uint32_t lane_id = get_lane_id();
+  printf("Debug[%u] %s: %s: %d: %llu\n", lane_id, file, func, line, value);
+}
+
+DEVICE
 void assert_fail(const char *str, const char *file, unsigned int line,
                  const char *func)
 {
   uint32_t lane_id = get_lane_id();
-    asm("// Assert fail " ::"r"(line), "r"(str));
-    printf("Assert fail[%u]: %s (%s: %s)\n",  lane_id, str, file, func);
+  asm("// Assert fail " ::"r"(line), "r"(str));
+  printf("Assert fail[%u]: %s (%s: %s)\n", lane_id, str, file, func);
   __builtin_trap();
 }
-  
+
 }  // namespace detail
 
 DEVICE uint32_t broadcast_master(uint32_t x)

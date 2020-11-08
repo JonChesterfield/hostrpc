@@ -25,6 +25,13 @@ uint32_t client_start_slot();
 void fence_acquire();
 void fence_release();
 
+#define debug(X) platform::detail::debug(__FILE__, __LINE__, __func__, X)
+namespace detail
+{
+void(debug)(const char *file, unsigned int line, const char *func,
+            uint64_t value);
+}
+
 // atomics are also be overloaded on different address spaces for some platforms
 // implemented for a slight superset of the subset of T that are presently in
 // use
@@ -148,6 +155,9 @@ namespace platform
 namespace detail
 {
 #if (HOSTRPC_AMDGCN)
+inline void(debug)(const char *, unsigned int, const char *, uint64_t)
+{ /*unimplemented*/
+}
 __attribute__((always_inline)) inline void assert_fail(const char *str,
                                                        const char *,
                                                        unsigned int line,
@@ -159,9 +169,10 @@ __attribute__((always_inline)) inline void assert_fail(const char *str,
 #endif
 
 #if (HOSTRPC_NVPTX)
+void(debug)(const char *, unsigned int, const char *, unsigned long long);
+
 void assert_fail(const char *str, const char *, unsigned int line,
                  const char *);
-
 #endif
 
 }  // namespace detail
@@ -200,7 +211,12 @@ inline uint32_t reduction_sum(uint32_t x) { return x; }
 inline uint32_t client_start_slot() { return 0; }
 inline void fence_acquire() { __c11_atomic_thread_fence(__ATOMIC_ACQUIRE); }
 inline void fence_release() { __c11_atomic_thread_fence(__ATOMIC_RELEASE); }
-
+namespace detail
+{
+inline void(debug)(const char *, unsigned int, const char *, uint64_t)
+{ /*unimplemented*/
+}
+}  // namespace detail
 #define HOSTRPC_PLATFORM_ATOMIC_FUNCTION_ATTRIBUTE
 #define HOSTRPC_PLATFORM_ATOMIC_ADDRSPACE_ATTRIBUTE
 #include "platform_atomic.inc"
@@ -332,7 +348,7 @@ uint32_t get_lane_id();
 
 __attribute__((always_inline)) bool is_master_lane()
 {
-  return get_lane_id() == detail::get_master_lane_id();
+  return get_lane_id() == platform::detail::get_master_lane_id();
 }
 
 uint32_t broadcast_master(uint32_t x);
@@ -380,7 +396,7 @@ template <typename T, T (*op)(HOSTRPC_ATOMIC(T) *, T), size_t memorder,
           size_t scope>
 T atomic_fetch_op(HOSTRPC_ATOMIC(T) * addr, T value)
 {
-  static_assert(detail::atomic_params_readmodifywrite<memorder, scope>(), "");
+  static_assert(atomic_params_readmodifywrite<memorder, scope>(), "");
 
   if (memorder == __ATOMIC_ACQ_REL)
     {
