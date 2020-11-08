@@ -33,19 +33,6 @@ static DEVICE uint32_t ballot()
 #endif
 }
 
-DEVICE uint32_t get_master_lane_id(void)
-{
-  uint32_t activemask = ballot();
-
-  uint32_t lowest_active = __builtin_ffs(activemask) - 1;
-  uint32_t lane_id = get_lane_id();
-
-  return lane_id == lowest_active;
-
-  // TODO: openmp deviceRTL uses:
-  // return (blockDim.x - 1) & ~(WARPSIZE - 1);
-}
-
 DEVICE int32_t __impl_shfl_down_sync(int32_t var, uint32_t laneDelta)
 {
   return __shfl_down_sync(UINT32_MAX, var, laneDelta, WARPSIZE);
@@ -71,9 +58,20 @@ void assert_fail(const char *str, const char *file, unsigned int line,
 
 }  // namespace detail
 
+static DEVICE uint32_t get_master_lane_id(void)
+{
+  // TODO: openmp deviceRTL uses:
+  // return (blockDim.x - 1) & ~(WARPSIZE - 1);
+  uint32_t activemask = detail::ballot();
+  uint32_t lowest_active = __builtin_ffs(activemask) - 1;
+  return lowest_active;
+}
+
+DEVICE bool is_master_lane() { return get_lane_id() == get_master_lane_id(); }
+
 DEVICE uint32_t broadcast_master(uint32_t x)
 {
-  uint32_t master_id = detail::get_master_lane_id();
+  uint32_t master_id = get_master_lane_id();
   // __nvvm_shfl_sync_idx_i32(UINT32_MAX, x, master_id, 31)
 #if CUDA_VERSION >= 9000
   // Use activemask?

@@ -28,9 +28,16 @@ void fence_release();
 #define debug(X) platform::detail::debug(__FILE__, __LINE__, __func__, X)
 namespace detail
 {
+#if (!HOSTRPC_NVPTX)
 void(debug)(const char *file, unsigned int line, const char *func,
             uint64_t value);
-}
+#else
+static_assert(sizeof(uint64_t) == sizeof(unsigned long long),
+              "yet they mangle differently");
+void(debug)(const char *file, unsigned int line, const char *func,
+            unsigned long long value);
+#endif
+}  // namespace detail
 
 // atomics are also be overloaded on different address spaces for some platforms
 // implemented for a slight superset of the subset of T that are presently in
@@ -326,7 +333,7 @@ BODGE_HIP inline uint32_t client_start_slot()
 }  // namespace platform
 #endif  // defined(__AMDGCN__)
 
-#if HOSTRPC_NVPTX
+#if (HOSTRPC_NVPTX)
 namespace platform
 {
 inline void sleep_briefly() {}
@@ -338,18 +345,13 @@ namespace detail
 // intrinsics. Can't compile the majority of the code as cuda, so moving the
 // platform functions out of line.
 
-uint32_t get_master_lane_id();
-
 int32_t __impl_shfl_down_sync(int32_t var, uint32_t laneDelta);
 
 }  // namespace detail
 
 uint32_t get_lane_id();
 
-__attribute__((always_inline)) bool is_master_lane()
-{
-  return get_lane_id() == platform::detail::get_master_lane_id();
-}
+bool is_master_lane();
 
 uint32_t broadcast_master(uint32_t x);
 
