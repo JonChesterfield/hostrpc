@@ -13,61 +13,6 @@
 
 namespace hostrpc
 {
-namespace x64_host_amdgcn_client
-{
-struct fill
-{
-  static void call(hostrpc::page_t *page, void *dv)
-  {
-#if defined(__AMDGCN__)
-    uint64_t *d = static_cast<uint64_t *>(dv);
-    hostcall_ops::pass_arguments(page, d);
-#else
-    (void)page;
-    (void)dv;
-#endif
-  };
-};
-
-struct use
-{
-  static void call(hostrpc::page_t *page, void *dv)
-  {
-#if defined(__AMDGCN__)
-    uint64_t *d = static_cast<uint64_t *>(dv);
-    hostcall_ops::use_result(page, d);
-#else
-    (void)page;
-    (void)dv;
-#endif
-  };
-};
-
-struct operate
-{
-  static void call(hostrpc::page_t *page, void *)
-  {
-#if defined(__x86_64__)
-    hostcall_ops::operate(page);
-#else
-    (void)page;
-#endif
-  }
-};
-
-struct clear
-{
-  static void call(hostrpc::page_t *page, void *)
-  {
-#if defined(__x86_64__)
-    hostcall_ops::clear(page);
-#else
-    (void)page;
-#endif
-  }
-};
-}  // namespace x64_host_amdgcn_client
-
 using SZ = size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
 using x64_amdgcn_pair =
     hostrpc::x64_gcn_pair_T<SZ, counters::client_nop, counters::server_nop>;
@@ -91,6 +36,40 @@ using x64_amdgcn_pair =
 
 #if defined(__AMDGCN__)
 
+namespace hostrpc
+{
+namespace x64_host_amdgcn_client
+{
+struct fill
+{
+  uint64_t *d;
+  fill(uint64_t *d) : d(d) {}
+  void operator()(hostrpc::page_t *page)
+  {
+#if defined(__AMDGCN__)
+    hostcall_ops::pass_arguments(page, d);
+#else
+    (void)page;
+#endif
+  };
+};
+
+struct use
+{
+  uint64_t *d;
+  use(uint64_t *d) : d(d) {}
+  void operator()(hostrpc::page_t *page)
+  {
+#if defined(__AMDGCN__)
+    hostcall_ops::use_result(page, d);
+#else
+    (void)page;
+#endif
+  };
+};
+}  // namespace x64_host_amdgcn_client
+}  // namespace hostrpc
+
 // Accessing this, sometimes, raises a page not present fault on gfx8
 // drawback of embedding in image is that multiple shared libraries will all
 // need their own copy, whereas it really should be one per gpu
@@ -102,14 +81,15 @@ hostrpc::x64_amdgcn_pair::client_type *client_singleton;
 template <bool C>
 static void hostcall_impl(uint64_t data[8])
 {
+  hostrpc::x64_host_amdgcn_client::fill f(&data[0]);
+  hostrpc::x64_host_amdgcn_client::use u(&data[0]);
+
   auto *c = &client_singleton[get_queue_index()];
 
   bool success = false;
   while (!success)
     {
-      void *d = static_cast<void *>(&data[0]);
-      success = c->rpc_invoke<hostrpc::x64_host_amdgcn_client::fill,
-                              hostrpc::x64_host_amdgcn_client::use, C>(d, d);
+      success = c->rpc_invoke<decltype(f), decltype(u), C>(f, u);
     }
 }
 
@@ -123,6 +103,36 @@ void hostcall_client_async(uint64_t data[8])
 #endif
 
 #if defined(__x86_64__)
+
+namespace hostrpc
+{
+namespace x64_host_amdgcn_client
+{
+struct operate
+{
+  void operator()(hostrpc::page_t *page)
+  {
+#if defined(__x86_64__)
+    hostcall_ops::operate(page);
+#else
+    (void)page;
+#endif
+  }
+};
+
+struct clear
+{
+  void operator()(hostrpc::page_t *page)
+  {
+#if defined(__x86_64__)
+    hostcall_ops::clear(page);
+#else
+    (void)page;
+#endif
+  }
+};
+}  // namespace x64_host_amdgcn_client
+}  // namespace hostrpc
 
 class hostcall_impl
 {
@@ -265,9 +275,9 @@ class hostcall_impl
       uint32_t ql = 0;
       for (;;)
         {
-          while (server.rpc_handle<hostrpc::x64_host_amdgcn_client::operate,
-                                   hostrpc::x64_host_amdgcn_client::clear>(
-              nullptr, &ql))
+          hostrpc::x64_host_amdgcn_client::operate op;
+          hostrpc::x64_host_amdgcn_client::clear cl;
+          while (server.rpc_handle<decltype(op), decltype(cl)>(op, cl, &ql))
             {
             }
 

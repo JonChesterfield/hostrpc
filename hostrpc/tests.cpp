@@ -54,16 +54,19 @@ TEST_CASE("set up single word system")
 
   struct fill
   {
-    static void call(page_t *p, void *v)
-    {
-      uint64_t *state = static_cast<uint64_t *>(v);
-      p->cacheline[0].element[0] = *state;
-    }
+    fill(_Atomic(uint64_t) * s) : state(s) {}
+    _Atomic(uint64_t) * state;
+    void operator()(page_t *p) { p->cacheline[0].element[0] = *state; }
+  };
+
+  struct use
+  {
+    void operator()(page_t *) {}
   };
 
   struct operate
   {
-    static void call(page_t *p, void *)
+    void operator()(page_t *p)
     {
       uint64_t r = p->cacheline[0].element[0];
       // printf("Server received %lu, forwarding as %lu\n", r, 2 * r);
@@ -73,12 +76,7 @@ TEST_CASE("set up single word system")
 
   struct clear
   {
-    static void call(page_t *, void *) {}
-  };
-
-  struct use
-  {
-    static void call(page_t *p, void *) { (void)p; }
+    void operator()(page_t *) {}
   };
 
   using SZ = hostrpc::size_compiletime<N>;
@@ -113,17 +111,15 @@ TEST_CASE("set up single word system")
                         &server_buffer[0],
                         &client_buffer[0]};
 
-      void *application_state_ptr = static_cast<void *>(&val);
-
+      fill f(&val);
+      use u;
       while (calls_launched < calls_planned)
         {
-          if (cl.rpc_invoke<fill, use, false>(application_state_ptr,
-                                              application_state_ptr))
+          if (cl.rpc_invoke<fill, use, false>(f, u))
             {
               calls_launched++;
             }
-          if (false && cl.rpc_invoke<fill, use, true>(application_state_ptr,
-                                                      application_state_ptr))
+          if (false && cl.rpc_invoke<fill, use, true>(f, u))
             {
               calls_launched++;
             }
@@ -142,12 +138,10 @@ TEST_CASE("set up single word system")
                         &client_buffer[0],
                         &server_buffer[0]};
 
-      void *application_state_ptr = static_cast<void *>(&val);
       uint32_t loc_arg = 0;
       for (;;)
         {
-          if (sv.rpc_handle<operate, clear>(application_state_ptr,
-                                            application_state_ptr, &loc_arg))
+          if (sv.rpc_handle<operate, clear>(operate{}, clear{}, &loc_arg))
 
             {
               calls_handled++;

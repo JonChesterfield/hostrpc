@@ -48,7 +48,7 @@ struct x64_gcn_pair_T
     auto alloc_remote = AllocRemote(coarse_handle);
 
     storage = host_client(alloc_buffer, alloc_inbox_outbox, alloc_local,
-                               alloc_remote, sz, &server, &client);
+                          alloc_remote, sz, &server, &client);
 #else
     (void)sz;
     (void)fine_handle;

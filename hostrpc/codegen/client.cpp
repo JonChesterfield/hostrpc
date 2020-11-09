@@ -15,9 +15,10 @@ extern "C" __attribute__((noinline)) void client_instance_direct(client_type& c)
 {
   for (;;)
     {
-      c.rpc_invoke<hostrpc::fill_nop, hostrpc::use_nop, true>(nullptr, nullptr);
-      c.rpc_invoke<hostrpc::fill_nop, hostrpc::use_nop, false>(nullptr,
-                                                               nullptr);
+      hostrpc::fill_nop fill;
+      hostrpc::use_nop use;
+      c.rpc_invoke<hostrpc::fill_nop, hostrpc::use_nop, true>(fill, use);
+      c.rpc_invoke<hostrpc::fill_nop, hostrpc::use_nop, false>(fill, use);
     }
 }
 

@@ -2,56 +2,30 @@
 
 using SZ = hostrpc::size_compiletime<128>;
 
-void op_target(hostrpc::page_t *, void *);
-void cl_target(hostrpc::page_t *, void *);
-
-struct pack
-{
-  void (*func)(hostrpc::page_t *, void *);
-  void *state;
-};
+void op_target(hostrpc::page_t *);
+void cl_target(hostrpc::page_t *);
 
 namespace hostrpc
 {
-struct operate_indirect
-{
-  static void call(hostrpc::page_t *page, void *pv)
-  {
-    pack *p = static_cast<pack *>(pv);
-    p->func(page, p->state);
-  }
-};
-
 struct operate_direct
 {
-  static void call(hostrpc::page_t *page, void *pv) { op_target(page, pv); }
-};
-
-struct clear_indirect
-{
-  static void call(hostrpc::page_t *page, void *pv)
-  {
-    pack *p = static_cast<pack *>(pv);
-    p->func(page, p->state);
-  }
+  void operator()(hostrpc::page_t *page) { op_target(page); }
 };
 
 struct clear_direct
 {
-  static void call(hostrpc::page_t *page, void *pv) { cl_target(page, pv); }
+  void operator()(hostrpc::page_t *page) { cl_target(page); }
 };
 }  // namespace hostrpc
 
 using server_type_direct =
     hostrpc::server_impl<uint64_t, SZ, hostrpc::copy_functor_memcpy_pull>;
 
-extern "C" void server_instance_direct(server_type_direct::inbox_t inbox,
-                                       server_type_direct::outbox_t outbox,
-                                       server_type_direct::lock_t active,
-                                       server_type_direct::staging_t staging,
-                                       hostrpc::page_t *remote_buffer,
-                                       hostrpc::page_t *local_buffer,
-                                       void *state_arg)
+extern "C" void server_instance_direct(
+    server_type_direct::inbox_t inbox, server_type_direct::outbox_t outbox,
+    server_type_direct::lock_t active, server_type_direct::staging_t staging,
+    hostrpc::page_t *remote_buffer, hostrpc::page_t *local_buffer,
+    hostrpc::operate_direct op, hostrpc::clear_direct cl)
 {
   SZ sz;
   server_type_direct s = {sz,      active,        inbox,       outbox,
@@ -59,29 +33,6 @@ extern "C" void server_instance_direct(server_type_direct::inbox_t inbox,
 
   for (;;)
     {
-      s.rpc_handle<hostrpc::operate_direct, hostrpc::clear_direct>(state_arg,
-                                                                   state_arg);
-    }
-}
-
-using server_type_indirect =
-    hostrpc::server_impl<uint64_t, SZ, hostrpc::copy_functor_memcpy_pull>;
-
-extern "C" void server_instance_indirect(
-    server_type_indirect::inbox_t inbox, server_type_indirect::outbox_t outbox,
-    server_type_indirect::lock_t active,
-    server_type_indirect::staging_t staging, hostrpc::page_t *remote_buffer,
-    hostrpc::page_t *local_buffer, void *state_arg)
-{
-  SZ sz;
-  server_type_indirect s = {sz,      active,        inbox,       outbox,
-                            staging, remote_buffer, local_buffer};
-
-  pack arg = {.func = op_target, .state = state_arg};
-
-  for (;;)
-    {
-      s.rpc_handle<hostrpc::operate_indirect, hostrpc::clear_indirect>(
-          static_cast<void *>(&arg), static_cast<void *>(&arg));
+      s.rpc_handle<hostrpc::operate_direct, hostrpc::clear_direct>(op, cl);
     }
 }

@@ -13,12 +13,12 @@ namespace hostrpc
 {
 struct fill_nop
 {
-  static void call(page_t*, void*) {}
+  void operator()(page_t*) {}
 };
 
 struct use_nop
 {
-  static void call(page_t*, void*) {}
+  void operator()(page_t*) {}
 };
 
 enum class client_state : uint8_t
@@ -129,8 +129,7 @@ struct client_impl : public SZT, public Counter
 
   // Returns true if it successfully launched the task
   template <typename Fill, typename Use, bool have_continuation>
-  bool rpc_invoke(void* fill_application_state,
-                  void* use_application_state) noexcept
+  bool rpc_invoke(Fill fill, Use use) noexcept
   {
     const uint32_t size = this->size();
     const uint32_t words = this->words();
@@ -178,7 +177,7 @@ struct client_impl : public SZT, public Counter
                 // Success, got the lock.
                 Counter::cas_lock_fail(cas_fail_count);
                 bool r = rpc_invoke_given_slot<Fill, Use, have_continuation>(
-                    fill_application_state, use_application_state, slot);
+                    fill, use, slot);
 
                 // wave release slot
                 platform::critical<uint32_t>([&]() {
@@ -241,9 +240,7 @@ struct client_impl : public SZT, public Counter
   // true if it successfully made a call, false if no work to do or only gc
   // If there's no continuation, shouldn't require a use_application_state
   template <typename Fill, typename Use, bool have_continuation>
-  bool rpc_invoke_given_slot(void* fill_application_state,
-                             void* use_application_state,
-                             uint32_t slot) noexcept
+  bool rpc_invoke_given_slot(Fill fill, Use use, uint32_t slot) noexcept
   {
     assert(slot != UINT32_MAX);
     const uint32_t element = index_to_element<Word>(slot);
@@ -296,7 +293,7 @@ struct client_impl : public SZT, public Counter
     // wave_populate
     // Fill may have no precondition, in which case this doesn't need to run
     Copy::pull_to_client_from_server(&local_buffer[slot], &remote_buffer[slot]);
-    Fill::call(&local_buffer[slot], fill_application_state);
+    fill(&local_buffer[slot]);
     Copy::push_from_client_to_server(&remote_buffer[slot], &local_buffer[slot]);
 
     // wave_publish work
@@ -355,7 +352,7 @@ struct client_impl : public SZT, public Counter
         Copy::pull_to_client_from_server(&local_buffer[slot],
                                          &remote_buffer[slot]);
         // call the continuation
-        Use::call(&local_buffer[slot], use_application_state);
+        use(&local_buffer[slot]);
 
         // Copying the state back to the server is a nop for aliased case,
         // and is only necessary if the server has a non-nop garbage clear
@@ -398,28 +395,6 @@ struct client_impl : public SZT, public Counter
     return true;
   }
 };
-
-namespace indirect
-{
-struct fill
-{
-  static void call(hostrpc::page_t* page, void* pv)
-  {
-    hostrpc::closure_pair* p = static_cast<hostrpc::closure_pair*>(pv);
-    p->func(page, p->state);
-  };
-};
-
-struct use
-{
-  static void call(hostrpc::page_t* page, void* pv)
-  {
-    hostrpc::closure_pair* p = static_cast<hostrpc::closure_pair*>(pv);
-    p->func(page, p->state);
-  };
-};
-
-}  // namespace indirect
 
 }  // namespace hostrpc
 

@@ -225,17 +225,14 @@ int init(void *image)
 
     struct operate_test
     {
-      static void call(hostrpc::page_t *, void *)
+      void operator()(hostrpc::page_t *)
       {
         fprintf(stderr, "Invoked operate\n");
       }
     };
     struct clear_test
     {
-      static void call(hostrpc::page_t *, void *)
-      {
-        fprintf(stderr, "Invoked clear\n");
-      }
+      void operator()(hostrpc::page_t *) { fprintf(stderr, "Invoked clear\n"); }
     };
 
     std::thread serv([&]() {
@@ -244,7 +241,7 @@ int init(void *image)
       for (unsigned i = 0; i < 16; i++)
         {
           bool r = x64_nvptx_state.server.rpc_handle<operate_test, clear_test>(
-              nullptr, nullptr, &location);
+              operate_test{}, clear_test{}, &location);
           fprintf(stderr, "server ret %u\n", r);
           for (unsigned j = 0; j < 1000; j++)
             {

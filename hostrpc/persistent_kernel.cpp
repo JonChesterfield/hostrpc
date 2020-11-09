@@ -73,28 +73,28 @@ struct gcn_x64_t
 
   struct fill
   {
-    static void call(hostrpc::page_t *page, void *dv)
+    hostrpc::page_t *d;
+    fill(hostrpc::page_t *d) : d(d) {}
+    void operator()(hostrpc::page_t *page)
     {
 #if defined(__x86_64__)
-      hostrpc::page_t *d = static_cast<hostrpc::page_t *>(dv);
       copy_page(page, d);
 #else
       (void)page;
-      (void)dv;
 #endif
     };
   };
 
   struct use
   {
-    static void call(hostrpc::page_t *page, void *dv)
+    hostrpc::page_t *d;
+    use(hostrpc::page_t *d) : d(d) {}
+    void operator()(hostrpc::page_t *page)
     {
 #if defined(__x86_64__)
-      hostrpc::page_t *d = static_cast<hostrpc::page_t *>(dv);
       copy_page(d, page);
 #else
       (void)page;
-      (void)dv;
 #endif
     };
   };
@@ -111,7 +111,7 @@ struct gcn_x64_t
 
   struct operate
   {
-    static void call(hostrpc::page_t *page, void *)
+    void operator()(hostrpc::page_t *page)
     {
 #if defined(__AMDGCN__)
       // Call through to a specific handler, one cache line per lane
@@ -125,7 +125,7 @@ struct gcn_x64_t
 
   struct clear
   {
-    static void call(hostrpc::page_t *page, void *)
+    void operator()(hostrpc::page_t *page)
     {
 #if defined(__AMDGCN__)
       hostrpc::cacheline_t *l = &page->cacheline[platform::get_lane_id()];
@@ -153,19 +153,6 @@ struct gcn_x64_t
 
   gcn_x64_t(const gcn_x64_t &) = delete;
   bool valid() { return true; }
-
-  template <bool have_continuation>
-  bool rpc_invoke(void *f, void *u) noexcept
-  {
-    return instance.client.rpc_invoke<fill, use, have_continuation>(f, u);
-  }
-
-  bool rpc_handle(void *operate_state, void *clear_state,
-                  uint32_t *location_arg) noexcept
-  {
-    return instance.server.rpc_handle<operate, clear>(
-        operate_state, clear_state, location_arg);
-  }
 
   client_counters client_counters() { return instance.client.get_counters(); }
   server_counters server_counters() { return instance.server.get_counters(); }
@@ -253,9 +240,10 @@ extern "C" void __device_persistent_kernel_call(HOSTRPC_ATOMIC(uint32_t) *
 
   uint32_t location_arg = 0;
 
-  if (server_instance[0]
-          .rpc_handle<hostrpc::gcn_x64_t::operate, hostrpc::gcn_x64_t::clear>(
-              0, 0, &location_arg))
+  hostrpc::gcn_x64_t::operate op;
+  hostrpc::gcn_x64_t::clear cl;
+  if (server_instance[0].rpc_handle<decltype(op), decltype(cl)>(op, cl,
+                                                                &location_arg))
     {
       uint32_t todo = platform::critical<uint32_t>(
           [&]() { return cas_fetch_dec(control); });
@@ -411,6 +399,9 @@ TEST_CASE("persistent_kernel")
     hostrpc::page_t tmp;
     memset(&tmp, 0, sizeof(tmp));
 
+    gcn_x64_t::fill f(&tmp);
+    gcn_x64_t::use u(&tmp);
+
     for (unsigned i = 0; i < init_control; i++)
       {
         uint64_t expect[64] = {0};
@@ -426,7 +417,8 @@ TEST_CASE("persistent_kernel")
                 t->element[0] * t->element[1] * t->element[2] * t->element[3];
           }
 
-        bool r = p.rpc_invoke<true>(&tmp, &tmp);
+        bool r =
+            p.instance.client.rpc_invoke<decltype(f), decltype(u), true>(f, u);
 
         for (unsigned j = 0; j < 64; j++)
           {

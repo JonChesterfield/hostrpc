@@ -69,26 +69,6 @@ struct x64_x64_t
     return true;
   }  // true if construction succeeded
 
-  template <bool have_continuation>
-  bool rpc_invoke(void *fill, void *use) noexcept
-  {
-    return client.rpc_invoke<indirect::fill, indirect::use, have_continuation>(
-        fill, use);
-  }
-
-  bool rpc_handle(void *operate_state, void *clear_state) noexcept
-  {
-    return server.rpc_handle<indirect::operate, indirect::clear>(operate_state,
-                                                                 clear_state);
-  }
-
-  bool rpc_handle(void *operate_state, void *clear_state,
-                  uint32_t *location_arg) noexcept
-  {
-    return server.rpc_handle<indirect::operate, indirect::clear>(
-        operate_state, clear_state, location_arg);
-  }
-
   client_counters client_counters() { return client.get_counters(); }
 };
 }  // namespace hostrpc
@@ -139,8 +119,6 @@ TEST_CASE("x64_x64_stress")
     unsigned count = 0;
 
     uint32_t server_location = 0;
-    hostrpc::closure_pair op_arg = make_closure_pair(&op_func);
-    hostrpc::closure_pair cl_arg = make_closure_pair(&cl_func);
     for (;;)
       {
         if (!server_live)
@@ -149,8 +127,8 @@ TEST_CASE("x64_x64_stress")
             break;
           }
         bool did_work =
-            p.rpc_handle(static_cast<void *>(&op_arg),
-                         static_cast<void *>(&cl_arg), &server_location);
+            p.server.rpc_handle<decltype(op_func), decltype(cl_func)>(
+                op_func, cl_func, &server_location);
         if (did_work)
           {
             count++;
@@ -175,15 +153,13 @@ TEST_CASE("x64_x64_stress")
     auto use = [&](hostrpc::page_t *page) {
       __builtin_memcpy(&scratch, page, sizeof(hostrpc::page_t));
     };
-    hostrpc::closure_pair fill_cp = make_closure_pair(&fill);
-    hostrpc::closure_pair use_cp = make_closure_pair(&use);
 
     for (unsigned r = 0; r < reps; r++)
       {
         init_page(&scratch, id + r);
         init_page(&expect, id + r + 1);
 
-        if (p.rpc_invoke<true>(&fill_cp, &use_cp))
+        if (p.client.rpc_invoke<decltype(fill), decltype(use), true>(fill, use))
           {
             count++;
             if (__builtin_memcmp(&scratch, &expect, sizeof(hostrpc::page_t)) !=

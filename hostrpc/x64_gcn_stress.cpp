@@ -40,28 +40,30 @@ static void copy_page(hostrpc::page_t *dst, hostrpc::page_t *src)
 
 struct fill
 {
-  static void call(hostrpc::page_t *page, void *dv)
+  fill(hostrpc::page_t *d) : d(d) {}
+  hostrpc::page_t *d;
+
+  void operator()(hostrpc::page_t *page)
   {
 #if defined(__AMDGCN__)
-    hostrpc::page_t *d = static_cast<hostrpc::page_t *>(dv);
     copy_page(page, d);
 #else
     (void)page;
-    (void)dv;
 #endif
   };
 };
 
 struct use
 {
-  static void call(hostrpc::page_t *page, void *dv)
+  use(hostrpc::page_t *d) : d(d) {}
+  hostrpc::page_t *d;
+
+  void operator()(hostrpc::page_t *page)
   {
 #if defined(__AMDGCN__)
-    hostrpc::page_t *d = static_cast<hostrpc::page_t *>(dv);
     copy_page(d, page);
 #else
     (void)page;
-    (void)dv;
 #endif
   };
 };
@@ -219,6 +221,9 @@ uint64_t gpu_call(hostrpc::x64_gcn_type::client_type *client, uint32_t id,
   hostrpc::page_t *expect = &stack_expect;
 #endif
 
+  fill f(scratch);
+  use u(scratch);
+
   uint32_t failures = 0;
   for (unsigned r = 0; r < reps; r++)
     {
@@ -234,12 +239,10 @@ uint64_t gpu_call(hostrpc::x64_gcn_type::client_type *client, uint32_t id,
           init_page(expect, 43);
         }
 
-      void *vp = static_cast<void *>(scratch);
-      vp = (void *)platform::broadcast_master((uint64_t)vp);
       bool rb = false;
       do
         {
-          rb = client->rpc_invoke<fill, use, true>(vp, vp);
+          rb = client->rpc_invoke<fill, use, true>(f, u);
         }
       while (rb == false);
 
@@ -454,8 +457,7 @@ TEST_CASE("x64_gcn_stress")
       unsigned count = 0;
 
       uint32_t server_location = 0;
-      hostrpc::closure_pair op_arg = make_closure_pair(&op_func);
-      hostrpc::closure_pair cl_arg = make_closure_pair(&cl_func);
+
       for (;;)
         {
           if (!server_live)
@@ -464,9 +466,8 @@ TEST_CASE("x64_gcn_stress")
               break;
             }
           bool did_work =
-              p.server.rpc_handle<indirect::operate, indirect::clear>(
-                  static_cast<void *>(&op_arg), static_cast<void *>(&cl_arg),
-                  &server_location);
+              p.server.rpc_handle<decltype(op_func), decltype(cl_func)>(
+                  op_func, cl_func, &server_location);
           if (did_work)
             {
               count++;

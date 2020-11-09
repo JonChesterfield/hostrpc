@@ -119,19 +119,16 @@ struct server_impl : public SZT, public Counter
 
   // Returns true if it handled one task. Does not attempt multiple tasks
   template <typename Operate, typename Clear>
-  __attribute__((always_inline)) bool rpc_handle(
-      void* operate_application_state, void* clear_application_state) noexcept
+  __attribute__((always_inline)) bool rpc_handle(Operate op, Clear cl) noexcept
   {
     uint32_t location = 0;
-    return rpc_handle<Operate, Clear>(operate_application_state,
-                                      clear_application_state, &location);
+    return rpc_handle<Operate, Clear>(op, cl, &location);
   }
 
   // location != NULL, used to round robin across slots
   template <typename Operate, typename Clear>
   __attribute__((always_inline)) bool rpc_handle(
-      void* operate_application_state, void* clear_application_state,
-      uint32_t* location_arg) noexcept
+      Operate op, Clear cl, uint32_t* location_arg) noexcept
   {
     const uint32_t size = this->size();
     const uint32_t words = this->words();
@@ -170,8 +167,7 @@ struct server_impl : public SZT, public Counter
                 // Success, got the lock. Aim location_arg at next slot
                 *location_arg = slot + 1;
 
-                bool r = rpc_handle_given_slot<Operate, Clear>(
-                    operate_application_state, clear_application_state, slot);
+                bool r = rpc_handle_given_slot<Operate, Clear>(op, cl, slot);
 
                 platform::critical<uint32_t>([&]() {
                   active.release_slot(size, slot);
@@ -199,9 +195,9 @@ struct server_impl : public SZT, public Counter
 
  private:
   template <typename Operate, typename Clear>
-  __attribute__((always_inline)) bool rpc_handle_given_slot(
-      void* operate_application_state, void* clear_application_state,
-      uint32_t slot)
+  __attribute__((always_inline)) bool rpc_handle_given_slot(Operate op,
+                                                            Clear cl,
+                                                            uint32_t slot)
   {
     assert(slot != SIZE_MAX);
 
@@ -243,7 +239,7 @@ struct server_impl : public SZT, public Counter
         // Move data and clear. TODO: Elide the copy for nop clear
         Copy::pull_to_server_from_client(&local_buffer[slot],
                                          &remote_buffer[slot]);
-        Clear::call(&local_buffer[slot], clear_application_state);
+        cl(&local_buffer[slot]);
         Copy::push_from_server_to_client(&remote_buffer[slot],
                                          &local_buffer[slot]);
 
@@ -278,7 +274,7 @@ struct server_impl : public SZT, public Counter
 #endif
     // make the calls
     Copy::pull_to_server_from_client(&local_buffer[slot], &remote_buffer[slot]);
-    Operate::call(&local_buffer[slot], operate_application_state);
+    op(&local_buffer[slot]);
     Copy::push_from_server_to_client(&remote_buffer[slot], &local_buffer[slot]);
 
     // publish result
@@ -302,26 +298,6 @@ struct server_impl : public SZT, public Counter
     return true;
   }
 };
-
-namespace indirect
-{
-struct operate
-{
-  static void call(hostrpc::page_t* page, void* pv)
-  {
-    hostrpc::closure_pair* p = static_cast<hostrpc::closure_pair*>(pv);
-    p->func(page, p->state);
-  }
-};
-struct clear
-{
-  static void call(hostrpc::page_t* page, void* pv)
-  {
-    hostrpc::closure_pair* p = static_cast<hostrpc::closure_pair*>(pv);
-    p->func(page, p->state);
-  }
-};
-}  // namespace indirect
 
 }  // namespace hostrpc
 #endif
