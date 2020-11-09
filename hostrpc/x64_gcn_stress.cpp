@@ -109,20 +109,6 @@ struct x64_gcn_type
 
   ~x64_gcn_type() { storage.destroy(); }
   x64_gcn_type(const x64_gcn_type &) = delete;
-  bool valid() { return true; }  // true if construction succeeded
-
-  template <bool have_continuation>
-  bool rpc_invoke(void *fill, void *use) noexcept
-  {
-    return client.rpc_invoke<fill, use, have_continuation>(fill, use);
-  }
-
-  bool rpc_handle(void *operate_state, void *clear_state,
-                  uint32_t *location_arg) noexcept
-  {
-    return server.rpc_handle<indirect::operate, indirect::clear>(
-        operate_state, clear_state, location_arg);
-  }
 
   client_counters client_counters() { return client.get_counters(); }
   server_counters server_counters() { return server.get_counters(); }
@@ -144,7 +130,7 @@ struct kernel_args
   uint32_t id;
   uint32_t reps;
   uint64_t result[MAX_WAVES];
-  uint64_t *control;
+  _Atomic(uint64_t) * control;
 };
 
 #if defined(__AMDGCN__)
@@ -157,7 +143,9 @@ static uint64_t gpu_call(hostrpc::x64_gcn_type::client_type *client,
                          uint32_t id, uint32_t reps);
 extern "C" void __device_start_main(kernel_args *args)
 {
-  while (__atomic_load_n(args->control, __ATOMIC_ACQUIRE) == 0)
+  while (platform::atomic_load<uint64_t, __ATOMIC_ACQUIRE,
+                               __OPENCL_MEMORY_SCOPE_DEVICE>(args->control) ==
+         0)
     {
     }
   uint64_t wg = __builtin_amdgcn_workgroup_id_x();
@@ -379,7 +367,7 @@ TEST_CASE("x64_gcn_stress")
     printf("Initialized gpu client state\n");
 
     // This is presently being called for 'operate' and for 'clear', which is OK
-    // for this test but not right in general. Need separate void *s for the two
+    // for this test but not right in general.
     // Reasonable chance we also want to initialize the data before the first
     // call
 
@@ -477,8 +465,9 @@ TEST_CASE("x64_gcn_stress")
               break;
             }
           bool did_work =
-              p.rpc_handle(static_cast<void *>(&op_arg),
-                           static_cast<void *>(&cl_arg), &server_location);
+              p.server.rpc_handle<indirect::operate, indirect::clear>(
+                  static_cast<void *>(&op_arg), static_cast<void *>(&cl_arg),
+                  &server_location);
           if (did_work)
             {
               count++;
@@ -538,9 +527,11 @@ TEST_CASE("x64_gcn_stress")
             nservers, nclients, per_client, MAX_WAVES);
 
     auto ctrl_holder = hsa::allocate(fine_grained_region, 8);
-    uint64_t *control = (uint64_t *)ctrl_holder.get();
+    _Atomic(uint64_t) *control =
+        (_Atomic(uint64_t) *)ctrl_holder.get();  // placement new
 
-    __atomic_store_n(control, 0, __ATOMIC_RELEASE);
+    platform::atomic_store<uint64_t, __ATOMIC_RELEASE,
+                           __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(control, 0);
 
     // derive 0 x64-gcn spawning 4 x64 servers, 1 gcn clients, each doing 4096
     // reps in batches of 8 derive 1 x64-gcn spawning 4 x64 servers, 2 gcn
@@ -601,7 +592,8 @@ TEST_CASE("x64_gcn_stress")
     printf("Servers running\n");
 
     // Release
-    __atomic_store_n(control, 1, __ATOMIC_RELEASE);
+    platform::atomic_store<uint64_t, __ATOMIC_RELEASE,
+                           __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(control, 1);
 
     // make sure there's a server running before we wait for the result
     {
