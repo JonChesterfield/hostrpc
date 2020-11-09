@@ -50,45 +50,14 @@ TEST_CASE("set up single word system")
   page_t client_buffer[N];
   page_t server_buffer[N];
 
-  const bool show_step = false;
-
-  HOSTRPC_ATOMIC(uint64_t) client_steps(0);
-  HOSTRPC_ATOMIC(uint64_t) server_steps(0);
-
   HOSTRPC_ATOMIC(uint64_t) val(UINT64_MAX);
-
-  struct application_state_t
-  {
-    application_state_t(HOSTRPC_ATOMIC(uint64_t) * val,
-                        HOSTRPC_ATOMIC(uint64_t) * steps, bool show_step)
-        : val(val), stepper(steps, show_step)
-    {
-    }
-    HOSTRPC_ATOMIC(uint64_t) * val;
-    default_stepper_state stepper;
-  };
-
-  struct stepper
-  {
-    static void call(int line, void *v)
-    {
-      application_state_t *state = static_cast<application_state_t *>(v);
-      if (state->stepper.show_step)
-        {
-          printf("%s:%d: step\n", state->stepper.name, line);
-        }
-      step(state->stepper.val);
-    }
-  };
 
   struct fill
   {
     static void call(page_t *p, void *v)
     {
-      application_state_t *state = static_cast<application_state_t *>(v);
-      state->val++;
-      // printf("Passing %lu\n", static_cast<uint64_t>(val));
-      p->cacheline[0].element[0] = *(state->val);
+      uint64_t *state = static_cast<uint64_t *>(v);
+      p->cacheline[0].element[0] = *state;
     }
   };
 
@@ -119,9 +88,9 @@ TEST_CASE("set up single word system")
   hostrpc::copy_functor_memcpy_pull cp;
 
   using Word = uint64_t;
-  using client_type = client_impl<Word, SZ, decltype(cp), stepper>;
+  using client_type = client_impl<Word, SZ, decltype(cp)>;
 
-  using server_type = server_impl<Word, SZ, decltype(cp), stepper>;
+  using server_type = server_impl<Word, SZ, decltype(cp)>;
 
   auto send = x64_alloc<client_type::outbox_t>(N, &store);
   auto recv = x64_alloc<client_type::inbox_t>(N, &store);
@@ -136,8 +105,6 @@ TEST_CASE("set up single word system")
 
   {
     safe_thread cl_thrd([&]() {
-      auto app_state = application_state_t(&val, &client_steps, show_step);
-
       client_type cl = {SZ{},
                         client_active,
                         recv,
@@ -146,7 +113,7 @@ TEST_CASE("set up single word system")
                         &server_buffer[0],
                         &client_buffer[0]};
 
-      void *application_state_ptr = static_cast<void *>(&app_state);
+      void *application_state_ptr = static_cast<void *>(&val);
 
       while (calls_launched < calls_planned)
         {
@@ -167,8 +134,6 @@ TEST_CASE("set up single word system")
     });
 
     safe_thread sv_thrd([&]() {
-      auto app_state = application_state_t(&val, &server_steps, show_step);
-
       server_type sv = {SZ{},
                         server_active,
                         send,
@@ -177,7 +142,7 @@ TEST_CASE("set up single word system")
                         &client_buffer[0],
                         &server_buffer[0]};
 
-      void *application_state_ptr = static_cast<void *>(&app_state);
+      void *application_state_ptr = static_cast<void *>(&val);
       uint32_t loc_arg = 0;
       for (;;)
         {
@@ -195,21 +160,6 @@ TEST_CASE("set up single word system")
             }
         }
     });
-
-    if (1)
-      {
-        client_steps = UINT64_MAX;
-        server_steps = UINT64_MAX;
-      }
-    else
-      {
-        for (unsigned i = 0; i < 20000; i++)
-          {
-            client_steps++;
-            server_steps++;
-            usleep(100);
-          }
-      }
 
     {
       uint64_t l = (uint64_t)calls_launched;

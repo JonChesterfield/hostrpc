@@ -22,10 +22,9 @@ struct x64_ptx_type
 {
   using SZ = hostrpc::size_runtime;
   using Copy = copy_functor_given_alias;
-  using Step = nop_stepper;
   using Word = uint32_t;
-  using client_type = client_impl<Word, SZ, Copy, Step, counters::client_nop>;
-  using server_type = server_impl<Word, SZ, Copy, Step, counters::server_nop>;
+  using client_type = client_impl<Word, SZ, Copy, counters::client_nop>;
+  using server_type = server_impl<Word, SZ, Copy, counters::server_nop>;
 
   client_type client;
   server_type server;

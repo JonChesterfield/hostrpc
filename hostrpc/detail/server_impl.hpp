@@ -40,7 +40,7 @@ enum class server_state : uint8_t
   result_with_thread = 0b111,
 };
 
-template <typename WordT, typename SZT, typename Copy, typename Step,
+template <typename WordT, typename SZT, typename Copy,
           typename Counter = counters::server>
 struct server_impl : public SZT, public Counter
 {
@@ -91,12 +91,6 @@ struct server_impl : public SZT, public Counter
 
   static void* operator new(size_t, server_impl* p) { return p; }
 
-  void step(int x, void* y, void* z)
-  {
-    Step::call(x, y);
-    Step::call(x, z);
-  }
-
   server_counters get_counters() { return Counter::get(); }
 
   void dump_word(uint32_t size, Word word)
@@ -139,11 +133,8 @@ struct server_impl : public SZT, public Counter
       void* operate_application_state, void* clear_application_state,
       uint32_t* location_arg) noexcept
   {
-    step(__LINE__, operate_application_state, clear_application_state);
     const uint32_t size = this->size();
     const uint32_t words = this->words();
-
-    step(__LINE__, operate_application_state, clear_application_state);
 
     const uint32_t location = *location_arg % size;
     const uint32_t element = index_to_element<Word>(location);
@@ -182,9 +173,6 @@ struct server_impl : public SZT, public Counter
                 bool r = rpc_handle_given_slot<Operate, Clear>(
                     operate_application_state, clear_application_state, slot);
 
-                step(__LINE__, operate_application_state,
-                     clear_application_state);
-
                 platform::critical<uint32_t>([&]() {
                   active.release_slot(size, slot);
                   return 0;
@@ -206,7 +194,6 @@ struct server_impl : public SZT, public Counter
       }
 
     // Nothing hit, may as well go from the same location on the next call
-    step(__LINE__, operate_application_state, clear_application_state);
     return false;
   }
 
@@ -256,9 +243,7 @@ struct server_impl : public SZT, public Counter
         // Move data and clear. TODO: Elide the copy for nop clear
         Copy::pull_to_server_from_client(&local_buffer[slot],
                                          &remote_buffer[slot]);
-        step(__LINE__, operate_application_state, clear_application_state);
         Clear::call(&local_buffer[slot], clear_application_state);
-        step(__LINE__, operate_application_state, clear_application_state);
         Copy::push_from_server_to_client(&remote_buffer[slot],
                                          &local_buffer[slot]);
 
@@ -283,24 +268,18 @@ struct server_impl : public SZT, public Counter
     if (!work_todo)
       {
         Counter::got_lock_after_work_done();
-        step(__LINE__, operate_application_state, clear_application_state);
         assert(lock_held());
         return false;
       }
 
-    step(__LINE__, operate_application_state, clear_application_state);
-
 #if defined(__x86_64__)
-    // fprintf(stderr, "[%lx] Operate slot %u\n", (uint64_t)get_thread_id(),
-    // slot);
+      // fprintf(stderr, "[%lx] Operate slot %u\n", (uint64_t)get_thread_id(),
+      // slot);
 #endif
     // make the calls
     Copy::pull_to_server_from_client(&local_buffer[slot], &remote_buffer[slot]);
-    step(__LINE__, operate_application_state, clear_application_state);
     Operate::call(&local_buffer[slot], operate_application_state);
-    step(__LINE__, operate_application_state, clear_application_state);
     Copy::push_from_server_to_client(&remote_buffer[slot], &local_buffer[slot]);
-    step(__LINE__, operate_application_state, clear_application_state);
 
     // publish result
     {

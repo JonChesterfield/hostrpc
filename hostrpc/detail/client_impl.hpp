@@ -41,7 +41,7 @@ enum class client_state : uint8_t
 // criteria for the slot to be awaiting gc?
 
 // enabling counters breaks codegen for amdgcn,
-template <typename WordT, typename SZT, typename Copy, typename Step,
+template <typename WordT, typename SZT, typename Copy,
           typename Counter = counters::client>
 struct client_impl : public SZT, public Counter
 {
@@ -125,12 +125,6 @@ struct client_impl : public SZT, public Counter
 
   static void* operator new(size_t, client_impl* p) { return p; }
 
-  void step(int x, void* y, void* z)
-  {
-    Step::call(x, y);
-    Step::call(x, z);
-  }
-
   client_counters get_counters() { return Counter::get(); }
 
   // Returns true if it successfully launched the task
@@ -138,16 +132,12 @@ struct client_impl : public SZT, public Counter
   bool rpc_invoke(void* fill_application_state,
                   void* use_application_state) noexcept
   {
-    step(__LINE__, fill_application_state, use_application_state);
-
     const uint32_t size = this->size();
     const uint32_t words = this->words();
     // 0b111 is posted request, waited for it, got it
     // 0b110 is posted request, nothing waited, got one
     // 0b101 is got a result, don't need it, only spun up a thread for cleanup
     // 0b100 is got a result, don't need it
-
-    step(__LINE__, fill_application_state, use_application_state);
 
     uint32_t slot = UINT32_MAX;
     // tries each word in sequnce. A cas failing suggests contention, in which
@@ -191,7 +181,6 @@ struct client_impl : public SZT, public Counter
                     fill_application_state, use_application_state, slot);
 
                 // wave release slot
-                step(__LINE__, fill_application_state, use_application_state);
                 platform::critical<uint32_t>([&]() {
                   active.release_slot(size, slot);
                   return 0;
@@ -209,7 +198,6 @@ struct client_impl : public SZT, public Counter
       }
 
     // couldn't get a slot, won't launch
-    step(__LINE__, fill_application_state, use_application_state);
     return false;
   }
 
@@ -302,21 +290,14 @@ struct client_impl : public SZT, public Counter
     if (!available)
       {
         Counter::got_lock_after_work_done();
-        step(__LINE__, fill_application_state, use_application_state);
         return false;
       }
 
-    step(__LINE__, fill_application_state, use_application_state);
-
     // wave_populate
-
     // Fill may have no precondition, in which case this doesn't need to run
     Copy::pull_to_client_from_server(&local_buffer[slot], &remote_buffer[slot]);
-    step(__LINE__, fill_application_state, use_application_state);
     Fill::call(&local_buffer[slot], fill_application_state);
-    step(__LINE__, fill_application_state, use_application_state);
     Copy::push_from_client_to_server(&remote_buffer[slot], &local_buffer[slot]);
-    step(__LINE__, fill_application_state, use_application_state);
 
     // wave_publish work
     {
@@ -333,8 +314,6 @@ struct client_impl : public SZT, public Counter
       Counter::publish_cas_fail(cas_fail_count);
       Counter::publish_cas_help(cas_help_count);
     }
-
-    step(__LINE__, fill_application_state, use_application_state);
 
     // current strategy is drop interest in the slot, then wait for the
     // server to confirm, then drop local thread
@@ -373,22 +352,16 @@ struct client_impl : public SZT, public Counter
 
         platform::fence_acquire();
 
-        step(__LINE__, fill_application_state, use_application_state);
         Copy::pull_to_client_from_server(&local_buffer[slot],
                                          &remote_buffer[slot]);
-        step(__LINE__, fill_application_state, use_application_state);
         // call the continuation
         Use::call(&local_buffer[slot], use_application_state);
-
-        step(__LINE__, fill_application_state, use_application_state);
 
         // Copying the state back to the server is a nop for aliased case,
         // and is only necessary if the server has a non-nop garbage clear
         // callback
         Copy::push_from_client_to_server(&remote_buffer[slot],
                                          &local_buffer[slot]);
-
-        step(__LINE__, fill_application_state, use_application_state);
 
         // mark the work as no longer in use
         // todo: is it better to leave this for the GC?
@@ -408,8 +381,6 @@ struct client_impl : public SZT, public Counter
         cas_help_count = platform::broadcast_master(cas_help_count);
         Counter::finished_cas_fail(cas_fail_count);
         Counter::finished_cas_help(cas_help_count);
-
-        step(__LINE__, fill_application_state, use_application_state);
       }
 
     // if we don't have a continuation, would return on 0b010

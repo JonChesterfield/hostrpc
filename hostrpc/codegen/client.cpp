@@ -9,8 +9,7 @@ struct copy_functor_nop
 {
 };
 
-using client_type =
-    hostrpc::client_impl<uint64_t, SZ, copy_functor_nop, hostrpc::nop_stepper>;
+using client_type = hostrpc::client_impl<uint64_t, SZ, copy_functor_nop>;
 
 extern "C" __attribute__((noinline)) void client_instance_direct(client_type& c)
 {

@@ -29,10 +29,9 @@ struct x64_x64_t
 {
   using SZ = hostrpc::size_runtime;
   using Copy = copy_functor_given_alias;
-  using Step = nop_stepper;
   using Word = uint64_t;
-  using client_type = client_impl<Word, SZ, Copy, Step>;
-  using server_type = server_impl<Word, SZ, Copy, Step>;
+  using client_type = client_impl<Word, SZ, Copy>;
+  using server_type = server_impl<Word, SZ, Copy>;
 
   client_type client;
   server_type server;

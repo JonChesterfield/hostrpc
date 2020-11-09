@@ -796,61 +796,6 @@ void staged_release_slot(uint32_t size, uint32_t i,
                                     cas_help_count);
 }
 
-inline void step(HOSTRPC_ATOMIC(uint64_t) * steps_left)
-{
-  if (platform::atomic_load<uint64_t, __ATOMIC_ACQUIRE,
-                            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
-          steps_left) == UINT64_MAX)
-    {
-      // Disable stepping
-      return;
-    }
-  while (platform::atomic_load<uint64_t, __ATOMIC_ACQUIRE,
-                               __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
-             steps_left) == 0)
-    {
-      // Don't burn all the cpu waiting for a step
-      platform::sleep_briefly();
-    }
-
-  steps_left--;
-}
-
-struct nop_stepper
-{
-  static void call(int, void *) {}
-};
-
-struct default_stepper_state
-{
-  default_stepper_state(HOSTRPC_ATOMIC(uint64_t) * val, bool show_step = false,
-                        const char *name = "unknown")
-      : val(val), show_step(show_step), name(name)
-  {
-  }
-
-  HOSTRPC_ATOMIC(uint64_t) * val;
-  bool show_step;
-  const char *name;
-};
-
-struct default_stepper
-{
-  static void call(int line, void *v)
-  {
-    if (v)
-      {
-        default_stepper_state *state = static_cast<default_stepper_state *>(v);
-        if (state->show_step)
-          {
-            printf("%s:%d: step\n", state->name, line);
-          }
-        (void)line;
-        step(state->val);
-      }
-  }
-};
-
 // Depending on the host / client device and how they're connected together,
 // copying data can be a no-op (shared memory, single buffer in use),
 // pull and push from one of the two, routed through a third buffer

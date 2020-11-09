@@ -26,11 +26,10 @@ template <typename SZ, typename ClientCounter = counters::client,
 struct x64_gcn_pair_T
 {
   using Copy = copy_functor_given_alias;
-  using Step = nop_stepper;
   using Word = uint64_t;
 
-  using client_type = client_impl<Word, SZ, Copy, Step, ClientCounter>;
-  using server_type = server_impl<Word, SZ, Copy, Step, ServerCounter>;
+  using client_type = client_impl<Word, SZ, Copy, ClientCounter>;
+  using server_type = server_impl<Word, SZ, Copy, ServerCounter>;
 
   client_type client;
   server_type server;
