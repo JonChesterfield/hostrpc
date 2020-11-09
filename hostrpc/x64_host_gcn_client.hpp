@@ -2,22 +2,15 @@
 #define X64_HOST_GCN_CLIENT_HPP_INCLUDED
 
 #include "detail/client_impl.hpp"
-#include "detail/common.hpp"
+//#include "detail/common.hpp"
 #include "detail/server_impl.hpp"
 
-#include "memory.hpp"
-#include "test_common.hpp"
-
-#if defined(__x86_64__)
-// May want this header to be free of hsa stuff, following the nvptx layout
-#include "hsa.h"
-#include <stdlib.h>
+//#include "memory.hpp"
+//#include "test_common.hpp"
 
 #include "allocator_hsa.hpp"
 #include "allocator_libc.hpp"
-#include "host_client.hpp"  // can be gcn/ptx if type_traits dropped
-
-#endif
+#include "host_client.hpp"
 
 namespace hostrpc
 {
@@ -34,75 +27,28 @@ struct x64_gcn_pair_T
   client_type client;
   server_type server;
 
+  using AllocBuffer = hostrpc::allocator::hsa<alignof(page_t)>;
+  using AllocInboxOutbox = hostrpc::allocator::hsa<64>;
+
+  using AllocLocal = hostrpc::allocator::host_libc<64>;
+  using AllocRemote = hostrpc::allocator::hsa<64>;
+
+  using storage_type = allocator::store_impl<AllocBuffer, AllocInboxOutbox,
+                                             AllocLocal, AllocRemote>;
+
+  storage_type storage;
   x64_gcn_pair_T(SZ sz, uint64_t fine_handle, uint64_t coarse_handle)
   {
 #if defined(__x86_64__)
 
-    auto alloc_buffer = hostrpc::allocator::hsa<alignof(page_t)>(fine_handle);
-    auto alloc_inbox_outbox = hostrpc::allocator::hsa<64>(fine_handle);
+    auto alloc_buffer = AllocBuffer(fine_handle);
+    auto alloc_inbox_outbox = AllocInboxOutbox(fine_handle);
 
-    auto alloc_local = hostrpc::allocator::host_libc<64>();
-    auto alloc_remote = hostrpc::allocator::hsa<64>(coarse_handle);
+    auto alloc_local = AllocLocal();
+    auto alloc_remote = AllocRemote(coarse_handle);
 
-    auto storage = host_client(alloc_buffer, alloc_inbox_outbox, alloc_local,
+    storage = host_client(alloc_buffer, alloc_inbox_outbox, alloc_local,
                                alloc_remote, sz, &server, &client);
-
-    return;
-
-    storage.destroy();
-
-    size_t N = sz.N();
-    hsa_region_t fine = {.handle = fine_handle};
-    hsa_region_t coarse = {.handle = coarse_handle};
-
-    // Shared buffer. todo: drop the redundant pointer
-    hostrpc::page_t *client_buffer = hostrpc::careful_array_cast<page_t>(
-        hostrpc::hsa_amdgpu::allocate(fine_handle, alignof(page_t),
-                                      N * sizeof(page_t)),
-        N);
-    hostrpc::page_t *server_buffer = client_buffer;
-
-    // allocating in coarse is probably not sufficient, likely to need to mark
-    // the pointer with an address space
-
-    // fine grained area, can read/write from either client or server
-    auto recv =
-        hsa_allocate_slot_bitmap_data_alloc<typename server_type::inbox_t>(
-            fine.handle, N);
-    auto send =
-        hsa_allocate_slot_bitmap_data_alloc<typename server_type::outbox_t>(
-            fine.handle, N);
-
-    // only accessed by client
-    auto client_active =
-        hsa_allocate_slot_bitmap_data_alloc<typename client_type::lock_t>(
-            coarse.handle, N);
-    auto client_staging =
-        hsa_allocate_slot_bitmap_data_alloc<typename client_type::staging_t>(
-            coarse.handle, N);
-
-    // only accessed by server
-    auto server_active =
-        x64_allocate_slot_bitmap_data_alloc<typename server_type::lock_t>(N);
-
-    auto server_staging =
-        x64_allocate_slot_bitmap_data_alloc<typename server_type::staging_t>(N);
-
-    // Should check for nullptr here
-
-    server = {sz,           server_active,  recv,
-              send,         server_staging, client_buffer,
-              server_buffer};
-
-    client = {sz,           client_active,  send,
-              recv,         client_staging, server_buffer,
-              client_buffer};
-
-    assert(client.size() == N);
-    assert(server.size() == N);
-
-    assert(client.inbox.data() == server.outbox.data());
-    assert(client.outbox.data() == server.inbox.data());
 #else
     (void)sz;
     (void)fine_handle;
@@ -113,29 +59,7 @@ struct x64_gcn_pair_T
   ~x64_gcn_pair_T()
   {
 #if defined(__x86_64__)
-    size_t N = client.size();
-    assert(server.size() == N);
-
-    hsa_allocate_slot_bitmap_data_free(server.inbox.data());
-    hsa_allocate_slot_bitmap_data_free(server.outbox.data());
-
-    hsa_allocate_slot_bitmap_data_free(client.active.data());
-    hsa_allocate_slot_bitmap_data_free(client.staging.data());
-
-    free(server.active.data());
-    free(server.staging.data());
-
-    // precondition of structure
-    assert(client.local_buffer == server.remote_buffer);
-    assert(client.remote_buffer == server.local_buffer);
-
-    // postcondition of this instance
-    assert(server.local_buffer == server.remote_buffer);
-    for (size_t i = 0; i < N; i++)
-      {
-        server.local_buffer[i].~page_t();
-      }
-    hsa_memory_free(server.local_buffer);
+    storage.destroy();
 #endif
   }
 };
