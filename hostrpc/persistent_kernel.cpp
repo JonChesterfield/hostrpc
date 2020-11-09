@@ -30,7 +30,13 @@ kernel void __device_persistent_kernel(__global void *args)
 #include <stddef.h>
 #include <stdint.h>
 
-#include "gcn_host_x64_client.hpp"
+#include "detail/client_impl.hpp"
+#include "detail/server_impl.hpp"
+
+#include "allocator_hsa.hpp"
+#include "allocator_libc.hpp"
+#include "host_client.hpp"
+
 #include "memory.hpp"
 
 namespace hostrpc
@@ -52,141 +58,72 @@ namespace hostrpc
 // std::launder'ed reinterpret cast, but as one can't assume C++17 and doesn't
 // have <new> for amdgcn, this uses __builtin_launder.
 
-inline constexpr size_t client_counter_overhead()
+#if defined(__AMDGCN__)
+static void gcn_server_callback(hostrpc::cacheline_t *line)
 {
-  return client_counters::cc_total_count * sizeof(HOSTRPC_ATOMIC(uint64_t));
+  // not yet implemented, maybe take a function pointer out of [0]
+  uint64_t l01 = line->element[0] * line->element[1];
+  uint64_t l23 = line->element[2] * line->element[3];
+  line->element[0] = l01 * l23;
 }
+#endif
 
-inline constexpr size_t server_counter_overhead()
+struct gcn_x64_type
 {
-  return server_counters::sc_total_count * sizeof(HOSTRPC_ATOMIC(uint64_t));
-}
+  using SZ = hostrpc::size_runtime;
+  using Copy = copy_functor_given_alias;
+  using Word = uint64_t;
 
-struct gcn_x64_t
-{
+  using client_type = client_impl<Word, SZ, Copy>;
+  using server_type = server_impl<Word, SZ, Copy>;
+
+  client_type client;
+  server_type server;
+
+  using AllocBuffer = hostrpc::allocator::hsa<alignof(page_t)>;
+  using AllocInboxOutbox = hostrpc::allocator::hsa<64>;
+
+  using AllocLocal = hostrpc::allocator::hsa<64>;
+  using AllocRemote = hostrpc::allocator::host_libc<64>;
+
+  using storage_type = allocator::store_impl<AllocBuffer, AllocInboxOutbox,
+                                             AllocLocal, AllocRemote>;
+
+  storage_type storage;
+
+  gcn_x64_type(SZ sz, uint64_t fine_handle, uint64_t coarse_handle)
+  {
 #if defined(__x86_64__)
-  static void copy_page(hostrpc::page_t *dst, hostrpc::page_t *src)
-  {
-    __builtin_memcpy(dst, src, sizeof(hostrpc::page_t));
-  }
-#endif
 
-  struct fill
-  {
-    hostrpc::page_t *d;
-    fill(hostrpc::page_t *d) : d(d) {}
-    void operator()(hostrpc::page_t *page)
-    {
-#if defined(__x86_64__)
-      copy_page(page, d);
+    auto alloc_buffer = AllocBuffer(fine_handle);
+    auto alloc_inbox_outbox = AllocInboxOutbox(fine_handle);
+
+    auto alloc_local = AllocLocal(coarse_handle);
+    auto alloc_remote = AllocRemote();
+
+    storage = host_client(alloc_buffer, alloc_inbox_outbox, alloc_local,
+                          alloc_remote, sz, &server, &client);
+
 #else
-      (void)page;
+    (void)sz;
+    (void)fine_handle;
+    (void)coarse_handle;
 #endif
-    };
-  };
-
-  struct use
-  {
-    hostrpc::page_t *d;
-    use(hostrpc::page_t *d) : d(d) {}
-    void operator()(hostrpc::page_t *page)
-    {
-#if defined(__x86_64__)
-      copy_page(d, page);
-#else
-      (void)page;
-#endif
-    };
-  };
-
-#if defined(__AMDGCN__)
-  static void gcn_server_callback(hostrpc::cacheline_t *line)
-  {
-    // not yet implemented, maybe take a function pointer out of [0]
-    uint64_t l01 = line->element[0] * line->element[1];
-    uint64_t l23 = line->element[2] * line->element[3];
-    line->element[0] = l01 * l23;
-  }
-#endif
-
-  struct operate
-  {
-    void operator()(hostrpc::page_t *page)
-    {
-#if defined(__AMDGCN__)
-      // Call through to a specific handler, one cache line per lane
-      hostrpc::cacheline_t *l = &page->cacheline[platform::get_lane_id()];
-      gcn_server_callback(l);
-#else
-      (void)page;
-#endif
-    };
-  };
-
-  struct clear
-  {
-    void operator()(hostrpc::page_t *page)
-    {
-#if defined(__AMDGCN__)
-      hostrpc::cacheline_t *l = &page->cacheline[platform::get_lane_id()];
-      for (unsigned i = 0; i < 8; i++)
-        {
-          l->element[i] = 0;
-        }
-#else
-      (void)page;
-#endif
-    }
-  };
-
-  using gcn_x64_type = gcn_x64_pair_T<hostrpc::size_runtime>;
-
-  gcn_x64_type instance;
-
-  // for gfx906, probably want N = 2048
-  gcn_x64_t(size_t N, uint64_t hsa_region_t_fine_handle,
-            uint64_t hsa_region_t_coarse_handle)
-      : instance(hostrpc::round64(N), hsa_region_t_fine_handle,
-                 hsa_region_t_coarse_handle)
-  {
   }
 
-  gcn_x64_t(const gcn_x64_t &) = delete;
-  bool valid() { return true; }
-
-  client_counters client_counters() { return instance.client.get_counters(); }
-  server_counters server_counters() { return instance.server.get_counters(); }
+  ~gcn_x64_type()
+  {
+#if defined(__x86_64__)
+    storage.destroy();
+#endif
+  }
 };
 
 }  // namespace hostrpc
 
-#if 1
 #if !defined(__AMDGCN__)
 #include "amd_hsa_queue.h"
 #include "hsa.h"
-#include <stddef.h>
-#include <stdint.h>
-
-template <size_t expect, size_t actual>
-static void assert_size_t_equal()
-{
-  static_assert(expect == actual, "");
-}
-
-void check_assumptions()
-{
-  assert_size_t_equal<sizeof(hsa_queue_t), 40>();
-  assert_size_t_equal<sizeof(amd_queue_t), 256>();
-  assert_size_t_equal<offsetof(hsa_queue_t, size), 24>();
-  assert_size_t_equal<offsetof(hsa_queue_t, base_address), 8>();
-  assert_size_t_equal<offsetof(hsa_queue_t, doorbell_signal), 16>();
-  assert_size_t_equal<offsetof(amd_queue_t, write_dispatch_id), 56>();
-  assert_size_t_equal<offsetof(amd_queue_t, read_dispatch_id), 128>();
-}
-
-#else
-void check_assumptions() {}
-#endif
 #endif
 
 #include <stddef.h>
@@ -203,7 +140,7 @@ struct kernel_args
 #if defined(__AMDGCN__)
 
 __attribute__((loader_uninitialized))
-VISIBLE hostrpc::gcn_x64_t::gcn_x64_type::server_type server_instance[1];
+VISIBLE hostrpc::gcn_x64_type::server_type server_instance[1];
 
 uint32_t cas_fetch_dec(HOSTRPC_ATOMIC(uint32_t) * addr)
 {
@@ -239,11 +176,29 @@ extern "C" void __device_persistent_kernel_call(HOSTRPC_ATOMIC(uint32_t) *
   (void)application_args;
 
   uint32_t location_arg = 0;
+  struct operate
+  {
+    void operator()(hostrpc::page_t *page)
+    {
+      // Call through to a specific handler, one cache line per lane
+      hostrpc::cacheline_t *l = &page->cacheline[platform::get_lane_id()];
+      gcn_server_callback(l);
+    };
+  } op;
 
-  hostrpc::gcn_x64_t::operate op;
-  hostrpc::gcn_x64_t::clear cl;
-  if (server_instance[0].rpc_handle<decltype(op), decltype(cl)>(op, cl,
-                                                                &location_arg))
+  struct clear
+  {
+    void operator()(hostrpc::page_t *page)
+    {
+      hostrpc::cacheline_t *l = &page->cacheline[platform::get_lane_id()];
+      for (unsigned i = 0; i < 8; i++)
+        {
+          l->element[i] = 0;
+        }
+    }
+  } cl;
+
+  if (server_instance[0].rpc_handle(op, cl, &location_arg))
     {
       uint32_t todo = platform::critical<uint32_t>(
           [&]() { return cas_fetch_dec(control); });
@@ -344,19 +299,18 @@ TEST_CASE("persistent_kernel")
     }
 
     size_t N = 1920;
-    hostrpc::gcn_x64_t p(N, fine_grained_region.handle,
-                         coarse_grained_region.handle);
+    hostrpc::gcn_x64_type p(hostrpc::round64(N), fine_grained_region.handle,
+                            coarse_grained_region.handle);
 
     {
-      auto c =
-          hsa::allocate(fine_grained_region,
-                        sizeof(hostrpc::gcn_x64_t::gcn_x64_type::server_type));
+      auto c = hsa::allocate(fine_grained_region,
+                             sizeof(hostrpc::gcn_x64_type::server_type));
       void *vc = c.get();
-      memcpy(vc, &p.instance.server, sizeof(p.instance.server));
+      memcpy(vc, &p.server, sizeof(p.server));
 
       int rc = hsa::copy_host_to_gpu(
           kernel_agent, reinterpret_cast<void *>(server_address),
-          reinterpret_cast<const void *>(vc), sizeof(p.instance.server));
+          reinterpret_cast<const void *>(vc), sizeof(p.server));
       if (rc != 0)
         {
           fprintf(stderr, "Failed to copy server state to gpu\n");
@@ -399,8 +353,25 @@ TEST_CASE("persistent_kernel")
     hostrpc::page_t tmp;
     memset(&tmp, 0, sizeof(tmp));
 
-    gcn_x64_t::fill f(&tmp);
-    gcn_x64_t::use u(&tmp);
+    struct fill
+    {
+      hostrpc::page_t *d;
+      fill(hostrpc::page_t *d) : d(d) {}
+      void operator()(hostrpc::page_t *page)
+      {
+        __builtin_memcpy(page, d, sizeof(hostrpc::page_t));
+      };
+    } f(&tmp);
+
+    struct use
+    {
+      hostrpc::page_t *d;
+      use(hostrpc::page_t *d) : d(d) {}
+      void operator()(hostrpc::page_t *page)
+      {
+        __builtin_memcpy(d, page, sizeof(hostrpc::page_t));
+      };
+    } u(&tmp);
 
     for (unsigned i = 0; i < init_control; i++)
       {
@@ -417,8 +388,7 @@ TEST_CASE("persistent_kernel")
                 t->element[0] * t->element[1] * t->element[2] * t->element[3];
           }
 
-        bool r =
-            p.instance.client.rpc_invoke<decltype(f), decltype(u), true>(f, u);
+        bool r = p.client.rpc_invoke<decltype(f), decltype(u), true>(f, u);
 
         for (unsigned j = 0; j < 64; j++)
           {
@@ -453,27 +423,26 @@ TEST_CASE("persistent_kernel")
     fprintf(stderr, "Instance set control to non-zero\n");
 
     {
-      auto c =
-          hsa::allocate(fine_grained_region,
-                        sizeof(hostrpc::gcn_x64_t::gcn_x64_type::server_type));
+      auto c = hsa::allocate(fine_grained_region,
+                             sizeof(hostrpc::gcn_x64_type::server_type));
       void *vc = c.get();
 
       int rc =
           hsa::copy_host_to_gpu(kernel_agent, reinterpret_cast<void *>(vc),
                                 reinterpret_cast<const void *>(server_address),
 
-                                sizeof(p.instance.server));
+                                sizeof(p.server));
       if (rc != 0)
         {
           fprintf(stderr, "Failed to copy server state back from gpu\n");
           exit(1);
         }
 
-      memcpy(&p.instance.server, vc, sizeof(p.instance.server));
+      memcpy(&p.server, vc, sizeof(p.server));
     }
 
-    p.server_counters().dump();
-    p.client_counters().dump();
+    p.server.get_counters().dump();
+    p.client.get_counters().dump();
 
     // hsa_queue_destroy(queue); // segv, probably means better counting needed
   }
