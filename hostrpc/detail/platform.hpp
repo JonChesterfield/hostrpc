@@ -301,11 +301,29 @@ BODGE_HIP __attribute__((always_inline)) inline uint32_t broadcast_master(
   return __builtin_amdgcn_readfirstlane(x);
 }
 
+BODGE_HIP static int optimizationBarrierHack(int in_val)
+{
+  int out_val;
+  __asm__ volatile("; ockl ballot hoisting hack %0"
+                   : "=v"(out_val)
+                   : "0"(in_val));
+  return out_val;
+}
+
 BODGE_HIP __attribute__((always_inline)) inline uint32_t all_true(uint32_t x)
 {
   // may be able to avoid reading exec here, depends what
   // uicmp does with inactive lanes
   // warning: ockl uses a compiler fence here to avoid hoisting across BB
+  // but introducing that raises an error:
+  // error: Illegal instruction detected:
+  // VOP* instruction violates constant bus restriction
+  // renamable $vcc = V_CMP_NE_U64_e64 $exec, killed $vcc, implicit $exec
+
+  // return x until the above is sorted out
+  return x;
+
+  x = optimizationBarrierHack(x);
   return __builtin_amdgcn_uicmp((int)x, 0, 33) == __builtin_amdgcn_read_exec();
 }
 
