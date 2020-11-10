@@ -143,7 +143,7 @@ fi
 
 $CXX_X64 memory_host.cpp -c -o memory_host.x64.bc
 
-$CXX_X64 -I$HSAINC memory_hsa.cpp -c -o memory_hsa.x64.bc
+$CXX_X64 -I$HSAINC allocator_hsa.cpp -c -o allocator_hsa.x64.bc
 
 $CXX_X64 -I$HSAINC tests.cpp -c -o tests.x64.bc
 $CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc
@@ -203,7 +203,7 @@ $CXX_GCN amdgcn_main.cpp -c -o amdgcn_main.gcn.bc
 # TODO: Embed it directly in the loader by patching call to main, as the loader doesn't do it
 $CXX_X64 -I$HSAINC amdgcn_loader.cpp -c -o amdgcn_loader.x64.bc
 
-$CXX_X64_LD $LDFLAGS amdgcn_loader.x64.bc memory_host.x64.bc memory_hsa.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o ../amdgcn_loader.exe
+$CXX_X64_LD $LDFLAGS amdgcn_loader.x64.bc memory_host.x64.bc allocator_hsa.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o ../amdgcn_loader.exe
 
 # Build the device library that calls into main()
 
@@ -261,12 +261,12 @@ $CXX_X64_LD tests.x64.bc x64_x64_stress.x64.bc states.x64.bc catch.o memory_host
 
 $CXX_X64_LD x64_x64_stress.x64.bc catch.o memory_host.x64.bc $LDFLAGS -o x64_x64_stress.exe
 
-$CXX_X64_LD x64_gcn_stress.x64.bc catch.o memory_host.x64.bc memory_hsa.x64.bc $LDFLAGS -o x64_gcn_stress.exe
+$CXX_X64_LD x64_gcn_stress.x64.bc catch.o memory_host.x64.bc allocator_hsa.x64.bc $LDFLAGS -o x64_gcn_stress.exe
 
 $CXX_X64_LD tests.x64.bc catch.o memory_host.x64.bc  $LDFLAGS -o tests.exe
 
 
-$CXX_X64_LD persistent_kernel.x64.bc catch.o memory_host.x64.bc memory_hsa.x64.bc $LDFLAGS -o persistent_kernel.exe
+$CXX_X64_LD persistent_kernel.x64.bc catch.o memory_host.x64.bc allocator_hsa.x64.bc $LDFLAGS -o persistent_kernel.exe
 
 if (($have_amdgcn)); then
 time ./persistent_kernel.exe

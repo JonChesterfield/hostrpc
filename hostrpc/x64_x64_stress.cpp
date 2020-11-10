@@ -1,6 +1,5 @@
 #include "base_types.hpp"
 #include "catch.hpp"
-#include "test_common.hpp"
 
 #include <cstring>
 #include <thread>

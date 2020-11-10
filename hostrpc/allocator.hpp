@@ -5,6 +5,10 @@
 
 #include <stddef.h>
 
+#if HOSTRPC_HOST
+#include <stdio.h>
+#endif
+
 namespace hostrpc
 {
 namespace allocator

@@ -2,11 +2,7 @@
 #define X64_HOST_GCN_CLIENT_HPP_INCLUDED
 
 #include "detail/client_impl.hpp"
-//#include "detail/common.hpp"
 #include "detail/server_impl.hpp"
-
-//#include "memory.hpp"
-//#include "test_common.hpp"
 
 #include "allocator_hsa.hpp"
 #include "allocator_libc.hpp"

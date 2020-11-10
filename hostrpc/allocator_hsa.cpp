@@ -1,13 +1,20 @@
-#include "memory_hsa.hpp"
+#include "allocator_hsa.hpp"
 
 #include "hsa.h"
 #include "hsa_ext_amd.h"
-
 #include <assert.h>
+
+#include "detail/platform_detect.h"
+
+#if !HOSTRPC_HOST
+#error "allocator_hsa relies on the hsa host library"
+#endif
 
 namespace hostrpc
 {
-namespace hsa_amdgpu
+namespace allocator
+{
+namespace hsa_impl
 {
 void *allocate(uint64_t hsa_region_t_handle, size_t align, size_t bytes)
 {
@@ -37,6 +44,8 @@ int deallocate(void *d)
 {
   return (hsa_memory_free(d) == HSA_STATUS_SUCCESS) ? 0 : 1;
 }
-}  // namespace hsa_amdgpu
 
+}  // namespace hsa_impl
+
+}  // namespace allocator
 }  // namespace hostrpc
