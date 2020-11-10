@@ -103,7 +103,6 @@ CXX_PTX="$TRUNKBIN/clang++ $NVPTXFLAGS"
 XCUDA="-x cuda --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda"
 XHIP="-x hip --cuda-gpu-arch=gfx906 -nogpulib -nogpuinc"
 
-
 CXX_CUDA="$CLANG -O2 $COMMONFLAGS $XCUDA -I/usr/local/cuda/include -nocudalib"
 
 CXX_X64_LD="$CXX"
@@ -167,7 +166,7 @@ $CXX_X64 -I$HSAINC persistent_kernel.cpp -c -o persistent_kernel.x64.bc
 if (($have_nvptx)); then
  $CXX_CUDA -std=c++14 --cuda-device-only $PTX_VER detail/platform.cu -c -emit-llvm -o detail/platform.ptx.bc
 
- $CXX_CUDA -std=c++14 --cuda-host-only memory_cuda.cu  -c -emit-llvm -o memory_cuda.x64.bc
+ $CXX_X64 -I/usr/local/cuda/include allocator_cuda.cpp  -c -emit-llvm -o allocator_cuda.x64.bc
 
  $CXX_CUDA -std=c++14 --cuda-device-only loader/nvptx_loader_entry.cu -c -emit-llvm -o loader/nvptx_loader_entry.cu.ptx.bc
 
@@ -185,7 +184,7 @@ $CLANG $XCUDA -std=c++14 hello.cu --cuda-device-only $PTX_VER -c -o hello.o  -I/
 $CXX_X64 nvptx_main.cpp -c -o nvptx_main.x64.bc
 $CXX_PTX nvptx_main.cpp -ffreestanding -c -o nvptx_main.ptx.bc
 
-$CLANG nvptx_loader.cpp memory_host.x64.bc memory_cuda.x64.bc nvptx_main.x64.bc --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -lcudart -pthread -o nvptx_loader.exe
+$CLANG nvptx_loader.cpp memory_host.x64.bc allocator_cuda.x64.bc nvptx_main.x64.bc --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -lcudart -pthread -o nvptx_loader.exe
 # ./nvptx_loader.exe hello.o
 
 fi

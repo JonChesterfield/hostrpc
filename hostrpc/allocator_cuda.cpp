@@ -1,11 +1,13 @@
-#include "memory_cuda.hpp"
+#include "allocator_cuda.hpp"
 
 #include <cuda.h>
 #include <cuda_runtime.h>
 
 namespace hostrpc
 {
-namespace cuda
+namespace allocator
+{
+namespace cuda_impl
 {
 void *allocate_gpu(size_t size)
 {
@@ -78,4 +80,5 @@ void *device_ptr_from_host_ptr(void *host)
 }
 
 }  // namespace cuda
+}  // namespace allocator
 }  // namespace hostrpc
