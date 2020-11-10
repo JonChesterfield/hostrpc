@@ -33,6 +33,15 @@ static DEVICE uint32_t ballot()
 #endif
 }
 
+// The __sync functions take a thread mask
+// It is UB to use UINT32_MAX if some threads are disabled
+// Can't use 0 as then an unpredictable fraction of threads contribute
+// activemask() can't be used to find which threads are enabled
+// This seems to suggest every function needs to take a thread mask, which would
+// make a mess of the function call API. Would also mean computing the master
+// thread based on mask and activemask() instead of taking the lowest set bit
+// from activemask
+
 DEVICE int32_t __impl_shfl_down_sync(int32_t var, uint32_t laneDelta)
 {
   return __shfl_down_sync(UINT32_MAX, var, laneDelta, WARPSIZE);
@@ -74,7 +83,6 @@ DEVICE uint32_t broadcast_master(uint32_t x)
   uint32_t master_id = get_master_lane_id();
   // __nvvm_shfl_sync_idx_i32(UINT32_MAX, x, master_id, 31)
 #if CUDA_VERSION >= 9000
-  // Use activemask?
   return __shfl_sync(UINT32_MAX, x, master_id);
 #else
   // This may be UB if some lanes are inactive
@@ -82,7 +90,10 @@ DEVICE uint32_t broadcast_master(uint32_t x)
 #endif
 }
 
-DEVICE uint32_t all_true(uint32_t x) { return __nvvm_vote_all(x); }
+DEVICE uint32_t all_true(uint32_t x)
+{
+  return __nvvm_vote_all_sync(UINT32_MAX, x);
+}
 
 // TODO: Check the differences between threadfence, threadfence_block,
 // threadfence_system
