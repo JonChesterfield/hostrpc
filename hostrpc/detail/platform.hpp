@@ -20,6 +20,7 @@ void sleep();
 bool is_master_lane();
 uint32_t get_lane_id();
 uint32_t broadcast_master(uint32_t);
+uint32_t all_true(uint32_t);
 uint32_t reduction_sum(uint32_t);
 uint32_t client_start_slot();
 void fence_acquire();
@@ -37,6 +38,7 @@ static_assert(sizeof(uint64_t) == sizeof(unsigned long long),
 void(debug)(const char *file, unsigned int line, const char *func,
             unsigned long long value);
 #endif
+
 }  // namespace detail
 
 // atomics are also be overloaded on different address spaces for some platforms
@@ -125,6 +127,7 @@ constexpr bool atomic_params_readmodifywrite()
 
 // Jury rig some pieces of libc for freestanding
 // Assert is based on the implementation in musl
+
 #if (HOSTRPC_AMDGCN || HOSTRPC_NVPTX)
 
 // stub printf for now
@@ -141,13 +144,17 @@ __attribute__((always_inline)) inline int __inline_printf()
 #ifdef NDEBUG
 #define assert(x) (void)0
 #else
+// Testing (x) || assert_fail with potentially non-uniform x leads to a
+// complicated CFG, as some lanes trap and some lanes don't. Explictly failing
+// the assert when any lane is false avoids this.
 #define assert_str(x) assert_str_1(x)
 #define assert_str_1(x) #x
 #define assert(x)                                                          \
-  ((void)((x) ||                                                           \
+  ((void)(platform::all_true(x) ||                                         \
           (platform::detail::assert_fail("L:" assert_str(__LINE__) " " #x, \
                                          __FILE__, __LINE__, __func__),    \
            0)))
+
 #endif
 
 #ifdef static_assert
@@ -170,7 +177,12 @@ __attribute__((always_inline)) inline void assert_fail(const char *str,
                                                        unsigned int line,
                                                        const char *)
 {
+#ifdef NDEBUG
   asm("// Assert fail " ::"r"(line), "r"(str));
+#else
+  (void)str;
+  (void)line;
+#endif
   __builtin_trap();
 }
 #endif
@@ -214,6 +226,7 @@ inline void sleep() { sleep_noexcept(1000); }
 inline bool is_master_lane() { return true; }
 inline uint32_t get_lane_id() { return 0; }
 inline uint32_t broadcast_master(uint32_t x) { return x; }
+inline uint32_t all_true(uint32_t x) { return x; }
 inline uint32_t reduction_sum(uint32_t x) { return x; }
 inline uint32_t client_start_slot() { return 0; }
 inline void fence_acquire() { __c11_atomic_thread_fence(__ATOMIC_ACQUIRE); }
@@ -286,6 +299,14 @@ BODGE_HIP __attribute__((always_inline)) inline uint32_t broadcast_master(
     uint32_t x)
 {
   return __builtin_amdgcn_readfirstlane(x);
+}
+
+BODGE_HIP __attribute__((always_inline)) inline uint32_t all_true(uint32_t x)
+{
+  // may be able to avoid reading exec here, depends what
+  // uicmp does with inactive lanes
+  // warning: ockl uses a compiler fence here to avoid hoisting across BB
+  return __builtin_amdgcn_uicmp((int)x, 0, 33) == __builtin_amdgcn_read_exec();
 }
 
 BODGE_HIP inline void fence_acquire()
