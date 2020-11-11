@@ -178,7 +178,8 @@ else
 fi
 
 if (($have_amdgcn)); then
-    $CLANG -std=c++11 -x hip demo.hip -o demo --offload-arch=gfx906 -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 && ./demo
+    # Tries to treat foo.so as a hip input file. Somewhat surprised, but might be right.
+    $CLANG -I$HSAINC -std=c++11 -x hip demo.hip -o demo --offload-arch=gfx906 -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 -L$HSALIBDIR -lhsa-runtime64 -Wl,-rpath=$HSALIBDIR && ./demo
 fi
 
 if (($have_nvptx)); then

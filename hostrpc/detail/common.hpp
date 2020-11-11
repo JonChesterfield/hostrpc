@@ -305,6 +305,8 @@ struct slot_bitmap
 
   HOSTRPC_ANNOTATE void dump(uint32_t size) const
   {
+    (void)size;
+#if HOSTRPC_HOST
     Word loaded = 0;
     (void)loaded;
     uint32_t w = size / wordBits();
@@ -324,6 +326,7 @@ struct slot_bitmap
           }
         printf("\n");
       }
+#endif
   }
 
   // assumes slot available

@@ -137,13 +137,15 @@ HOSTRPC_ANNOTATE constexpr bool atomic_params_readmodifywrite()
 // aomp clang currently rewrites any variadic function to a pair of
 // allocate/execute functions, which don't necessarily exist.
 // Clobber it with the preprocessor as a workaround.
-#define printf(...) __inline_printf()
-HOSTRPC_ANNOTATE
-__attribute__((always_inline)) inline int __inline_printf()
+#if !__HIP__
+#define printf(...) hostrpc_inline_printf()
+extern "C" HOSTRPC_ANNOTATE __attribute__((always_inline)) inline int
+hostrpc_inline_printf()
 {
   // printf is implement with hostcall, so going to have to do without
   return 0;
 }
+#endif
 
 // trying to get hip code to compile
 #if defined(assert)
