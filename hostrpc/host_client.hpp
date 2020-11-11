@@ -7,7 +7,7 @@
 namespace hostrpc
 {
 template <typename T>
-size_t bytes_for_N_slots(size_t N)
+HOSTRPC_ANNOTATE size_t bytes_for_N_slots(size_t N)
 {
   constexpr size_t bps = T::bits_per_slot();
   static_assert(bps == 1 || bps == 8, "");
@@ -23,7 +23,6 @@ struct is_same
 
 template <typename T>
 struct is_same<T, T>
-
 {
   static constexpr bool value = true;
 };
@@ -32,7 +31,8 @@ struct is_same<T, T>
 template <typename SZ, typename LocalType, typename RemoteType,
           typename AllocBuffer, typename AllocInboxOutbox, typename AllocLocal,
           typename AllocRemote>
-allocator::store_impl<AllocBuffer, AllocInboxOutbox, AllocLocal, AllocRemote>
+HOSTRPC_ANNOTATE allocator::store_impl<AllocBuffer, AllocInboxOutbox,
+                                       AllocLocal, AllocRemote>
 host_client(AllocBuffer alloc_buffer, AllocInboxOutbox alloc_inbox_outbox,
             AllocLocal alloc_local, AllocRemote alloc_remote, SZ sz,
             LocalType* local, RemoteType* remote)

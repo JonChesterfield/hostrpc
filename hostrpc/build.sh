@@ -178,7 +178,7 @@ else
 fi
 
 if (($have_amdgcn)); then
-    $CLANG -x hip demo.hip -o demo --offload-arch=gfx906 -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 && ./demo
+    $CLANG -std=c++11 -x hip demo.hip -o demo --offload-arch=gfx906 -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 && ./demo
 fi
 
 if (($have_nvptx)); then

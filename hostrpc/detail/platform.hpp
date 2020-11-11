@@ -145,6 +145,11 @@ __attribute__((always_inline)) inline int __inline_printf()
   return 0;
 }
 
+// trying to get hip code to compile
+#if defined(assert)
+#undef assert
+#endif
+
 #ifdef NDEBUG
 #define assert(x) (void)0
 #else
@@ -354,22 +359,25 @@ HOSTRPC_ANNOTATE inline uint32_t client_start_slot()
   // Ideally would return something < size
   // Attempt to distibute clients roughly across the array
   // compute unit currently executing the wave is a version of that
+
+  // hip's runtime has macros that collide with these. That should be fixed in
+  // hip, as 'HW_' is not a reserved namespace. Until then, bodge it here.
   enum
   {
-    HW_ID = 4,  // specify that the hardware register to read is HW_ID
+    HRPC_HW_ID = 4,  // specify that the hardware register to read is HW_ID
 
-    HW_ID_CU_ID_SIZE = 4,    // size of CU_ID field in bits
-    HW_ID_CU_ID_OFFSET = 8,  // offset of CU_ID from start of register
+    HRPC_HW_ID_CU_ID_SIZE = 4,    // size of CU_ID field in bits
+    HRPC_HW_ID_CU_ID_OFFSET = 8,  // offset of CU_ID from start of register
 
-    HW_ID_SE_ID_SIZE = 2,     // sizeof SE_ID field in bits
-    HW_ID_SE_ID_OFFSET = 13,  // offset of SE_ID from start of register
+    HRPC_HW_ID_SE_ID_SIZE = 2,     // sizeof SE_ID field in bits
+    HRPC_HW_ID_SE_ID_OFFSET = 13,  // offset of SE_ID from start of register
   };
 #define ENCODE_HWREG(WIDTH, OFF, REG) (REG | (OFF << 6) | ((WIDTH - 1) << 11))
   uint32_t cu_id = __builtin_amdgcn_s_getreg(
-      ENCODE_HWREG(HW_ID_CU_ID_SIZE, HW_ID_CU_ID_OFFSET, HW_ID));
+      ENCODE_HWREG(HRPC_HW_ID_CU_ID_SIZE, HRPC_HW_ID_CU_ID_OFFSET, HRPC_HW_ID));
   uint32_t se_id = __builtin_amdgcn_s_getreg(
-      ENCODE_HWREG(HW_ID_SE_ID_SIZE, HW_ID_SE_ID_OFFSET, HW_ID));
-  return (se_id << HW_ID_CU_ID_SIZE) + cu_id;
+      ENCODE_HWREG(HRPC_HW_ID_SE_ID_SIZE, HRPC_HW_ID_SE_ID_OFFSET, HRPC_HW_ID));
+  return (se_id << HRPC_HW_ID_CU_ID_SIZE) + cu_id;
 #undef ENCODE_HWREG
 }
 

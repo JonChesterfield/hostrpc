@@ -16,6 +16,7 @@ kernel void __device_start(__global void *args) { __device_start_cast(args); }
 #include "detail/platform_detect.h"
 #include "detail/server_impl.hpp"
 #include "timer.hpp"
+#include "x64_gcn_type.hpp"
 
 #if (HOSTRPC_HOST)
 #include "hsa.h"
@@ -66,54 +67,6 @@ struct use
 #endif
   };
 };
-
-namespace hostrpc
-{
-struct x64_gcn_type
-{
-  using SZ = hostrpc::size_runtime;
-  using Copy = copy_functor_given_alias;
-  using Word = uint64_t;
-  using client_type = client_impl<Word, SZ, Copy, counters::client>;
-  using server_type = server_impl<Word, SZ, Copy, counters::server>;
-
-  client_type client;
-  server_type server;
-
-  using AllocBuffer = hostrpc::allocator::hsa<alignof(page_t)>;
-  using AllocInboxOutbox = hostrpc::allocator::hsa<64>;
-
-  using AllocLocal = hostrpc::allocator::host_libc<64>;
-  using AllocRemote = hostrpc::allocator::hsa<64>;
-
-  using storage_type = allocator::store_impl<AllocBuffer, AllocInboxOutbox,
-                                             AllocLocal, AllocRemote>;
-
-  storage_type storage;
-  x64_gcn_type(size_t N, uint64_t hsa_region_t_fine_handle,
-               uint64_t hsa_region_t_coarse_handle)
-  {
-    uint64_t fine_handle = hsa_region_t_fine_handle;
-    uint64_t coarse_handle = hsa_region_t_coarse_handle;
-
-    AllocBuffer alloc_buffer(fine_handle);
-    AllocInboxOutbox alloc_inbox_outbox(fine_handle);
-
-    AllocLocal alloc_local;
-    AllocRemote alloc_remote(coarse_handle);
-
-    SZ sz(N);
-    storage = host_client(alloc_buffer, alloc_inbox_outbox, alloc_local,
-                          alloc_remote, sz, &server, &client);
-  }
-
-  ~x64_gcn_type() { storage.destroy(); }
-  x64_gcn_type(const x64_gcn_type &) = delete;
-
-  client_counters client_counters() { return client.get_counters(); }
-  server_counters server_counters() { return server.get_counters(); }
-};
-}  // namespace hostrpc
 
 #define MAXCLIENT (8 * 1024)  // lazy memory management, could malloc it
 

@@ -271,7 +271,10 @@ struct slot_bitmap
   // could check the types, expecting uint64_t or uint32_t
   static_assert((sizeof(Word) == 8) || (sizeof(Word) == 4), "");
 
-  HOSTRPC_ANNOTATE constexpr size_t wordBits() { return 8 * sizeof(Word); }
+  HOSTRPC_ANNOTATE constexpr size_t wordBits() const
+  {
+    return 8 * sizeof(Word);
+  }
 
   static_assert(sizeof(Word) == sizeof(HOSTRPC_ATOMIC(Word)), "");
   static_assert(sizeof(Word *) == 8, "");

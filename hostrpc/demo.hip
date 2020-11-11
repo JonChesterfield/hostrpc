@@ -1,5 +1,12 @@
-
 #include "hip/hip_runtime.h"
+
+#include "detail/client_impl.hpp"
+#include "detail/server_impl.hpp"
+
+#include "allocator.hpp"
+#include "host_client.hpp"
+
+#include "x64_gcn_type.hpp"
 
 __device__ extern "C" int printf(const char *format, ...);
 
