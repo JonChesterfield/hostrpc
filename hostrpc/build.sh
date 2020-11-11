@@ -177,6 +177,10 @@ else
  echo "Skipping ptx"
 fi
 
+if (($have_amdgcn)); then
+    $CLANG -x hip demo.hip -o demo --offload-arch=gfx906 -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 && ./demo
+fi
+
 if (($have_nvptx)); then
 # One step at a time
     $CLANG $XCUDA hello.cu -o hello -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcudart_static -ldl -lrt -pthread && ./hello
