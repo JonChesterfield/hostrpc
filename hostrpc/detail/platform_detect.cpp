@@ -38,24 +38,25 @@
 
 #if 0
 
+NOCUDA='-nocudainc -nocudalib -Wno-unused-command-line-argument'
+
 CLANG=$HOME/rocm/aomp/bin/clang++
 
 echo '#warning "Ptx freestanding"'
-$CLANG -g -O2 -emit-llvm -ffreestanding -fno-exceptions -Wno-atomic-alignment --target=nvptx64-nvidia-cuda -march=sm_50  platform_detect.cpp -c -o /dev/null
+$CLANG -g -O2 -emit-llvm -ffreestanding -fno-exceptions -Wno-atomic-alignment --target=nvptx64-nvidia-cuda -march=sm_50 $NOCUDA  platform_detect.cpp -c -o /dev/null
 
 echo '#warning "GCN freestanding"'
 $CLANG -std=c++14 -emit-llvm -O2 -ffreestanding -fno-exceptions --target=amdgcn-amd-amdhsa -march=gfx906 -mcpu=gfx906 -nogpulib platform_detect.cpp -c -o /dev/null
 
-
 echo '#warning "Cuda gpu"'
-$CLANG -x cuda --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda --cuda-device-only platform_detect.cpp -c -o /dev/null
+$CLANG -x cuda --cuda-gpu-arch=sm_50 $NOCUDA  --cuda-path=/usr/local/cuda --cuda-device-only platform_detect.cpp -c -o /dev/null
 
 echo '#warning "Cuda host"'
-$CLANG -x cuda --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda --cuda-host-only platform_detect.cpp -c -o /dev/null
+$CLANG -x cuda --cuda-gpu-arch=sm_50 $NOCUDA --cuda-host-only platform_detect.cpp -c -o /dev/null
 
 echo '#warning "Cuda gpu"'
 echo '#warning "Cuda host"'
-$CLANG -x cuda --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda platform_detect.cpp -c -o /dev/null
+$CLANG -x cuda --cuda-gpu-arch=sm_50 $NOCUDA --cuda-path=/usr/local/cuda platform_detect.cpp -c -o /dev/null
 
 echo '#warning "Hip gpu"'
 $CLANG -x hip --cuda-gpu-arch=gfx906 --cuda-device-only -nogpuinc -nogpulib  platform_detect.cpp -c -o /dev/null
