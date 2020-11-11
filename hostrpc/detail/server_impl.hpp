@@ -3,7 +3,9 @@
 
 #include "common.hpp"
 #include "counters.hpp"
-#if defined(__x86_64__)
+#include "platform_detect.h"
+
+#if HOSTRPC_HOST
 
 #include <sys/syscall.h>
 #include <sys/types.h>
@@ -232,10 +234,6 @@ struct server_impl : public SZT, public Counter
     if (garbage_todo)
       {
         assert((o & this_slot) != 0);
-#if defined(__x86_64__)
-        // fprintf(stderr, "[%lx] Clear slot %u\n", (uint64_t)get_thread_id(),
-        // slot);
-#endif
         // Move data and clear. TODO: Elide the copy for nop clear
         Copy::pull_to_server_from_client(&local_buffer[slot],
                                          &remote_buffer[slot]);
@@ -268,10 +266,6 @@ struct server_impl : public SZT, public Counter
         return false;
       }
 
-#if defined(__x86_64__)
-      // fprintf(stderr, "[%lx] Operate slot %u\n", (uint64_t)get_thread_id(),
-      // slot);
-#endif
     // make the calls
     Copy::pull_to_server_from_client(&local_buffer[slot], &remote_buffer[slot]);
     op(&local_buffer[slot]);

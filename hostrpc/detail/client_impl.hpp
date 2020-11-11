@@ -3,6 +3,7 @@
 
 #include "common.hpp"
 #include "counters.hpp"
+#include "platform_detect.h"
 
 // Intend to have call and service working across gcn and x86
 // The normal terminology is:
@@ -113,7 +114,7 @@ struct client_impl : public SZT, public Counter
 
   void dump()
   {
-#if defined(__x86_64__)
+#if HOSTRPC_HOST
     fprintf(stderr, "remote_buffer %p\n", remote_buffer);
     fprintf(stderr, "local_buffer  %p\n", local_buffer);
     fprintf(stderr, "inbox         %p\n", inbox.a);

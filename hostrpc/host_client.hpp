@@ -55,7 +55,7 @@ host_client(AllocBuffer alloc_buffer, AllocInboxOutbox alloc_inbox_outbox,
   static_assert(AllocInboxOutbox::align == 64, "");
 
   // hazard - there is no requirement from the standard that memory which is
-  // initially zero will remain to after placement new over it. Similarly,
+  // initially zero will remain so after placement new over it. Similarly,
   // should probably placement new into the remote memory, despite it being
   // inaccessible.
 

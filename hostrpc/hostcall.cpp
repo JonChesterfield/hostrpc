@@ -2,25 +2,63 @@
 #include "base_types.hpp"
 #include "hostcall_hsa.hpp"
 #include "queue_to_index.hpp"
-#include "x64_host_gcn_client.hpp"
 
 #include <stddef.h>
 #include <stdint.h>
 
-#if defined(__x86_64__)
+#include "allocator.hpp"
+#include "detail/client_impl.hpp"
+#include "detail/platform_detect.h"
+#include "detail/server_impl.hpp"
+#include "host_client.hpp"
+
+#if HOSTRPC_HOST
 #include <new>
 #endif
 
 namespace hostrpc
 {
-using SZ = size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
-using x64_amdgcn_pair =
-    hostrpc::x64_gcn_pair_T<SZ, counters::client_nop, counters::server_nop>;
+struct x64_gcn_type
+{
+  using SZ = size_compiletime<hostrpc::x64_host_amdgcn_array_size>;
+  using Copy = copy_functor_given_alias;
+  using Word = uint64_t;
+
+  using client_type = client_impl<Word, SZ, Copy, counters::client_nop>;
+  using server_type = server_impl<Word, SZ, Copy, counters::server_nop>;
+
+  client_type client;
+  server_type server;
+
+  using AllocBuffer = hostrpc::allocator::hsa<alignof(page_t)>;
+  using AllocInboxOutbox = hostrpc::allocator::hsa<64>;
+
+  using AllocLocal = hostrpc::allocator::host_libc<64>;
+  using AllocRemote = hostrpc::allocator::hsa<64>;
+
+  using storage_type = allocator::store_impl<AllocBuffer, AllocInboxOutbox,
+                                             AllocLocal, AllocRemote>;
+
+  storage_type storage;
+  x64_gcn_type(SZ sz, uint64_t fine_handle, uint64_t coarse_handle)
+  {
+    auto alloc_buffer = AllocBuffer(fine_handle);
+    auto alloc_inbox_outbox = AllocInboxOutbox(fine_handle);
+
+    auto alloc_local = AllocLocal();
+    auto alloc_remote = AllocRemote(coarse_handle);
+
+    storage = host_client(alloc_buffer, alloc_inbox_outbox, alloc_local,
+                          alloc_remote, sz, &server, &client);
+  }
+
+  ~x64_gcn_type() { storage.destroy(); }
+};
 
 }  // namespace hostrpc
 
 // trying to get something running on gfx8
-#if defined(__x86_64__)
+#if HOSTRPC_HOST
 #include "../impl/data.h"
 #include "hsa.hpp"
 #include <array>
@@ -46,11 +84,7 @@ struct fill
   fill(uint64_t *d) : d(d) {}
   void operator()(hostrpc::page_t *page)
   {
-#if defined(__AMDGCN__)
     hostcall_ops::pass_arguments(page, d);
-#else
-    (void)page;
-#endif
   };
 };
 
@@ -58,14 +92,7 @@ struct use
 {
   uint64_t *d;
   use(uint64_t *d) : d(d) {}
-  void operator()(hostrpc::page_t *page)
-  {
-#if defined(__AMDGCN__)
-    hostcall_ops::use_result(page, d);
-#else
-    (void)page;
-#endif
-  };
+  void operator()(hostrpc::page_t *page) { hostcall_ops::use_result(page, d); };
 };
 }  // namespace x64_host_amdgcn_client
 }  // namespace hostrpc
@@ -76,7 +103,7 @@ struct use
 
 // Doesn't need to be initialized, though zeroing might help debugging
 __attribute__((visibility("default")))
-hostrpc::x64_amdgcn_pair::client_type *client_singleton;
+hostrpc::x64_gcn_type::client_type *client_singleton;
 
 template <bool C>
 static void hostcall_impl(uint64_t data[8])
@@ -102,7 +129,7 @@ void hostcall_client_async(uint64_t data[8])
 
 #endif
 
-#if defined(__x86_64__)
+#if HOSTRPC_HOST
 
 namespace hostrpc
 {
@@ -110,26 +137,12 @@ namespace x64_host_amdgcn_client
 {
 struct operate
 {
-  void operator()(hostrpc::page_t *page)
-  {
-#if defined(__x86_64__)
-    hostcall_ops::operate(page);
-#else
-    (void)page;
-#endif
-  }
+  void operator()(hostrpc::page_t *page) { hostcall_ops::operate(page); }
 };
 
 struct clear
 {
-  void operator()(hostrpc::page_t *page)
-  {
-#if defined(__x86_64__)
-    hostcall_ops::clear(page);
-#else
-    (void)page;
-#endif
-  }
+  void operator()(hostrpc::page_t *page) { hostcall_ops::clear(page); }
 };
 }  // namespace x64_host_amdgcn_client
 }  // namespace hostrpc
@@ -202,8 +215,8 @@ class hostcall_impl
       }
 
     // TODO: Avoid this heap alloc?
-    auto res = std::unique_ptr<hostrpc::x64_amdgcn_pair>(
-        new (std::nothrow) hostrpc::x64_amdgcn_pair(
+    auto res = std::unique_ptr<hostrpc::x64_gcn_type>(
+        new (std::nothrow) hostrpc::x64_gcn_type(
             SZ{}, fine_grained_region.handle, coarse_grained_region.handle));
     if (!res)
       {
@@ -293,11 +306,11 @@ class hostcall_impl
   }
 
   // pointer to gpu array, allocated in coarse (per-gpu)
-  hostrpc::x64_amdgcn_pair::client_type *hsa_coarse_clients;
+  hostrpc::x64_gcn_type::client_type *hsa_coarse_clients;
 
-  hostrpc::x64_amdgcn_pair::client_type *hsa_fine_scratch;
+  hostrpc::x64_gcn_type::client_type *hsa_fine_scratch;
 
-  std::array<std::unique_ptr<hostrpc::x64_amdgcn_pair>, MAX_NUM_DOORBELLS>
+  std::array<std::unique_ptr<hostrpc::x64_gcn_type>, MAX_NUM_DOORBELLS>
       stored_pairs;
 
   HOSTRPC_ATOMIC(uint32_t) thread_killer = 0;
@@ -313,7 +326,7 @@ class hostcall_impl
 hostcall_impl::hostcall_impl(hsa_agent_t kernel_agent)
     : kernel_agent(kernel_agent)
 {
-  using Ty = hostrpc::x64_amdgcn_pair::client_type;
+  using Ty = hostrpc::x64_gcn_type::client_type;
 
   // todo: error checks here
   fine_grained_region = hsa::region_fine_grained(kernel_agent);
@@ -355,7 +368,7 @@ hostcall_impl::~hostcall_impl()
     {
       threads[i].join();
     }
-  using Ty = hostrpc::x64_amdgcn_pair::client_type;
+  using Ty = hostrpc::x64_gcn_type::client_type;
   hsa_fine_scratch->~Ty();
   hsa_memory_free(hsa_fine_scratch);
 

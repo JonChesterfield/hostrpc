@@ -1,6 +1,7 @@
 #define VISIBLE __attribute__((visibility("default")))
 
 #include "cxa_atexit.hpp"
+#include "detail/platform_detect.h"
 
 #if !defined __OPENCL__
 #if defined(__AMDGCN__)
@@ -92,8 +93,6 @@ struct gcn_x64_type
 
   gcn_x64_type(SZ sz, uint64_t fine_handle, uint64_t coarse_handle)
   {
-#if defined(__x86_64__)
-
     auto alloc_buffer = AllocBuffer(fine_handle);
     auto alloc_inbox_outbox = AllocInboxOutbox(fine_handle);
 
@@ -102,20 +101,9 @@ struct gcn_x64_type
 
     storage = host_client(alloc_buffer, alloc_inbox_outbox, alloc_local,
                           alloc_remote, sz, &server, &client);
-
-#else
-    (void)sz;
-    (void)fine_handle;
-    (void)coarse_handle;
-#endif
   }
 
-  ~gcn_x64_type()
-  {
-#if defined(__x86_64__)
-    storage.destroy();
-#endif
-  }
+  ~gcn_x64_type() { storage.destroy(); }
 };
 
 }  // namespace hostrpc
@@ -220,7 +208,7 @@ extern "C" void __device_persistent_kernel_cast(
 
 #endif
 
-#if defined(__x86_64__)
+#if HOSTRPC_HOST
 #include "catch.hpp"
 #include "incbin.h"
 #include "launch.hpp"

@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "detail/platform_detect.h"
+
 // There is a finite number of HSA queues supported by the driver:
 static const constexpr uint32_t MAX_NUM_DOORBELLS = 0x400;
 
@@ -11,7 +13,7 @@ static const constexpr uint32_t MAX_NUM_DOORBELLS = 0x400;
 // MAX_NUM_DOORBELLS).
 inline uint16_t queue_to_index(unsigned char *q);
 
-#if defined(__x86_64__)
+#if HOSTRPC_HOST
 #include "hsa.h"
 
 // x64 is likely to have a hsa queue, and has no corresponding builtin
@@ -36,7 +38,7 @@ inline uint16_t queue_to_index(unsigned char *q)
 {
   // Given a pointer to the hsa queue,
   constexpr size_t doorbell_signal_offset = 16;
-#if defined(__x86_64__)
+#if HOSTRPC_HOST
   // avoiding #include hsa.h on the gpu
   static_assert(
       offsetof(hsa_queue_t, doorbell_signal) == doorbell_signal_offset, "");

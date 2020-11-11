@@ -1,7 +1,9 @@
 #ifndef TIMER_HPP_INCLUDED
 #define TIMER_HPP_INCLUDED
 
-#if defined(__x86_64__)
+#include "detail/platform_detect.h"
+
+#if HOSTRPC_HOST
 #include <chrono>
 #include <iostream>
 #include <string>

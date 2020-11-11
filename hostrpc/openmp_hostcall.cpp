@@ -4,7 +4,7 @@
 #include "hostcall.hpp"
 #include "hostcall_hsa.hpp"
 
-#if defined(__x86_64__)
+#if HOSTRPC_HOST
 
 extern "C" void hostrpc_execute_service(uint32_t service, uint32_t device_id,
                                         uint64_t *payload);
@@ -13,7 +13,7 @@ extern "C" void hostrpc_execute_service(uint32_t service, uint32_t device_id,
 
 namespace hostcall_ops
 {
-#if defined(__x86_64__)
+#if HOSTRPC_HOST
 void operate(hostrpc::page_t *page)
 {
   for (unsigned c = 0; c < 64; c++)

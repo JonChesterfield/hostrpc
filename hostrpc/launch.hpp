@@ -1,10 +1,12 @@
 #ifndef LAUNCH_HPP_INCLUDED
 #define LAUNCH_HPP_INCLUDED
 
-#if !defined(__x86_64__)
-#error "launch.hpp assumes x64"
+#include "detail/platform_detect.h"
 
+#if !HOSTRPC_HOST
+#error "launch.hpp assumes host"
 #endif
+
 #include "hsa.hpp"
 
 namespace

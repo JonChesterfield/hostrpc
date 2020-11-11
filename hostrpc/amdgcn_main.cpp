@@ -13,7 +13,7 @@ static const uint64_t free_op = 22;
 // Included on amdgcn.
 #include <x86_64-linux-gnu/asm/unistd_64.h>
 
-#if defined(__x86_64__)
+#if HOSTRPC_HOST
 #include "hsa.h"
 #include "hsa.hpp"
 
@@ -55,7 +55,7 @@ ssize_t write(unsigned int fd, const char *buf, size_t count)
 
 namespace hostcall_ops
 {
-#if defined(__x86_64__)
+#if HOSTRPC_HOST
 
 void operate(unsigned lane, hostrpc::cacheline_t *line)
 {

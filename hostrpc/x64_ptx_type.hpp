@@ -2,13 +2,12 @@
 #define X64_NVPTX_TYPE_HPP_INCLUDED
 
 #include "base_types.hpp"
+
+#include "allocator.hpp"
 #include "detail/client_impl.hpp"
 #include "detail/platform_detect.h"
 #include "detail/server_impl.hpp"
-
-#include "allocator.hpp"
 #include "host_client.hpp"
-#include "memory.hpp"
 
 #if HOSTRPC_HOST
 #include <stdio.h>
@@ -25,9 +24,6 @@ struct x64_ptx_type
   using client_type = client_impl<Word, SZ, Copy, counters::client_nop>;
   using server_type = server_impl<Word, SZ, Copy, counters::server_nop>;
 
-  client_type client;
-  server_type server;
-
   using AllocBuffer = hostrpc::allocator::cuda_shared<alignof(page_t)>;
   using AllocInboxOutbox = hostrpc::allocator::cuda_shared<64>;
 
@@ -37,7 +33,10 @@ struct x64_ptx_type
   using storage_type = allocator::store_impl<AllocBuffer, AllocInboxOutbox,
                                              AllocLocal, AllocRemote>;
 
+  client_type client;
+  server_type server;
   storage_type storage;
+
   x64_ptx_type(size_t N)
   {
     N = hostrpc::round64(N);

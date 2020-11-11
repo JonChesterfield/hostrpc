@@ -4,7 +4,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#if defined(__x86_64__)
+#include "detail/platform_detect.h"
+
+#if HOSTRPC_HOST
 #include <stdio.h>
 #endif
 
@@ -124,7 +126,7 @@ struct client_counters
       }
   }
 
-#if defined(__x86_64__)
+#if HOSTRPC_HOST
   void dump() const
   {
     printf("CC: no_candidate_slot: %lu\n", state[cc_no_candidate_slot]);
@@ -171,7 +173,7 @@ struct server_counters
       }
   }
 
-#if defined(__x86_64__)
+#if HOSTRPC_HOST
   void dump() const
   {
     printf("SC: no_candidate_bitmap: %lu\n", state[sc_no_candidate_bitmap]);

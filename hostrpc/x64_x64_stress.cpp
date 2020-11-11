@@ -1,8 +1,16 @@
 #include "base_types.hpp"
 #include "catch.hpp"
+#include "detail/platform_detect.h"
 
 #include <cstring>
 #include <thread>
+
+#include "allocator.hpp"
+#include "detail/client_impl.hpp"
+#include "detail/server_impl.hpp"
+#include "host_client.hpp"
+
+#if HOSTRPC_HOST
 
 static void init_page(hostrpc::page_t *page, uint64_t v)
 {
@@ -14,13 +22,6 @@ static void init_page(hostrpc::page_t *page, uint64_t v)
         }
     }
 }
-
-#if defined(__x86_64__)
-
-#include "allocator.hpp"
-#include "detail/client_impl.hpp"
-#include "detail/server_impl.hpp"
-#include "host_client.hpp"
 
 namespace hostrpc
 {
