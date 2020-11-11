@@ -21,8 +21,7 @@ kernel void __device_start(__global void *args) { __device_start_cast(args); }
 #include "hsa.h"
 #endif
 
-#include "allocator_hsa.hpp"
-#include "allocator_libc.hpp"
+#include "allocator.hpp"
 #include "host_client.hpp"
 
 #if defined(__AMDGCN__)

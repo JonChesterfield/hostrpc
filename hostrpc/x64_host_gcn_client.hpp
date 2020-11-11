@@ -4,8 +4,7 @@
 #include "detail/client_impl.hpp"
 #include "detail/server_impl.hpp"
 
-#include "allocator_hsa.hpp"
-#include "allocator_libc.hpp"
+#include "allocator.hpp"
 #include "host_client.hpp"
 
 namespace hostrpc

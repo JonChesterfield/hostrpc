@@ -140,9 +140,9 @@ fi
 # $CLANG $XHIP -std=c++14 --cuda-device-only codegen/client.cpp -S -o codegen/client.hip.gcn.ll
 # $CLANG $XHIP -std=c++14 --cuda-host-only codegen/client.cpp -S -o codegen/client.hip.x64.ll
 
-$CXX_X64 memory_host.cpp -c -o memory_host.x64.bc
-
 $CXX_X64 -I$HSAINC allocator_hsa.cpp -c -o allocator_hsa.x64.bc
+
+$CXX_X64 allocator_host_libc.cpp -c -o allocator_host_libc.x64.bc
 
 $CXX_X64 -I$HSAINC tests.cpp -c -o tests.x64.bc
 $CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc
@@ -184,7 +184,7 @@ $CLANG $XCUDA -std=c++14 hello.cu --cuda-device-only $PTX_VER -c -o hello.o  -I/
 $CXX_X64 nvptx_main.cpp -c -o nvptx_main.x64.bc
 $CXX_PTX nvptx_main.cpp -ffreestanding -c -o nvptx_main.ptx.bc
 
-$CLANG nvptx_loader.cpp memory_host.x64.bc allocator_cuda.x64.bc nvptx_main.x64.bc --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -lcudart -pthread -o nvptx_loader.exe
+$CLANG nvptx_loader.cpp allocator_cuda.x64.bc nvptx_main.x64.bc --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -lcudart -pthread -o nvptx_loader.exe
 # ./nvptx_loader.exe hello.o
 
 fi
@@ -202,7 +202,7 @@ $CXX_GCN amdgcn_main.cpp -c -o amdgcn_main.gcn.bc
 # TODO: Embed it directly in the loader by patching call to main, as the loader doesn't do it
 $CXX_X64 -I$HSAINC amdgcn_loader.cpp -c -o amdgcn_loader.x64.bc
 
-$CXX_X64_LD $LDFLAGS amdgcn_loader.x64.bc memory_host.x64.bc allocator_hsa.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o ../amdgcn_loader.exe
+$CXX_X64_LD $LDFLAGS amdgcn_loader.x64.bc allocator_host_libc.x64.bc allocator_hsa.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o ../amdgcn_loader.exe
 
 # Build the device library that calls into main()
 
@@ -256,16 +256,16 @@ fi
 #     $CXX_GCN_LD -c $ll -o $obj
 # done
 
-$CXX_X64_LD tests.x64.bc x64_x64_stress.x64.bc states.x64.bc catch.o memory_host.x64.bc $LDFLAGS -o states.exe
+$CXX_X64_LD tests.x64.bc x64_x64_stress.x64.bc states.x64.bc catch.o allocator_host_libc.x64.bc $LDFLAGS -o states.exe
 
-$CXX_X64_LD x64_x64_stress.x64.bc catch.o memory_host.x64.bc $LDFLAGS -o x64_x64_stress.exe
+$CXX_X64_LD x64_x64_stress.x64.bc allocator_host_libc.x64.bc catch.o $LDFLAGS -o x64_x64_stress.exe
 
-$CXX_X64_LD x64_gcn_stress.x64.bc catch.o memory_host.x64.bc allocator_hsa.x64.bc $LDFLAGS -o x64_gcn_stress.exe
+$CXX_X64_LD x64_gcn_stress.x64.bc catch.o allocator_host_libc.x64.bc allocator_hsa.x64.bc $LDFLAGS -o x64_gcn_stress.exe
 
-$CXX_X64_LD tests.x64.bc catch.o memory_host.x64.bc  $LDFLAGS -o tests.exe
+$CXX_X64_LD tests.x64.bc allocator_host_libc.x64.bc catch.o  $LDFLAGS -o tests.exe
 
 
-$CXX_X64_LD persistent_kernel.x64.bc catch.o memory_host.x64.bc allocator_hsa.x64.bc $LDFLAGS -o persistent_kernel.exe
+$CXX_X64_LD persistent_kernel.x64.bc catch.o allocator_host_libc.x64.bc allocator_hsa.x64.bc $LDFLAGS -o persistent_kernel.exe
 
 if (($have_amdgcn)); then
 time ./persistent_kernel.exe

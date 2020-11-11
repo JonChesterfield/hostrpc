@@ -17,7 +17,7 @@ static void init_page(hostrpc::page_t *page, uint64_t v)
 
 #if defined(__x86_64__)
 
-#include "allocator_libc.hpp"
+#include "allocator.hpp"
 #include "detail/client_impl.hpp"
 #include "detail/server_impl.hpp"
 #include "host_client.hpp"

@@ -1,11 +1,10 @@
-#include "allocator_hsa.hpp"
+#include "allocator.hpp"
 
 #include "hsa.h"
 #include "hsa_ext_amd.h"
 #include <assert.h>
 
 #include "detail/platform_detect.h"
-
 #if !HOSTRPC_HOST
 #error "allocator_hsa relies on the hsa host library"
 #endif

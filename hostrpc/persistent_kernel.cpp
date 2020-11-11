@@ -33,8 +33,7 @@ kernel void __device_persistent_kernel(__global void *args)
 #include "detail/client_impl.hpp"
 #include "detail/server_impl.hpp"
 
-#include "allocator_hsa.hpp"
-#include "allocator_libc.hpp"
+#include "allocator.hpp"
 #include "host_client.hpp"
 
 #include "memory.hpp"

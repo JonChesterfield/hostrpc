@@ -6,8 +6,7 @@
 #include "detail/platform_detect.h"
 #include "detail/server_impl.hpp"
 
-#include "allocator_cuda.hpp"
-#include "allocator_libc.hpp"
+#include "allocator.hpp"
 #include "host_client.hpp"
 #include "memory.hpp"
 

@@ -9,13 +9,16 @@
 #include <thread>
 #include <unistd.h>
 
-#include "memory_host.hpp"
+#include "allocator.hpp"
 
 struct x64_alloc_deleter
 {
   struct D
   {
-    void operator()(void *d) { hostrpc::x64_native::deallocate(d); }
+    void operator()(void *d)
+    {
+      hostrpc::allocator::host_libc_impl::deallocate(d);
+    }
   };
 
   using UPtr = std::unique_ptr<void, D>;
@@ -36,7 +39,8 @@ static T x64_alloc(size_t size, x64_alloc_deleter *store)
   static_assert(bps == 1 || bps == 8, "");
   assert(size % 64 == 0 && "Size must be a multiple of 64");
   constexpr const static size_t align = 64;
-  void *memory = hostrpc::x64_native::allocate(align, size * bps);
+  void *memory =
+      hostrpc::allocator::host_libc_impl::allocate(align, size * bps);
   typename T::Ty *m =
       hostrpc::careful_array_cast<typename T::Ty>(memory, size * bps);
   (*store)(m);
