@@ -14,12 +14,12 @@ namespace hostrpc
 {
 struct fill_nop
 {
-  void operator()(page_t*) {}
+  HOSTRPC_ANNOTATE void operator()(page_t*) {}
 };
 
 struct use_nop
 {
-  void operator()(page_t*) {}
+  HOSTRPC_ANNOTATE void operator()(page_t*) {}
 };
 
 enum class client_state : uint8_t
@@ -52,9 +52,12 @@ struct client_impl : public SZT, public Counter
   using inbox_t = message_bitmap<Word>;
   using outbox_t = message_bitmap<Word>;
   using staging_t = slot_bitmap_device_local<Word>;
-  constexpr size_t wordBits() const { return 8 * sizeof(Word); }
-  uint32_t size() const { return SZ::N(); }
-  uint32_t words() const { return size() / wordBits(); }
+  HOSTRPC_ANNOTATE constexpr size_t wordBits() const
+  {
+    return 8 * sizeof(Word);
+  }
+  HOSTRPC_ANNOTATE uint32_t size() const { return SZ::N(); }
+  HOSTRPC_ANNOTATE uint32_t words() const { return size() / wordBits(); }
 
   page_t* remote_buffer;
   page_t* local_buffer;
@@ -64,7 +67,7 @@ struct client_impl : public SZT, public Counter
   outbox_t outbox;
   staging_t staging;
 
-  client_impl()
+  HOSTRPC_ANNOTATE client_impl()
       : SZ{0},
         Counter{},
         remote_buffer(nullptr),
@@ -75,9 +78,10 @@ struct client_impl : public SZT, public Counter
         staging{}
   {
   }
-  ~client_impl() {}
-  client_impl(SZ sz, lock_t active, inbox_t inbox, outbox_t outbox,
-              staging_t staging, page_t* remote_buffer, page_t* local_buffer)
+  HOSTRPC_ANNOTATE ~client_impl() {}
+  HOSTRPC_ANNOTATE client_impl(SZ sz, lock_t active, inbox_t inbox,
+                               outbox_t outbox, staging_t staging,
+                               page_t* remote_buffer, page_t* local_buffer)
 
       : SZ{sz},
         Counter{},
@@ -112,7 +116,7 @@ struct client_impl : public SZT, public Counter
     static_assert(alignof(client_impl) == 8, "");
   }
 
-  void dump()
+  HOSTRPC_ANNOTATE void dump()
   {
 #if HOSTRPC_HOST
     fprintf(stderr, "remote_buffer %p\n", remote_buffer);
@@ -124,13 +128,16 @@ struct client_impl : public SZT, public Counter
 #endif
   }
 
-  static void* operator new(size_t, client_impl* p) { return p; }
+  HOSTRPC_ANNOTATE static void* operator new(size_t, client_impl* p)
+  {
+    return p;
+  }
 
-  client_counters get_counters() { return Counter::get(); }
+  HOSTRPC_ANNOTATE client_counters get_counters() { return Counter::get(); }
 
   // Returns true if it successfully launched the task
   template <typename Fill, typename Use, bool have_continuation>
-  bool rpc_invoke(Fill fill, Use use) noexcept
+  HOSTRPC_ANNOTATE bool rpc_invoke(Fill fill, Use use) noexcept
   {
     const uint32_t size = this->size();
     const uint32_t words = this->words();
@@ -202,7 +209,7 @@ struct client_impl : public SZT, public Counter
   }
 
  private:
-  uint32_t find_candidate_client_slot(uint32_t w)
+  HOSTRPC_ANNOTATE uint32_t find_candidate_client_slot(uint32_t w)
   {
     Word i = inbox.load_word(size(), w);
     Word o = staging.load_word(size(), w);
@@ -229,7 +236,7 @@ struct client_impl : public SZT, public Counter
     return UINT32_MAX;
   }
 
-  void dump_word(uint32_t size, Word word)
+  HOSTRPC_ANNOTATE void dump_word(uint32_t size, Word word)
   {
     Word i = inbox.load_word(size, word);
     Word o = staging.load_word(size, word);
@@ -241,7 +248,8 @@ struct client_impl : public SZT, public Counter
   // true if it successfully made a call, false if no work to do or only gc
   // If there's no continuation, shouldn't require a use_application_state
   template <typename Fill, typename Use, bool have_continuation>
-  bool rpc_invoke_given_slot(Fill fill, Use use, uint32_t slot) noexcept
+  HOSTRPC_ANNOTATE bool rpc_invoke_given_slot(Fill fill, Use use,
+                                              uint32_t slot) noexcept
   {
     assert(slot != UINT32_MAX);
     const uint32_t element = index_to_element<Word>(slot);

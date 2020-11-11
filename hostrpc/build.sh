@@ -137,8 +137,11 @@ $CLANG $XCUDA -std=c++14 --cuda-host-only -nocudainc -nocudalib codegen/client.c
 fi
 
 # HIP has excessive requirements on function annotation that cuda does not, ignore for now
-# $CLANG $XHIP -std=c++14 --cuda-device-only codegen/client.cpp -S -o codegen/client.hip.gcn.ll
-# $CLANG $XHIP -std=c++14 --cuda-host-only codegen/client.cpp -S -o codegen/client.hip.x64.ll
+# Fails to annotate CFG at O0
+$CLANG $XHIP -std=c++14 -O1 --cuda-device-only codegen/client.cpp -S -o codegen/client.hip.gcn.ll
+$CLANG $XHIP -std=c++14 -O1 --cuda-host-only codegen/client.cpp -S -o codegen/client.hip.x64.ll
+$CLANG $XHIP -std=c++14 -O1 --cuda-device-only codegen/server.cpp -S -o codegen/server.hip.gcn.ll
+$CLANG $XHIP -std=c++14 -O1 --cuda-host-only codegen/server.cpp -S -o codegen/server.hip.x64.ll
 
 $CXX_X64 -I$HSAINC allocator_hsa.cpp -c -o allocator_hsa.x64.bc
 
@@ -184,7 +187,7 @@ $CLANG $XCUDA -std=c++14 hello.cu --cuda-device-only $PTX_VER -c -o hello.o  -I/
 $CXX_X64 nvptx_main.cpp -c -o nvptx_main.x64.bc
 $CXX_PTX nvptx_main.cpp -ffreestanding -c -o nvptx_main.ptx.bc
 
-$CLANG nvptx_loader.cpp allocator_cuda.x64.bc nvptx_main.x64.bc --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -lcudart -pthread -o nvptx_loader.exe
+$CLANG nvptx_loader.cpp allocator_cuda.x64.bc allocator_host_libc.x64.bc nvptx_main.x64.bc --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -lcudart -pthread -o nvptx_loader.exe
 # ./nvptx_loader.exe hello.o
 
 fi

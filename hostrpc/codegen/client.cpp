@@ -1,4 +1,5 @@
 #include "../detail/client_impl.hpp"
+#include "../detail/platform_detect.h"
 
 #include "../allocator.hpp"
 
@@ -11,7 +12,8 @@ struct copy_functor_nop
 
 using client_type = hostrpc::client_impl<uint64_t, SZ, copy_functor_nop>;
 
-extern "C" __attribute__((noinline)) void client_instance_direct(client_type& c)
+extern "C" __attribute__((noinline)) HOSTRPC_ANNOTATE void
+client_instance_direct(client_type& c)
 {
   for (;;)
     {
@@ -22,26 +24,32 @@ extern "C" __attribute__((noinline)) void client_instance_direct(client_type& c)
     }
 }
 
-extern "C" __attribute__((noinline)) void client_instance_from_components(
-    SZ sz, client_type::inbox_t inbox, client_type::outbox_t outbox,
-    client_type::lock_t active, client_type::staging_t staging,
-    hostrpc::page_t* remote_buffer, hostrpc::page_t* local_buffer)
+extern "C" __attribute__((noinline))
+
+HOSTRPC_ANNOTATE void
+client_instance_from_components(SZ sz, client_type::inbox_t inbox,
+                                client_type::outbox_t outbox,
+                                client_type::lock_t active,
+                                client_type::staging_t staging,
+                                hostrpc::page_t* remote_buffer,
+                                hostrpc::page_t* local_buffer)
 {
   client_type c = {sz,      active,        inbox,       outbox,
                    staging, remote_buffer, local_buffer};
   client_instance_direct(c);
 }
 
-void sink(client_type*);
+HOSTRPC_ANNOTATE void sink(client_type*);
 
-extern "C" __attribute__((noinline)) void client_instance_from_cast(void* from)
+extern "C" __attribute__((noinline)) HOSTRPC_ANNOTATE void
+client_instance_from_cast(void* from)
 {
   client_type* c = reinterpret_cast<client_type*>(from);
   client_instance_direct(*c);
 }
 
-extern "C" __attribute__((noinline)) void client_instance_from_aliasing(
-    void* from)
+extern "C" __attribute__((noinline)) HOSTRPC_ANNOTATE void
+client_instance_from_aliasing(void* from)
 {
   using aliasing_client_type = __attribute__((__may_alias__)) client_type;
   aliasing_client_type* c = reinterpret_cast<aliasing_client_type*>(from);

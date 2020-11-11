@@ -11,7 +11,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-static inline uint64_t get_thread_id()
+HOSTRPC_ANNOTATE static inline uint64_t get_thread_id()
 {
   pid_t x = syscall(__NR_gettid);
   return x;
@@ -22,11 +22,11 @@ namespace hostrpc
 {
 struct operate_nop
 {
-  static void call(page_t*, void*) {}
+  HOSTRPC_ANNOTATE static void call(page_t*, void*) {}
 };
 struct clear_nop
 {
-  static void call(page_t*, void*) {}
+  HOSTRPC_ANNOTATE static void call(page_t*, void*) {}
 };
 
 enum class server_state : uint8_t
@@ -53,10 +53,13 @@ struct server_impl : public SZT, public Counter
   using outbox_t = message_bitmap<Word>;
   using staging_t = slot_bitmap_device_local<Word>;
 
-  constexpr size_t wordBits() const { return 8 * sizeof(Word); }
+  HOSTRPC_ANNOTATE constexpr size_t wordBits() const
+  {
+    return 8 * sizeof(Word);
+  }
   // may want to rename this, number-slots?
-  uint32_t size() const { return SZ::N(); }
-  uint32_t words() const { return size() / wordBits(); }
+  HOSTRPC_ANNOTATE uint32_t size() const { return SZ::N(); }
+  HOSTRPC_ANNOTATE uint32_t words() const { return size() / wordBits(); }
 
   page_t* remote_buffer;
   page_t* local_buffer;
@@ -66,7 +69,7 @@ struct server_impl : public SZT, public Counter
   outbox_t outbox;
   staging_t staging;
 
-  server_impl()
+  HOSTRPC_ANNOTATE server_impl()
       : SZ{0},
         Counter{},
         remote_buffer(nullptr),
@@ -77,9 +80,10 @@ struct server_impl : public SZT, public Counter
         staging{}
   {
   }
-  ~server_impl() {}
-  server_impl(SZ sz, lock_t active, inbox_t inbox, outbox_t outbox,
-              staging_t staging, page_t* remote_buffer, page_t* local_buffer)
+  HOSTRPC_ANNOTATE ~server_impl() {}
+  HOSTRPC_ANNOTATE server_impl(SZ sz, lock_t active, inbox_t inbox,
+                               outbox_t outbox, staging_t staging,
+                               page_t* remote_buffer, page_t* local_buffer)
       : SZ{sz},
         Counter{},
         remote_buffer(remote_buffer),
@@ -91,11 +95,14 @@ struct server_impl : public SZT, public Counter
   {
   }
 
-  static void* operator new(size_t, server_impl* p) { return p; }
+  HOSTRPC_ANNOTATE static void* operator new(size_t, server_impl* p)
+  {
+    return p;
+  }
 
-  server_counters get_counters() { return Counter::get(); }
+  HOSTRPC_ANNOTATE server_counters get_counters() { return Counter::get(); }
 
-  void dump_word(uint32_t size, Word word)
+  HOSTRPC_ANNOTATE void dump_word(uint32_t size, Word word)
   {
     Word i = inbox.load_word(size, word);
     Word o = staging.load_word(size, word);
@@ -104,7 +111,8 @@ struct server_impl : public SZT, public Counter
     printf("%lu %lu %lu\n", i, o, a);
   }
 
-  Word find_candidate_server_available_bitmap(uint32_t w, Word mask)
+  HOSTRPC_ANNOTATE Word find_candidate_server_available_bitmap(uint32_t w,
+                                                               Word mask)
   {
     const uint32_t size = this->size();
     Word i = inbox.load_word(size, w);
@@ -121,7 +129,8 @@ struct server_impl : public SZT, public Counter
 
   // Returns true if it handled one task. Does not attempt multiple tasks
   template <typename Operate, typename Clear>
-  __attribute__((always_inline)) bool rpc_handle(Operate op, Clear cl) noexcept
+  __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle(
+      Operate op, Clear cl) noexcept
   {
     uint32_t location = 0;
     return rpc_handle<Operate, Clear>(op, cl, &location);
@@ -129,7 +138,7 @@ struct server_impl : public SZT, public Counter
 
   // location != NULL, used to round robin across slots
   template <typename Operate, typename Clear>
-  __attribute__((always_inline)) bool rpc_handle(
+  __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle(
       Operate op, Clear cl, uint32_t* location_arg) noexcept
   {
     const uint32_t size = this->size();
@@ -197,9 +206,8 @@ struct server_impl : public SZT, public Counter
 
  private:
   template <typename Operate, typename Clear>
-  __attribute__((always_inline)) bool rpc_handle_given_slot(Operate op,
-                                                            Clear cl,
-                                                            uint32_t slot)
+  __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle_given_slot(
+      Operate op, Clear cl, uint32_t slot)
   {
     assert(slot != SIZE_MAX);
 

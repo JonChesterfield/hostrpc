@@ -11,7 +11,7 @@
 #endif
 
 template <size_t lhs, size_t rhs>
-constexpr bool static_equal()
+HOSTRPC_ANNOTATE constexpr bool static_equal()
 {
   static_assert(lhs == rhs, "");
   return lhs == rhs;
@@ -33,8 +33,8 @@ static_assert(sizeof(page_t) == 4096, "");
 
 struct size_runtime
 {
-  size_runtime(size_t N) : SZ(N) {}
-  size_t N() const { return SZ; }
+  HOSTRPC_ANNOTATE size_runtime(size_t N) : SZ(N) {}
+  HOSTRPC_ANNOTATE size_t N() const { return SZ; }
 
  private:
   size_t SZ;
@@ -43,9 +43,9 @@ struct size_runtime
 template <size_t SZ>
 struct size_compiletime
 {
-  size_compiletime() {}
-  size_compiletime(size_t) {}
-  constexpr size_t N() const { return SZ; }
+  HOSTRPC_ANNOTATE size_compiletime() {}
+  HOSTRPC_ANNOTATE size_compiletime(size_t) {}
+  HOSTRPC_ANNOTATE constexpr size_t N() const { return SZ; }
 };
 
 using closure_func_t = void (*)(page_t *, void *);
@@ -56,7 +56,7 @@ struct closure_pair
 };
 
 template <typename Func>
-closure_pair make_closure_pair(Func *af)
+HOSTRPC_ANNOTATE closure_pair make_closure_pair(Func *af)
 {
   auto cbf = [](hostrpc::page_t *page, void *vf) {
     Func *cf = static_cast<Func *>(vf);
@@ -71,24 +71,24 @@ closure_pair make_closure_pair(Func *af)
 template <size_t Size, size_t Align>
 struct storage
 {
-  static constexpr size_t size() { return Size; }
-  static constexpr size_t align() { return Align; }
+  HOSTRPC_ANNOTATE static constexpr size_t size() { return Size; }
+  HOSTRPC_ANNOTATE static constexpr size_t align() { return Align; }
 
   template <typename T>
-  T *open()
+  HOSTRPC_ANNOTATE T *open()
   {
     return __builtin_launder(reinterpret_cast<T *>(data));
   }
 
   // TODO: Allow move construct into storage
   template <typename T>
-  T *construct(T t)
+  HOSTRPC_ANNOTATE T *construct(T t)
   {
     return new (reinterpret_cast<T *>(data)) T(t);
   }
 
   template <typename T>
-  void destroy()
+  HOSTRPC_ANNOTATE void destroy()
   {
     open<T>()->~T();
   }
@@ -118,7 +118,7 @@ struct client_counters
   };
 
   uint64_t state[cc_total_count];
-  client_counters()
+  HOSTRPC_ANNOTATE client_counters()
   {
     for (unsigned i = 0; i < cc_total_count; i++)
       {
@@ -127,7 +127,7 @@ struct client_counters
   }
 
 #if HOSTRPC_HOST
-  void dump() const
+  HOSTRPC_ANNOTATE void dump() const
   {
     printf("CC: no_candidate_slot: %lu\n", state[cc_no_candidate_slot]);
     printf("CC: missed_lock_on_candidate_slot: %lu\n",
@@ -165,7 +165,7 @@ struct server_counters
     sc_total_count,
   };
   uint64_t state[sc_total_count];
-  server_counters()
+  HOSTRPC_ANNOTATE server_counters()
   {
     for (unsigned i = 0; i < sc_total_count; i++)
       {
@@ -174,7 +174,7 @@ struct server_counters
   }
 
 #if HOSTRPC_HOST
-  void dump() const
+  HOSTRPC_ANNOTATE void dump() const
   {
     printf("SC: no_candidate_bitmap: %lu\n", state[sc_no_candidate_bitmap]);
     printf("SC: cas_lock_fail: %lu\n", state[sc_cas_lock_fail]);

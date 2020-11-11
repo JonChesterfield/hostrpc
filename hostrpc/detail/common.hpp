@@ -5,6 +5,7 @@
 
 #include "../base_types.hpp"
 #include "platform.hpp"
+#include "platform_detect.h"
 
 namespace hostrpc
 {
@@ -30,14 +31,14 @@ namespace hostrpc
 namespace
 {
 template <typename Word>
-inline uint32_t index_to_element(uint32_t x)
+HOSTRPC_ANNOTATE inline uint32_t index_to_element(uint32_t x)
 {
   uint32_t wordBits = 8 * sizeof(Word);
   return x / wordBits;
 }
 
 template <typename Word>
-inline uint32_t index_to_subindex(uint32_t x)
+HOSTRPC_ANNOTATE inline uint32_t index_to_subindex(uint32_t x)
 {
   uint32_t wordBits = 8 * sizeof(Word);
   return x % wordBits;
@@ -45,43 +46,43 @@ inline uint32_t index_to_subindex(uint32_t x)
 
 namespace bits
 {
-inline bool nthbitset(uint32_t x, uint32_t n)
+HOSTRPC_ANNOTATE inline bool nthbitset(uint32_t x, uint32_t n)
 {
   assert(n < 32);
   return x & (UINT32_C(1) << n);
 }
 
-inline bool nthbitset(uint64_t x, uint32_t n)
+HOSTRPC_ANNOTATE inline bool nthbitset(uint64_t x, uint32_t n)
 {
   assert(n < 64);
   return x & (UINT64_C(1) << n);
 }
 
-inline uint32_t setnthbit(uint32_t x, uint32_t n)
+HOSTRPC_ANNOTATE inline uint32_t setnthbit(uint32_t x, uint32_t n)
 {
   assert(n < 32);
   return x | (UINT32_C(1) << n);
 }
 
-inline uint64_t setnthbit(uint64_t x, uint32_t n)
+HOSTRPC_ANNOTATE inline uint64_t setnthbit(uint64_t x, uint32_t n)
 {
   assert(n < 64);
   return x | (UINT64_C(1) << n);
 }
 
-inline uint32_t clearnthbit(uint32_t x, uint32_t n)
+HOSTRPC_ANNOTATE inline uint32_t clearnthbit(uint32_t x, uint32_t n)
 {
   assert(n < 32);
   return x & ~(UINT32_C(1) << n);
 }
 
-inline uint64_t clearnthbit(uint64_t x, uint32_t n)
+HOSTRPC_ANNOTATE inline uint64_t clearnthbit(uint64_t x, uint32_t n)
 {
   assert(n < 64);
   return x & ~(UINT64_C(1) << n);
 }
 
-inline uint32_t ctz(uint32_t value)
+HOSTRPC_ANNOTATE inline uint32_t ctz(uint32_t value)
 {
   if (value == 0)
     {
@@ -104,7 +105,7 @@ inline uint32_t ctz(uint32_t value)
 #endif
 }
 
-inline uint32_t ctz(uint64_t value)
+HOSTRPC_ANNOTATE inline uint32_t ctz(uint64_t value)
 {
   if (value == 0)
     {
@@ -128,7 +129,7 @@ inline uint32_t ctz(uint64_t value)
 #endif
 }
 
-inline uint32_t clz(uint32_t value)
+HOSTRPC_ANNOTATE inline uint32_t clz(uint32_t value)
 {
   if (value == 0)
     {
@@ -146,7 +147,7 @@ inline uint32_t clz(uint32_t value)
 #endif
 }
 
-inline uint32_t clz(uint64_t value)
+HOSTRPC_ANNOTATE inline uint32_t clz(uint64_t value)
 {
   if (value == 0)
     {
@@ -168,14 +169,17 @@ inline uint32_t clz(uint64_t value)
 
 namespace detail
 {
-inline bool multiple_of_64(uint64_t x) { return (x % 64) == 0; }
+HOSTRPC_ANNOTATE inline bool multiple_of_64(uint64_t x)
+{
+  return (x % 64) == 0;
+}
 
-inline uint64_t round_up_to_multiple_of_64(uint64_t x)
+HOSTRPC_ANNOTATE inline uint64_t round_up_to_multiple_of_64(uint64_t x)
 {
   return 64u * ((x + 63u) / 64u);
 }
 
-inline uint32_t setbitsrange32(uint32_t l, uint32_t h)
+HOSTRPC_ANNOTATE inline uint32_t setbitsrange32(uint32_t l, uint32_t h)
 {
   uint32_t base = UINT32_MAX;
   uint32_t width = (h - l) + 1;
@@ -184,7 +188,7 @@ inline uint32_t setbitsrange32(uint32_t l, uint32_t h)
   return base;
 }
 
-inline uint64_t setbitsrange64(uint32_t l, uint32_t h)
+HOSTRPC_ANNOTATE inline uint64_t setbitsrange64(uint32_t l, uint32_t h)
 {
   uint64_t base = UINT64_MAX;
   uint32_t width = (h - l) + 1;
@@ -215,8 +219,8 @@ namespace properties
 template <bool HasFetchOpArg, bool HasCasOpArg>
 struct base
 {
-  static constexpr bool hasFetchOp() { return HasFetchOpArg; }
-  static constexpr bool hasCasOp() { return HasCasOpArg; }
+  HOSTRPC_ANNOTATE static constexpr bool hasFetchOp() { return HasFetchOpArg; }
+  HOSTRPC_ANNOTATE static constexpr bool hasCasOp() { return HasCasOpArg; }
 };
 
 template <typename Word>
@@ -228,12 +232,12 @@ struct fine_grain : public base<false, true>
 template <typename Word>
 struct device_local : base<true, true>
 {
-#if defined(__AMDGCN__)
-  using Ty = __attribute__((aligned(64))) __attribute__((address_space(1)))
-  HOSTRPC_ATOMIC(Word);
-#else
-  using Ty = __attribute__((aligned(64))) HOSTRPC_ATOMIC(Word);
+  using Ty = __attribute__((aligned(64)))
+#if defined(__AMDGCN__) && !defined(__HIP__)
+  // HIP errors on this, may want to mark the variable __device__
+  __attribute__((address_space(1)))
 #endif
+  HOSTRPC_ATOMIC(Word);
 };
 
 }  // namespace properties
@@ -267,16 +271,16 @@ struct slot_bitmap
   // could check the types, expecting uint64_t or uint32_t
   static_assert((sizeof(Word) == 8) || (sizeof(Word) == 4), "");
 
-  constexpr size_t wordBits() { return 8 * sizeof(Word); }
+  HOSTRPC_ANNOTATE constexpr size_t wordBits() { return 8 * sizeof(Word); }
 
   static_assert(sizeof(Word) == sizeof(HOSTRPC_ATOMIC(Word)), "");
   static_assert(sizeof(Word *) == 8, "");
   static_assert(sizeof(HOSTRPC_ATOMIC(Word) *) == 8, "");
 
   Ty *a;
-  static constexpr uint32_t bits_per_slot() { return 1; }
-  slot_bitmap() : a(nullptr) {}
-  slot_bitmap(Ty *d) : a(d)
+  HOSTRPC_ANNOTATE static constexpr uint32_t bits_per_slot() { return 1; }
+  HOSTRPC_ANNOTATE slot_bitmap() : a(nullptr) {}
+  HOSTRPC_ANNOTATE slot_bitmap(Ty *d) : a(d)
   {
     // can't necessarily write to a from this object. if the memory is on
     // the gpu, but this instance is being constructed on the gpu first,
@@ -284,10 +288,11 @@ struct slot_bitmap
     // zeroed for the bitmap to work.
   }
 
-  ~slot_bitmap() {}
-  Ty *data() { return a; }
+  HOSTRPC_ANNOTATE ~slot_bitmap() {}
+  HOSTRPC_ANNOTATE Ty *data() { return a; }
 
-  bool operator()(uint32_t size, uint32_t i, Word *loaded) const
+  HOSTRPC_ANNOTATE bool operator()(uint32_t size, uint32_t i,
+                                   Word *loaded) const
   {
     uint32_t w = index_to_element<Word>(i);
     Word d = load_word(size, w);
@@ -295,7 +300,7 @@ struct slot_bitmap
     return bits::nthbitset(d, index_to_subindex<Word>(i));
   }
 
-  void dump(uint32_t size) const
+  HOSTRPC_ANNOTATE void dump(uint32_t size) const
   {
     Word loaded = 0;
     (void)loaded;
@@ -319,7 +324,8 @@ struct slot_bitmap
   }
 
   // assumes slot available
-  Word claim_slot_returning_updated_word(uint32_t size, uint32_t i)
+  HOSTRPC_ANNOTATE Word claim_slot_returning_updated_word(uint32_t size,
+                                                          uint32_t i)
   {
     (void)size;
     assert(i < size);
@@ -336,12 +342,13 @@ struct slot_bitmap
   }
 
   // assumes slot taken
-  void release_slot(uint32_t size, uint32_t i)
+  HOSTRPC_ANNOTATE void release_slot(uint32_t size, uint32_t i)
   {
     release_slot_returning_updated_word(size, i);
   }
 
-  Word release_slot_returning_updated_word(uint32_t size, uint32_t i)
+  HOSTRPC_ANNOTATE Word release_slot_returning_updated_word(uint32_t size,
+                                                            uint32_t i)
   {
     (void)size;
     assert(i < size);
@@ -356,14 +363,15 @@ struct slot_bitmap
     return before & mask;
   }
 
-  Word load_word(uint32_t size, uint32_t w) const
+  HOSTRPC_ANNOTATE Word load_word(uint32_t size, uint32_t w) const
   {
     (void)size;
     assert(w < (size / (8 * sizeof(Word))));
     return platform::atomic_load<Word, __ATOMIC_RELAXED, scope>(&a[w]);
   }
 
-  bool cas(Word element, Word expect, Word replace, Word *loaded)
+  HOSTRPC_ANNOTATE bool cas(Word element, Word expect, Word replace,
+                            Word *loaded)
   {
     Ty *addr = &a[element];
 
@@ -377,7 +385,7 @@ struct slot_bitmap
   // these are used on memory visible fromi all svm devices
 
  private:
-  Word fetch_and(uint32_t element, Word mask)
+  HOSTRPC_ANNOTATE Word fetch_and(uint32_t element, Word mask)
   {
     Ty *addr = &a[element];
     if (Prop::hasFetchOp())
@@ -410,7 +418,7 @@ struct slot_bitmap
       }
   }
 
-  Word fetch_or(uint32_t element, Word mask)
+  HOSTRPC_ANNOTATE Word fetch_or(uint32_t element, Word mask)
   {
     Ty *addr = &a[element];
     if (Prop::hasFetchOp())
@@ -451,18 +459,18 @@ struct lock_bitmap
   static_assert(Prop::hasFetchOp(), "");
   static_assert(Prop::hasCasOp(), "");
   Ty *a;
-  static constexpr size_t bits_per_slot() { return 1; }
+  HOSTRPC_ANNOTATE static constexpr size_t bits_per_slot() { return 1; }
 
-  lock_bitmap() : a(nullptr) {}
-  lock_bitmap(Ty *d) : a(d) {}
+  HOSTRPC_ANNOTATE lock_bitmap() : a(nullptr) {}
+  HOSTRPC_ANNOTATE lock_bitmap(Ty *d) : a(d) {}
 
-  ~lock_bitmap() {}
-  Ty *data() { return a; }
+  HOSTRPC_ANNOTATE ~lock_bitmap() {}
+  HOSTRPC_ANNOTATE Ty *data() { return a; }
 
   // cas, true on success
   // on return true, loaded contains active[w]
-  bool try_claim_empty_slot(uint32_t size, uint32_t slot,
-                            uint64_t *cas_fail_count)
+  HOSTRPC_ANNOTATE bool try_claim_empty_slot(uint32_t size, uint32_t slot,
+                                             uint64_t *cas_fail_count)
   {
     assert(slot < size);
     uint32_t w = index_to_element<Word>(slot);
@@ -513,7 +521,7 @@ struct lock_bitmap
   }
 
   // assumes slot taken
-  void release_slot(uint32_t size, uint32_t i)
+  HOSTRPC_ANNOTATE void release_slot(uint32_t size, uint32_t i)
   {
     (void)size;
     assert(i < size);
@@ -529,7 +537,7 @@ struct lock_bitmap
                                __OPENCL_MEMORY_SCOPE_DEVICE>(addr, mask);
   }
 
-  Word load_word(uint32_t size, uint32_t w) const
+  HOSTRPC_ANNOTATE Word load_word(uint32_t size, uint32_t w) const
   {
     (void)size;
     assert(w < (size / (8 * sizeof(Word))));
@@ -539,7 +547,8 @@ struct lock_bitmap
   }
 
  private:
-  bool cas(uint32_t element, Word expect, Word replace, Word *loaded)
+  HOSTRPC_ANNOTATE bool cas(uint32_t element, Word expect, Word replace,
+                            Word *loaded)
   {
     Ty *addr = &a[element];
     // this cas function is not used across devices by this library
@@ -570,12 +579,15 @@ struct slot_bytemap
       __attribute__((aligned(64))) __attribute__((may_alias)) Word;
 #endif
 
-  constexpr size_t wordBits() const { return 8 * sizeof(Word); }
+  HOSTRPC_ANNOTATE constexpr size_t wordBits() const
+  {
+    return 8 * sizeof(Word);
+  }
 
   Ty *a;
-  static constexpr size_t bits_per_slot() { return 8; }
-  slot_bytemap() : a(nullptr) {}
-  slot_bytemap(Ty *d) : a(d)
+  HOSTRPC_ANNOTATE static constexpr size_t bits_per_slot() { return 8; }
+  HOSTRPC_ANNOTATE slot_bytemap() : a(nullptr) {}
+  HOSTRPC_ANNOTATE slot_bytemap(Ty *d) : a(d)
   {
     // can't necessarily write to a from this object. if the memory is on
     // the gpu, but this instance is being constructed on the gpu first,
@@ -583,15 +595,22 @@ struct slot_bytemap
     // zeroed for the bytemap to work.
   }
 
-  ~slot_bytemap() {}
-  Ty *data() { return a; }
+  HOSTRPC_ANNOTATE ~slot_bytemap() {}
+  HOSTRPC_ANNOTATE Ty *data() { return a; }
 
   // assumes slot available
-  void claim_slot(uint32_t size, uint32_t i) { write_byte<1>(size, i); }
+  HOSTRPC_ANNOTATE void claim_slot(uint32_t size, uint32_t i)
+  {
+    write_byte<1>(size, i);
+  }
 
   // assumes slot taken
-  void release_slot(uint32_t size, uint32_t i) { write_byte<0>(size, i); }
+  HOSTRPC_ANNOTATE void release_slot(uint32_t size, uint32_t i)
+  {
+    write_byte<0>(size, i);
+  }
 
+  HOSTRPC_ANNOTATE
   Word load_word(uint32_t size, uint32_t w) const
   {
     (void)size;
@@ -602,7 +621,8 @@ struct slot_bytemap
     return pack_words(&a[i]);
   }
 
-  bool operator()(uint32_t size, uint32_t i, Word *loaded) const
+  HOSTRPC_ANNOTATE bool operator()(uint32_t size, uint32_t i,
+                                   Word *loaded) const
   {
     // TODO: Works iff load_word matches bitmap
     uint32_t w = index_to_element<Word>(i);
@@ -613,7 +633,7 @@ struct slot_bytemap
 
  private:
   template <uint8_t v>
-  void write_byte(uint32_t size, uint32_t i)
+  HOSTRPC_ANNOTATE void write_byte(uint32_t size, uint32_t i)
   {
     (void)size;
     assert(i < size);
@@ -625,7 +645,7 @@ struct slot_bytemap
 #endif
   }
 
-  uint8_t pack_word(uint64_t x) const
+  HOSTRPC_ANNOTATE uint8_t pack_word(uint64_t x) const
   {
     // x = 0000000h 0000000g 0000000f 0000000e 0000000d 0000000c 0000000b
     // 0000000a
@@ -638,7 +658,7 @@ struct slot_bytemap
     return r;
   }
 
-  uint8_t pack_word(uint32_t x) const
+  HOSTRPC_ANNOTATE uint8_t pack_word(uint32_t x) const
   {
     // x = 0000000d 0000000c 0000000b 0000000a
     uint32_t m = x * UINT64_C(0x10204080);
@@ -648,7 +668,7 @@ struct slot_bytemap
     return r;
   }
 
-  uint64_t pack_words(Ty *data) const
+  HOSTRPC_ANNOTATE uint64_t pack_words(Ty *data) const
   {
     static_assert(sizeof(Word) == 8, "");
     AliasingWordTy *words = (AliasingWordTy *)data;
@@ -664,11 +684,10 @@ struct slot_bytemap
 
 template <bool InitialState, typename Word, size_t Sscope, typename SProp,
           size_t Vscope, typename VProp>
-void update_visible_from_staging(uint32_t size, uint32_t i,
-                                 slot_bitmap<Word, Sscope, SProp> *staging,
-                                 slot_bitmap<Word, Vscope, VProp> *visible,
-                                 uint64_t *cas_fail_count,
-                                 uint64_t *cas_help_count)
+HOSTRPC_ANNOTATE void update_visible_from_staging(
+    uint32_t size, uint32_t i, slot_bitmap<Word, Sscope, SProp> *staging,
+    slot_bitmap<Word, Vscope, VProp> *visible, uint64_t *cas_fail_count,
+    uint64_t *cas_help_count)
 {
   // Write value ~InitialState to slot[i]
 
@@ -724,10 +743,10 @@ void update_visible_from_staging(uint32_t size, uint32_t i,
 
 template <typename Word, size_t Sscope, typename SProp, size_t Vscope,
           typename VProp>
-void staged_claim_slot(uint32_t size, uint32_t i,
-                       slot_bitmap<Word, Sscope, SProp> *staging,
-                       slot_bitmap<Word, Vscope, VProp> *visible,
-                       uint64_t *cas_fail_count, uint64_t *cas_help_count)
+HOSTRPC_ANNOTATE void staged_claim_slot(
+    uint32_t size, uint32_t i, slot_bitmap<Word, Sscope, SProp> *staging,
+    slot_bitmap<Word, Vscope, VProp> *visible, uint64_t *cas_fail_count,
+    uint64_t *cas_help_count)
 {
   update_visible_from_staging<false>(size, i, staging, visible, cas_fail_count,
                                      cas_help_count);
@@ -735,20 +754,19 @@ void staged_claim_slot(uint32_t size, uint32_t i,
 
 template <typename Word, size_t Sscope, typename SProp, size_t Vscope,
           typename VProp>
-void staged_release_slot(uint32_t size, uint32_t i,
-                         slot_bitmap<Word, Sscope, SProp> *staging,
-                         slot_bitmap<Word, Vscope, VProp> *visible,
-                         uint64_t *cas_fail_count, uint64_t *cas_help_count)
+HOSTRPC_ANNOTATE void staged_release_slot(
+    uint32_t size, uint32_t i, slot_bitmap<Word, Sscope, SProp> *staging,
+    slot_bitmap<Word, Vscope, VProp> *visible, uint64_t *cas_fail_count,
+    uint64_t *cas_help_count)
 {
   update_visible_from_staging<true>(size, i, staging, visible, cas_fail_count,
                                     cas_help_count);
 }
 
 template <bool InitialState, typename Word, size_t Sscope, typename SProp>
-void update_visible_from_staging(uint32_t size, uint32_t i,
-                                 slot_bitmap<Word, Sscope, SProp> *staging,
-                                 slot_bytemap<Word> *visible, uint64_t *,
-                                 uint64_t *)
+HOSTRPC_ANNOTATE void update_visible_from_staging(
+    uint32_t size, uint32_t i, slot_bitmap<Word, Sscope, SProp> *staging,
+    slot_bytemap<Word> *visible, uint64_t *, uint64_t *)
 {
   // Write value ~InitialState to slot[i]
 
@@ -777,20 +795,20 @@ void update_visible_from_staging(uint32_t size, uint32_t i,
 }
 
 template <typename Word, size_t Sscope, typename SProp>
-void staged_claim_slot(uint32_t size, uint32_t i,
-                       slot_bitmap<Word, Sscope, SProp> *staging,
-                       slot_bytemap<Word> *visible, uint64_t *cas_fail_count,
-                       uint64_t *cas_help_count)
+HOSTRPC_ANNOTATE void staged_claim_slot(
+    uint32_t size, uint32_t i, slot_bitmap<Word, Sscope, SProp> *staging,
+    slot_bytemap<Word> *visible, uint64_t *cas_fail_count,
+    uint64_t *cas_help_count)
 {
   update_visible_from_staging<false>(size, i, staging, visible, cas_fail_count,
                                      cas_help_count);
 }
 
 template <typename Word, size_t Sscope, typename SProp>
-void staged_release_slot(uint32_t size, uint32_t i,
-                         slot_bitmap<Word, Sscope, SProp> *staging,
-                         slot_bytemap<Word> *visible, uint64_t *cas_fail_count,
-                         uint64_t *cas_help_count)
+HOSTRPC_ANNOTATE void staged_release_slot(
+    uint32_t size, uint32_t i, slot_bitmap<Word, Sscope, SProp> *staging,
+    slot_bytemap<Word> *visible, uint64_t *cas_fail_count,
+    uint64_t *cas_help_count)
 {
   update_visible_from_staging<true>(size, i, staging, visible, cas_fail_count,
                                     cas_help_count);
@@ -804,33 +822,49 @@ template <typename T>
 struct copy_functor_interface
 {
   // dst then src, memcpy style. Copies a single page
-  static void push_from_client_to_server(page_t *dst, const page_t *src)
+  HOSTRPC_ANNOTATE static void push_from_client_to_server(page_t *dst,
+                                                          const page_t *src)
   {
     T::push_from_client_to_server_impl(dst, src);
   }
-  static void pull_to_client_from_server(page_t *dst, const page_t *src)
+  HOSTRPC_ANNOTATE static void pull_to_client_from_server(page_t *dst,
+                                                          const page_t *src)
   {
     T::pull_to_client_from_server_impl(dst, src);
   }
 
-  static void push_from_server_to_client(page_t *dst, const page_t *src)
+  HOSTRPC_ANNOTATE static void push_from_server_to_client(page_t *dst,
+                                                          const page_t *src)
   {
     T::push_from_server_to_client_impl(dst, src);
   }
-  static void pull_to_server_from_client(page_t *dst, const page_t *src)
+  HOSTRPC_ANNOTATE static void pull_to_server_from_client(page_t *dst,
+                                                          const page_t *src)
   {
     T::pull_to_server_from_client_impl(dst, src);
   }
 
  private:
   friend T;
-  copy_functor_interface() = default;
+  HOSTRPC_ANNOTATE copy_functor_interface() = default;
 
   // Default implementations are no-ops
-  static void push_from_client_to_server_impl(page_t *, const page_t *) {}
-  static void pull_to_client_from_server_impl(page_t *, const page_t *) {}
-  static void push_from_server_to_client_impl(page_t *, const page_t *) {}
-  static void pull_to_server_from_client_impl(page_t *, const page_t *) {}
+  HOSTRPC_ANNOTATE static void push_from_client_to_server_impl(page_t *,
+                                                               const page_t *)
+  {
+  }
+  HOSTRPC_ANNOTATE static void pull_to_client_from_server_impl(page_t *,
+                                                               const page_t *)
+  {
+  }
+  HOSTRPC_ANNOTATE static void push_from_server_to_client_impl(page_t *,
+                                                               const page_t *)
+  {
+  }
+  HOSTRPC_ANNOTATE static void pull_to_server_from_client_impl(page_t *,
+                                                               const page_t *)
+  {
+  }
 };
 
 struct copy_functor_memcpy_pull
@@ -839,12 +873,14 @@ struct copy_functor_memcpy_pull
   friend struct copy_functor_interface<copy_functor_memcpy_pull>;
 
  private:
-  static void pull_to_client_from_server_impl(page_t *dst, const page_t *src)
+  HOSTRPC_ANNOTATE static void pull_to_client_from_server_impl(
+      page_t *dst, const page_t *src)
   {
     size_t N = sizeof(page_t);
     __builtin_memcpy(dst, src, N);
   }
-  static void pull_to_server_from_client_impl(page_t *dst, const page_t *src)
+  HOSTRPC_ANNOTATE static void pull_to_server_from_client_impl(
+      page_t *dst, const page_t *src)
   {
     size_t N = sizeof(page_t);
     __builtin_memcpy(dst, src, N);
@@ -856,25 +892,29 @@ struct copy_functor_given_alias
 {
   friend struct copy_functor_interface<copy_functor_given_alias>;
 
-  static void push_from_client_to_server_impl(page_t *dst, const page_t *src)
+  HOSTRPC_ANNOTATE static void push_from_client_to_server_impl(
+      page_t *dst, const page_t *src)
   {
     assert(src == dst);
     (void)src;
     (void)dst;
   }
-  static void pull_to_client_from_server_impl(page_t *dst, const page_t *src)
+  HOSTRPC_ANNOTATE static void pull_to_client_from_server_impl(
+      page_t *dst, const page_t *src)
   {
     assert(src == dst);
     (void)src;
     (void)dst;
   }
-  static void push_from_server_to_client_impl(page_t *dst, const page_t *src)
+  HOSTRPC_ANNOTATE static void push_from_server_to_client_impl(
+      page_t *dst, const page_t *src)
   {
     assert(src == dst);
     (void)src;
     (void)dst;
   }
-  static void pull_to_server_from_client_impl(page_t *dst, const page_t *src)
+  HOSTRPC_ANNOTATE static void pull_to_server_from_client_impl(
+      page_t *dst, const page_t *src)
   {
     assert(src == dst);
     (void)src;

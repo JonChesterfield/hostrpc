@@ -1,27 +1,28 @@
+#include "../detail/platform_detect.h"
 #include "../detail/server_impl.hpp"
 
 using SZ = hostrpc::size_compiletime<128>;
 
-void op_target(hostrpc::page_t *);
-void cl_target(hostrpc::page_t *);
+HOSTRPC_ANNOTATE void op_target(hostrpc::page_t *);
+HOSTRPC_ANNOTATE void cl_target(hostrpc::page_t *);
 
 namespace hostrpc
 {
 struct operate_direct
 {
-  void operator()(hostrpc::page_t *page) { op_target(page); }
+  HOSTRPC_ANNOTATE void operator()(hostrpc::page_t *page) { op_target(page); }
 };
 
 struct clear_direct
 {
-  void operator()(hostrpc::page_t *page) { cl_target(page); }
+  HOSTRPC_ANNOTATE void operator()(hostrpc::page_t *page) { cl_target(page); }
 };
 }  // namespace hostrpc
 
 using server_type_direct =
     hostrpc::server_impl<uint64_t, SZ, hostrpc::copy_functor_memcpy_pull>;
 
-extern "C" void server_instance_direct(
+extern "C" HOSTRPC_ANNOTATE void server_instance_direct(
     server_type_direct::inbox_t inbox, server_type_direct::outbox_t outbox,
     server_type_direct::lock_t active, server_type_direct::staging_t staging,
     hostrpc::page_t *remote_buffer, hostrpc::page_t *local_buffer,
