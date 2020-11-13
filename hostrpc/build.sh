@@ -65,6 +65,7 @@ HSALIB="$HSALIBDIR/libhsa-runtime64.so" # $RDIR/lib/libomptarget.rtl.hsa.so"
 
 CLANG="$RDIR/bin/clang++"
 LLC="$RDIR/bin/llc"
+DIS="$RDIR/bin/llvm-dis"
 LINK="$RDIR/bin/llvm-link"
 OPT="$RDIR/bin/opt"
 
@@ -119,6 +120,41 @@ fi
 
 $CXX_X64 states.cpp -c -o states.x64.bc
 
+
+$CXX_X64 codegen/foo_cxx.cpp -S -o codegen/foo_cxx.x64.ll
+$CXX_GCN codegen/foo_cxx.cpp -S -o codegen/foo_cxx.gcn.ll
+$CXX_PTX codegen/foo_cxx.cpp -S -o codegen/foo_cxx.ptx.ll
+
+$TRUNKBIN/clang++ $XCUDA -std=c++14 --cuda-device-only -nocudainc -nocudalib codegen/foo.cu -emit-llvm -S -o codegen/foo.cuda.ptx.ll
+
+$TRUNKBIN/clang++ $XCUDA -std=c++14 --cuda-host-only -nocudainc -nocudalib codegen/foo.cu -emit-llvm -S -o codegen/foo.cuda.x64.ll
+
+cd codegen
+$TRUNKBIN/clang++ $XCUDA -std=c++14 -nocudainc -nocudalib foo.cu -emit-llvm -S
+mv foo.ll foo.cuda.both_x64.ll
+mv foo-cuda-nvptx64-nvidia-cuda-*.ll foo.cuda.both_ptx.ll
+cd -
+
+
+# aomp has broken cuda-device-only
+$TRUNKBIN/clang++ -x hip --cuda-gpu-arch=gfx906 -nogpulib -std=c++14 -O1 --cuda-device-only codegen/foo.cu -emit-llvm -S -o codegen/foo.hip.gcn.ll
+$TRUNKBIN/clang++ -x hip --cuda-gpu-arch=gfx906 -nogpulib -std=c++14 -O1 --cuda-host-only codegen/foo.cu -emit-llvm -S -o codegen/foo.hip.x64.ll
+
+# hip doesn't understand -emit-llvm (or -S, or -c) when trying to do host and device together
+# so can't test that here
+
+# This ignores -S for some reason
+$CLANG -O2  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  codegen/foo.omp.cpp -c -emit-llvm --cuda-device-only -o codegen/foo.omp.gcn.bc && $DIS codegen/foo.omp.gcn.bc && rm codegen/foo.omp.gcn.bc
+
+# ignores host-only, so the IR has a binary gfx pasted at the top
+$CLANG -O2  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  codegen/foo.omp.cpp -S -emit-llvm --cuda-host-only -o codegen/foo.omp.gcn-x64.ll
+
+
+$CLANG -O2  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50  codegen/foo.omp.cpp -c -emit-llvm -S --cuda-device-only -o codegen/foo.omp.ptx.ll
+
+$CLANG -O2  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50  codegen/foo.omp.cpp -c -emit-llvm -S --cuda-host-only -o codegen/foo.omp.ptx-x64.ll
+
+exit
 
 # Sanity check that the client and server compile successfully
 # and provide an example of the generated IR
@@ -180,6 +216,8 @@ fi
 if (($have_amdgcn)); then
     # Tries to treat foo.so as a hip input file. Somewhat surprised, but might be right.
     $CLANG -I$HSAINC -std=c++11 -x hip demo.hip -o demo --offload-arch=gfx906 -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 -L$HSALIBDIR -lhsa-runtime64 -Wl,-rpath=$HSALIBDIR && ./demo
+
+    exit 0
 fi
 
 if (($have_nvptx)); then
