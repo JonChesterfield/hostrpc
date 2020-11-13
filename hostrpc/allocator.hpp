@@ -6,7 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#if HOSTRPC_HOST
+#if HOSTRPC_HAVE_STDIO
 #include <stdio.h>
 #endif
 
@@ -56,13 +56,14 @@ struct interface
     HOSTRPC_ANNOTATE raw(void *p) : ptr(p) {}
     HOSTRPC_ANNOTATE bool valid() { return ptr != nullptr; }
     HOSTRPC_ANNOTATE status destroy() { return Base::destroy(*this); }
-    HOSTRPC_ANNOTATE local_t local() { return Base::local(*this); }
-    HOSTRPC_ANNOTATE remote_t remote() { return Base::remote(*this); }
+    HOSTRPC_ANNOTATE local_t local_ptr() { return Base::local_ptr(*this); }
+    HOSTRPC_ANNOTATE remote_t remote_ptr() { return Base::remote_ptr(*this); }
     void *ptr;
     HOSTRPC_ANNOTATE void dump(const char *str)
     {
-#if HOSTRPC_HOST
-      fprintf(stderr, "%s: %p (%p, %p)\n", str, ptr, local().ptr, remote().ptr);
+#if HOSTRPC_HAVE_STDIO
+      fprintf(stderr, "%s: %p (%p, %p)\n", str, ptr, local_ptr().ptr,
+              remote_ptr().ptr);
 #else
       (void)str;
 #endif
@@ -71,8 +72,8 @@ struct interface
 
  private:
   // The raw/local/remote conversion is a no-op for most allocators
-  HOSTRPC_ANNOTATE static local_t local(raw x) { return x.ptr; }
-  HOSTRPC_ANNOTATE static remote_t remote(raw x) { return x.ptr; }
+  HOSTRPC_ANNOTATE static local_t local_ptr(raw x) { return x.ptr; }
+  HOSTRPC_ANNOTATE static remote_t remote_ptr(raw x) { return x.ptr; }
 };
 
 namespace host_libc_impl
@@ -165,11 +166,11 @@ struct cuda_shared : public interface<Align, cuda_shared<Align>>
   {
     return cuda_impl::deallocate_shared(x.ptr) == 0 ? success : failure;
   }
-  HOSTRPC_ANNOTATE static local_t local(raw x)
+  HOSTRPC_ANNOTATE static local_t local_ptr(raw x)
   {
     return {cuda_impl::align_pointer_up(x.ptr, Align)};
   }
-  HOSTRPC_ANNOTATE static remote_t remote(raw x)
+  HOSTRPC_ANNOTATE static remote_t remote_ptr(raw x)
   {
     if (!x.ptr)
       {
@@ -198,12 +199,12 @@ struct cuda_gpu : public interface<Align, cuda_gpu<Align>>
   {
     return cuda_impl::deallocate_gpu(x.ptr) == 0 ? success : failure;
   }
-  HOSTRPC_ANNOTATE static local_t local(raw)
+  HOSTRPC_ANNOTATE static local_t local_ptr(raw)
   {
     // local is on the host (as only have a host cuda allocator at present)
     return {0};
   }
-  HOSTRPC_ANNOTATE static remote_t remote(raw x)
+  HOSTRPC_ANNOTATE static remote_t remote_ptr(raw x)
   {
     return {cuda_impl::align_pointer_up(x.ptr, Align)};
   }

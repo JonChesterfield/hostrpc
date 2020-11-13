@@ -5,19 +5,6 @@
 #include "counters.hpp"
 #include "platform_detect.h"
 
-#if HOSTRPC_HOST
-
-#include <sys/syscall.h>
-#include <sys/types.h>
-#include <unistd.h>
-
-HOSTRPC_ANNOTATE static inline uint64_t get_thread_id()
-{
-  pid_t x = syscall(__NR_gettid);
-  return x;
-}
-
-#endif
 namespace hostrpc
 {
 struct operate_nop
@@ -252,12 +239,11 @@ struct server_impl : public SZT, public Counter
         platform::fence_release();
         uint64_t cas_fail_count = 0;
         uint64_t cas_help_count = 0;
-        platform::critical<uint32_t>([&]() {
-          staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
-                              &cas_help_count);
-          return 0;
-        });
-
+        if (platform::is_master_lane())
+          {
+            staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
+                                &cas_help_count);
+          }
         cas_fail_count = platform::broadcast_master(cas_fail_count);
         cas_help_count = platform::broadcast_master(cas_help_count);
         Counter::garbage_cas_fail(cas_fail_count);
@@ -284,11 +270,11 @@ struct server_impl : public SZT, public Counter
       platform::fence_release();
       uint64_t cas_fail_count = 0;
       uint64_t cas_help_count = 0;
-      platform::critical<uint32_t>([&]() {
-        staged_claim_slot(size, slot, &staging, &outbox, &cas_fail_count,
-                          &cas_help_count);
-        return 0;
-      });
+      if (platform::is_master_lane())
+        {
+          staged_claim_slot(size, slot, &staging, &outbox, &cas_fail_count,
+                            &cas_help_count);
+        }
       cas_fail_count = platform::broadcast_master(cas_fail_count);
       cas_help_count = platform::broadcast_master(cas_help_count);
       Counter::publish_cas_fail(cas_fail_count);

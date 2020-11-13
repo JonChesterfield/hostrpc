@@ -118,7 +118,7 @@ struct client_impl : public SZT, public Counter
 
   HOSTRPC_ANNOTATE void dump()
   {
-#if HOSTRPC_HOST
+#if HOSTRPC_HAVE_STDIO
     fprintf(stderr, "remote_buffer %p\n", remote_buffer);
     fprintf(stderr, "local_buffer  %p\n", local_buffer);
     fprintf(stderr, "inbox         %p\n", inbox.a);
@@ -281,11 +281,13 @@ struct client_impl : public SZT, public Counter
         platform::fence_release();
         uint64_t cas_fail_count = 0;
         uint64_t cas_help_count = 0;
-        platform::critical<uint32_t>([&]() {
-          staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
-                              &cas_help_count);
-          return 0;
-        });
+        // opencl has incomplete support for lambdas, can't pass address of
+        // captured variable.
+        if (platform::is_master_lane())
+          {
+            staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
+                                &cas_help_count);
+          }
         cas_fail_count = platform::broadcast_master(cas_fail_count);
         cas_help_count = platform::broadcast_master(cas_help_count);
         Counter::garbage_cas_fail(cas_fail_count);
@@ -310,11 +312,11 @@ struct client_impl : public SZT, public Counter
       platform::fence_release();
       uint64_t cas_fail_count = 0;
       uint64_t cas_help_count = 0;
-      platform::critical<uint32_t>([&]() {
-        staged_claim_slot(size, slot, &staging, &outbox, &cas_fail_count,
-                          &cas_help_count);
-        return 0;
-      });
+      if (platform::is_master_lane())
+        {
+          staged_claim_slot(size, slot, &staging, &outbox, &cas_fail_count,
+                            &cas_help_count);
+        }
       cas_fail_count = platform::broadcast_master(cas_fail_count);
       cas_help_count = platform::broadcast_master(cas_help_count);
       Counter::publish_cas_fail(cas_fail_count);
@@ -334,9 +336,12 @@ struct client_impl : public SZT, public Counter
 
         while (true)
           {
-            uint32_t got = platform::critical<uint32_t>(
-                [&]() { return inbox(size, slot, &loaded); });
-
+            uint32_t got = 0;
+            if (platform::is_master_lane())
+              {
+                got = inbox(size, slot, &loaded);
+              }
+            got = platform::broadcast_master(got);
             loaded = platform::broadcast_master(loaded);
 
             if (got == 1)
@@ -378,11 +383,11 @@ struct client_impl : public SZT, public Counter
         platform::fence_release();
         uint64_t cas_fail_count = 0;
         uint64_t cas_help_count = 0;
-        platform::critical<uint32_t>([&]() {
-          staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
-                              &cas_help_count);
-          return 0;
-        });
+        if (platform::is_master_lane())
+          {
+            staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
+                                &cas_help_count);
+          }
         cas_fail_count = platform::broadcast_master(cas_fail_count);
         cas_help_count = platform::broadcast_master(cas_help_count);
         Counter::finished_cas_fail(cas_fail_count);

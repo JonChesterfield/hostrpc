@@ -5,6 +5,12 @@
 #error "NVPTX and AMDGCN both defined"
 #endif
 
+#if defined(__CUDA__) && defined(__HIP__)
+// Warning? Probably treating these two the same
+#error "Cuda and hip both defined"
+#endif
+
+
 // A few compilation modes exist.
 // Simple one is compiling for one architecture (x64, gcn, ptx) at a time
 // This is used by C++ and by opencl. x64 is referred to as 'host' here, but
@@ -13,6 +19,18 @@
 #define HOSTRPC_AMDGCN 0
 #define HOSTRPC_NVPTX 0
 #define HOSTRPC_HOST 0
+
+#if defined (__OPENCL_C_VERSION__)
+#define HOSTRPC_HAVE_STDIO 0
+#endif
+#if defined(_OPENMP)
+#define HOSTRPC_HAVE_STDIO 0
+#endif
+
+#ifndef HOSTRPC_HAVE_STDIO
+#define HOSTRPC_HAVE_STDIO HOSTRPC_HOST
+#endif
+
 
 // clang -x cuda errors on __device__, __host__ but seems to do the right thing with __attribute__
 #define HOSTRPC_CUDA_DEVICE __attribute__((device)) // __device__

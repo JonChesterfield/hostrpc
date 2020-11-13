@@ -501,9 +501,13 @@ struct lock_bitmap
 
         // If the bit is known zero, can use fetch_or to set it
 
-        Word unexpected_contents;
-        uint32_t r = platform::critical<uint32_t>(
-            [&]() { return cas(w, d, proposed, &unexpected_contents); });
+        Word unexpected_contents = 0;
+        uint32_t r = 0;
+        if (platform::is_master_lane())
+          {
+            r = cas(w, d, proposed, &unexpected_contents);
+          }
+        r = platform::broadcast_master(r);
 
         unexpected_contents = platform::broadcast_master(unexpected_contents);
 

@@ -103,6 +103,7 @@ CXX_PTX="$TRUNKBIN/clang++ $NVPTXFLAGS"
 
 XCUDA="-x cuda --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda"
 XHIP="-x hip --cuda-gpu-arch=gfx906 -nogpulib -nogpuinc"
+XOPENCL="-x cl -Xclang -cl-std=clc++ -DCL_VERSION_2_0=200 -D__OPENCL_C_VERSION__=200  -Dcl_khr_fp64 -Dcl_khr_fp16   -Dcl_khr_subgroups -Dcl_khr_int64_base_atomics -Dcl_khr_int64_extended_atomics" 
 
 CXX_CUDA="$CLANG -O2 $COMMONFLAGS $XCUDA -I/usr/local/cuda/include -nocudalib"
 
@@ -121,6 +122,7 @@ fi
 $CXX_X64 states.cpp -c -o states.x64.bc
 
 
+# Checking cross platform compilation for simple case
 $CXX_X64 codegen/foo_cxx.cpp -S -o codegen/foo_cxx.x64.ll
 $CXX_GCN codegen/foo_cxx.cpp -S -o codegen/foo_cxx.gcn.ll
 $CXX_PTX codegen/foo_cxx.cpp -S -o codegen/foo_cxx.ptx.ll
@@ -154,17 +156,13 @@ $CLANG -O2  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia
 
 $CLANG -O2  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50  codegen/foo.omp.cpp -c -emit-llvm -S --cuda-host-only -o codegen/foo.omp.ptx-x64.ll
 
-
-XOPENCL="-x cl -Xclang -cl-std=clc++ -DCL_VERSION_2_0=200 -D__OPENCL_C_VERSION__=200  -Dcl_khr_fp64 -Dcl_khr_fp16   -Dcl_khr_subgroups -Dcl_khr_int64_base_atomics -Dcl_khr_int64_extended_atomics" 
-
-$CLANG $XOPENCL -S -nogpulib -emit-llvm codegen/foo_cxx.cpp -S -o codegen/foo.cl.x64.ll
+# OpenCL compilation model is essentially that of c++
+$CLANG $XOPENCL -S -emit-llvm codegen/foo_cxx.cpp -S -o codegen/foo.cl.x64.ll
 
 $CLANG $XOPENCL -S -nogpulib -emit-llvm -target amdgcn-amd-amdhsa -mcpu=$GFX codegen/foo_cxx.cpp -S -o codegen/foo.cl.gcn.ll
 
 # recognises mcpu but warns that it is unused
 $CLANG $XOPENCL -S -nogpulib -emit-llvm -target nvptx64-nvidia-cuda codegen/foo_cxx.cpp -S -o codegen/foo.cl.ptx.ll
-
-exit
 
 # Sanity check that the client and server compile successfully
 # and provide an example of the generated IR
@@ -176,11 +174,10 @@ $CXX_GCN codegen/server.cpp -S -o codegen/server.gcn.ll
 $CXX_PTX codegen/client.cpp -S -o codegen/client.ptx.ll
 $CXX_PTX codegen/server.cpp -S -o codegen/server.ptx.ll
 
-if (($have_nvptx)); then
-    # wx/aomp toolchain doesn't have the nvptx64 target
-$CLANG $XCUDA -std=c++14 --cuda-device-only -nocudainc -nocudalib codegen/client.cpp -S -o codegen/client.cuda.ptx.ll
-$CLANG $XCUDA -std=c++14 --cuda-host-only -nocudainc -nocudalib codegen/client.cpp -S -o codegen/client.cuda.x64.ll
-fi
+
+$CLANG $XCUDA -std=c++14 --cuda-device-only -nocudainc -nocudalib codegen/client.cpp -emit-llvm -S -o codegen/client.cuda.ptx.ll
+$CLANG $XCUDA -std=c++14 --cuda-host-only -nocudainc -nocudalib codegen/client.cpp -emit-llvm -S -o codegen/client.cuda.x64.ll
+
 
 # HIP has excessive requirements on function annotation that cuda does not, ignore for now
 # Fails to annotate CFG at O0
@@ -188,6 +185,11 @@ $CLANG $XHIP -std=c++14 -O1 --cuda-device-only codegen/client.cpp -S -o codegen/
 $CLANG $XHIP -std=c++14 -O1 --cuda-host-only codegen/client.cpp -S -o codegen/client.hip.x64.ll
 $CLANG $XHIP -std=c++14 -O1 --cuda-device-only codegen/server.cpp -S -o codegen/server.hip.gcn.ll
 $CLANG $XHIP -std=c++14 -O1 --cuda-host-only codegen/server.cpp -S -o codegen/server.hip.x64.ll
+
+# Build as opencl/c++ too
+$CLANG $XOPENCL -S -emit-llvm codegen/client.cpp -S -o codegen/client.ocl.x64.ll
+$CLANG $XOPENCL -S -emit-llvm codegen/server.cpp -S -o codegen/server.ocl.x64.ll
+
 
 $CXX_X64 -I$HSAINC allocator_hsa.cpp -c -o allocator_hsa.x64.bc
 

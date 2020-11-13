@@ -6,7 +6,7 @@
 
 #include "detail/platform_detect.h"
 
-#if HOSTRPC_HOST
+#if HOSTRPC_HAVE_STDIO
 #include <stdio.h>
 #endif
 
@@ -47,26 +47,6 @@ struct size_compiletime
   HOSTRPC_ANNOTATE size_compiletime(size_t) {}
   HOSTRPC_ANNOTATE constexpr size_t N() const { return SZ; }
 };
-
-using closure_func_t = void (*)(page_t *, void *);
-struct closure_pair
-{
-  closure_func_t func;
-  void *state;
-};
-
-template <typename Func>
-HOSTRPC_ANNOTATE closure_pair make_closure_pair(Func *af)
-{
-  auto cbf = [](hostrpc::page_t *page, void *vf) {
-    Func *cf = static_cast<Func *>(vf);
-    return (*cf)(page);
-  };
-  return {
-      .func = cbf,
-      .state = static_cast<void *>(af),
-  };
-}
 
 template <size_t Size, size_t Align>
 struct storage
@@ -126,7 +106,7 @@ struct client_counters
       }
   }
 
-#if HOSTRPC_HOST
+#if HOSTRPC_HAVE_STDIO
   HOSTRPC_ANNOTATE void dump() const
   {
     printf("CC: no_candidate_slot: %lu\n", state[cc_no_candidate_slot]);
@@ -173,7 +153,7 @@ struct server_counters
       }
   }
 
-#if HOSTRPC_HOST
+#if HOSTRPC_HAVE_STDIO
   HOSTRPC_ANNOTATE void dump() const
   {
     printf("SC: no_candidate_bitmap: %lu\n", state[sc_no_candidate_bitmap]);

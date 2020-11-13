@@ -20,6 +20,17 @@ kernel void __device_start(__global void *args) { __device_start_cast(args); }
 
 #if (HOSTRPC_HOST)
 #include "hsa.h"
+
+#include <sys/syscall.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+HOSTRPC_ANNOTATE static inline uint64_t get_thread_id()
+{
+  pid_t x = syscall(__NR_gettid);
+  return x;
+}
+
 #endif
 
 #include "allocator.hpp"

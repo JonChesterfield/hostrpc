@@ -6,10 +6,49 @@
 #include "../base_types.hpp"  // page_t
 #include "platform_detect.h"
 
+#if defined(__OPENCL_C_VERSION__)
+// OpenCL requires _Atomic qualified types, but fails to parse
+// _Atomic(type).
+
+#pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable
+#pragma OPENCL EXTENSION cl_khr_int64_extended_atomics : enable
+namespace platform
+{
+template <typename T>
+struct ocl_atomic;
+
+static_assert(sizeof(atomic_uint) == sizeof(uint32_t), "");
+static_assert(sizeof(atomic_ulong) == sizeof(uint64_t), "");
+
+template <>
+struct ocl_atomic<uint64_t>
+{
+  using type = atomic_ulong;
+};
+
+template <>
+struct ocl_atomic<uint32_t>
+{
+  using type = atomic_uint;
+};
+
+}  // namespace platform
+
+#define HOSTRPC_ATOMIC(X) typename platform::ocl_atomic<X>::type
+#else
 #if HOSTRPC_NVPTX
-#define HOSTRPC_ATOMIC(X) volatile _Atomic(X)  // will be volatile
+#define HOSTRPC_ATOMIC(X) volatile _Atomic(X)
 #else
 #define HOSTRPC_ATOMIC(X) _Atomic(X)
+#endif
+#endif
+
+#if 0
+#if defined(__OPENCL_C_VERSION__)
+#if HOSTRPC_HOST
+extern "C" int printf(const char *format, ...);
+#endif
+#endif
 #endif
 
 namespace platform
@@ -46,6 +85,7 @@ void(debug)(const char *file, unsigned int line, const char *func,
 // atomics are also be overloaded on different address spaces for some platforms
 // implemented for a slight superset of the subset of T that are presently in
 // use
+#if 0
 template <typename T, size_t memorder, size_t scope>
 HOSTRPC_ANNOTATE T atomic_load(HOSTRPC_ATOMIC(T) const *);
 
@@ -66,7 +106,7 @@ template <typename T, size_t memorder, size_t scope>
 HOSTRPC_ANNOTATE bool atomic_compare_exchange_weak(HOSTRPC_ATOMIC(T) *,
                                                    T expected, T desired,
                                                    T *loaded);
-
+#endif
 }  // namespace platform
 
 // This is exciting. Nvptx doesn't implement atomic, so one must use volatile +
@@ -130,6 +170,20 @@ HOSTRPC_ANNOTATE constexpr bool atomic_params_readmodifywrite()
 
 // Jury rig some pieces of libc for freestanding
 // Assert is based on the implementation in musl
+
+#if (HOSTRPC_HOST && defined(__OPENCL_C_VERSION__))
+// No assert available. Probably want to change to platform::require
+// and provide implementations for each arch.
+#define assert(x) (void)0
+#define printf(...) hostrpc_inline_printf()
+
+extern "C" HOSTRPC_ANNOTATE __attribute__((always_inline)) inline int
+hostrpc_inline_printf()
+{
+  // opencl has no stdio
+  return 0;
+}
+#endif
 
 #if (HOSTRPC_AMDGCN || HOSTRPC_NVPTX)
 
@@ -209,11 +263,14 @@ HOSTRPC_ANNOTATE void assert_fail(const char *str, const char *,
 }  // namespace platform
 
 #if HOSTRPC_HOST
-#include <chrono>
-#include <unistd.h>
+// #include <chrono>
+// #include <unistd.h>
 
+#if !defined(__OPENCL_C_VERSION__)
 #include <cassert>
-#include <cstdio>
+#endif
+
+//#include <cstdio>
 
 namespace platform
 {
@@ -223,7 +280,8 @@ namespace platform
 HOSTRPC_ANNOTATE static __attribute__((noinline)) void sleep_noexcept(
     unsigned int t) noexcept
 {
-  usleep(t);
+  (void)t;
+  // usleep(t);
 }
 
 HOSTRPC_ANNOTATE inline void sleep_briefly()

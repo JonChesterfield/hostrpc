@@ -10,15 +10,11 @@
 // function 'foo'
 
 #if defined(__OPENCL_C_VERSION__)
-#warning "is opencl"
-
-#if defined(__AMDGCN__)
-#warning "amd"
+#if defined(__HIP__) || defined(__CUDA__)
+#error "opencl and hip|cuda ?"
 #endif
 
-#if defined(__NVPTX__)
-#warning "ptx"
-#endif
+// defines __AMDGCN__, __NVPTX__ for the device compilation only
 
 #endif
 
