@@ -90,4 +90,13 @@ echo '#warning "OpenMP host"'
 echo '#warning "OpenMP ptx gpu"'
 $CLANG -std=c++14 -emit-llvm -O2 -fno-exceptions -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50 $NOGPU platform_detect.cpp -c -o /dev/null
 
+echo '#warning "OpenCL host"'
+$CLANG -x cl -Xclang -cl-std=clc++ $NOGPU -emit-llvm -D__OPENCL_C_VERSION__=200 platform_detect.cpp -c -o /dev/null
+
+echo '#warning "OpenCL gcn gpu"'
+$CLANG -x cl -Xclang -cl-std=clc++ $NOGPU -emit-llvm -D__OPENCL_C_VERSION__=200 platform_detect.cpp -target amdgcn-amd-amdhsa -c -o /dev/null
+
+echo '#warning "OpenCL ptx gpu"'
+$CLANG -x cl -Xclang -cl-std=clc++ $NOGPU -emit-llvm -D__OPENCL_C_VERSION__=200 platform_detect.cpp -target nvptx64-nvidia-cuda -c -o /dev/null
+
 #endif

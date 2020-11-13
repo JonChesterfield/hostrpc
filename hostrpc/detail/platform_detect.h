@@ -5,6 +5,11 @@
 #error "NVPTX and AMDGCN both defined"
 #endif
 
+// A few compilation modes exist.
+// Simple one is compiling for one architecture (x64, gcn, ptx) at a time
+// This is used by C++ and by opencl. x64 is referred to as 'host' here, but
+// hosts other than x64 have not yet been tested
+
 #define HOSTRPC_AMDGCN 0
 #define HOSTRPC_NVPTX 0
 #define HOSTRPC_HOST 0
@@ -42,6 +47,24 @@
   #endif
 #endif
 
+#if defined (__OPENCL_C_VERSION__)
+  #if defined (__AMDGCN__)
+    //# warning "OpenCL gcn gpu"
+    #undef HOSTRPC_AMDGCN
+    #define HOSTRPC_AMDGCN 1
+  #endif
+  #if defined (__NVPTX__)
+    //#warning "OpenCL ptx gpu"
+    #undef HOSTRPC_NVPTX
+    #define HOSTRPC_NVPTX 1
+  #endif
+    #if !defined (__AMDGCN__) && !defined (__NVPTX__)
+    //#warning "OpenCL host"
+    #undef HOSTRPC_HOST
+    #define HOSTRPC_HOST 1
+  #endif
+#endif
+  
 #if !defined(_OPENMP) && defined(__NVPTX__)
   #if defined (__CUDA__)
     #if defined(__CUDA_ARCH__)

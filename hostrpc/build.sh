@@ -154,6 +154,16 @@ $CLANG -O2  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia
 
 $CLANG -O2  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50  codegen/foo.omp.cpp -c -emit-llvm -S --cuda-host-only -o codegen/foo.omp.ptx-x64.ll
 
+
+XOPENCL="-x cl -Xclang -cl-std=clc++ -DCL_VERSION_2_0=200 -D__OPENCL_C_VERSION__=200  -Dcl_khr_fp64 -Dcl_khr_fp16   -Dcl_khr_subgroups -Dcl_khr_int64_base_atomics -Dcl_khr_int64_extended_atomics" 
+
+$CLANG $XOPENCL -S -nogpulib -emit-llvm codegen/foo_cxx.cpp -S -o codegen/foo.cl.x64.ll
+
+$CLANG $XOPENCL -S -nogpulib -emit-llvm -target amdgcn-amd-amdhsa -mcpu=$GFX codegen/foo_cxx.cpp -S -o codegen/foo.cl.gcn.ll
+
+# recognises mcpu but warns that it is unused
+$CLANG $XOPENCL -S -nogpulib -emit-llvm -target nvptx64-nvidia-cuda codegen/foo_cxx.cpp -S -o codegen/foo.cl.ptx.ll
+
 exit
 
 # Sanity check that the client and server compile successfully

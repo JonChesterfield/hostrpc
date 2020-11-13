@@ -9,6 +9,19 @@
 // 'foo' error: __host__ __device__ function 'foo' cannot overload __host__
 // function 'foo'
 
+#if defined(__OPENCL_C_VERSION__)
+#warning "is opencl"
+
+#if defined(__AMDGCN__)
+#warning "amd"
+#endif
+
+#if defined(__NVPTX__)
+#warning "ptx"
+#endif
+
+#endif
+
 #if defined(_OPENMP)
 
 // openmp defines __host__ macro, via
