@@ -16,8 +16,8 @@ struct x64_gcn_type
   using SZ = hostrpc::size_runtime;
   using Copy = copy_functor_given_alias;
   using Word = uint64_t;
-  using client_type = client_impl<Word, SZ, Copy, counters::client>;
-  using server_type = server_impl<Word, SZ, Copy, counters::server>;
+  using client_type = client_impl<Word, SZ, Copy, counters::client_nop>;
+  using server_type = server_impl<Word, SZ, Copy, counters::server_nop>;
 
   client_type client;
   server_type server;

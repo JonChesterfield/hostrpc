@@ -146,7 +146,7 @@ $TRUNKBIN/clang++ -x hip --cuda-gpu-arch=gfx906 -nogpulib -std=c++14 -O1 --cuda-
 # so can't test that here
 
 # This ignores -S for some reason
-$CLANG -O2  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  codegen/foo.omp.cpp -c -emit-llvm --cuda-device-only -o codegen/foo.omp.gcn.bc && $DIS codegen/foo.omp.gcn.bc && rm codegen/foo.omp.gcn.bc
+$CLANG -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  codegen/foo.omp.cpp -c -emit-llvm --cuda-device-only -o codegen/foo.omp.gcn.bc && $DIS codegen/foo.omp.gcn.bc && rm codegen/foo.omp.gcn.bc
 
 # ignores host-only, so the IR has a binary gfx pasted at the top
 $CLANG -O2  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  codegen/foo.omp.cpp -S -emit-llvm --cuda-host-only -o codegen/foo.omp.gcn-x64.ll
@@ -232,8 +232,6 @@ if (($have_amdgcn)); then
     $LINK allocator_hsa.x64.bc allocator_host_libc.x64.bc -o demo_bitcode.bc
 
     $CLANG -I$HSAINC -std=c++11 -x hip demo.hip -o demo --offload-arch=gfx906 -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.bc -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 -L$HSALIBDIR -lhsa-runtime64 -Wl,-rpath=$HSALIBDIR && ./demo
-
-    exit 0
 fi
 
 if (($have_nvptx)); then
@@ -251,6 +249,14 @@ $CLANG nvptx_loader.cpp allocator_cuda.x64.bc allocator_host_libc.x64.bc nvptx_m
 
 fi
 
+if (($have_amdgcn)); then
+    $LINK allocator_hsa.x64.bc allocator_host_libc.x64.bc hsa_support.bc -o demo_bitcode.omp.bc
+    
+$CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.omp.bc -o demo_openmp -pthread $HSALIB -Wl,-rpath=$HSALIBDIR
+
+./demo_openmp
+exit 0
+fi
 
 $CXX_GCN hostcall.cpp -c -o hostcall.gcn.bc
 $CXX_X64 -I$HSAINC hostcall.cpp -c -o hostcall.x64.bc
