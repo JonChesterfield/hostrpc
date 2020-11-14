@@ -227,7 +227,11 @@ fi
 
 if (($have_amdgcn)); then
     # Tries to treat foo.so as a hip input file. Somewhat surprised, but might be right.
-    $CLANG -I$HSAINC -std=c++11 -x hip demo.hip -o demo --offload-arch=gfx906 -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 -L$HSALIBDIR -lhsa-runtime64 -Wl,-rpath=$HSALIBDIR && ./demo
+    # The clang driver can't handle some hip input + some bitcode input, but does have the
+    # internal hook -mlink-builtin-bitcode that can be used to the same end effect
+    $LINK allocator_hsa.x64.bc allocator_host_libc.x64.bc -o demo_bitcode.bc
+
+    $CLANG -I$HSAINC -std=c++11 -x hip demo.hip -o demo --offload-arch=gfx906 -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.bc -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 -L$HSALIBDIR -lhsa-runtime64 -Wl,-rpath=$HSALIBDIR && ./demo
 
     exit 0
 fi

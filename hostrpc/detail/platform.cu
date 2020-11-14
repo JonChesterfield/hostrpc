@@ -9,6 +9,8 @@
 
 namespace platform
 {
+namespace nvptx
+{
 DEVICE uint32_t get_lane_id(void)
 {
   return __nvvm_read_ptx_sreg_tid_x() /*threadIdx.x*/ & (WARPSIZE - 1);
@@ -48,8 +50,8 @@ DEVICE int32_t __impl_shfl_down_sync(int32_t var, uint32_t laneDelta)
 }
 
 DEVICE
-void(debug)(const char *file, unsigned int line, const char *func,
-            unsigned long long value)
+void debug_func(const char *file, unsigned int line, const char *func,
+                unsigned long long value)
 {
   uint32_t lane_id = get_lane_id();
   printf("Debug[%u] %s: %s: %d: %llu\n", lane_id, file, func, line, value);
@@ -168,5 +170,5 @@ HOSTRPC_STAMP_FETCH_OPS(unsigned long long)
 #undef HOSTRPC_STAMP_FETCH_OPS
 
 }  // namespace detail
-
+}  // namespace nvptx
 }  // namespace platform

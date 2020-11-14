@@ -6,6 +6,8 @@
 #include "../base_types.hpp"  // page_t
 #include "platform_detect.h"
 
+// todo: this should all be under namespace hostrpc
+
 #if defined(__OPENCL_C_VERSION__)
 // OpenCL requires _Atomic qualified types, but fails to parse
 // _Atomic(type).
@@ -65,27 +67,12 @@ HOSTRPC_ANNOTATE uint32_t client_start_slot();
 HOSTRPC_ANNOTATE void fence_acquire();
 HOSTRPC_ANNOTATE void fence_release();
 
-#define debug(X) platform::detail::debug(__FILE__, __LINE__, __func__, X)
-namespace detail
-{
-#if (!HOSTRPC_NVPTX)
-HOSTRPC_ANNOTATE
-void(debug)(const char *file, unsigned int line, const char *func,
-            uint64_t value);
-#else
-static_assert(sizeof(uint64_t) == sizeof(unsigned long long),
-              "yet they mangle differently");
-HOSTRPC_ANNOTATE
-void(debug)(const char *file, unsigned int line, const char *func,
-            unsigned long long value);
-#endif
-
-}  // namespace detail
+#define debug(X) platform::detail::debug_func(__FILE__, __LINE__, __func__, X)
 
 // atomics are also be overloaded on different address spaces for some platforms
 // implemented for a slight superset of the subset of T that are presently in
 // use
-#if 0
+
 template <typename T, size_t memorder, size_t scope>
 HOSTRPC_ANNOTATE T atomic_load(HOSTRPC_ATOMIC(T) const *);
 
@@ -106,7 +93,7 @@ template <typename T, size_t memorder, size_t scope>
 HOSTRPC_ANNOTATE bool atomic_compare_exchange_weak(HOSTRPC_ATOMIC(T) *,
                                                    T expected, T desired,
                                                    T *loaded);
-#endif
+
 }  // namespace platform
 
 // This is exciting. Nvptx doesn't implement atomic, so one must use volatile +
@@ -231,11 +218,13 @@ hostrpc_inline_printf()
 
 namespace platform
 {
+#if (HOSTRPC_AMDGCN)
+namespace amdgcn
+{
 namespace detail
 {
-#if (HOSTRPC_AMDGCN)
-HOSTRPC_ANNOTATE inline void(debug)(const char *, unsigned int, const char *,
-                                    uint64_t)
+HOSTRPC_ANNOTATE inline void debug_func(const char *, unsigned int,
+                                        const char *, uint64_t)
 { /*unimplemented*/
 }
 HOSTRPC_ANNOTATE __attribute__((always_inline)) inline void assert_fail(
@@ -249,21 +238,30 @@ HOSTRPC_ANNOTATE __attribute__((always_inline)) inline void assert_fail(
 #endif
   __builtin_trap();
 }
+}  // namespace detail
+}  // namespace amdgcn
 #endif
 
 #if (HOSTRPC_NVPTX)
-HOSTRPC_ANNOTATE void(debug)(const char *, unsigned int, const char *,
-                             unsigned long long);
+namespace nvptx
+{
+namespace detail
+{
+static_assert(sizeof(uint64_t) == sizeof(unsigned long long),
+              "yet they mangle differently");
+
+HOSTRPC_ANNOTATE void debug_func(const char *, unsigned int, const char *,
+                                 unsigned long long);
 
 HOSTRPC_ANNOTATE void assert_fail(const char *str, const char *,
                                   unsigned int line, const char *);
+}  // namespace detail
+}  // namespace nvptx
 #endif
 
-}  // namespace detail
 }  // namespace platform
 
 #if HOSTRPC_HOST
-// #include <chrono>
 // #include <unistd.h>
 
 #if !defined(__OPENCL_C_VERSION__)
@@ -273,6 +271,8 @@ HOSTRPC_ANNOTATE void assert_fail(const char *str, const char *,
 //#include <cstdio>
 
 namespace platform
+{
+namespace host
 {
 // local toolchain thinks usleep might throw. That induces a bunch of exception
 // control flow where there otherwise wouldn't be any. Will fix by calling into
@@ -307,16 +307,29 @@ HOSTRPC_ANNOTATE inline void fence_release()
 {
   __c11_atomic_thread_fence(__ATOMIC_RELEASE);
 }
+
 namespace detail
 {
-HOSTRPC_ANNOTATE inline void(debug)(const char *, unsigned int, const char *,
-                                    uint64_t)
+HOSTRPC_ANNOTATE inline void debug_func(const char *, unsigned int,
+                                        const char *, uint64_t)
 { /*unimplemented*/
 }
+
+HOSTRPC_ANNOTATE __attribute__((always_inline)) inline void assert_fail(
+    const char *str, const char *file, unsigned int line, const char *func)
+{
+  // todo
+  (void)str;
+  (void)file;
+  (void)line;
+  (void)func;
+}
 }  // namespace detail
+
 #define HOSTRPC_PLATFORM_ATOMIC_ADDRSPACE_ATTRIBUTE
 #include "platform_atomic.inc"
 
+}  // namespace host
 }  // namespace platform
 #endif
 
@@ -329,6 +342,8 @@ HOSTRPC_ANNOTATE inline void(debug)(const char *, unsigned int, const char *,
 #if HOSTRPC_AMDGCN
 
 namespace platform
+{
+namespace amdgcn
 {
 namespace detail
 {
@@ -410,10 +425,16 @@ HOSTRPC_ANNOTATE __attribute__((always_inline)) inline void fence_release()
 #define HOSTRPC_PLATFORM_ATOMIC_ADDRSPACE_ATTRIBUTE
 #include "platform_atomic.inc"
 
+}  // namespace amdgcn
+
+// amdgcn uses an overload in address space 1 for these functions
+// todo: see if these overloads can be dropped by casting at call site
 #define HOSTRPC_PLATFORM_ATOMIC_ADDRSPACE_ATTRIBUTE \
   __attribute__((address_space(1)))
 #include "platform_atomic.inc"
 
+namespace amdgcn
+{
 HOSTRPC_ANNOTATE inline uint32_t client_start_slot()
 {
   // Ideally would return something < size
@@ -440,12 +461,14 @@ HOSTRPC_ANNOTATE inline uint32_t client_start_slot()
   return (se_id << HRPC_HW_ID_CU_ID_SIZE) + cu_id;
 #undef ENCODE_HWREG
 }
-
+}  // namespace amdgcn
 }  // namespace platform
 #endif  // defined(__AMDGCN__)
 
 #if (HOSTRPC_NVPTX)
 namespace platform
+{
+namespace nvptx
 {
 HOSTRPC_ANNOTATE
 inline void sleep_briefly() {}
@@ -472,6 +495,10 @@ bool is_master_lane();
 HOSTRPC_ANNOTATE
 uint32_t broadcast_master(uint32_t x);
 
+HOSTRPC_ANNOTATE inline uint32_t all_true(uint32_t x)
+{ /* todo */
+  return x;
+}
 HOSTRPC_ANNOTATE
 void fence_acquire();
 HOSTRPC_ANNOTATE
@@ -520,7 +547,8 @@ template <typename T, T (*op)(HOSTRPC_ATOMIC(T) *, T), size_t memorder,
           size_t scope>
 HOSTRPC_ANNOTATE T atomic_fetch_op(HOSTRPC_ATOMIC(T) * addr, T value)
 {
-  static_assert(atomic_params_readmodifywrite<memorder, scope>(), "");
+  static_assert(
+      platform::detail::atomic_params_readmodifywrite<memorder, scope>(), "");
 
   if (memorder == __ATOMIC_ACQ_REL)
     {
@@ -542,7 +570,7 @@ template <typename T, size_t memorder, size_t scope>
 HOSTRPC_ANNOTATE T atomic_load(HOSTRPC_ATOMIC(T) const *addr)
 {
   static_assert(sizeof(T) <= 8, "");
-  static_assert(detail::atomic_params_load<memorder, scope>(), "");
+  static_assert(platform::detail::atomic_params_load<memorder, scope>(), "");
   T res = detail::atomic_load_relaxed(addr);
   if (memorder == __ATOMIC_ACQUIRE)
     {
@@ -554,7 +582,7 @@ HOSTRPC_ANNOTATE T atomic_load(HOSTRPC_ATOMIC(T) const *addr)
 template <typename T, size_t memorder, size_t scope>
 HOSTRPC_ANNOTATE void atomic_store(HOSTRPC_ATOMIC(T) * addr, T value)
 {
-  static_assert(detail::atomic_params_store<memorder, scope>(), "");
+  static_assert(platform::detail::atomic_params_store<memorder, scope>(), "");
   if (memorder == __ATOMIC_RELEASE)
     {
       fence_release();
@@ -565,7 +593,8 @@ HOSTRPC_ANNOTATE void atomic_store(HOSTRPC_ATOMIC(T) * addr, T value)
 template <typename T, size_t memorder, size_t scope>
 HOSTRPC_ANNOTATE T atomic_fetch_add(HOSTRPC_ATOMIC(T) * addr, T value)
 {
-  static_assert(detail::atomic_params_readmodifywrite<memorder, scope>(), "");
+  static_assert(
+      platform::detail::atomic_params_readmodifywrite<memorder, scope>(), "");
   return detail::atomic_fetch_op<T, detail::atomic_fetch_add_relaxed, memorder,
                                  scope>(addr, value);
 }
@@ -573,7 +602,8 @@ HOSTRPC_ANNOTATE T atomic_fetch_add(HOSTRPC_ATOMIC(T) * addr, T value)
 template <typename T, size_t memorder, size_t scope>
 HOSTRPC_ANNOTATE T atomic_fetch_and(HOSTRPC_ATOMIC(T) * addr, T value)
 {
-  static_assert(detail::atomic_params_readmodifywrite<memorder, scope>(), "");
+  static_assert(
+      platform::detail::atomic_params_readmodifywrite<memorder, scope>(), "");
   return detail::atomic_fetch_op<T, detail::atomic_fetch_and_relaxed, memorder,
                                  scope>(addr, value);
 }
@@ -581,7 +611,8 @@ HOSTRPC_ANNOTATE T atomic_fetch_and(HOSTRPC_ATOMIC(T) * addr, T value)
 template <typename T, size_t memorder, size_t scope>
 HOSTRPC_ANNOTATE T atomic_fetch_or(HOSTRPC_ATOMIC(T) * addr, T value)
 {
-  static_assert(detail::atomic_params_readmodifywrite<memorder, scope>(), "");
+  static_assert(
+      platform::detail::atomic_params_readmodifywrite<memorder, scope>(), "");
   return detail::atomic_fetch_op<T, detail::atomic_fetch_or_relaxed, memorder,
                                  scope>(addr, value);
 }
@@ -591,7 +622,8 @@ HOSTRPC_ANNOTATE bool atomic_compare_exchange_weak(HOSTRPC_ATOMIC(T) * addr,
                                                    T expected, T desired,
                                                    T *loaded)
 {
-  static_assert(detail::atomic_params_readmodifywrite<memorder, scope>(), "");
+  static_assert(
+      platform::detail::atomic_params_readmodifywrite<memorder, scope>(), "");
 
   if (memorder == __ATOMIC_ACQ_REL)
     {
@@ -610,9 +642,122 @@ HOSTRPC_ANNOTATE bool atomic_compare_exchange_weak(HOSTRPC_ATOMIC(T) * addr,
 }
 
 HOSTRPC_ANNOTATE inline uint32_t client_start_slot() { return 0; }
-
+}  // namespace nvptx
 }  // namespace platform
 #endif  // defined(__CUDACC__)
+
+// Dispatch in a fashion compatible with c++, cuda, hip, opencl, openmp
+
+#if HOSTRPC_HOST
+#define HOSTRPC_IMPL_NS platform::host
+#elif HOSTRPC_AMDGCN
+#define HOSTRPC_IMPL_NS platform::amdgcn
+#elif HOSTRPC_NVPTX
+#define HOSTRPC_IMPL_NS platform::nvptx
+#else
+#error "Unknown compile mode"
+#endif
+
+namespace platform
+{
+// Functions implemented for each platform
+HOSTRPC_ANNOTATE inline void sleep_briefly()
+{
+  HOSTRPC_IMPL_NS::sleep_briefly();
+}
+HOSTRPC_ANNOTATE inline void sleep() { HOSTRPC_IMPL_NS::sleep(); }
+HOSTRPC_ANNOTATE inline bool is_master_lane()
+{
+  return HOSTRPC_IMPL_NS::is_master_lane();
+}
+HOSTRPC_ANNOTATE inline uint32_t get_lane_id()
+{
+  return HOSTRPC_IMPL_NS::get_lane_id();
+}
+HOSTRPC_ANNOTATE inline uint32_t broadcast_master(uint32_t x)
+{
+  return HOSTRPC_IMPL_NS::broadcast_master(x);
+}
+HOSTRPC_ANNOTATE inline uint32_t all_true(uint32_t x)
+{
+  return HOSTRPC_IMPL_NS::all_true(x);
+}
+
+HOSTRPC_ANNOTATE inline uint32_t client_start_slot()
+{
+  return HOSTRPC_IMPL_NS::client_start_slot();
+}
+HOSTRPC_ANNOTATE inline void fence_acquire()
+{
+  HOSTRPC_IMPL_NS::fence_acquire();
+}
+HOSTRPC_ANNOTATE inline void fence_release()
+{
+  HOSTRPC_IMPL_NS::fence_release();
+}
+
+namespace detail
+{
+HOSTRPC_ANNOTATE __attribute__((always_inline)) inline void assert_fail(
+    const char *str, const char *file, unsigned int line, const char *func)
+{
+  HOSTRPC_IMPL_NS::detail::assert_fail(str, file, line, func);
+}
+
+HOSTRPC_ANNOTATE
+inline void debug_func(const char *file, unsigned int line, const char *func,
+                       uint64_t value)
+{
+  HOSTRPC_IMPL_NS::detail::debug_func(file, line, func, value);
+}
+
+}  // namespace detail
+
+// atomics are also be overloaded on different address spaces for some platforms
+// implemented for a slight superset of the subset of T that are presently in
+// use
+
+template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE inline T atomic_load(HOSTRPC_ATOMIC(T) const *a)
+{
+  return HOSTRPC_IMPL_NS::atomic_load<T, memorder, scope>(a);
+}
+
+template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE inline void atomic_store(HOSTRPC_ATOMIC(T) * a, T v)
+{
+  return HOSTRPC_IMPL_NS::atomic_store<T, memorder, scope>(a, v);
+}
+
+template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE inline T atomic_fetch_add(HOSTRPC_ATOMIC(T) * a, T v)
+{
+  return HOSTRPC_IMPL_NS::atomic_fetch_add<T, memorder, scope>(a, v);
+}
+
+template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE inline T atomic_fetch_and(HOSTRPC_ATOMIC(T) * a, T v)
+{
+  return HOSTRPC_IMPL_NS::atomic_fetch_and<T, memorder, scope>(a, v);
+}
+
+template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE inline T atomic_fetch_or(HOSTRPC_ATOMIC(T) * a, T v)
+{
+  return HOSTRPC_IMPL_NS::atomic_fetch_or<T, memorder, scope>(a, v);
+}
+
+// single memorder used for success and failure cases
+template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE inline bool atomic_compare_exchange_weak(HOSTRPC_ATOMIC(T) * a,
+                                                          T expected, T desired,
+                                                          T *loaded)
+{
+  return HOSTRPC_IMPL_NS::atomic_compare_exchange_weak<T, memorder, scope>(
+      a, expected, desired, loaded);
+}
+
+}  // namespace platform
 
 namespace platform
 {
@@ -623,12 +768,12 @@ HOSTRPC_ANNOTATE
 __attribute__((always_inline)) inline uint32_t reduction_sum(uint32_t x)
 {
   // could implement shfl_down for x64 and drop the macro
-  x += detail::__impl_shfl_down_sync(x, 32);
-  x += detail::__impl_shfl_down_sync(x, 16);
-  x += detail::__impl_shfl_down_sync(x, 8);
-  x += detail::__impl_shfl_down_sync(x, 4);
-  x += detail::__impl_shfl_down_sync(x, 2);
-  x += detail::__impl_shfl_down_sync(x, 1);
+  x += HOSTRPC_IMPL_NS::detail::__impl_shfl_down_sync(x, 32);
+  x += HOSTRPC_IMPL_NS::detail::__impl_shfl_down_sync(x, 16);
+  x += HOSTRPC_IMPL_NS::detail::__impl_shfl_down_sync(x, 8);
+  x += HOSTRPC_IMPL_NS::detail::__impl_shfl_down_sync(x, 4);
+  x += HOSTRPC_IMPL_NS::detail::__impl_shfl_down_sync(x, 2);
+  x += HOSTRPC_IMPL_NS::detail::__impl_shfl_down_sync(x, 1);
   return x;
 }
 #endif

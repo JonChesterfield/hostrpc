@@ -33,13 +33,6 @@
 
 
 // clang -x cuda errors on __device__, __host__ but seems to do the right thing with __attribute__
-#define HOSTRPC_CUDA_DEVICE __attribute__((device)) // __device__
-#define HOSTRPC_CUDA_HOST __attribute__((host)) // __host__
-
-#define HOSTRPC_HIP_DEVICE __attribute__((device))
-#define HOSTRPC_HIP_HOST __attribute__((host))
-
-
 
 // openmp presently defines __HIP__
 #if (defined(__CUDA__) || defined (__HIP__)) && !defined(_OPENMP)
