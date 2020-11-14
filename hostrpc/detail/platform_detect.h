@@ -39,7 +39,17 @@
 #define HOSTRPC_HIP_DEVICE __attribute__((device))
 #define HOSTRPC_HIP_HOST __attribute__((host))
 
-#define HOSTRPC_ANNOTATE
+
+
+// openmp presently defines __HIP__
+#if (defined(__CUDA__) || defined (__HIP__)) && !defined(_OPENMP)
+#define HOSTRPC_ANNOTATE_HOST __attribute__((host))
+#define HOSTRPC_ANNOTATE_DEVICE __attribute__((device))
+#else
+#define HOSTRPC_ANNOTATE_HOST
+#define HOSTRPC_ANNOTATE_DEVICE
+#endif
+#define HOSTRPC_ANNOTATE HOSTRPC_ANNOTATE_HOST HOSTRPC_ANNOTATE_DEVICE
 
 #if !defined (__NVPTX__) & !defined(__AMDGCN__)
 // TODO: Consider simplifying the following based on this
@@ -89,14 +99,10 @@
       //#warning "Cuda gpu"
       #undef HOSTRPC_NVPTX
       #define HOSTRPC_NVPTX 1
-      #undef HOSTRPC_ANNOTATE
-      #define HOSTRPC_ANNOTATE HOSTRPC_CUDA_DEVICE
     #else
       //#warning "Cuda host"
       #undef HOSTRPC_HOST
       #define HOSTRPC_HOST 1
-      #undef HOSTRPC_ANNOTATE
-      #define HOSTRPC_ANNOTATE HOSTRPC_CUDA_HOST
     #endif
   #else
     //#warning "Ptx freestanding"
@@ -111,14 +117,10 @@
       //#warning "Hip gpu"
       #undef HOSTRPC_AMDGCN
       #define HOSTRPC_AMDGCN 1
-      #undef HOSTRPC_ANNOTATE
-      #define HOSTRPC_ANNOTATE HOSTRPC_HIP_DEVICE
     #else
       //#warning "Hip host"
       #undef HOSTRPC_HOST
       #define HOSTRPC_HOST 1
-      #undef HOSTRPC_ANNOTATE
-      #define HOSTRPC_ANNOTATE HOSTRPC_HIP_HOST
     #endif
   #else
     //#warning "GCN freestanding"

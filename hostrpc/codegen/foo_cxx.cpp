@@ -1,3 +1,3 @@
 #include "foo.hpp"
 
-void call(void) { platform::foo(); }
+void call() { platform::foo(); }

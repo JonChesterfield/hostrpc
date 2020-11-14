@@ -9,6 +9,8 @@
 // 'foo' error: __host__ __device__ function 'foo' cannot overload __host__
 // function 'foo'
 
+#include "../detail/platform_detect.h"
+
 #if defined(__OPENCL_C_VERSION__)
 #if defined(__HIP__) || defined(__CUDA__)
 #error "opencl and hip|cuda ?"
@@ -28,36 +30,56 @@
 // defining another function with the same name is a redefinition error
 // this could be worked around using variant
 
-#define HOSTRPC_HOST
-#define HOSTRPC_DEVICE
-
-#else
-
-#if defined(__HIP__) | defined(__CUDA__)
-#define HOSTRPC_HOST __attribute__((host))
-#define HOSTRPC_DEVICE __attribute__((device))
-#else
-#define HOSTRPC_HOST
-#define HOSTRPC_DEVICE
-#endif
+#define __p(STR) _Pragma(STR)
+#define __p2(STR) __p(#STR)
 
 #endif
 
 namespace platform
 {
-void foo();
+// do something platform dependent in each
+#if HOSTRPC_HOST
+namespace host
+{
+HOSTRPC_ANNOTATE_HOST void foo() { __builtin_ia32_sfence(); }
+}  // namespace host
+#endif
 
-HOSTRPC_HOST void foo();
+#if HOSTRPC_AMDGCN
+namespace amdgcn
+{
+HOSTRPC_ANNOTATE_DEVICE void foo() { __builtin_amdgcn_s_sleep(0); }
+}  // namespace amdgcn
+#endif
 
-HOSTRPC_DEVICE void foo();
+#if HOSTRPC_NVPTX
+namespace nvptx
+{
+HOSTRPC_ANNOTATE_DEVICE void foo() { (void)__nvvm_read_ptx_sreg_tid_x(); }
+}  // namespace nvptx
+#endif
+}  // namespace platform
+
+#if HOSTRPC_HOST
+#define HOSTRPC_IMPL_NS host
+#elif HOSTRPC_AMDGCN
+#define HOSTRPC_IMPL_NS amdgcn
+#elif HOSTRPC_NVPTX
+#define HOSTRPC_IMPL_NS nvptx
+#else
+#error "Unknown compile mode"
+#endif
 
 #pragma omp declare target
-void foo();
-#pragma omp end declare target
 
-// If using this declaration, it must be the only declaration
-//  __host__   __device__   void foo();
+namespace platform
+{
+// marks it __host__ __device__
+HOSTRPC_ANNOTATE
+void foo() { HOSTRPC_IMPL_NS::foo(); }
 
 }  // namespace platform
+
+#pragma omp end declare target
 
 #endif
