@@ -76,6 +76,13 @@ struct interface
   HOSTRPC_ANNOTATE static remote_t remote_ptr(raw x) { return x.ptr; }
 };
 
+HOSTRPC_ANNOTATE inline void *align_pointer_up(void *ptr, size_t align)
+{
+  uint64_t top_misaligned = (uint64_t)ptr + align - 1;
+  uint64_t aligned = top_misaligned & ~(align - 1);
+  return (void *)aligned;
+}
+
 namespace host_libc_impl
 {
 HOSTRPC_ANNOTATE void *allocate(size_t align, size_t bytes);
@@ -96,6 +103,82 @@ struct host_libc : public interface<Align, host_libc<Align>>
   {
     host_libc_impl::deallocate(x.ptr);
     return success;
+  }
+};
+
+namespace openmp_target_impl
+{
+HOSTRPC_ANNOTATE void *allocate(int device_num, size_t bytes);
+HOSTRPC_ANNOTATE int deallocate(int device_num, void *);
+}  // namespace openmp_target_impl
+
+template <size_t Align, int device_num>
+struct openmp_target : public interface<Align, openmp_target<Align, device_num>>
+{
+  using Base = interface<Align, openmp_target<Align, device_num>>;
+  using typename Base::local_t;
+  using typename Base::raw;
+  using typename Base::remote_t;
+
+  HOSTRPC_ANNOTATE
+  openmp_target() {}
+  HOSTRPC_ANNOTATE raw allocate(size_t N)
+  {
+    size_t adj = N + Align - 1;
+    return {openmp_target_impl::allocate(device_num, adj)};
+  }
+  HOSTRPC_ANNOTATE static status destroy(raw x)
+  {
+    return (openmp_target_impl::deallocate(device_num, x.ptr) == 0) ? success
+                                                                    : failure;
+  }
+
+  HOSTRPC_ANNOTATE static local_t local_ptr(raw) { return {0}; }
+  HOSTRPC_ANNOTATE static remote_t remote_ptr(raw x)
+  {
+    return {align_pointer_up(x.ptr, Align)};
+  }
+};
+
+namespace openmp_shared_impl
+{
+HOSTRPC_ANNOTATE void *ctor();  // null on fail
+HOSTRPC_ANNOTATE void dtor(void *);
+HOSTRPC_ANNOTATE void *allocate(void *state, int device_num, size_t bytes);
+HOSTRPC_ANNOTATE int deallocate(void *state, int device_num, void *);
+
+}  // namespace openmp_shared_impl
+
+template <size_t Align, int device_num>
+struct openmp_shared : public interface<Align, openmp_shared<Align, device_num>>
+{
+  using Base = interface<Align, openmp_shared<Align, device_num>>;
+  using typename Base::local_t;
+  using typename Base::raw;
+  using typename Base::remote_t;
+
+  void *state;
+
+  HOSTRPC_ANNOTATE
+  openmp_shared() { state = openmp_shared_impl::ctor(); }
+
+  // this class isn't safe to copy if it cleans up, make move-only
+  HOSTRPC_ANNOTATE
+  ~openmp_shared()
+  { /* openmp_shared_impl::dtor(state);*/
+  }
+
+  HOSTRPC_ANNOTATE raw allocate(size_t N)
+  {
+    size_t adj = N + Align - 1;
+    return {openmp_shared_impl::allocate(state, device_num, adj)};
+  }
+  HOSTRPC_ANNOTATE static status destroy(raw x)
+  {
+    // leak for now - need a non-static destroy to pass state in
+    return (openmp_shared_impl::deallocate(nullptr, device_num, x.ptr) == 0)
+               ? success
+               : failure;
   }
 };
 
@@ -138,13 +221,6 @@ HOSTRPC_ANNOTATE int deallocate_shared(void *);
 
 HOSTRPC_ANNOTATE void *device_ptr_from_host_ptr(void *);
 
-HOSTRPC_ANNOTATE inline void *align_pointer_up(void *ptr, size_t align)
-{
-  uint64_t top_misaligned = (uint64_t)ptr + align - 1;
-  uint64_t aligned = top_misaligned & ~(align - 1);
-  return (void *)aligned;
-}
-
 }  // namespace cuda_impl
 
 template <size_t Align>
@@ -168,7 +244,7 @@ struct cuda_shared : public interface<Align, cuda_shared<Align>>
   }
   HOSTRPC_ANNOTATE static local_t local_ptr(raw x)
   {
-    return {cuda_impl::align_pointer_up(x.ptr, Align)};
+    return {align_pointer_up(x.ptr, Align)};
   }
   HOSTRPC_ANNOTATE static remote_t remote_ptr(raw x)
   {
@@ -177,7 +253,7 @@ struct cuda_shared : public interface<Align, cuda_shared<Align>>
         return {0};
       }
     void *dev = cuda_impl::device_ptr_from_host_ptr(x.ptr);
-    return {cuda_impl::align_pointer_up(dev, Align)};
+    return {align_pointer_up(dev, Align)};
   }
 };
 
@@ -206,7 +282,7 @@ struct cuda_gpu : public interface<Align, cuda_gpu<Align>>
   }
   HOSTRPC_ANNOTATE static remote_t remote_ptr(raw x)
   {
-    return {cuda_impl::align_pointer_up(x.ptr, Align)};
+    return {align_pointer_up(x.ptr, Align)};
   }
 };
 

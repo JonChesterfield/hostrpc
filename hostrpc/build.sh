@@ -192,8 +192,8 @@ $CLANG $XOPENCL -S -emit-llvm codegen/server.cpp -S -o codegen/server.ocl.x64.ll
 
 
 $CXX_X64 -I$HSAINC allocator_hsa.cpp -c -o allocator_hsa.x64.bc
-
 $CXX_X64 allocator_host_libc.cpp -c -o allocator_host_libc.x64.bc
+$CXX_X64 -I$RDIR/include allocator_openmp.cpp -c -o allocator_openmp.x64.bc
 
 $CXX_X64 -I$HSAINC tests.cpp -c -o tests.x64.bc
 $CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc
@@ -250,12 +250,11 @@ $CLANG nvptx_loader.cpp allocator_cuda.x64.bc allocator_host_libc.x64.bc nvptx_m
 fi
 
 if (($have_amdgcn)); then
-    $LINK allocator_hsa.x64.bc allocator_host_libc.x64.bc hsa_support.bc -o demo_bitcode.omp.bc
+    $LINK allocator_hsa.x64.bc allocator_host_libc.x64.bc allocator_openmp.x64.bc hsa_support.bc -o demo_bitcode.omp.bc
     
 $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.omp.bc -o demo_openmp -pthread $HSALIB -Wl,-rpath=$HSALIBDIR
 
 ./demo_openmp
-exit 0
 fi
 
 $CXX_GCN hostcall.cpp -c -o hostcall.gcn.bc

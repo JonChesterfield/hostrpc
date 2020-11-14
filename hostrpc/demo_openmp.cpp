@@ -6,6 +6,7 @@
 #include "host_client.hpp"
 
 #include "x64_gcn_type.hpp"
+#include "x64_target_type.hpp"
 
 static void copy_page(hostrpc::page_t *dst, hostrpc::page_t *src)
 {
@@ -64,8 +65,7 @@ int main()
     hsa_region_t coarse_grained_region =
         hsa::region_coarse_grained(kernel_agent);
     size_t N = 1920;
-    hostrpc::x64_gcn_type p(N, fine_grained_region.handle,
-                            coarse_grained_region.handle);
+    hostrpc::x64_target_type<0> p(N);
 
     std::thread serv([&]() {
       uint32_t location = 0;
