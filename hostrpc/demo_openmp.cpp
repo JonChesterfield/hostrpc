@@ -37,13 +37,25 @@ struct use
 
 #pragma omp end declare target
 
+// this fails to compile - no member named 'printf' in the global namespace
+// seems to be trying to use stuff from wchar, can probably work around by
+// using pthreads instead (as thread includes string which seems to be the
+// problem)
+
 #include <stdio.h>
 #include <thread>
 #include <unistd.h>
 
-#include "hsa.hpp"
+#define WITH_HSA 0
 
-hostrpc::x64_gcn_type::client_type client_instance;
+#if WITH_HSA
+using base_type = hostrpc::x64_gcn_type;
+#include "hsa.hpp"
+#else
+using base_type = hostrpc::x64_target_type<0>;
+#endif
+
+base_type::client_type client_instance;
 hostrpc::page_t scratch;
 
 struct operate_test
@@ -57,16 +69,22 @@ struct clear_test
 
 int main()
 {
+#if WITH_HSA
   hsa::init hsa;
+#endif
   {
     printf("in openmp host\n");
+    size_t N = 1920;
+
+#if WITH_HSA
     hsa_agent_t kernel_agent = hsa::find_a_gpu_or_exit();
     hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
     hsa_region_t coarse_grained_region =
         hsa::region_coarse_grained(kernel_agent);
-    size_t N = 1920;
-    hostrpc::x64_target_type<0> p(N);
-
+    base_type p(N);
+#else
+    base_type p(N);
+#endif
     std::thread serv([&]() {
       uint32_t location = 0;
 

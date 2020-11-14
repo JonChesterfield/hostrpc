@@ -257,6 +257,15 @@ $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgc
 ./demo_openmp
 fi
 
+if (($have_nvptx)); then
+    $LINK allocator_host_libc.x64.bc allocator_openmp.x64.bc -o demo_bitcode.omp.bc
+    
+$CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50  demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.omp.bc -o demo_openmp -pthread 
+
+./demo_openmp
+fi
+
+
 $CXX_GCN hostcall.cpp -c -o hostcall.gcn.bc
 $CXX_X64 -I$HSAINC hostcall.cpp -c -o hostcall.x64.bc
 
