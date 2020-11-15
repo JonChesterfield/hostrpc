@@ -213,11 +213,9 @@ $LINK persistent_kernel.gcn.code.bc persistent_kernel.gcn.kern.bc $OCKL_LIBS -o 
 $CXX_GCN_LD persistent_kernel.gcn.bc -o persistent_kernel.gcn.so
 $CXX_X64 -I$HSAINC persistent_kernel.cpp -c -o persistent_kernel.x64.bc
 
+$CXX_CUDA -std=c++14 --cuda-device-only -nogpuinc -nobuiltininc $PTX_VER detail/platform.cu -c -emit-llvm -o detail/platform.ptx.bc
 
 if (($have_nvptx)); then
-    # Would like to build with -nogpuinc, maybe also -nobuiltininc. Goal is to build without cuda toolkit.
- $CXX_CUDA -std=c++14 --cuda-device-only $PTX_VER detail/platform.cu -c -emit-llvm -o detail/platform.ptx.bc
-
  $CXX_X64 -I/usr/local/cuda/include allocator_cuda.cpp  -c -emit-llvm -o allocator_cuda.x64.bc
 
  $CXX_CUDA -std=c++14 --cuda-device-only loader/nvptx_loader_entry.cu -c -emit-llvm -o loader/nvptx_loader_entry.cu.ptx.bc
@@ -235,6 +233,9 @@ if (($have_amdgcn)); then
     $CLANG -I$HSAINC -std=c++11 -x hip demo.hip -o demo --offload-arch=gfx906 -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.bc -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 -L$HSALIBDIR -lhsa-runtime64 -Wl,-rpath=$HSALIBDIR && ./demo
 fi
 
+$CXX_X64 nvptx_main.cpp -c -o nvptx_main.x64.bc
+$CXX_PTX nvptx_main.cpp -ffreestanding -c -o nvptx_main.ptx.bc
+
 if (($have_nvptx)); then
 # One step at a time
     $CLANG $XCUDA hello.cu -o hello -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcudart_static -ldl -lrt -pthread && ./hello
@@ -242,8 +243,6 @@ if (($have_nvptx)); then
 # hello.o is an executable elf, may be able to load it from cuda
 $CLANG $XCUDA -std=c++14 hello.cu --cuda-device-only $PTX_VER -c -o hello.o  -I/usr/local/cuda/include
 
-$CXX_X64 nvptx_main.cpp -c -o nvptx_main.x64.bc
-$CXX_PTX nvptx_main.cpp -ffreestanding -c -o nvptx_main.ptx.bc
 
 $CLANG nvptx_loader.cpp allocator_cuda.x64.bc allocator_host_libc.x64.bc nvptx_main.x64.bc --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -lcudart -pthread -o nvptx_loader.exe
 # ./nvptx_loader.exe hello.o
@@ -253,17 +252,13 @@ fi
 if (($have_amdgcn)); then
     $LINK allocator_hsa.x64.bc allocator_host_libc.x64.bc allocator_openmp.x64.bc hsa_support.bc -o demo_bitcode.omp.bc
     
-$CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.omp.bc -o demo_openmp -pthread $HSALIB -Wl,-rpath=$HSALIBDIR
-
-./demo_openmp
+    $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.omp.bc -o demo_openmp -pthread $HSALIB -Wl,-rpath=$HSALIBDIR && ./demo_openmp
 fi
 
 if (($have_nvptx)); then
     $LINK allocator_host_libc.x64.bc allocator_openmp.x64.bc -o demo_bitcode.omp.bc
     
-$CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50  demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.omp.bc -o demo_openmp -pthread 
-
-./demo_openmp
+    # $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50  demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.omp.bc -o demo_openmp -pthread && ./demo_openmp
 fi
 
 
@@ -279,7 +274,9 @@ $CXX_GCN amdgcn_main.cpp -c -o amdgcn_main.gcn.bc
 # TODO: Embed it directly in the loader by patching call to main, as the loader doesn't do it
 $CXX_X64 -I$HSAINC amdgcn_loader.cpp -c -o amdgcn_loader.x64.bc
 
+if (($have_amdgcn)); then
 $CXX_X64_LD $LDFLAGS amdgcn_loader.x64.bc allocator_host_libc.x64.bc allocator_hsa.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o ../amdgcn_loader.exe
+fi
 
 # Build the device library that calls into main()
 
@@ -306,7 +303,6 @@ if (($have_nvptx)); then
 "$TRUNKBIN/clang++" --target=nvptx64-nvidia-cuda -march=sm_50 $PTX_VER executable_device.ptx.bc -S -o executable_device.ptx.s
 /usr/local/cuda/bin/ptxas -m64 -O0 --gpu-name sm_50 executable_device.ptx.s -o a.ptx.out
 ./nvptx_loader.exe a.ptx.out
-
 fi
 
 # Register amdhsa elf magic with kernel

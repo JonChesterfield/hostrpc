@@ -262,10 +262,10 @@ HOSTRPC_ANNOTATE void assert_fail(const char *str, const char *,
 }  // namespace platform
 
 #if HOSTRPC_HOST
-// #include <unistd.h>
 
 #if !defined(__OPENCL_C_VERSION__)
 #include <cassert>
+#include <unistd.h>
 #endif
 
 //#include <cstdio>
@@ -280,8 +280,11 @@ namespace host
 HOSTRPC_ANNOTATE static __attribute__((noinline)) void sleep_noexcept(
     unsigned int t) noexcept
 {
+#if !defined(__OPENCL_C_VERSION__)
+  usleep(t);
+#else
   (void)t;
-  // usleep(t);
+#endif
 }
 
 HOSTRPC_ANNOTATE inline void sleep_briefly()

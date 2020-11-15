@@ -7,7 +7,6 @@
 
 #include <list>
 #include <thread>
-#include <unistd.h>
 
 #include "allocator.hpp"
 
@@ -178,7 +177,7 @@ TEST_CASE("set up single word system")
               break;
             }
 
-          usleep(10000);
+          platform::sleep();
         }
       while ((calls_launched != calls_handled) ||
              (calls_launched != calls_planned));

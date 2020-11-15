@@ -95,7 +95,7 @@ int main()
           fprintf(stderr, "server ret %u\n", r);
           for (unsigned j = 0; j < 1000; j++)
             {
-              usleep(100);
+              platform::sleep();
             }
         }
     });
