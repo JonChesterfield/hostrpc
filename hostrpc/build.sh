@@ -215,6 +215,7 @@ $CXX_X64 -I$HSAINC persistent_kernel.cpp -c -o persistent_kernel.x64.bc
 
 
 if (($have_nvptx)); then
+    # Would like to build with -nogpuinc, maybe also -nobuiltininc. Goal is to build without cuda toolkit.
  $CXX_CUDA -std=c++14 --cuda-device-only $PTX_VER detail/platform.cu -c -emit-llvm -o detail/platform.ptx.bc
 
  $CXX_X64 -I/usr/local/cuda/include allocator_cuda.cpp  -c -emit-llvm -o allocator_cuda.x64.bc
