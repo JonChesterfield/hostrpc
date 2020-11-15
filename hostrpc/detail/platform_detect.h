@@ -20,6 +20,8 @@
 #define HOSTRPC_NVPTX 0
 #define HOSTRPC_HOST 0
 
+#ifndef HOSTRPC_HAVE_STDIO
+
 #if defined (__OPENCL_C_VERSION__)
 #define HOSTRPC_HAVE_STDIO 0
 #endif
@@ -31,6 +33,7 @@
 #define HOSTRPC_HAVE_STDIO HOSTRPC_HOST
 #endif
 
+#endif
 
 // clang -x cuda errors on __device__, __host__ but seems to do the right thing with __attribute__
 

@@ -265,10 +265,10 @@ HOSTRPC_ANNOTATE void assert_fail(const char *str, const char *,
 
 #if !defined(__OPENCL_C_VERSION__)
 #include <cassert>
-#include <unistd.h>
 #endif
 
-//#include <cstdio>
+// should probably implement this in platform::host_libc source
+extern "C" int usleep(unsigned);  // #include <unistd.h>
 
 namespace platform
 {

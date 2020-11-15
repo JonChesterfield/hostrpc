@@ -9,6 +9,8 @@ DERIVE=${1:-4}
 # Aomp
 RDIR=$HOME/rocm/aomp
 
+CLANGINCLUDE=$RDIR/lib/clang/11.0.0/include
+
 # Needs to resolve to gfx906, gfx1010 or similar
 GFX=`$RDIR/bin/mygpu -d gfx906` # lost the entry for gfx750 at some point
 
@@ -75,6 +77,9 @@ OPT="$RDIR/bin/opt"
 CXX="$CLANG -std=c++14 -Wall -Wextra"
 LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR hsa_support.bc -lelf"
 
+
+NOINC="-nostdinc -nostdinc++ -isystem $CLANGINCLUDE -DHOSTRPC_HAVE_STDIO=0"
+
 AMDGPU="--target=amdgcn-amd-amdhsa -march=$GFX -mcpu=$GFX -mllvm -amdgpu-fixed-function-abi -nogpulib"
 
 # Not sure why CUDACC isn't being set by clang here, probably a bad sign
@@ -123,6 +128,7 @@ $CXX_X64 states.cpp -c -o states.x64.bc
 
 
 # Checking cross platform compilation for simple case
+
 $CXX_X64 codegen/foo_cxx.cpp -S -o codegen/foo_cxx.x64.ll
 $CXX_GCN codegen/foo_cxx.cpp -S -o codegen/foo_cxx.gcn.ll
 $CXX_PTX codegen/foo_cxx.cpp -S -o codegen/foo_cxx.ptx.ll
@@ -189,7 +195,6 @@ $CLANG $XHIP -std=c++14 -O1 --cuda-host-only codegen/server.cpp -S -o codegen/se
 # Build as opencl/c++ too
 $CLANG $XOPENCL -S -emit-llvm codegen/client.cpp -S -o codegen/client.ocl.x64.ll
 $CLANG $XOPENCL -S -emit-llvm codegen/server.cpp -S -o codegen/server.ocl.x64.ll
-
 
 $CXX_X64 -I$HSAINC allocator_hsa.cpp -c -o allocator_hsa.x64.bc
 $CXX_X64 allocator_host_libc.cpp -c -o allocator_host_libc.x64.bc
