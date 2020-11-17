@@ -257,13 +257,13 @@ fi
 if (($have_amdgcn)); then
     $LINK allocator_hsa.x64.bc allocator_host_libc.x64.bc allocator_openmp.x64.bc hsa_support.bc -o demo_bitcode.omp.bc
     
-    $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.omp.bc -o demo_openmp -pthread $HSALIB -Wl,-rpath=$HSALIBDIR && ./demo_openmp
+    $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  -DDEMO_OPENMP_AMDGCN=1 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.omp.bc -o demo_openmp.gcn -pthread $HSALIB -Wl,-rpath=$HSALIBDIR && ./demo_openmp.gcn
 fi
 
 if (($have_nvptx)); then
     $LINK allocator_host_libc.x64.bc allocator_openmp.x64.bc -o demo_bitcode.omp.bc
     
-    # $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50  demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.omp.bc -o demo_openmp -pthread && ./demo_openmp
+    $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50 -DDEMO_OPENMP_NVPTX=1 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.omp.bc -o demo_openmp.ptx -pthread && ./demo_openmp.ptx
 fi
 
 
