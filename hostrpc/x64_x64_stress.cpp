@@ -6,11 +6,32 @@
 #include <thread>
 
 #include "allocator.hpp"
+#include "client_server_pair.hpp"
 #include "detail/client_impl.hpp"
 #include "detail/server_impl.hpp"
 #include "host_client.hpp"
 
-#if HOSTRPC_HOST
+namespace hostrpc
+{
+using x64_x64_type_base = client_server_pair_t<
+    hostrpc::size_runtime, copy_functor_given_alias, uint64_t,
+    hostrpc::allocator::host_libc<alignof(page_t)>,
+    hostrpc::allocator::host_libc<64>, hostrpc::allocator::host_libc<64>,
+    hostrpc::allocator::host_libc<64> >;
+
+struct x64_x64_type : public x64_x64_type_base
+{
+  using base = x64_x64_type_base;
+  HOSTRPC_ANNOTATE x64_x64_type(size_t N)
+      : x64_x64_type_base(
+            hostrpc::size_runtime(N), typename base::AllocBuffer(),
+            typename base::AllocInboxOutbox(), typename base::AllocLocal(),
+            typename base::AllocRemote())
+  {
+  }
+};
+
+}  // namespace hostrpc
 
 static void init_page(hostrpc::page_t *page, uint64_t v)
 {
@@ -23,66 +44,10 @@ static void init_page(hostrpc::page_t *page, uint64_t v)
     }
 }
 
-namespace hostrpc
-{
-struct x64_x64_t
-{
-  using SZ = hostrpc::size_runtime;
-  using Copy = copy_functor_given_alias;
-  using Word = uint64_t;
-  using client_type = client_impl<Word, SZ, Copy>;
-  using server_type = server_impl<Word, SZ, Copy>;
-
-  client_type client;
-  server_type server;
-
-  using AllocBuffer = hostrpc::allocator::host_libc<alignof(page_t)>;
-  using AllocInboxOutbox = hostrpc::allocator::host_libc<64>;
-
-  using AllocLocal = hostrpc::allocator::host_libc<64>;
-  using AllocRemote = hostrpc::allocator::host_libc<64>;
-
-  using storage_type = allocator::store_impl<AllocBuffer, AllocInboxOutbox,
-                                             AllocLocal, AllocRemote>;
-
-  storage_type storage;
-
-  // This probably can't be copied, but could be movable
-  x64_x64_t(size_t minimum_number_slots)
-  {
-    size_t N = hostrpc::round64(minimum_number_slots);
-    AllocBuffer alloc_buffer;
-    AllocInboxOutbox alloc_inbox_outbox;
-    AllocLocal alloc_local;
-    AllocRemote alloc_remote;
-
-    SZ sz(N);
-    storage = host_client(alloc_buffer, alloc_inbox_outbox, alloc_local,
-                          alloc_remote, sz, &server, &client);
-  }
-
-  ~x64_x64_t() { storage.destroy(); }
-
-  x64_x64_t(const x64_x64_t &) = delete;
-  bool valid()
-  { /*todo*/
-    return true;
-  }  // true if construction succeeded
-
-  client_counters client_counters() { return client.get_counters(); }
-};
-}  // namespace hostrpc
-#endif
-
-namespace hostrpc
-{
-thread_local unsigned my_id = 0;
-}  // namespace hostrpc
-
 TEST_CASE("x64_x64_stress")
 {
   using namespace hostrpc;
-  hostrpc::x64_x64_t p(100);
+  hostrpc::x64_x64_type p(100);
 
   auto op_func = [](hostrpc::page_t *page) {
     for (unsigned c = 0; c < 64; c++)
@@ -115,7 +80,6 @@ TEST_CASE("x64_x64_stress")
   HOSTRPC_ATOMIC(bool) server_live(true);
 
   auto server_worker = [&](unsigned id) {
-    my_id = id;
     unsigned count = 0;
 
     uint32_t server_location = 0;
@@ -141,7 +105,6 @@ TEST_CASE("x64_x64_stress")
   // own counter - which is good for efficiency but complicates reporting
 
   auto client_worker = [&](unsigned id, unsigned reps) -> unsigned {
-    my_id = id;
     page_t scratch;
     page_t expect;
     unsigned count = 0;
