@@ -86,7 +86,7 @@ plugins find_plugins()
     {
       fprintf(stderr, "path %s\n", dir.get());
       res.amdgcn = find_plugin(dir.get(), "libomptarget.rtl.amdgpu.so");
-      res.nvptx = find_plugin(dir.get(), "libomptarget.rtl.nvptx.so");
+      res.nvptx = find_plugin(dir.get(), "libomptarget.rtl.cuda.so");
     }
 
   return res;
