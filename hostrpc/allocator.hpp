@@ -298,7 +298,7 @@ struct store_impl
   typename AllocRemote::raw remote_staging;
 
   HOSTRPC_ANNOTATE store_impl() = default;
-
+  HOSTRPC_ANNOTATE ~store_impl() = default;
   HOSTRPC_ANNOTATE store_impl(typename AllocBuffer::raw buffer,
                               typename AllocInboxOutbox::raw recv,
                               typename AllocInboxOutbox::raw send,
@@ -315,6 +315,12 @@ struct store_impl
         remote_staging(remote_staging)
   {
   }
+
+  HOSTRPC_ANNOTATE store_impl(const store_impl &) = delete;
+  HOSTRPC_ANNOTATE store_impl &operator=(const store_impl &) = delete;
+
+  HOSTRPC_ANNOTATE store_impl(store_impl &&) = default;
+  HOSTRPC_ANNOTATE store_impl &operator=(store_impl &&) = default;
 
   HOSTRPC_ANNOTATE bool valid()
   {

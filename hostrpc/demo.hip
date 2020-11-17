@@ -10,8 +10,10 @@
 
 #include "hsa.hpp"
 
-hostrpc::x64_gcn_type::client_type *client_instance = nullptr;
-hostrpc::x64_gcn_type::server_type *server_instance = nullptr;
+using SZ = hostrpc::size_runtime;
+
+hostrpc::x64_gcn_type<SZ>::client_type *client_instance = nullptr;
+hostrpc::x64_gcn_type<SZ>::server_type *server_instance = nullptr;
 
 __device__ extern "C" int printf(const char *format, ...);
 
@@ -39,9 +41,9 @@ int main()
   }
 
 #if 1
-  size_t N = 1920;
-  hostrpc::x64_gcn_type p(N, fine_grained_region.handle,
-                          coarse_grained_region.handle);
+  SZ sz(1920);
+  hostrpc::x64_gcn_type<SZ> p(sz, fine_grained_region.handle,
+                              coarse_grained_region.handle);
 #endif
 
   __device_start<<<1, 1>>>(0, 0, 0);

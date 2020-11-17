@@ -97,13 +97,15 @@ struct kernel_args
   _Atomic(uint64_t) * control;
 };
 
+using SZ = hostrpc::size_runtime;
+
 #if defined(__AMDGCN__)
 
 // Wire opencl kernel up to c++ implementation
 VISIBLE
-hostrpc::x64_gcn_type::client_type hostrpc_pair_client[1];
+hostrpc::x64_gcn_type<SZ>::client_type hostrpc_pair_client[1];
 
-static uint64_t gpu_call(hostrpc::x64_gcn_type::client_type *client,
+static uint64_t gpu_call(hostrpc::x64_gcn_type<SZ>::client_type *client,
                          uint32_t id, uint32_t reps);
 extern "C" void __device_start_main(kernel_args *args)
 {
@@ -166,7 +168,7 @@ hostrpc::page_t scratch_store[MAXCLIENT];
 VISIBLE
 hostrpc::page_t expect_store[MAXCLIENT];
 
-uint64_t gpu_call(hostrpc::x64_gcn_type::client_type *client, uint32_t id,
+uint64_t gpu_call(hostrpc::x64_gcn_type<SZ>::client_type *client, uint32_t id,
                   uint32_t reps)
 {
   const bool check_result = true;
@@ -302,9 +304,9 @@ TEST_CASE("x64_gcn_stress")
     }
 
     HOSTRPC_ATOMIC(bool) server_live(true);
-    size_t N = 1920;
-    hostrpc::x64_gcn_type p(N, fine_grained_region.handle,
-                            coarse_grained_region.handle);
+    SZ N{1920};
+    hostrpc::x64_gcn_type<SZ> p(N, fine_grained_region.handle,
+                                coarse_grained_region.handle);
 
     // Great error from valgrind on gfx1010:
     // Address 0x8e08000 is in a --- mapped file /dev/dri/renderD128 segment
@@ -314,14 +316,14 @@ TEST_CASE("x64_gcn_stress")
       // put a default constructed instance in fine grain memory then overwrite
       // it with the p instance. May instead want to construct p into fine grain
       auto c = hsa::allocate(fine_grained_region,
-                             sizeof(hostrpc::x64_gcn_type::client_type));
+                             sizeof(hostrpc::x64_gcn_type<SZ>::client_type));
       void *vc = c.get();
       memcpy(vc, &p.client, sizeof(p.client));
 
       int rc = hsa::copy_host_to_gpu(
           kernel_agent, reinterpret_cast<void *>(client_address),
           reinterpret_cast<const void *>(vc),
-          sizeof(hostrpc::x64_gcn_type::client_type));
+          sizeof(hostrpc::x64_gcn_type<SZ>::client_type));
       if (rc != 0)
         {
           fprintf(stderr, "Failed to copy client state to gpu\n");
@@ -582,12 +584,12 @@ TEST_CASE("x64_gcn_stress")
     // dump.
     {
       auto c = hsa::allocate(fine_grained_region,
-                             sizeof(hostrpc::x64_gcn_type::client_type));
+                             sizeof(hostrpc::x64_gcn_type<SZ>::client_type));
       void *vc = c.get();
 
       int rc = hsa::copy_host_to_gpu(
           kernel_agent, vc, reinterpret_cast<const void *>(client_address),
-          sizeof(hostrpc::x64_gcn_type::client_type));
+          sizeof(hostrpc::x64_gcn_type<SZ>::client_type));
       if (rc != 0)
         {
           fprintf(stderr, "Failed to copy client state back from gpu\n");

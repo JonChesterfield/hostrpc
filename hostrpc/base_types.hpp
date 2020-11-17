@@ -10,6 +10,32 @@
 #include <stdio.h>
 #endif
 
+namespace hostrpc
+{
+static constexpr size_t round8(size_t x) { return 8u * ((x + 7u) / 8u); }
+_Static_assert(0 == round8(0), "");
+_Static_assert(8 == round8(1), "");
+_Static_assert(8 == round8(2), "");
+_Static_assert(8 == round8(7), "");
+_Static_assert(8 == round8(8), "");
+_Static_assert(16 == round8(9), "");
+_Static_assert(16 == round8(10), "");
+_Static_assert(16 == round8(15), "");
+_Static_assert(16 == round8(16), "");
+_Static_assert(24 == round8(17), "");
+
+static constexpr size_t round64(size_t x) { return 64u * ((x + 63u) / 64u); }
+_Static_assert(0 == round64(0), "");
+_Static_assert(64 == round64(1), "");
+_Static_assert(64 == round64(2), "");
+_Static_assert(64 == round64(63), "");
+_Static_assert(64 == round64(64), "");
+_Static_assert(128 == round64(65), "");
+_Static_assert(128 == round64(127), "");
+_Static_assert(128 == round64(128), "");
+_Static_assert(192 == round64(129), "");
+}  // namespace hostrpc
+
 template <size_t lhs, size_t rhs>
 HOSTRPC_ANNOTATE constexpr bool static_equal()
 {
@@ -33,7 +59,7 @@ static_assert(sizeof(page_t) == 4096, "");
 
 struct size_runtime
 {
-  HOSTRPC_ANNOTATE size_runtime(size_t N) : SZ(N) {}
+  HOSTRPC_ANNOTATE size_runtime(size_t N) : SZ(hostrpc::round64(N)) {}
   HOSTRPC_ANNOTATE size_t N() const { return SZ; }
 
  private:
@@ -45,7 +71,7 @@ struct size_compiletime
 {
   HOSTRPC_ANNOTATE size_compiletime() {}
   HOSTRPC_ANNOTATE size_compiletime(size_t) {}
-  HOSTRPC_ANNOTATE constexpr size_t N() const { return SZ; }
+  HOSTRPC_ANNOTATE constexpr size_t N() const { return hostrpc::round64(SZ); }
 };
 
 template <size_t Size, size_t Align>

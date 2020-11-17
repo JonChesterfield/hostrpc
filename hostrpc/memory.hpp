@@ -1,34 +1,9 @@
 #ifndef HOSTRPC_MEMORY_HPP_INCLUDED
 #define HOSTRPC_MEMORY_HPP_INCLUDED
 
+#include "base_types.hpp"
 #include <stddef.h>
 #include <stdint.h>
-
-namespace hostrpc
-{
-static constexpr size_t round8(size_t x) { return 8u * ((x + 7u) / 8u); }
-_Static_assert(0 == round8(0), "");
-_Static_assert(8 == round8(1), "");
-_Static_assert(8 == round8(2), "");
-_Static_assert(8 == round8(7), "");
-_Static_assert(8 == round8(8), "");
-_Static_assert(16 == round8(9), "");
-_Static_assert(16 == round8(10), "");
-_Static_assert(16 == round8(15), "");
-_Static_assert(16 == round8(16), "");
-_Static_assert(24 == round8(17), "");
-
-static constexpr size_t round64(size_t x) { return 64u * ((x + 63u) / 64u); }
-_Static_assert(0 == round64(0), "");
-_Static_assert(64 == round64(1), "");
-_Static_assert(64 == round64(2), "");
-_Static_assert(64 == round64(63), "");
-_Static_assert(64 == round64(64), "");
-_Static_assert(128 == round64(65), "");
-_Static_assert(128 == round64(127), "");
-_Static_assert(128 == round64(128), "");
-_Static_assert(192 == round64(129), "");
-}  // namespace hostrpc
 
 // TODO: Put these somewhere else  or include <new> and restrict to HOST
 inline void* operator new(size_t, _Atomic(uint32_t) * p) { return p; }

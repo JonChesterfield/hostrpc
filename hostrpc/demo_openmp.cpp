@@ -51,8 +51,10 @@ struct use
 
 #define WITH_HSA 1
 
+using SZ = hostrpc::size_compiletime<1920>;
+
 #if WITH_HSA
-using base_type = hostrpc::x64_gcn_type;
+using base_type = hostrpc::x64_gcn_type<SZ>;
 #include "hsa.hpp"
 #else
 using base_type = hostrpc::x64_target_type<0>;
@@ -79,17 +81,17 @@ int main()
 #endif
   {
     printf("in openmp host\n");
-    size_t N = 1920;
+    SZ sz;
 
 #if WITH_HSA
     hsa_agent_t kernel_agent = hsa::find_a_gpu_or_exit();
     hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
     hsa_region_t coarse_grained_region =
         hsa::region_coarse_grained(kernel_agent);
-    base_type p(N, fine_grained_region.handle, coarse_grained_region.handle);
+    base_type p(sz, fine_grained_region.handle, coarse_grained_region.handle);
 #else
     fprintf(stderr, "base type before\n");
-    base_type p(N);
+    base_type p(sz);
     fprintf(stderr, "base type after\n");
 #endif
     std::thread serv([&]() {
