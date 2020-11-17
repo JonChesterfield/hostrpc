@@ -58,6 +58,9 @@ HOSTRPC_ANNOTATE void dtor(void *state)
 
 HOSTRPC_ANNOTATE void *allocate(void *state, int, size_t bytes)
 {
+  // This doesn't work - omp_alloc doesn't call into the plugin, and
+  // the rest of llvm doesn't know how to allocate fine grain hsa memory
+  return nullptr;
   if (state)
     {
       omp_allocator_handle_t *alloc = get(state);

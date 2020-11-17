@@ -146,7 +146,6 @@ HOSTRPC_ANNOTATE void *ctor();  // null on fail
 HOSTRPC_ANNOTATE void dtor(void *);
 HOSTRPC_ANNOTATE void *allocate(void *state, int device_num, size_t bytes);
 HOSTRPC_ANNOTATE int deallocate(void *state, int device_num, void *);
-
 }  // namespace openmp_shared_impl
 
 template <size_t Align, int device_num>

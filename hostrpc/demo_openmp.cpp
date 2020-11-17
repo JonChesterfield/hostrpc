@@ -8,6 +8,9 @@
 #include "x64_gcn_type.hpp"
 #include "x64_target_type.hpp"
 
+#include <cinttypes>
+#include <cstdlib>
+
 static void copy_page(hostrpc::page_t *dst, hostrpc::page_t *src)
 {
   unsigned id = platform::get_lane_id();
@@ -46,7 +49,7 @@ struct use
 #include <thread>
 #include <unistd.h>
 
-#define WITH_HSA 0
+#define WITH_HSA 1
 
 #if WITH_HSA
 using base_type = hostrpc::x64_gcn_type;
@@ -56,7 +59,6 @@ using base_type = hostrpc::x64_target_type<0>;
 #endif
 
 base_type::client_type client_instance;
-hostrpc::page_t scratch;
 
 struct operate_test
 {
@@ -69,6 +71,9 @@ struct clear_test
 
 int main()
 {
+#pragma omp target
+  asm("// less lazy");
+
 #if WITH_HSA
   hsa::init hsa;
 #endif
@@ -81,9 +86,11 @@ int main()
     hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
     hsa_region_t coarse_grained_region =
         hsa::region_coarse_grained(kernel_agent);
-    base_type p(N);
+    base_type p(N, fine_grained_region.handle, coarse_grained_region.handle);
 #else
+    fprintf(stderr, "base type before\n");
     base_type p(N);
+    fprintf(stderr, "base type after\n");
 #endif
     std::thread serv([&]() {
       uint32_t location = 0;
@@ -102,13 +109,57 @@ int main()
 
     client_instance = p.client;
 
-#pragma omp target map(tofrom : client_instance, scratch)
+    auto allocator =
+        hostrpc::allocator::openmp_target<alignof(hostrpc::page_t), 0>();
+    auto scratch_raw = allocator.allocate(sizeof(hostrpc::page_t));
+    if (!scratch_raw.valid())
+      {
+        exit(1);
+      }
+
+    hostrpc::page_t *scratch =
+        new (scratch_raw.remote_ptr().ptr) hostrpc::page_t;
+
+    fprintf(stderr, "scratch %p\n", scratch);
+
+    printf("remote_buffer 0x%.12" PRIxPTR "\n",
+           (uintptr_t)client_instance.remote_buffer);
+    printf("local_buffer  0x%.12" PRIxPTR "\n",
+           (uintptr_t)client_instance.local_buffer);
+    printf("inbox         0x%.12" PRIxPTR "\n",
+           (uintptr_t)client_instance.inbox.a);
+    printf("outbox        0x%.12" PRIxPTR "\n",
+           (uintptr_t)client_instance.outbox.a);
+    printf("active        0x%.12" PRIxPTR "\n",
+           (uintptr_t)client_instance.active.a);
+    printf("outbox stg    0x%.12" PRIxPTR "\n",
+           (uintptr_t)client_instance.staging.a);
+
+#pragma omp target map(tofrom \
+                       : client_instance) device(0) is_device_ptr(scratch)
     {
-      fill f(&scratch);
-      use u(&scratch);
+      printf("gpu: scratch %p\n", scratch);
+
+      printf("remote_buffer 0x%.12" PRIxPTR "\n",
+             (uintptr_t)client_instance.remote_buffer);
+      printf("local_buffer  0x%.12" PRIxPTR "\n",
+             (uintptr_t)client_instance.local_buffer);
+      printf("inbox         0x%.12" PRIxPTR "\n",
+             (uintptr_t)client_instance.inbox.a);
+      printf("outbox        0x%.12" PRIxPTR "\n",
+             (uintptr_t)client_instance.outbox.a);
+      printf("active        0x%.12" PRIxPTR "\n",
+             (uintptr_t)client_instance.active.a);
+      printf("outbox stg    0x%.12" PRIxPTR "\n",
+             (uintptr_t)client_instance.staging.a);
+
+      fill f(scratch);
+      use u(scratch);
       client_instance.rpc_invoke<fill, use, true>(f, u);
     }
 
     serv.join();
+
+    scratch_raw.destroy();
   }
 }
