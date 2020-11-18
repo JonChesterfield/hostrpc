@@ -9,7 +9,7 @@ struct plugins
   bool nvptx = false;
 };
 
-plugins find_plugins();
-}
+plugins find_plugins();  // lazily evaluated then cached
+}  // namespace hostrpc
 
 #endif

@@ -1,19 +1,21 @@
 #include "openmp_plugins.hpp"
 
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <dlfcn.h>
 #include <libgen.h>
 #include <link.h>
 #include <memory>
-#include <cstdlib>
-#include <cstdio>
-#include <cstring>
 
-namespace hostrpc {
-
-static std::unique_ptr<char> plugin_path()
+namespace hostrpc
+{
+namespace
+{
+std::unique_ptr<char> plugin_path()
 {
   std::unique_ptr<char> res;
-  
+
   void *libomptarget = dlopen("libomptarget.so", RTLD_NOW);
 
   if (!libomptarget)
@@ -49,9 +51,7 @@ static std::unique_ptr<char> plugin_path()
   return res;
 }
 
-  
-static bool find_plugin(const char * dir,
-                 const char * name)
+static bool find_plugin(const char *dir, const char *name)
 {
   const char *fmt = "%s/%s";
   int size = snprintf(nullptr, 0, fmt, dir, name);
@@ -64,19 +64,20 @@ static bool find_plugin(const char * dir,
         {
           fprintf(stderr, "Seek %s\n", buffer.get());
           void *r = dlopen(buffer.get(), RTLD_NOW | RTLD_NOLOAD);
-          if (r != nullptr) {
-            dlclose(r);
-            return true;
-          }
+          if (r != nullptr)
+            {
+              dlclose(r);
+              return true;
+            }
         }
     }
   return false;
 }
 
-plugins find_plugins()
+plugins find_plugins_impl()
 {
   plugins res;
-  
+
   // Load the openmp target regions linked to this binary
 #pragma omp target
   asm("");
@@ -91,4 +92,24 @@ plugins find_plugins()
 
   return res;
 }
-}
+}  // namespace
+
+struct plugins_cache
+{
+ private:
+  plugins value;
+  static plugins_cache &getInstance()
+  {
+    static plugins_cache instance;
+    return instance;
+  }
+  plugins_cache() { value = find_plugins_impl(); }
+  plugins_cache(plugins_cache const &) = delete;
+  void operator=(plugins_cache const &) = delete;
+
+ public:
+  static plugins get() { return getInstance().value; }
+};
+
+plugins find_plugins() { return plugins_cache::get(); }
+}  // namespace hostrpc

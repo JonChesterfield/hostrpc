@@ -1,21 +1,33 @@
-
-#if !defined(DEMO_OPENMP_AMDGCN) && !defined(DEMO_OPENMP_NVPTX)
-// Can't seem to query whether device(0) is on amdgpu or nvptx
-#error "Require user to specify amdgcn or nvptx"
-#endif
-
 #pragma omp declare target
-#include "detail/client_impl.hpp"
-#include "detail/server_impl.hpp"
 
 #include "allocator.hpp"
+#include "base_types.hpp"
+#include "client_server_pair.hpp"
+#include "detail/client_impl.hpp"
+#include "detail/server_impl.hpp"
 #include "host_client.hpp"
 
-#include "x64_gcn_type.hpp"
-#include "x64_ptx_type.hpp"
+namespace hostrpc
+{
+template <typename SZ, int device_num>
+using x64_device_type_base =
+    client_server_pair_t<SZ, copy_functor_given_alias, uint64_t,
+                         allocator::openmp_shared<alignof(page_t)>,
+                         allocator::openmp_shared<64>, allocator::host_libc<64>,
+                         allocator::openmp_device<64, device_num>>;
 
-#include <cinttypes>
-#include <cstdlib>
+template <typename SZ, int device_num>
+struct x64_device_type : public x64_device_type_base<SZ, device_num>
+{
+  using base = x64_device_type_base<SZ, device_num>;
+  HOSTRPC_ANNOTATE x64_device_type(SZ sz)
+      : base(sz, typename base::AllocBuffer(),
+             typename base::AllocInboxOutbox(), typename base::AllocLocal(),
+             typename base::AllocRemote())
+  {
+  }
+};
+}  // namespace hostrpc
 
 static void copy_page(hostrpc::page_t *dst, hostrpc::page_t *src)
 {
@@ -51,24 +63,19 @@ struct use
 // using pthreads instead (as thread includes string which seems to be the
 // problem)
 
-
 #include <omp.h>
 
 #include "openmp_plugins.hpp"
+#include <cinttypes>
+#include <cstdlib>
 #include <stdio.h>
 #include <thread>
 #include <unistd.h>
 
 using SZ = hostrpc::size_compiletime<1920>;
+constexpr static int device_num = 0;
 
-#if defined(DEMO_OPENMP_AMDGCN)
-using base_type = hostrpc::x64_gcn_type<SZ>;
-#include "hsa.hpp"
-#endif
-
-#if defined(DEMO_OPENMP_NVPTX)
-using base_type = hostrpc::x64_ptx_type<SZ>;
-#endif
+using base_type = hostrpc::x64_device_type<SZ, device_num>;
 
 base_type::client_type client_instance;
 
@@ -81,9 +88,6 @@ struct clear_test
   void operator()(hostrpc::page_t *) { fprintf(stderr, "Invoked clear\n"); }
 };
 
-
-
-
 int main()
 {
 #pragma omp target
@@ -93,23 +97,16 @@ int main()
 
   fprintf(stderr, "amd: %u, ptx: %u\n", got.amdgcn, got.nvptx);
 
-  hsa::init hsa;
   {
     printf("in openmp host\n");
     SZ sz;
 
-#if defined(DEMO_OPENMP_AMDGCN)
-    hsa_agent_t kernel_agent = hsa::find_a_gpu_or_exit();
-    hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
-    hsa_region_t coarse_grained_region =
-        hsa::region_coarse_grained(kernel_agent);
-    base_type p(sz, fine_grained_region.handle, coarse_grained_region.handle);
-#endif
-#if defined(DEMO_OPENMP_NVPTX)
-    base_type p(sz.size());
-#endif
+    base_type p(sz);
+    p.storage.dump();
 
     std::thread serv([&]() {
+      fprintf(stderr, "thread lives\n");
+      p.storage.dump();
       uint32_t location = 0;
 
       for (unsigned i = 0; i < 16; i++)
@@ -127,7 +124,7 @@ int main()
     client_instance = p.client;
 
     auto allocator =
-        hostrpc::allocator::openmp_target<alignof(hostrpc::page_t), 0>();
+        hostrpc::allocator::openmp_device<alignof(hostrpc::page_t), 0>();
     auto scratch_raw = allocator.allocate(sizeof(hostrpc::page_t));
     if (!scratch_raw.valid())
       {
@@ -152,6 +149,7 @@ int main()
     printf("outbox stg    0x%.12" PRIxPTR "\n",
            (uintptr_t)client_instance.staging.a);
 
+#if 1
 #pragma omp target map(tofrom \
                        : client_instance) device(0) is_device_ptr(scratch)
     {
@@ -174,9 +172,12 @@ int main()
       use u(scratch);
       client_instance.rpc_invoke<fill, use, true>(f, u);
     }
+#endif
+
+    fprintf(stderr, "Post target region\n");
 
     serv.join();
-
+    fprintf(stderr, "Joined\n");
     scratch_raw.destroy();
   }
 }

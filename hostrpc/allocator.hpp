@@ -106,85 +106,13 @@ struct host_libc : public interface<Align, host_libc<Align>>
   }
 };
 
-namespace openmp_target_impl
-{
-HOSTRPC_ANNOTATE void *allocate(int device_num, size_t bytes);
-HOSTRPC_ANNOTATE int deallocate(int device_num, void *);
-}  // namespace openmp_target_impl
-
-template <size_t Align, int device_num>
-struct openmp_target : public interface<Align, openmp_target<Align, device_num>>
-{
-  using Base = interface<Align, openmp_target<Align, device_num>>;
-  using typename Base::local_t;
-  using typename Base::raw;
-  using typename Base::remote_t;
-
-  HOSTRPC_ANNOTATE
-  openmp_target() {}
-  HOSTRPC_ANNOTATE raw allocate(size_t N)
-  {
-    size_t adj = N + Align - 1;
-    return {openmp_target_impl::allocate(device_num, adj)};
-  }
-  HOSTRPC_ANNOTATE static status destroy(raw x)
-  {
-    return (openmp_target_impl::deallocate(device_num, x.ptr) == 0) ? success
-                                                                    : failure;
-  }
-
-  HOSTRPC_ANNOTATE static local_t local_ptr(raw) { return {0}; }
-  HOSTRPC_ANNOTATE static remote_t remote_ptr(raw x)
-  {
-    return {align_pointer_up(x.ptr, Align)};
-  }
-};
-
-namespace openmp_shared_impl
-{
-HOSTRPC_ANNOTATE void *ctor();  // null on fail
-HOSTRPC_ANNOTATE void dtor(void *);
-HOSTRPC_ANNOTATE void *allocate(void *state, int device_num, size_t bytes);
-HOSTRPC_ANNOTATE int deallocate(void *state, int device_num, void *);
-}  // namespace openmp_shared_impl
-
-template <size_t Align, int device_num>
-struct openmp_shared : public interface<Align, openmp_shared<Align, device_num>>
-{
-  using Base = interface<Align, openmp_shared<Align, device_num>>;
-  using typename Base::local_t;
-  using typename Base::raw;
-  using typename Base::remote_t;
-
-  void *state;
-
-  HOSTRPC_ANNOTATE
-  openmp_shared() { state = openmp_shared_impl::ctor(); }
-
-  // this class isn't safe to copy if it cleans up, make move-only
-  HOSTRPC_ANNOTATE
-  ~openmp_shared()
-  { /* openmp_shared_impl::dtor(state);*/
-  }
-
-  HOSTRPC_ANNOTATE raw allocate(size_t N)
-  {
-    size_t adj = N + Align - 1;
-    return {openmp_shared_impl::allocate(state, device_num, adj)};
-  }
-  HOSTRPC_ANNOTATE static status destroy(raw x)
-  {
-    // leak for now - need a non-static destroy to pass state in
-    return (openmp_shared_impl::deallocate(nullptr, device_num, x.ptr) == 0)
-               ? success
-               : failure;
-  }
-};
-
 namespace hsa_impl
 {
 HOSTRPC_ANNOTATE void *allocate(uint64_t hsa_region_t_handle, size_t align,
                                 size_t bytes);
+
+HOSTRPC_ANNOTATE void *allocate_fine_grain(size_t bytes);
+
 HOSTRPC_ANNOTATE int deallocate(void *);
 }  // namespace hsa_impl
 
@@ -207,6 +135,22 @@ struct hsa : public interface<Align, hsa<Align>>
   }
 };
 
+template <size_t Align>
+struct hsa_shared : public interface<Align, hsa_shared<Align>>
+{
+  using typename interface<Align, hsa_shared<Align>>::raw;
+
+  HOSTRPC_ANNOTATE hsa_shared() { static_assert(Align <= 4096, ""); }
+  HOSTRPC_ANNOTATE raw allocate(size_t N)
+  {
+    return {hsa_impl::allocate_fine_grain(N)};
+  }
+  HOSTRPC_ANNOTATE static status destroy(raw x)
+  {
+    return (hsa_impl::deallocate(x.ptr) == 0) ? success : failure;
+  }
+};
+
 namespace cuda_impl
 {
 // caller gets to align the result
@@ -221,6 +165,35 @@ HOSTRPC_ANNOTATE int deallocate_shared(void *);
 HOSTRPC_ANNOTATE void *device_ptr_from_host_ptr(void *);
 
 }  // namespace cuda_impl
+
+template <size_t Align>
+struct cuda_gpu : public interface<Align, cuda_gpu<Align>>
+{
+  using Base = interface<Align, cuda_gpu<Align>>;
+  using typename Base::local_t;
+  using typename Base::raw;
+  using typename Base::remote_t;
+
+  HOSTRPC_ANNOTATE cuda_gpu() {}
+  HOSTRPC_ANNOTATE raw allocate(size_t N)
+  {
+    size_t adj = N + Align - 1;
+    return {cuda_impl::allocate_gpu(adj)};  // zeros
+  }
+  HOSTRPC_ANNOTATE static status destroy(raw x)
+  {
+    return cuda_impl::deallocate_gpu(x.ptr) == 0 ? success : failure;
+  }
+  HOSTRPC_ANNOTATE static local_t local_ptr(raw)
+  {
+    // local is on the host (as only have a host cuda allocator at present)
+    return {0};
+  }
+  HOSTRPC_ANNOTATE static remote_t remote_ptr(raw x)
+  {
+    return {align_pointer_up(x.ptr, Align)};
+  }
+};
 
 template <size_t Align>
 struct cuda_shared : public interface<Align, cuda_shared<Align>>
@@ -256,28 +229,68 @@ struct cuda_shared : public interface<Align, cuda_shared<Align>>
   }
 };
 
-template <size_t Align>
-struct cuda_gpu : public interface<Align, cuda_gpu<Align>>
+namespace openmp_impl
 {
-  using Base = interface<Align, cuda_gpu<Align>>;
+HOSTRPC_ANNOTATE void *allocate_device(int device_num, size_t bytes);
+HOSTRPC_ANNOTATE int deallocate_device(int device_num, void *);
+
+HOSTRPC_ANNOTATE void *allocate_shared(size_t bytes);
+HOSTRPC_ANNOTATE int deallocate_shared(void *);
+
+}  // namespace openmp_impl
+
+template <size_t Align, int device_num>
+struct openmp_device : public interface<Align, openmp_device<Align, device_num>>
+{
+  using Base = interface<Align, openmp_device<Align, device_num>>;
   using typename Base::local_t;
   using typename Base::raw;
   using typename Base::remote_t;
 
-  HOSTRPC_ANNOTATE cuda_gpu() {}
+  HOSTRPC_ANNOTATE
+  openmp_device() {}
   HOSTRPC_ANNOTATE raw allocate(size_t N)
   {
     size_t adj = N + Align - 1;
-    return {cuda_impl::allocate_gpu(adj)};  // zeros
+    return {openmp_impl::allocate_device(device_num, adj)};
   }
   HOSTRPC_ANNOTATE static status destroy(raw x)
   {
-    return cuda_impl::deallocate_gpu(x.ptr) == 0 ? success : failure;
+    return (openmp_impl::deallocate_device(device_num, x.ptr) == 0) ? success
+                                                                    : failure;
   }
-  HOSTRPC_ANNOTATE static local_t local_ptr(raw)
+
+  HOSTRPC_ANNOTATE static local_t local_ptr(raw) { return {0}; }
+  HOSTRPC_ANNOTATE static remote_t remote_ptr(raw x)
   {
-    // local is on the host (as only have a host cuda allocator at present)
-    return {0};
+    return {align_pointer_up(x.ptr, Align)};
+  }
+};
+
+template <size_t Align>
+struct openmp_shared : public interface<Align, openmp_shared<Align>>
+{
+  using Base = interface<Align, openmp_shared<Align>>;
+  using typename Base::local_t;
+  using typename Base::raw;
+  using typename Base::remote_t;
+
+  HOSTRPC_ANNOTATE
+  openmp_shared() {}
+
+  HOSTRPC_ANNOTATE raw allocate(size_t N)
+  {
+    size_t adj = N + Align - 1;
+    return {openmp_impl::allocate_shared(adj)};
+  }
+  HOSTRPC_ANNOTATE static status destroy(raw x)
+  {
+    return (openmp_impl::deallocate_shared(x.ptr) == 0) ? success : failure;
+  }
+
+  HOSTRPC_ANNOTATE static local_t local_ptr(raw x)
+  {
+    return {align_pointer_up(x.ptr, Align)};
   }
   HOSTRPC_ANNOTATE static remote_t remote_ptr(raw x)
   {

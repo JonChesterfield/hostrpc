@@ -1,4 +1,5 @@
 #include "allocator.hpp"
+#include "openmp_plugins.hpp"
 
 #include <cstdlib>
 #include <omp.h>
@@ -7,81 +8,98 @@ namespace hostrpc
 {
 namespace allocator
 {
-namespace openmp_target_impl
+// Chooses hsa or cuda at runtime, but a system may not have both present
+namespace hsa_impl
 {
-HOSTRPC_ANNOTATE void *allocate(int device_num, size_t bytes)
+__attribute__((weak)) HOSTRPC_ANNOTATE void *allocate_fine_grain(size_t)
 {
-  return omp_target_alloc(bytes, device_num);
+  fprintf(stderr, "Called weak symbol\n");
+  return nullptr;
+}
+__attribute__((weak)) HOSTRPC_ANNOTATE int deallocate(void *)
+{
+  fprintf(stderr, "Called weak symbol\n");
+  return 1;
+}
+}  // namespace hsa_impl
+
+namespace cuda_impl
+{
+__attribute__((weak)) HOSTRPC_ANNOTATE void *allocate_shared(size_t)
+{
+  fprintf(stderr, "Called weak symbol\n");
+
+  return nullptr;
+}
+__attribute__((weak)) HOSTRPC_ANNOTATE int deallocate_shared(void *)
+{
+  fprintf(stderr, "Called weak symbol\n");
+  return 1;
+}
+}  // namespace cuda_impl
+
+namespace openmp_impl
+{
+HOSTRPC_ANNOTATE void *allocate_device(int device_num, size_t bytes)
+{
+  bytes = 4 * ((bytes + 3) / 4);
+  void *res = omp_target_alloc(bytes, device_num);
+
+  // zero it. should do this in parallel, simple for now.
+  size_t words = bytes / sizeof(uint32_t);
+#pragma omp target map(to : words is_device_ptr(res)
+  {
+    uint32_t *r = (uint32_t *)res;
+    for (size_t i = 0; i < words; i++)
+      {
+        r[i] = 0;
+      }
+  }
+
+  return res;
 }
 
-HOSTRPC_ANNOTATE int deallocate(int device_num, void *ptr)
+HOSTRPC_ANNOTATE int deallocate_device(int device_num, void *ptr)
 {
   omp_target_free(ptr, device_num);
   return 0;
 }
 
-}  // namespace openmp_target_impl
-
-namespace openmp_shared_impl
+HOSTRPC_ANNOTATE void *allocate_shared(size_t bytes)
 {
-HOSTRPC_ANNOTATE void *ctor()
-{
-  void *m = malloc(sizeof(omp_allocator_handle_t));
-  if (m)
+  plugins p = hostrpc::find_plugins();
+  if (p.amdgcn && p.nvptx)
     {
-      omp_allocator_handle_t *omp = new omp_allocator_handle_t;
-      // spec says this takes a const array, but clang thinks it's mutable
-      *omp = omp_init_allocator(omp_default_mem_space, 1,
-                                (omp_alloctrait_t[1]){{
-                                    .key = omp_atk_pinned,
-                                    .value = omp_atv_true,
-                                }});
-      return reinterpret_cast<void *>(omp);
+      return 0;
     }
-  return m;
-}
-
-static omp_allocator_handle_t *get(void *state)
-{
-  return __builtin_launder(reinterpret_cast<omp_allocator_handle_t *>(state));
-}
-
-HOSTRPC_ANNOTATE void dtor(void *state)
-{
-  if (state)
+  if (p.amdgcn)
     {
-      omp_allocator_handle_t *alloc = get(state);
-      omp_destroy_allocator(*alloc);
-      free(alloc);
+      return hsa_impl::allocate_fine_grain(bytes);
     }
-}
-
-HOSTRPC_ANNOTATE void *allocate(void *state, int, size_t bytes)
-{
-  // This doesn't work - omp_alloc doesn't call into the plugin, and
-  // the rest of llvm doesn't know how to allocate fine grain hsa memory
-  return nullptr;
-  if (state)
+  if (p.nvptx)
     {
-      omp_allocator_handle_t *alloc = get(state);
-      return omp_alloc(bytes, *alloc);
+      return cuda_impl::allocate_shared(bytes);
     }
-  else
-    {
-      return nullptr;
-    }
+  return 0;
 }
-
-HOSTRPC_ANNOTATE int deallocate(void *state, int, void *ptr)
+HOSTRPC_ANNOTATE int deallocate_shared(void *ptr)
 {
-  if (state)
+  plugins p = hostrpc::find_plugins();
+  if (ptr)
     {
-      omp_allocator_handle_t *alloc = get(state);
-      omp_free(ptr, *alloc);
+      if (p.amdgcn)
+        {
+          return hsa_impl::deallocate(ptr);
+        }
+      if (p.nvptx)
+        {
+          return cuda_impl::deallocate_shared(ptr);
+        }
     }
   return 0;
 }
 
-}  // namespace openmp_shared_impl
+}  // namespace openmp_impl
+
 }  // namespace allocator
 }  // namespace hostrpc

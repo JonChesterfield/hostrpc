@@ -22,10 +22,9 @@ struct x64_ptx_type : public x64_ptx_type_base
 {
   using base = x64_ptx_type_base;
   HOSTRPC_ANNOTATE x64_ptx_type(size_t N)
-      : x64_ptx_type_base(
-            hostrpc::size_runtime(N), typename base::AllocBuffer(),
-            typename base::AllocInboxOutbox(), typename base::AllocLocal(),
-            typename base::AllocRemote())
+      : base(hostrpc::size_runtime(N), typename base::AllocBuffer(),
+             typename base::AllocInboxOutbox(), typename base::AllocLocal(),
+             typename base::AllocRemote())
   {
   }
 };

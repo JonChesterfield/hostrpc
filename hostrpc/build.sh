@@ -75,7 +75,7 @@ OPT="$RDIR/bin/opt"
 #LINK="ld -r"
 
 CXX="$CLANG -std=c++14 -Wall -Wextra"
-LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR hsa_support.bc -lelf"
+LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR hsa_support.x64.bc -lelf"
 
 
 NOINC="-nostdinc -nostdinc++ -isystem $CLANGINCLUDE -DHOSTRPC_HAVE_STDIO=0"
@@ -116,9 +116,9 @@ CXX_X64_LD="$CXX"
 CXX_GCN_LD="$CXX $GCNFLAGS"
 
 # msgpack, assumed to be checked out ../ from here
-$CXX_X64 ../impl/msgpack.cpp -c -o msgpack.bc
-$CXX_X64 find_metadata.cpp -c -o find_metadata.bc
-$LINK msgpack.bc find_metadata.bc -o hsa_support.bc
+$CXX_X64 ../impl/msgpack.cpp -c -o msgpack.x64.bc
+$CXX_X64 find_metadata.cpp -c -o find_metadata.x64.bc
+$LINK msgpack.x64.bc find_metadata.x64.bc -o hsa_support.x64.bc
 
 if [ ! -f catch.o ]; then
     time $CXX -O3 catch.cpp -c -o catch.o
@@ -255,16 +255,18 @@ $CLANG nvptx_loader.cpp allocator_cuda.x64.bc allocator_host_libc.x64.bc nvptx_m
 
 fi
 
+$LINK allocator_host_libc.x64.bc allocator_openmp.x64.bc openmp_plugins.x64.bc -o demo_bitcode.common.x64.bc
+
 if (($have_amdgcn)); then
-    $LINK allocator_hsa.x64.bc allocator_host_libc.x64.bc allocator_openmp.x64.bc hsa_support.bc openmp_plugins.x64.bc -o demo_bitcode.omp.bc
+    $LINK demo_bitcode.common.x64.bc hsa_support.x64.bc allocator_hsa.x64.bc  -o demo_bitcode.omp.bc
     
-    $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  -DDEMO_OPENMP_AMDGCN=1 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.omp.bc -o demo_openmp.gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR && ./demo_openmp.gcn
+    $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.omp.bc -o demo_openmp.gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR && ./demo_openmp.gcn
 fi
 
 if (($have_nvptx)); then
-    $LINK allocator_host_libc.x64.bc allocator_openmp.x64.bc openmp_plugins.x64.bc -o demo_bitcode.omp.bc
+    $LINK demo_bitcode.common.x64.bc allocator_cuda.x64.bc -o demo_bitcode.omp.bc
     
-    $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50 -DDEMO_OPENMP_NVPTX=1 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.omp.bc -o demo_openmp.ptx -pthread -ldl && ./demo_openmp.ptx
+    $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.omp.bc -o demo_openmp.ptx -pthread -ldl && ./demo_openmp.ptx
 fi
 
 

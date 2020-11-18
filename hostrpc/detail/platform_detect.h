@@ -25,6 +25,11 @@
 #if defined (__OPENCL_C_VERSION__)
 #define HOSTRPC_HAVE_STDIO 0
 #endif
+
+#if defined (__CUDA__) || defined (__HIP__)
+#define HOSTRPC_HAVE_STDIO 0
+#endif
+
 #if defined(_OPENMP)
 #define HOSTRPC_HAVE_STDIO 0
 #endif

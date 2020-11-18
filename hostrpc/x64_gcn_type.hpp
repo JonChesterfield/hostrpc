@@ -24,10 +24,10 @@ struct x64_gcn_type : public x64_gcn_type_base<SZ>
   using base = x64_gcn_type_base<SZ>;
   HOSTRPC_ANNOTATE x64_gcn_type(SZ sz, uint64_t fine_handle,
                                 uint64_t coarse_handle)
-      : x64_gcn_type_base<SZ>(sz, typename base::AllocBuffer(fine_handle),
-                              typename base::AllocInboxOutbox(fine_handle),
-                              typename base::AllocLocal(),
-                              typename base::AllocRemote(coarse_handle))
+      : base(sz, typename base::AllocBuffer(fine_handle),
+             typename base::AllocInboxOutbox(fine_handle),
+             typename base::AllocLocal(),
+             typename base::AllocRemote(coarse_handle))
   {
   }
 };

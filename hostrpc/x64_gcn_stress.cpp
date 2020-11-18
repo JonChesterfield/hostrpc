@@ -234,6 +234,10 @@ uint64_t gpu_call(hostrpc::x64_gcn_type<SZ>::client_type *client, uint32_t id,
 #include <thread>
 
 #include "incbin.h"
+namespace hostrpc
+{
+void init();
+}
 
 INCBIN(x64_gcn_stress_so, "x64_gcn_stress.gcn.so");
 
@@ -241,6 +245,9 @@ TEST_CASE("x64_gcn_stress")
 {
   hsa::init hsa;
   {
+    {
+      hostrpc::init();
+    }
     using namespace hostrpc;
 
     hsa_agent_t kernel_agent = hsa::find_a_gpu_or_exit();
