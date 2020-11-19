@@ -68,8 +68,8 @@ struct use
 #include "hostrpc_thread.hpp"
 #include "openmp_plugins.hpp"
 #include <inttypes.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 using SZ = hostrpc::size_compiletime<1920>;
@@ -136,7 +136,8 @@ int main()
       }
 
     hostrpc::page_t *scratch =
-        new (scratch_raw.remote_ptr().ptr) hostrpc::page_t;
+        new (reinterpret_cast<hostrpc::page_t *>(scratch_raw.remote_ptr().ptr))
+            hostrpc::page_t;
 
     fprintf(stderr, "scratch %p\n", scratch);
 

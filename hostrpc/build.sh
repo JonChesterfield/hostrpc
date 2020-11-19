@@ -88,7 +88,7 @@ PTX_VER="-Xclang -target-feature -Xclang +ptx63"
 NVGPU="--target=nvptx64-nvidia-cuda -march=sm_50 $PTX_VER -D__CUDACC__"
 
 COMMONFLAGS="-Wall -Wextra -emit-llvm " # -DNDEBUG -Wno-type-limits "
-X64FLAGS=" -O2 -pthread -g"
+X64FLAGS=" -O2 -pthread " # nvptx can't handle debug info on x64?
 GCNFLAGS=" -O2 -ffreestanding -fno-exceptions $AMDGPU"
 # atomic alignment objection seems reasonable - may want 32 wide atomics on nvptx
 # clang/ptx back end is crashing in llvm::DwarfDebug::constructCallSiteEntryDIEs

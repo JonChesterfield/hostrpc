@@ -22,13 +22,10 @@ struct thread
     impl = other.impl;
     other.impl = nullptr;
   };
-  ~thread()
-  {
-    hostrpc::detail::dtor(impl);
-  }
+  ~thread() { hostrpc::detail::dtor(impl); }
   bool valid() { return impl != nullptr; }
 
-  void join() { hostrpc::detail::join(impl);}
+  void join() { hostrpc::detail::join(impl); }
 
  private:
   hostrpc::detail::thread_impl *impl;
