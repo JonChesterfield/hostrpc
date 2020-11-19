@@ -88,7 +88,8 @@ PTX_VER="-Xclang -target-feature -Xclang +ptx63"
 NVGPU="--target=nvptx64-nvidia-cuda -march=sm_50 $PTX_VER -D__CUDACC__"
 
 COMMONFLAGS="-Wall -Wextra -emit-llvm " # -DNDEBUG -Wno-type-limits "
-X64FLAGS=" -O2 -pthread " # nvptx can't handle debug info on x64?
+# cuda/openmp pass the host O flag through to ptxas, which crashes on debug info if > 0
+X64FLAGS=" -O0 -g -pthread " # nvptx can't handle debug info on x64 for O>0
 GCNFLAGS=" -O2 -ffreestanding -fno-exceptions $AMDGPU"
 # atomic alignment objection seems reasonable - may want 32 wide atomics on nvptx
 # clang/ptx back end is crashing in llvm::DwarfDebug::constructCallSiteEntryDIEs
@@ -268,7 +269,7 @@ fi
 if (($have_nvptx)); then
     $LINK demo_bitcode.common.x64.bc allocator_cuda.x64.bc -o demo_bitcode.omp.bc
     
-    $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.omp.bc -o demo_openmp.ptx -pthread -ldl && ./demo_openmp.ptx
+    $CLANG -I$HSAINC -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.omp.bc -Xclang -mlink-builtin-bitcode -Xclang detail/platform.ptx.bc -o demo_openmp.ptx -L/usr/local/cuda/lib64/ -lcudart_static -ldl -lrt -pthread && ./demo_openmp.ptx
 fi
 
 
@@ -310,7 +311,11 @@ if (($have_nvptx)); then
 # $LINK nvptx_main.ptx.bc nvptx_loader_device.ptx.bc  -o executable_device.ptx.bc
 "$TRUNKBIN/llvm-link" nvptx_main.ptx.bc loader/nvptx_loader_entry.cu.ptx.bc detail/platform.ptx.bc -o executable_device.ptx.bc
 
-"$TRUNKBIN/clang++" --target=nvptx64-nvidia-cuda -march=sm_50 $PTX_VER executable_device.ptx.bc -S -o executable_device.ptx.s
+$LINK nvptx_main.ptx.bc loader/nvptx_loader_entry.cu.ptx.bc detail/platform.ptx.bc -o executable_device.ptx.bc
+
+
+$CLANG --target=nvptx64-nvidia-cuda -march=sm_50 $PTX_VER executable_device.ptx.bc -S -o executable_device.ptx.s
+
 /usr/local/cuda/bin/ptxas -m64 -O0 --gpu-name sm_50 executable_device.ptx.s -o a.ptx.out
 ./nvptx_loader.exe a.ptx.out
 fi

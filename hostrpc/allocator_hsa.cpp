@@ -50,6 +50,17 @@ struct hsa_pool
 
 namespace hsa_impl
 {
+HOSTRPC_ANNOTATE int memsetzero_gpu(void *memory, size_t bytes)
+{
+  assert((bytes & ~(size_t)0x3) == bytes);
+  hsa_status_t r = hsa_amd_memory_fill(memory, 0, bytes / 4);
+  if (r != HSA_STATUS_SUCCESS)
+    {
+      return 1;
+    }
+  return 0;
+}
+
 void *allocate(uint64_t hsa_region_t_handle, size_t align, size_t bytes)
 {
   assert(align >= 64);

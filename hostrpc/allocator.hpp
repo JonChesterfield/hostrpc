@@ -114,6 +114,8 @@ HOSTRPC_ANNOTATE void *allocate(uint64_t hsa_region_t_handle, size_t align,
 HOSTRPC_ANNOTATE void *allocate_fine_grain(size_t bytes);
 
 HOSTRPC_ANNOTATE int deallocate(void *);
+
+HOSTRPC_ANNOTATE int memsetzero_gpu(void *, size_t size);
 }  // namespace hsa_impl
 
 template <size_t Align>
@@ -164,6 +166,7 @@ HOSTRPC_ANNOTATE int deallocate_shared(void *);
 
 HOSTRPC_ANNOTATE void *device_ptr_from_host_ptr(void *);
 
+HOSTRPC_ANNOTATE int memsetzero_gpu(void *, size_t size);
 }  // namespace cuda_impl
 
 template <size_t Align>

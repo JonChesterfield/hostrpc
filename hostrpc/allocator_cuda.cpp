@@ -14,6 +14,25 @@ namespace allocator
 {
 namespace cuda_impl
 {
+HOSTRPC_ANNOTATE int memsetzero_gpu(void *memory, size_t bytes)
+{
+  cudaError_t rc;
+
+  rc = cudaMemset(memory, 0, bytes);
+  if (rc != cudaSuccess)
+    {
+      return 1;
+    }
+
+  rc = cudaDeviceSynchronize();
+  if (rc != cudaSuccess)
+    {
+      return 1;
+    }
+
+  return 0;
+}
+
 void *allocate_gpu(size_t size)
 {
   void *ptr;

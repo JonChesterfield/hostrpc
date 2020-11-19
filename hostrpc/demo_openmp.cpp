@@ -95,7 +95,8 @@ int main()
 
   hostrpc::plugins got = hostrpc::find_plugins();
 
-  fprintf(stderr, "amd: %u, ptx: %u\n", got.amdgcn, got.nvptx);
+  fprintf(stderr, "amd: %u, ptx: %u. Found %u devices\n", got.amdgcn, got.nvptx,
+          omp_get_num_devices());
 
   {
     printf("in openmp host\n");
@@ -103,6 +104,21 @@ int main()
 
     base_type p(sz);
     p.storage.dump();
+
+    printf("remote_buffer 0x%.12" PRIxPTR "\n",
+           (uintptr_t)client_instance.remote_buffer);
+    printf("local_buffer  0x%.12" PRIxPTR "\n",
+           (uintptr_t)client_instance.local_buffer);
+    printf("inbox         0x%.12" PRIxPTR "\n",
+           (uintptr_t)client_instance.inbox.a);
+    printf("outbox        0x%.12" PRIxPTR "\n",
+           (uintptr_t)client_instance.outbox.a);
+    printf("active        0x%.12" PRIxPTR "\n",
+           (uintptr_t)client_instance.active.a);
+    printf("outbox stg    0x%.12" PRIxPTR "\n",
+           (uintptr_t)client_instance.staging.a);
+
+    fflush(stdout);
 
     auto serv_func =
 
