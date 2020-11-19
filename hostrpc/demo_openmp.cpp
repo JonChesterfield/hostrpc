@@ -120,24 +120,30 @@ int main()
 
     fflush(stdout);
 
-    auto serv_func =
+    HOSTRPC_ATOMIC(uint32_t) server_control;
+    platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
+                           __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+        &server_control, 1);
 
-        [&]() {
-          fprintf(stderr, "thread lives\n");
-          p.storage.dump();
-          uint32_t location = 0;
+    auto serv_func = [&]() {
+      uint32_t location = 0;
 
-          for (unsigned i = 0; i < 16; i++)
+      uint32_t ctrl = 1;
+      while (ctrl)
+        {
+          ctrl = platform::atomic_load<uint32_t, __ATOMIC_ACQUIRE,
+                                       __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+              &server_control);
+
+          bool r = p.server.rpc_handle<operate_test, clear_test>(
+              operate_test{}, clear_test{}, &location);
+          fprintf(stderr, "server ret %u\n", r);
+          for (unsigned j = 0; j < 1000; j++)
             {
-              bool r = p.server.rpc_handle<operate_test, clear_test>(
-                  operate_test{}, clear_test{}, &location);
-              fprintf(stderr, "server ret %u\n", r);
-              for (unsigned j = 0; j < 1000; j++)
-                {
-                  platform::sleep();
-                }
+              platform::sleep();
             }
-        };
+        }
+    };
 
     auto serv = hostrpc::make_thread(&serv_func);
 
@@ -155,47 +161,19 @@ int main()
         new (reinterpret_cast<hostrpc::page_t *>(scratch_raw.remote_ptr().ptr))
             hostrpc::page_t;
 
-    fprintf(stderr, "scratch %p\n", scratch);
-
-    printf("remote_buffer 0x%.12" PRIxPTR "\n",
-           (uintptr_t)client_instance.remote_buffer);
-    printf("local_buffer  0x%.12" PRIxPTR "\n",
-           (uintptr_t)client_instance.local_buffer);
-    printf("inbox         0x%.12" PRIxPTR "\n",
-           (uintptr_t)client_instance.inbox.a);
-    printf("outbox        0x%.12" PRIxPTR "\n",
-           (uintptr_t)client_instance.outbox.a);
-    printf("active        0x%.12" PRIxPTR "\n",
-           (uintptr_t)client_instance.active.a);
-    printf("outbox stg    0x%.12" PRIxPTR "\n",
-           (uintptr_t)client_instance.staging.a);
-
-#if 1
 #pragma omp target map(tofrom \
                        : client_instance) device(0) is_device_ptr(scratch)
     {
-      printf("gpu: scratch %p\n", scratch);
-
-      printf("remote_buffer 0x%.12" PRIxPTR "\n",
-             (uintptr_t)client_instance.remote_buffer);
-      printf("local_buffer  0x%.12" PRIxPTR "\n",
-             (uintptr_t)client_instance.local_buffer);
-      printf("inbox         0x%.12" PRIxPTR "\n",
-             (uintptr_t)client_instance.inbox.a);
-      printf("outbox        0x%.12" PRIxPTR "\n",
-             (uintptr_t)client_instance.outbox.a);
-      printf("active        0x%.12" PRIxPTR "\n",
-             (uintptr_t)client_instance.active.a);
-      printf("outbox stg    0x%.12" PRIxPTR "\n",
-             (uintptr_t)client_instance.staging.a);
-
       fill f(scratch);
       use u(scratch);
       client_instance.rpc_invoke<fill, use, true>(f, u);
     }
-#endif
 
     fprintf(stderr, "Post target region\n");
+
+    platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
+                           __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+        &server_control, 0);
 
     serv.join();
     fprintf(stderr, "Joined\n");
