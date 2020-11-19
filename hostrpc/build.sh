@@ -59,7 +59,7 @@ else
 OCKL_LIBS=""
 fi
 
-HSALIBDIR="$HOME/rocm/aomp/hsa/lib/"
+HSALIBDIR="$HOME/rocm/aomp/lib"
 HSALIB="$HSALIBDIR/libhsa-runtime64.so" # $RDIR/lib/libomptarget.rtl.hsa.so"
 
 # Shouldn't need these, but copying across from initial for reference 
@@ -127,6 +127,8 @@ fi
 $CXX_X64 states.cpp -c -o states.x64.bc
 
 $CXX_X64 openmp_plugins.cpp -c -o openmp_plugins.x64.bc
+
+$CXX_X64 hostrpc_thread.cpp -c -o hostrpc_thread.x64.bc
 
 # Checking cross platform compilation for simple case
 
@@ -255,7 +257,7 @@ $CLANG nvptx_loader.cpp allocator_cuda.x64.bc allocator_host_libc.x64.bc nvptx_m
 
 fi
 
-$LINK allocator_host_libc.x64.bc allocator_openmp.x64.bc openmp_plugins.x64.bc -o demo_bitcode.common.x64.bc
+$LINK allocator_host_libc.x64.bc allocator_openmp.x64.bc openmp_plugins.x64.bc hostrpc_thread.x64.bc -o demo_bitcode.common.x64.bc
 
 if (($have_amdgcn)); then
     $LINK demo_bitcode.common.x64.bc hsa_support.x64.bc allocator_hsa.x64.bc  -o demo_bitcode.omp.bc

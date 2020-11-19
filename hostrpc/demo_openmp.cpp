@@ -65,11 +65,11 @@ struct use
 
 #include <omp.h>
 
+#include "hostrpc_thread.hpp"
 #include "openmp_plugins.hpp"
-#include <cinttypes>
-#include <cstdlib>
+#include <inttypes.h>
+#include <stdlib.h>
 #include <stdio.h>
-#include <thread>
 #include <unistd.h>
 
 using SZ = hostrpc::size_compiletime<1920>;
@@ -104,22 +104,26 @@ int main()
     base_type p(sz);
     p.storage.dump();
 
-    std::thread serv([&]() {
-      fprintf(stderr, "thread lives\n");
-      p.storage.dump();
-      uint32_t location = 0;
+    auto serv_func =
 
-      for (unsigned i = 0; i < 16; i++)
-        {
-          bool r = p.server.rpc_handle<operate_test, clear_test>(
-              operate_test{}, clear_test{}, &location);
-          fprintf(stderr, "server ret %u\n", r);
-          for (unsigned j = 0; j < 1000; j++)
+        [&]() {
+          fprintf(stderr, "thread lives\n");
+          p.storage.dump();
+          uint32_t location = 0;
+
+          for (unsigned i = 0; i < 16; i++)
             {
-              platform::sleep();
+              bool r = p.server.rpc_handle<operate_test, clear_test>(
+                  operate_test{}, clear_test{}, &location);
+              fprintf(stderr, "server ret %u\n", r);
+              for (unsigned j = 0; j < 1000; j++)
+                {
+                  platform::sleep();
+                }
             }
-        }
-    });
+        };
+
+    auto serv = hostrpc::make_thread(&serv_func);
 
     client_instance = p.client;
 
