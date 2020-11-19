@@ -12,9 +12,18 @@ namespace hostrpc
 {
 namespace
 {
-std::unique_ptr<char> plugin_path()
+struct call_free
 {
-  std::unique_ptr<char> res;
+  template <typename T>
+  void operator()(T *ptr)
+  {
+    free(ptr);
+  }
+};
+
+std::unique_ptr<char, call_free> plugin_path()
+{
+  std::unique_ptr<char, call_free> res;
 
   void *libomptarget = dlopen("libomptarget.so", RTLD_NOW);
 
@@ -33,7 +42,7 @@ std::unique_ptr<char> plugin_path()
     {
       if (map)
         {
-          auto real = std::unique_ptr<char>(strdup(map->l_name));
+          auto real = std::unique_ptr<char, call_free>(strdup(map->l_name));
           if (real)
             {
               char *dir = dirname(real.get());  // mutates real
@@ -41,7 +50,7 @@ std::unique_ptr<char> plugin_path()
                 {
                   fprintf(stderr, "%s vs %s vs %s\n", map->l_name, real.get(),
                           dir);
-                  res = std::unique_ptr<char>(strdup(dir));
+                  res = std::unique_ptr<char, call_free>(strdup(dir));
                 }
             }
         }
@@ -58,7 +67,7 @@ static bool find_plugin(const char *dir, const char *name)
   if (size > 0)
     {
       size++;  // nul
-      auto buffer = std::unique_ptr<char>((char *)malloc(size));
+      auto buffer = std::unique_ptr<char, call_free>((char *)malloc(size));
       int rc = snprintf(buffer.get(), size, fmt, dir, name);
       if (rc > 0)
         {
