@@ -29,32 +29,39 @@ struct x64_device_type : public x64_device_type_base<SZ, device_num>
 };
 }  // namespace hostrpc
 
-static void copy_page(hostrpc::page_t *dst, hostrpc::page_t *src)
+template <typename C, bool have_continuation>
+static bool invoke(C *client, uint64_t x0, uint64_t x1, uint64_t x2,
+                   uint64_t x3, uint64_t x4, uint64_t x5, uint64_t x6,
+                   uint64_t x7)
 {
-  unsigned id = platform::get_lane_id();
-  hostrpc::cacheline_t *dline = &dst->cacheline[id];
-  hostrpc::cacheline_t *sline = &src->cacheline[id];
-  for (unsigned e = 0; e < 8; e++)
-    {
-      dline->element[e] = sline->element[e];
-    }
+  auto fill = [&](hostrpc::page_t *page) -> void {
+    hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
+    line->element[0] = x0;
+    line->element[1] = x1;
+    line->element[2] = x2;
+    line->element[3] = x3;
+    line->element[4] = x4;
+    line->element[5] = x5;
+    line->element[6] = x6;
+    line->element[7] = x7;
+  };
+
+  auto use = [&](hostrpc::page_t *page) -> void {
+    hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
+    x0 = line->element[0];
+    x1 = line->element[1];
+    x2 = line->element[2];
+    x3 = line->element[3];
+    x4 = line->element[4];
+    x5 = line->element[5];
+    x6 = line->element[6];
+    x7 = line->element[7];
+  };
+
+  return client
+      ->template rpc_invoke<decltype(fill), decltype(use), have_continuation>(
+          fill, use);
 }
-
-struct fill
-{
-  fill(hostrpc::page_t *d) : d(d) {}
-  hostrpc::page_t *d;
-
-  void operator()(hostrpc::page_t *page) { copy_page(page, d); };
-};
-
-struct use
-{
-  use(hostrpc::page_t *d) : d(d) {}
-  hostrpc::page_t *d;
-
-  void operator()(hostrpc::page_t *page) { copy_page(d, page); };
-};
 
 #pragma omp end declare target
 
@@ -81,7 +88,22 @@ base_type::client_type client_instance;
 
 struct operate_test
 {
-  void operator()(hostrpc::page_t *) { fprintf(stderr, "Invoked operate\n"); }
+  void operator()(hostrpc::page_t *page)
+  {
+    fprintf(stderr, "Invoked operate\n");
+    for (unsigned i = 0; i < 64; i++)
+      {
+        operator()(i, &page->cacheline[i]);
+      }
+  }
+
+  void operator()(unsigned index, hostrpc::cacheline_t *line)
+  {
+    printf("%u: (%lu, %lu, %lu, %lu, %lu, %lu, %lu, %lu)\n", index,
+           line->element[0], line->element[1], line->element[2],
+           line->element[3], line->element[4], line->element[5],
+           line->element[6], line->element[7]);
+  }
 };
 struct clear_test
 {
@@ -99,26 +121,9 @@ int main()
           omp_get_num_devices());
 
   {
-    printf("in openmp host\n");
     SZ sz;
 
     base_type p(sz);
-    p.storage.dump();
-
-    printf("remote_buffer 0x%.12" PRIxPTR "\n",
-           (uintptr_t)client_instance.remote_buffer);
-    printf("local_buffer  0x%.12" PRIxPTR "\n",
-           (uintptr_t)client_instance.local_buffer);
-    printf("inbox         0x%.12" PRIxPTR "\n",
-           (uintptr_t)client_instance.inbox.a);
-    printf("outbox        0x%.12" PRIxPTR "\n",
-           (uintptr_t)client_instance.outbox.a);
-    printf("active        0x%.12" PRIxPTR "\n",
-           (uintptr_t)client_instance.active.a);
-    printf("outbox stg    0x%.12" PRIxPTR "\n",
-           (uintptr_t)client_instance.staging.a);
-
-    fflush(stdout);
 
     HOSTRPC_ATOMIC(uint32_t) server_control;
     platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
@@ -128,16 +133,33 @@ int main()
     auto serv_func = [&]() {
       uint32_t location = 0;
 
-      uint32_t ctrl = 1;
-      while (ctrl)
-        {
-          ctrl = platform::atomic_load<uint32_t, __ATOMIC_ACQUIRE,
-                                       __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
-              &server_control);
+      auto serv_func_busy = [&]() {
+        bool r = true;
+        while (r)
+          {
+            r = p.server.rpc_handle<operate_test, clear_test>(
+                operate_test{}, clear_test{}, &location);
+          }
+      };
 
-          bool r = p.server.rpc_handle<operate_test, clear_test>(
-              operate_test{}, clear_test{}, &location);
-          fprintf(stderr, "server ret %u\n", r);
+      for (;;)
+        {
+          serv_func_busy();
+
+          // ran out of work, has client set control to cease?
+          uint32_t ctrl =
+              platform::atomic_load<uint32_t, __ATOMIC_ACQUIRE,
+                                    __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+                  &server_control);
+
+          if (ctrl == 0)
+            {
+              // client called to cease, empty any clear jobs in the pipeline
+              serv_func_busy();
+              break;
+            }
+
+          // nothing to do, but not told to stop. spin.
           for (unsigned j = 0; j < 1000; j++)
             {
               platform::sleep();
@@ -149,25 +171,13 @@ int main()
 
     client_instance = p.client;
 
-    auto allocator =
-        hostrpc::allocator::openmp_device<alignof(hostrpc::page_t), 0>();
-    auto scratch_raw = allocator.allocate(sizeof(hostrpc::page_t));
-    if (!scratch_raw.valid())
+#pragma omp target parallel for map(tofrom : client_instance) device(0)
+    for (int i = 0; i < 128; i++)
       {
-        exit(1);
+        unsigned id = platform::get_lane_id();
+        invoke<decltype(client_instance), true>(&client_instance, id, 6, 5, 4,
+                                                3, 2, 1, 0);
       }
-
-    hostrpc::page_t *scratch =
-        new (reinterpret_cast<hostrpc::page_t *>(scratch_raw.remote_ptr().ptr))
-            hostrpc::page_t;
-
-#pragma omp target map(tofrom \
-                       : client_instance) device(0) is_device_ptr(scratch)
-    {
-      fill f(scratch);
-      use u(scratch);
-      client_instance.rpc_invoke<fill, use, true>(f, u);
-    }
 
     fprintf(stderr, "Post target region\n");
 
@@ -177,6 +187,5 @@ int main()
 
     serv.join();
     fprintf(stderr, "Joined\n");
-    scratch_raw.destroy();
   }
 }
