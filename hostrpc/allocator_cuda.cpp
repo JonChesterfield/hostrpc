@@ -8,6 +8,9 @@
 #error "allocator_cuda relies on the cuda host library"
 #endif
 
+#include <string.h>
+#include <sys/mman.h>
+
 namespace hostrpc
 {
 namespace allocator
@@ -65,13 +68,48 @@ int deallocate_gpu(void *ptr)
   return rc == cudaSuccess ? 0 : 1;
 }
 
+#define VIA_MMAP 1
+
+// cudaHostAlloc deadlocks when called from gpu kernel
+// mmap alternative doesn't, but is asserting, and cudaMemset fails on it
+// todo: recheck what the various cuda calls should be
 void *allocate_shared(size_t size)
 {
   // cudaHostRegister may be a better choice as the memory can be more easily
   // aligned that way. should check cudaDevAttrHostRegisterSupported
-  void *ptr;
   fprintf(stderr, "call host alloc\n");
-  cudaError_t rc = cudaHostAlloc(&ptr, size, cudaHostAllocMapped);
+  cudaError_t rc;
+
+#if (VIA_MMAP)
+  void *mapped = mmap(NULL, size, PROT_READ | PROT_WRITE,
+                      MAP_PRIVATE | MAP_ANONYMOUS | MAP_LOCKED, -1, 0);
+
+  if (mapped == MAP_FAILED)
+    {
+      return nullptr;
+    }
+
+  fprintf(stderr, "call host register\n");
+
+  rc = cudaHostRegister(mapped, size, cudaHostRegisterDefault);
+
+  if (rc != cudaSuccess)
+    {
+      fprintf(stderr, "host register ret %u\n", rc);
+      return nullptr;
+    }
+
+  fprintf(stderr, "call memset\n");
+  memset(mapped, 0, size);
+
+  fprintf(stderr, "allocate+registered %p\n", mapped);
+  return mapped;
+
+#else
+
+  void *ptr;
+
+  rc = cudaHostAlloc(&ptr, size, cudaHostAllocMapped);
   if (rc != cudaSuccess)
     {
       return nullptr;
@@ -87,12 +125,19 @@ void *allocate_shared(size_t size)
   fprintf(stderr, "alloc shared done\n");
 
   return ptr;
+#endif
 }
 
 int deallocate_shared(void *ptr)
 {
+#if (VIA_MMAP)
+  // leak, haven't tracked the size
+  // munmap(ptr, size);
+  return 0;
+#else
   cudaError_t rc = cudaFreeHost(ptr);
   return rc == cudaSuccess ? 0 : 1;
+#endif
 }
 
 void *device_ptr_from_host_ptr(void *host)
