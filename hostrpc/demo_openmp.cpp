@@ -30,32 +30,30 @@ struct x64_device_type : public x64_device_type_base<SZ, device_num>
 }  // namespace hostrpc
 
 template <typename C, bool have_continuation>
-static bool invoke(C *client, uint64_t x0, uint64_t x1, uint64_t x2,
-                   uint64_t x3, uint64_t x4, uint64_t x5, uint64_t x6,
-                   uint64_t x7)
+static bool invoke(C *client, uint64_t x[8])
 {
   auto fill = [&](hostrpc::page_t *page) -> void {
     hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
-    line->element[0] = x0;
-    line->element[1] = x1;
-    line->element[2] = x2;
-    line->element[3] = x3;
-    line->element[4] = x4;
-    line->element[5] = x5;
-    line->element[6] = x6;
-    line->element[7] = x7;
+    line->element[0] = x[0];
+    line->element[1] = x[1];
+    line->element[2] = x[2];
+    line->element[3] = x[3];
+    line->element[4] = x[4];
+    line->element[5] = x[5];
+    line->element[6] = x[6];
+    line->element[7] = x[7];
   };
 
   auto use = [&](hostrpc::page_t *page) -> void {
     hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
-    x0 = line->element[0];
-    x1 = line->element[1];
-    x2 = line->element[2];
-    x3 = line->element[3];
-    x4 = line->element[4];
-    x5 = line->element[5];
-    x6 = line->element[6];
-    x7 = line->element[7];
+    x[0] = line->element[0];
+    x[1] = line->element[1];
+    x[2] = line->element[2];
+    x[3] = line->element[3];
+    x[4] = line->element[4];
+    x[5] = line->element[5];
+    x[6] = line->element[6];
+    x[7] = line->element[7];
   };
 
   return client
@@ -65,11 +63,6 @@ static bool invoke(C *client, uint64_t x0, uint64_t x1, uint64_t x2,
 
 #pragma omp end declare target
 
-// this fails to compile - no member named 'printf' in the global namespace
-// seems to be trying to use stuff from wchar, can probably work around by
-// using pthreads instead (as thread includes string which seems to be the
-// problem)
-
 #include <omp.h>
 
 #include "hostrpc_thread.hpp"
@@ -78,6 +71,41 @@ static bool invoke(C *client, uint64_t x0, uint64_t x1, uint64_t x2,
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+
+#include <x86_64-linux-gnu/asm/unistd_64.h>
+
+__attribute__((unused)) static const uint64_t no_op = 0;
+
+static const uint64_t syscall_op = 42;
+static const uint64_t allocate_op = 21;
+static const uint64_t free_op = 22;
+
+static uint64_t syscall6(uint64_t n, uint64_t a0, uint64_t a1, uint64_t a2,
+                         uint64_t a3, uint64_t a4, uint64_t a5)
+{
+  const bool verbose = false;
+  uint64_t ret;
+#if HOSTRPC_HOST
+  // not in a target region, but clang errors on the unknown register anyway
+  register uint64_t r10 __asm__("r10") = a3;
+  register uint64_t r8 __asm__("r8") = a4;
+  register uint64_t r9 __asm__("r9") = a5;
+
+  ret = 0;
+  __asm__ volatile("syscall"
+                   : "=a"(ret)
+                   : "a"(n), "D"(a0), "S"(a1), "d"(a2), "r"(r10), "r"(r8),
+                     "r"(r9)
+                   : "rcx", "r11", "memory");
+
+  if (verbose)
+    {
+      fprintf(stderr, "%lu <- syscall %lu %lu %lu %lu %lu %lu %lu\n", ret, n,
+              a0, a1, a2, a3, a4, a5);
+    }
+#endif
+  return ret;
+}
 
 using SZ = hostrpc::size_compiletime<1920>;
 constexpr static int device_num = 0;
@@ -99,15 +127,56 @@ struct operate_test
 
   void operator()(unsigned index, hostrpc::cacheline_t *line)
   {
+    if (line->element[0] == no_op)
+      {
+        return;
+      }
+
+    if (line->element[0] == allocate_op)
+      {
+        uint64_t size = line->element[1];
+        void *res = hostrpc::allocator::openmp_impl::allocate_shared(size);
+        line->element[0] = (uint64_t)res;
+        return;
+      }
+
+    if (line->element[0] == free_op)
+      {
+        void *ptr = (void *)line->element[1];
+        line->element[0] =
+            hostrpc::allocator::openmp_impl::deallocate_shared(ptr);
+
+        return;
+      }
+
+    if (line->element[0] == syscall_op)
+      {
+        line->element[0] =
+            syscall6(line->element[1], line->element[2], line->element[3],
+                     line->element[4], line->element[5], line->element[6],
+                     line->element[7]);
+        return;
+      }
+
+    return;
+
     printf("%u: (%lu, %lu, %lu, %lu, %lu, %lu, %lu, %lu)\n", index,
            line->element[0], line->element[1], line->element[2],
            line->element[3], line->element[4], line->element[5],
            line->element[6], line->element[7]);
   }
 };
+
 struct clear_test
 {
-  void operator()(hostrpc::page_t *) { fprintf(stderr, "Invoked clear\n"); }
+  void operator()(hostrpc::page_t *page)
+  {
+    for (unsigned c = 0; c < 64; c++)
+      {
+        hostrpc::cacheline_t &line = page->cacheline[c];
+        line.element[0] = no_op;
+      }
+  }
 };
 
 int main()
@@ -171,13 +240,38 @@ int main()
 
     client_instance = p.client;
 
-#pragma omp target parallel for map(tofrom : client_instance) device(0)
-    for (int i = 0; i < 128; i++)
-      {
-        unsigned id = platform::get_lane_id();
-        invoke<decltype(client_instance), true>(&client_instance, id, 6, 5, 4,
-                                                3, 2, 1, 0);
-      }
+#pragma omp target map(tofrom : client_instance) device(0)
+    {
+      uint64_t tmp[8];
+      tmp[0] = allocate_op;
+      tmp[1] = 16;
+      invoke<decltype(client_instance), true>(&client_instance, tmp);
+
+      char *buf = (char *)tmp[0];
+
+      buf[0] = 'h';
+      buf[1] = 'i';
+      buf[2] = '\n';
+      buf[3] = '\0';
+
+      tmp[0] = syscall_op;
+      tmp[1] = __NR_write;
+      tmp[2] = 2;
+      tmp[3] = (uint64_t)buf;
+      tmp[4] = 3;
+
+      invoke<decltype(client_instance), true>(&client_instance, tmp);
+
+      tmp[0] = syscall_op;
+      tmp[1] = __NR_fsync;
+      tmp[2] = 2;
+
+      invoke<decltype(client_instance), true>(&client_instance, tmp);
+
+      tmp[0] = free_op;
+      tmp[1] = (uint64_t)buf;
+      invoke<decltype(client_instance), true>(&client_instance, tmp);
+    }
 
     fprintf(stderr, "Post target region\n");
 
