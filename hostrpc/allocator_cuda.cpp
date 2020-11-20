@@ -70,17 +70,21 @@ void *allocate_shared(size_t size)
   // cudaHostRegister may be a better choice as the memory can be more easily
   // aligned that way. should check cudaDevAttrHostRegisterSupported
   void *ptr;
+  fprintf(stderr, "call host alloc\n");
   cudaError_t rc = cudaHostAlloc(&ptr, size, cudaHostAllocMapped);
   if (rc != cudaSuccess)
     {
       return nullptr;
     }
 
+  fprintf(stderr, "call memset\n");
   rc = cudaMemset(ptr, 0, size);
   if (rc != cudaSuccess)
     {
       return nullptr;
     }
+
+  fprintf(stderr, "alloc shared done\n");
 
   return ptr;
 }

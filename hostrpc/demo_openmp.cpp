@@ -127,6 +127,11 @@ struct operate_test
 
   void operator()(unsigned index, hostrpc::cacheline_t *line)
   {
+    printf("%u: (%lu, %lu, %lu, %lu, %lu, %lu, %lu, %lu)\n", index,
+           line->element[0], line->element[1], line->element[2],
+           line->element[3], line->element[4], line->element[5],
+           line->element[6], line->element[7]);
+
     if (line->element[0] == no_op)
       {
         return;
@@ -135,7 +140,9 @@ struct operate_test
     if (line->element[0] == allocate_op)
       {
         uint64_t size = line->element[1];
+        fprintf(stderr, "Call allocate_shared\n");
         void *res = hostrpc::allocator::openmp_impl::allocate_shared(size);
+        fprintf(stderr, "Called allocate_shared\n");
         line->element[0] = (uint64_t)res;
         return;
       }
@@ -157,13 +164,6 @@ struct operate_test
                      line->element[7]);
         return;
       }
-
-    return;
-
-    printf("%u: (%lu, %lu, %lu, %lu, %lu, %lu, %lu, %lu)\n", index,
-           line->element[0], line->element[1], line->element[2],
-           line->element[3], line->element[4], line->element[5],
-           line->element[6], line->element[7]);
   }
 };
 
