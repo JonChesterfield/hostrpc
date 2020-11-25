@@ -77,7 +77,7 @@ OPT="$RDIR/bin/opt"
 #LINK="ld -r"
 
 CXX="$CLANG -std=c++14 -Wall -Wextra"
-LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR obj/hsa_support.x64.bc -lelf"
+LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR -lelf"
 
 
 NOINC="-nostdinc -nostdinc++ -isystem $CLANGINCLUDE -DHOSTRPC_HAVE_STDIO=0"
@@ -144,22 +144,46 @@ if (($have_nvptx)); then
  $LINK obj/host_support.x64.bc obj/allocator_cuda.x64.bc -o obj/cuda_support.x64.bc
 fi
 
+# openmp support library
+$CXX_X64 -I$RDIR/include allocator_openmp.cpp -c -o obj/allocator_openmp.x64.bc
+$CXX_X64 openmp_plugins.cpp -c -o obj/openmp_plugins.x64.bc
+$LINK obj/allocator_openmp.x64.bc obj/openmp_plugins.x64.bc -o obj/openmp_support.x64.bc
 
-# loader bitcode
+
+
+
+# amdgcn loader links these, but shouldn't. need to refactor.
+$CXX_GCN hostcall.cpp -c -o hostcall.gcn.bc
+$CXX_X64 -I$HSAINC hostcall.cpp -c -o hostcall.x64.bc
+# Build the device code that uses said library
+$CXX_X64 -I$HSAINC amdgcn_main.cpp -c -o amdgcn_main.x64.bc
+$CXX_GCN amdgcn_main.cpp -c -o amdgcn_main.gcn.bc
+
+
+# build loaders - run int main() {} on the gpu
+
+# Register amdhsa elf magic with kernel
+# One off
+# cd /proc/sys/fs/binfmt_misc/ && echo ':amdgcn:M:0:\x7f\x45\x4c\x46\x02\x01\x01\x40\x01\x00\x00\x00\x00\x00\x00\x00::/home/amd/hostrpc/amdgcn_loader.exe:' > register
+
+# Persistent
+# echo ':amdgcn:M:0:\x7f\x45\x4c\x46\x02\x01\x01\x40\x01\x00\x00\x00\x00\x00\x00\x00::/home/amd/hostrpc/amdgcn_loader.exe:' >> /etc/binfmt.d/amdgcn.conf
+
+
 if (($have_amdgcn)); then
   $CXXCL_GCN loader/amdgcn_loader_entry.cl -c -o loader/amdgcn_loader_entry.gcn.bc
   $CXX_GCN loader/opencl_loader_cast.cpp -c -o loader/opencl_loader_cast.gcn.bc
   $LINK loader/amdgcn_loader_entry.gcn.bc loader/opencl_loader_cast.gcn.bc | $OPT -O2 -o amdgcn_loader_device.gcn.bc
+
+  $CXX_X64 -I$HSAINC amdgcn_loader.cpp -c -o loader/amdgcn_loader.x64.bc
   $CXX_X64_LD $LDFLAGS loader/amdgcn_loader.x64.bc obj/hsa_support.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o ../amdgcn_loader.exe
 fi
 
 if (($have_nvptx)); then
-
  # presently using the cuda entry point but may want the opencl one later
  $CXX_CUDA -std=c++14 --cuda-device-only loader/nvptx_loader_entry.cu -c -emit-llvm -o loader/nvptx_loader_entry.cu.ptx.bc   
  $CXXCL_PTX loader/nvptx_loader_entry.cl -c -o loader/nvptx_loader_entry.cl.ptx.bc
  $CXX_PTX loader/opencl_loader_cast.cpp -c -o loader/opencl_loader_cast.ptx.bc
-
 
  $CLANG nvptx_loader.cpp obj/cuda_support.x64.bc --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -lcudart -pthread -o ../nvptx_loader.exe
 fi
@@ -168,11 +192,19 @@ if [ ! -f obj/catch.o ]; then
     time $CXX -O3 catch.cpp -c -o obj/catch.o
 fi
 
-$CXX_X64 states.cpp -c -o states.x64.bc
 
-$CXX_X64 openmp_plugins.cpp -c -o openmp_plugins.x64.bc
+$CXX_X64 prototype/states.cpp -c -o prototype/states.x64.bc
 
-# Checking cross platform compilation for simple case
+
+
+# Sanity checks that the client and server compile successfully
+# and provide an example of the generated IR
+$CXX_X64 codegen/client.cpp -S -o codegen/client.x64.ll
+$CXX_X64 codegen/server.cpp -S -o codegen/server.x64.ll
+$CXX_GCN codegen/client.cpp -S -o codegen/client.gcn.ll
+$CXX_GCN codegen/server.cpp -S -o codegen/server.gcn.ll
+$CXX_PTX codegen/client.cpp -S -o codegen/client.ptx.ll
+$CXX_PTX codegen/server.cpp -S -o codegen/server.ptx.ll
 
 $CXX_X64 codegen/foo_cxx.cpp -S -o codegen/foo_cxx.x64.ll
 $CXX_GCN codegen/foo_cxx.cpp -S -o codegen/foo_cxx.gcn.ll
@@ -215,15 +247,6 @@ $CLANG $XOPENCL -S -nogpulib -emit-llvm -target amdgcn-amd-amdhsa -mcpu=$GFX cod
 # recognises mcpu but warns that it is unused
 $CLANG $XOPENCL -S -nogpulib -emit-llvm -target nvptx64-nvidia-cuda codegen/foo_cxx.cpp -S -o codegen/foo.cl.ptx.ll
 
-# Sanity check that the client and server compile successfully
-# and provide an example of the generated IR
-# TODO: Get these building with cuda, hip, openmp-ptx, openmp-gcn too
-$CXX_X64 codegen/client.cpp -S -o codegen/client.x64.ll
-$CXX_X64 codegen/server.cpp -S -o codegen/server.x64.ll
-$CXX_GCN codegen/client.cpp -S -o codegen/client.gcn.ll
-$CXX_GCN codegen/server.cpp -S -o codegen/server.gcn.ll
-$CXX_PTX codegen/client.cpp -S -o codegen/client.ptx.ll
-$CXX_PTX codegen/server.cpp -S -o codegen/server.ptx.ll
 
 
 $CLANG $XCUDA -std=c++14 --cuda-device-only -nocudainc -nocudalib codegen/client.cpp -emit-llvm -S -o codegen/client.cuda.ptx.ll
@@ -241,8 +264,6 @@ $CLANG $XHIP -std=c++14 -O1 --cuda-host-only codegen/server.cpp -S -o codegen/se
 $CLANG $XOPENCL -S -emit-llvm codegen/client.cpp -S -o codegen/client.ocl.x64.ll
 $CLANG $XOPENCL -S -emit-llvm codegen/server.cpp -S -o codegen/server.ocl.x64.ll
 
-
-$CXX_X64 -I$RDIR/include allocator_openmp.cpp -c -o allocator_openmp.x64.bc
 
 $CXX_X64 -I$HSAINC tests.cpp -c -o tests.x64.bc
 $CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc
@@ -285,32 +306,20 @@ $CLANG $XCUDA -std=c++14 hello.cu --cuda-device-only $PTX_VER -c -o hello.o  -I/
 
 fi
 
-$LINK allocator_openmp.x64.bc openmp_plugins.x64.bc -o demo_bitcode.common.x64.bc
 
 if (($have_amdgcn)); then
-    $LINK demo_bitcode.common.x64.bc obj/hsa_support.x64.bc -o demo_bitcode.omp.bc
+    $LINK obj/openmp_support.x64.bc obj/hsa_support.x64.bc -o obj/demo_bitcode_gcn.omp.bc
     
-    $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.omp.bc -o demo_openmp.gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR && ./demo_openmp.gcn
+    $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang obj/demo_bitcode_gcn.omp.bc -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR # && ./demo_openmp_gcn
 fi
 
 if (($have_nvptx)); then
-    $LINK demo_bitcode.common.x64.bc obj/cuda_support.x64.bc -o demo_bitcode.omp.bc
+    $LINK obj/openmp_support.x64.bc obj/cuda_support.x64.bc -o demo_bitcode_ptx.omp.bc
     
-    $CLANG -I$HSAINC -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.omp.bc -Xclang -mlink-builtin-bitcode -Xclang detail/platform.ptx.bc -o demo_openmp.ptx -L/usr/local/cuda/lib64/ -lcudart_static -ldl -lrt -pthread && ./demo_openmp.ptx
+    $CLANG -I$HSAINC -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.ptx.omp.bc -Xclang -mlink-builtin-bitcode -Xclang detail/platform.ptx.bc -o demo_openmp_ptx -L/usr/local/cuda/lib64/ -lcudart_static -ldl -lrt -pthread && ./demo_openmp_ptx
 fi
 
 
-$CXX_GCN hostcall.cpp -c -o hostcall.gcn.bc
-$CXX_X64 -I$HSAINC hostcall.cpp -c -o hostcall.x64.bc
-
-# Build the device code that uses said library
-$CXX_X64 -I$HSAINC amdgcn_main.cpp -c -o amdgcn_main.x64.bc
-$CXX_GCN amdgcn_main.cpp -c -o amdgcn_main.gcn.bc
-
-
-# Build the device loader that assumes the device library is linked into the application
-# TODO: Embed it directly in the loader by patching call to main, as the loader doesn't do it
-$CXX_X64 -I$HSAINC amdgcn_loader.cpp -c -o amdgcn_loader.x64.bc
 
 
 # Build the device library that calls into main()
@@ -335,13 +344,6 @@ $CLANG --target=nvptx64-nvidia-cuda -march=sm_50 $PTX_VER executable_device.ptx.
 ./../nvptx_loader.exe a.ptx.out
 fi
 
-# Register amdhsa elf magic with kernel
-# One off
-# cd /proc/sys/fs/binfmt_misc/ && echo ':amdgcn:M:0:\x7f\x45\x4c\x46\x02\x01\x01\x40\x01\x00\x00\x00\x00\x00\x00\x00::/home/amd/hostrpc/amdgcn_loader.exe:' > register
-
-# Persistent
-# echo ':amdgcn:M:0:\x7f\x45\x4c\x46\x02\x01\x01\x40\x01\x00\x00\x00\x00\x00\x00\x00::/home/amd/hostrpc/amdgcn_loader.exe:' >> /etc/binfmt.d/amdgcn.conf
-
 
 # llc seems to need to be told what architecture it's disassembling
 
@@ -359,7 +361,9 @@ fi
 #     $CXX_GCN_LD -c $ll -o $obj
 # done
 
-$CXX_X64_LD tests.x64.bc x64_x64_stress.x64.bc states.x64.bc obj/catch.o obj/allocator_host_libc.x64.bc $LDFLAGS -o states.exe
+# $CXX_X64_LD tests.x64.bc prototype/states.x64.bc obj/catch.o obj/allocator_host_libc.x64.bc $LDFLAGS -o prototype/states.exe
+
+$CXX_X64_LD prototype/states.x64.bc obj/catch.o $LDFLAGS -o prototype/states.exe
 
 $CXX_X64_LD x64_x64_stress.x64.bc obj/host_support.x64.bc obj/catch.o $LDFLAGS -o x64_x64_stress.exe
 
@@ -369,6 +373,8 @@ $CXX_X64_LD tests.x64.bc obj/host_support.x64.bc obj/catch.o $LDFLAGS -o tests.e
 
 
 $CXX_X64_LD persistent_kernel.x64.bc obj/catch.o obj/hsa_support.x64.bc $LDFLAGS -o persistent_kernel.exe
+
+time valgrind --leak-check=full --fair-sched=yes ./prototype/states.exe
 
 if (($have_amdgcn)); then
 time ./persistent_kernel.exe
@@ -387,4 +393,3 @@ echo "Call x64_gcn_stress: Derive $DERIVE"
 time ./x64_gcn_stress.exe
 fi
 
-# time valgrind --leak-check=full --fair-sched=yes ./states.exe hazard

@@ -197,8 +197,8 @@ extern "C" __attribute__((visibility("default"))) int main(int argc,
   //     scavenge register without an emergency spill slot!
 
   // The hostrpc buffer is zero init, but no_op is not zero. Can somewhat bodge
-  // that by an initial no_op call, but really should zero all the buffer.
-
+  // that by an initial no_op call, but really should zero all the buffer. 
+  
   if (platform::get_lane_id() == 0)
     {
       char *buf = (char *)allocate(16);
