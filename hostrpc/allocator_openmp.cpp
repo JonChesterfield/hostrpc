@@ -116,6 +116,7 @@ HOSTRPC_ANNOTATE void *allocate_shared(size_t bytes)
   plugins p = hostrpc::find_plugins();
   if ((p.amdgcn + p.nvptx) != 1)
     {
+      printf("allocate shared: no plugins\n");
       return 0;
     }
   if (p.amdgcn)

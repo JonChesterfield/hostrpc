@@ -10,17 +10,119 @@
 
 #include "hsa.hpp"
 
-using SZ = hostrpc::size_runtime;
+#include "syscall.hpp"
 
-hostrpc::x64_gcn_type<SZ>::client_type *client_instance = nullptr;
-hostrpc::x64_gcn_type<SZ>::server_type *server_instance = nullptr;
+#include "hostrpc_thread.hpp"
+#include "server_thread_state.hpp"
+
+using SZ = hostrpc::size_runtime;
 
 __device__ extern "C" int printf(const char *format, ...);
 
-__global__ extern "C" void __device_start(int, char **, int *)
+template <typename C, bool have_continuation>
+__device__ static bool invoke(C *client, uint64_t x[8])
 {
-  printf("Hello world from hip\n");
+  auto fill = [&](hostrpc::page_t *page) -> void {
+    hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
+    line->element[0] = x[0];
+    line->element[1] = x[1];
+    line->element[2] = x[2];
+    line->element[3] = x[3];
+    line->element[4] = x[4];
+    line->element[5] = x[5];
+    line->element[6] = x[6];
+    line->element[7] = x[7];
+  };
+
+  auto use = [&](hostrpc::page_t *page) -> void {
+    hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
+    x[0] = line->element[0];
+    x[1] = line->element[1];
+    x[2] = line->element[2];
+    x[3] = line->element[3];
+    x[4] = line->element[4];
+    x[5] = line->element[5];
+    x[6] = line->element[6];
+    x[7] = line->element[7];
+  };
+
+  return client
+      ->template rpc_invoke<decltype(fill), decltype(use), have_continuation>(
+          fill, use);
 }
+
+__global__ extern "C" void on_gpu(
+    hostrpc::x64_gcn_type<SZ>::client_type *client, int, char **, int *)
+{
+  auto inv = [=](uint64_t x[8]) -> bool {
+    return invoke<hostrpc::x64_gcn_type<SZ>::client_type, true>(client, x);
+  };
+
+  printf("On gpu\n");
+  uint64_t tmp[8];
+  tmp[0] = hostrpc::allocate_op;
+  tmp[1] = 16;
+  printf("Invoke\n");
+  inv(tmp);
+
+  printf("inv alloc: %lu\n", tmp[0]);
+
+  char *buf = (char *)tmp[0];
+
+  buf[0] = 'h';
+  buf[1] = 'i';
+  buf[2] = '\n';
+  buf[3] = '\0';
+
+  tmp[0] = hostrpc::syscall_op;
+  tmp[1] = __NR_write;
+  tmp[2] = 2;
+  tmp[3] = (uint64_t)buf;
+  tmp[4] = 3;
+
+  inv(tmp);
+
+  tmp[0] = hostrpc::syscall_op;
+  tmp[1] = __NR_fsync;
+  tmp[2] = 2;
+
+  inv(tmp);
+
+  tmp[0] = hostrpc::free_op;
+  tmp[1] = (uint64_t)buf;
+  inv(tmp);
+}
+
+struct operate_test
+{
+  void operator()(hostrpc::page_t *page)
+  {
+    fprintf(stderr, "Invoked operate\n");
+    for (unsigned i = 0; i < 64; i++)
+      {
+        operator()(i, &page->cacheline[i]);
+      }
+  }
+
+  void operator()(unsigned index, hostrpc::cacheline_t *line)
+  {
+#if HOSTRPC_HOST
+    hostrpc::syscall_on_cache_line(index, line);
+#endif
+  }
+};
+
+struct clear_test
+{
+  void operator()(hostrpc::page_t *page)
+  {
+    for (unsigned c = 0; c < 64; c++)
+      {
+        hostrpc::cacheline_t &line = page->cacheline[c];
+        line.element[0] = hostrpc::no_op;
+      }
+  }
+};
 
 int main()
 {
@@ -40,13 +142,29 @@ int main()
       }
   }
 
-#if 1
   SZ sz(1920);
   hostrpc::x64_gcn_type<SZ> p(sz, fine_grained_region.handle,
                               coarse_grained_region.handle);
-#endif
 
-  __device_start<<<1, 1>>>(0, 0, 0);
+  hostrpc::x64_gcn_type<SZ>::client_type *ptr;
+  hipMalloc((void **)&ptr, sizeof(hostrpc::x64_gcn_type<SZ>::client_type));
+  hipMemcpyHtoD(ptr, &p.client, sizeof(hostrpc::x64_gcn_type<SZ>::client_type));
+
+  HOSTRPC_ATOMIC(uint32_t) server_control;
+  platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
+                         __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(&server_control,
+                                                                1);
+
+  auto s = hostrpc::make_server_thread_state(&p.server, &server_control,
+                                             operate_test{}, clear_test{});
+  auto serv = hostrpc::make_thread(&s);
+
+  fprintf(stderr, "passing addr %p\n", ptr);
+  hipDeviceSynchronize();
+
+  on_gpu<<<1, 1>>>(ptr, 0, 0, 0);
+
+  fprintf(stderr, "got back from on_gpu launch\n");
 
   hipDeviceSynchronize();
 

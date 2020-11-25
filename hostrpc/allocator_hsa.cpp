@@ -97,12 +97,14 @@ void *allocate_fine_grain(size_t bytes)
 
   if (rc != HSA_STATUS_SUCCESS)
     {
+      printf("allocate_fine_grain: Fail at line %u\n", __LINE__);
       return nullptr;
     }
 
   rc = hsa_pool::enable(memory);
   if (rc != HSA_STATUS_SUCCESS)
     {
+      printf("allocate_fine_grain: Fail at line %u\n", __LINE__);
       return nullptr;
     }
 

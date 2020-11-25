@@ -67,45 +67,15 @@ static bool invoke(C *client, uint64_t x[8])
 
 #include "hostrpc_thread.hpp"
 #include "openmp_plugins.hpp"
+#include "syscall.hpp"
+
+#include "server_thread_state.hpp"
+
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-
 #include <x86_64-linux-gnu/asm/unistd_64.h>
-
-__attribute__((unused)) static const uint64_t no_op = 0;
-
-static const uint64_t syscall_op = 42;
-static const uint64_t allocate_op = 21;
-static const uint64_t free_op = 22;
-
-static uint64_t syscall6(uint64_t n, uint64_t a0, uint64_t a1, uint64_t a2,
-                         uint64_t a3, uint64_t a4, uint64_t a5)
-{
-  const bool verbose = false;
-  uint64_t ret;
-#if HOSTRPC_HOST
-  // not in a target region, but clang errors on the unknown register anyway
-  register uint64_t r10 __asm__("r10") = a3;
-  register uint64_t r8 __asm__("r8") = a4;
-  register uint64_t r9 __asm__("r9") = a5;
-
-  ret = 0;
-  __asm__ volatile("syscall"
-                   : "=a"(ret)
-                   : "a"(n), "D"(a0), "S"(a1), "d"(a2), "r"(r10), "r"(r8),
-                     "r"(r9)
-                   : "rcx", "r11", "memory");
-
-  if (verbose)
-    {
-      fprintf(stderr, "%lu <- syscall %lu %lu %lu %lu %lu %lu %lu\n", ret, n,
-              a0, a1, a2, a3, a4, a5);
-    }
-#endif
-  return ret;
-}
 
 using SZ = hostrpc::size_compiletime<1920>;
 constexpr static int device_num = 0;
@@ -127,43 +97,9 @@ struct operate_test
 
   void operator()(unsigned index, hostrpc::cacheline_t *line)
   {
-    printf("%u: (%lu, %lu, %lu, %lu, %lu, %lu, %lu, %lu)\n", index,
-           line->element[0], line->element[1], line->element[2],
-           line->element[3], line->element[4], line->element[5],
-           line->element[6], line->element[7]);
-
-    if (line->element[0] == no_op)
-      {
-        return;
-      }
-
-    if (line->element[0] == allocate_op)
-      {
-        uint64_t size = line->element[1];
-        fprintf(stderr, "Call allocate_shared\n");
-        void *res = hostrpc::allocator::openmp_impl::allocate_shared(size);
-        fprintf(stderr, "Called allocate_shared\n");
-        line->element[0] = (uint64_t)res;
-        return;
-      }
-
-    if (line->element[0] == free_op)
-      {
-        void *ptr = (void *)line->element[1];
-        line->element[0] =
-            hostrpc::allocator::openmp_impl::deallocate_shared(ptr);
-
-        return;
-      }
-
-    if (line->element[0] == syscall_op)
-      {
-        line->element[0] =
-            syscall6(line->element[1], line->element[2], line->element[3],
-                     line->element[4], line->element[5], line->element[6],
-                     line->element[7]);
-        return;
-      }
+#if HOSTRPC_HOST
+    hostrpc::syscall_on_cache_line(index, line);
+#endif
   }
 };
 
@@ -174,7 +110,7 @@ struct clear_test
     for (unsigned c = 0; c < 64; c++)
       {
         hostrpc::cacheline_t &line = page->cacheline[c];
-        line.element[0] = no_op;
+        line.element[0] = hostrpc::no_op;
       }
   }
 };
@@ -199,53 +135,22 @@ int main()
                            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
         &server_control, 1);
 
-    auto serv_func = [&]() {
-      uint32_t location = 0;
-
-      auto serv_func_busy = [&]() {
-        bool r = true;
-        while (r)
-          {
-            r = p.server.rpc_handle<operate_test, clear_test>(
-                operate_test{}, clear_test{}, &location);
-          }
-      };
-
-      for (;;)
-        {
-          serv_func_busy();
-
-          // ran out of work, has client set control to cease?
-          uint32_t ctrl =
-              platform::atomic_load<uint32_t, __ATOMIC_ACQUIRE,
-                                    __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
-                  &server_control);
-
-          if (ctrl == 0)
-            {
-              // client called to cease, empty any clear jobs in the pipeline
-              serv_func_busy();
-              break;
-            }
-
-          // nothing to do, but not told to stop. spin.
-          for (unsigned j = 0; j < 1000; j++)
-            {
-              platform::sleep();
-            }
-        }
-    };
-
-    auto serv = hostrpc::make_thread(&serv_func);
+    auto s = hostrpc::make_server_thread_state(&p.server, &server_control,
+                                               operate_test{}, clear_test{});
+    auto serv = hostrpc::make_thread(&s);
 
     client_instance = p.client;
 
 #pragma omp target map(tofrom : client_instance) device(0)
     {
+      auto inv = [&](uint64_t x[8]) -> bool {
+        return invoke<base_type::client_type, true>(&client_instance, x);
+      };
+
       uint64_t tmp[8];
-      tmp[0] = allocate_op;
+      tmp[0] = hostrpc::allocate_op;
       tmp[1] = 16;
-      invoke<decltype(client_instance), true>(&client_instance, tmp);
+      inv(tmp);
 
       char *buf = (char *)tmp[0];
 
@@ -254,23 +159,23 @@ int main()
       buf[2] = '\n';
       buf[3] = '\0';
 
-      tmp[0] = syscall_op;
+      tmp[0] = hostrpc::syscall_op;
       tmp[1] = __NR_write;
       tmp[2] = 2;
       tmp[3] = (uint64_t)buf;
       tmp[4] = 3;
 
-      invoke<decltype(client_instance), true>(&client_instance, tmp);
+      inv(tmp);
 
-      tmp[0] = syscall_op;
+      tmp[0] = hostrpc::syscall_op;
       tmp[1] = __NR_fsync;
       tmp[2] = 2;
 
-      invoke<decltype(client_instance), true>(&client_instance, tmp);
+      inv(tmp);
 
-      tmp[0] = free_op;
+      tmp[0] = hostrpc::free_op;
       tmp[1] = (uint64_t)buf;
-      invoke<decltype(client_instance), true>(&client_instance, tmp);
+      inv(tmp);
     }
 
     fprintf(stderr, "Post target region\n");

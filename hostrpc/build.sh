@@ -124,10 +124,8 @@ CXX_GCN_LD="$CXX $GCNFLAGS"
 
 # host support library
 $CXX_X64 allocator_host_libc.cpp -c -o obj/allocator_host_libc.x64.bc
-
 # wraps pthreads, cuda miscompiled <thread>
 $CXX_X64 hostrpc_thread.cpp -c -o obj/hostrpc_thread.x64.bc 
-
 $LINK obj/allocator_host_libc.x64.bc obj/hostrpc_thread.x64.bc -o obj/host_support.x64.bc
 
 # hsa support library
@@ -149,8 +147,7 @@ $CXX_X64 -I$RDIR/include allocator_openmp.cpp -c -o obj/allocator_openmp.x64.bc
 $CXX_X64 openmp_plugins.cpp -c -o obj/openmp_plugins.x64.bc
 $LINK obj/allocator_openmp.x64.bc obj/openmp_plugins.x64.bc -o obj/openmp_support.x64.bc
 
-
-
+$CXX_X64 syscall.cpp -c -o obj/syscall.x64.bc 
 
 # amdgcn loader links these, but shouldn't. need to refactor.
 $CXX_GCN hostcall.cpp -c -o hostcall.gcn.bc
@@ -289,7 +286,9 @@ if (($have_amdgcn)); then
     # Tries to treat foo.so as a hip input file. Somewhat surprised, but might be right.
     # The clang driver can't handle some hip input + some bitcode input, but does have the
     # internal hook -mlink-builtin-bitcode that can be used to the same end effect
-    $CLANG -I$HSAINC -std=c++11 -x hip demo.hip -o demo --offload-arch=gfx906 -Xclang -mlink-builtin-bitcode -Xclang obj/hsa_support.x64.bc -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 -L$HSALIBDIR -lhsa-runtime64 -Wl,-rpath=$HSALIBDIR && ./demo
+    $LINK obj/hsa_support.x64.bc obj/syscall.x64.bc -o obj/demo.hip.link.x64.bc
+    
+    $CLANG -I$HSAINC -std=c++11 -x hip demo.hip -o demo --offload-arch=gfx906 -Xclang -mlink-builtin-bitcode -Xclang obj/demo.hip.link.x64.bc -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 -L$HSALIBDIR -lhsa-runtime64 -Wl,-rpath=$HSALIBDIR -pthread -ldl && ./demo
 fi
 
 $CXX_PTX nvptx_main.cpp -ffreestanding -c -o nvptx_main.ptx.bc
@@ -308,13 +307,13 @@ fi
 
 
 if (($have_amdgcn)); then
-    $LINK obj/openmp_support.x64.bc obj/hsa_support.x64.bc -o obj/demo_bitcode_gcn.omp.bc
+    $LINK obj/openmp_support.x64.bc obj/hsa_support.x64.bc obj/syscall.x64.bc -o obj/demo_bitcode_gcn.omp.bc
     
-    $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang obj/demo_bitcode_gcn.omp.bc -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR # && ./demo_openmp_gcn
+#    $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang obj/demo_bitcode_gcn.omp.bc -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR # && ./demo_openmp_gcn
 fi
 
 if (($have_nvptx)); then
-    $LINK obj/openmp_support.x64.bc obj/cuda_support.x64.bc -o demo_bitcode_ptx.omp.bc
+    $LINK obj/openmp_support.x64.bc obj/cuda_support.x64.bc obj/syscall.x64.bc -o demo_bitcode_ptx.omp.bc
     
     $CLANG -I$HSAINC -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode.ptx.omp.bc -Xclang -mlink-builtin-bitcode -Xclang detail/platform.ptx.bc -o demo_openmp_ptx -L/usr/local/cuda/lib64/ -lcudart_static -ldl -lrt -pthread && ./demo_openmp_ptx
 fi
