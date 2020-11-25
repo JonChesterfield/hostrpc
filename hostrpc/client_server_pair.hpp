@@ -46,6 +46,10 @@ struct client_server_pair_t
   HOSTRPC_ANNOTATE ~client_server_pair_t() { storage.destroy(); }
   HOSTRPC_ANNOTATE client_server_pair_t(const client_server_pair_t &) = delete;
 
+  HOSTRPC_ANNOTATE bool valid()
+  {
+    return storage.valid();
+  }
   HOSTRPC_ANNOTATE client_counters client_counters()
   {
     return client.get_counters();

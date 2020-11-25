@@ -130,6 +130,11 @@ int main()
 
     base_type p(sz);
 
+    if (!p.valid()) {
+      fprintf(stderr, "%s: Failed to allocate\n", __func__);
+      return 1;
+    }
+
     HOSTRPC_ATOMIC(uint32_t) server_control;
     platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
                            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
