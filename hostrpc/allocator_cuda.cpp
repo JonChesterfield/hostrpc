@@ -130,6 +130,7 @@ void *allocate_shared(size_t size)
 
 int deallocate_shared(void *ptr)
 {
+  (void)ptr;
 #if (VIA_MMAP)
   // leak, haven't tracked the size
   // munmap(ptr, size);
