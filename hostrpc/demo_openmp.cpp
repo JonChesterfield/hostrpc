@@ -82,7 +82,7 @@ constexpr static int device_num = 0;
 
 using base_type = hostrpc::x64_device_type<SZ, device_num>;
 
-base_type::client_type client_instance;
+// base_type::client_type client_instance;
 
 struct operate_test
 {
@@ -145,10 +145,11 @@ int main()
                                                operate_test{}, clear_test{});
     auto serv = hostrpc::make_thread(&s);
 
-    client_instance = p.client;
+    auto client_instance = p.client;
 
-#pragma omp target map(tofrom : client_instance) device(0)
+#pragma omp target map(to : client_instance) device(0)
     {
+      printf("target region start\n");
       auto inv = [&](uint64_t x[8]) -> bool {
         return invoke<base_type::client_type, true>(&client_instance, x);
       };
@@ -182,6 +183,7 @@ int main()
       tmp[0] = hostrpc::free_op;
       tmp[1] = (uint64_t)buf;
       inv(tmp);
+      printf("target region done\n");
     }
 
     fprintf(stderr, "Post target region\n");
