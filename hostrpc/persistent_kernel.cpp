@@ -92,15 +92,10 @@ struct gcn_x64_type
   storage_type storage;
 
   gcn_x64_type(SZ sz, uint64_t fine_handle, uint64_t coarse_handle)
+      : storage(host_client(
+            AllocBuffer(fine_handle), AllocInboxOutbox(fine_handle),
+            AllocLocal(coarse_handle), AllocRemote(), sz, &server, &client))
   {
-    auto alloc_buffer = AllocBuffer(fine_handle);
-    auto alloc_inbox_outbox = AllocInboxOutbox(fine_handle);
-
-    auto alloc_local = AllocLocal(coarse_handle);
-    auto alloc_remote = AllocRemote();
-
-    storage = host_client(alloc_buffer, alloc_inbox_outbox, alloc_local,
-                          alloc_remote, sz, &server, &client);
   }
 
   ~gcn_x64_type() { storage.destroy(); }

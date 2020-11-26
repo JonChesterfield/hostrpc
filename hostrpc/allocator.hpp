@@ -54,8 +54,18 @@ struct interface
   {
     HOSTRPC_ANNOTATE raw() : ptr(nullptr) {}
     HOSTRPC_ANNOTATE raw(void *p) : ptr(p) {}
+
+    // Move only makes it easier to avoid calling free twice on the same pointer
+    HOSTRPC_ANNOTATE raw(const raw &) = delete;
+    HOSTRPC_ANNOTATE raw(raw &&other) : ptr(other.ptr) { other.ptr = nullptr; }
     HOSTRPC_ANNOTATE bool valid() { return ptr != nullptr; }
-    HOSTRPC_ANNOTATE status destroy() { return Base::destroy(*this); }
+    HOSTRPC_ANNOTATE status destroy()
+    {
+      // assumes that destroy(nullptr) is a nop
+      status res = Base::destroy(this);
+      ptr = nullptr;
+      return res;
+    }
     HOSTRPC_ANNOTATE local_t local_ptr() { return Base::local_ptr(*this); }
     HOSTRPC_ANNOTATE remote_t remote_ptr() { return Base::remote_ptr(*this); }
     void *ptr;
@@ -72,8 +82,8 @@ struct interface
 
  private:
   // The raw/local/remote conversion is a no-op for most allocators
-  HOSTRPC_ANNOTATE static local_t local_ptr(raw x) { return x.ptr; }
-  HOSTRPC_ANNOTATE static remote_t remote_ptr(raw x) { return x.ptr; }
+  HOSTRPC_ANNOTATE static local_t local_ptr(const raw &x) { return x.ptr; }
+  HOSTRPC_ANNOTATE static remote_t remote_ptr(const raw &x) { return x.ptr; }
 };
 
 HOSTRPC_ANNOTATE inline void *align_pointer_up(void *ptr, size_t align)
@@ -99,9 +109,9 @@ struct host_libc : public interface<Align, host_libc<Align>>
     return {host_libc_impl::allocate(Align, N)};
   }
 
-  HOSTRPC_ANNOTATE static status destroy(raw x)
+  HOSTRPC_ANNOTATE static status destroy(raw *x)
   {
-    host_libc_impl::deallocate(x.ptr);
+    host_libc_impl::deallocate(x->ptr);
     return success;
   }
 };
@@ -131,9 +141,9 @@ struct hsa : public interface<Align, hsa<Align>>
   {
     return {hsa_impl::allocate(hsa_region_t_handle, Align, N)};
   }
-  HOSTRPC_ANNOTATE static status destroy(raw x)
+  HOSTRPC_ANNOTATE static status destroy(raw *x)
   {
-    return (hsa_impl::deallocate(x.ptr) == 0) ? success : failure;
+    return (hsa_impl::deallocate(x->ptr) == 0) ? success : failure;
   }
 };
 
@@ -147,9 +157,9 @@ struct hsa_shared : public interface<Align, hsa_shared<Align>>
   {
     return {hsa_impl::allocate_fine_grain(N)};
   }
-  HOSTRPC_ANNOTATE static status destroy(raw x)
+  HOSTRPC_ANNOTATE static status destroy(raw *x)
   {
-    return (hsa_impl::deallocate(x.ptr) == 0) ? success : failure;
+    return (hsa_impl::deallocate(x->ptr) == 0) ? success : failure;
   }
 };
 
@@ -183,16 +193,16 @@ struct cuda_gpu : public interface<Align, cuda_gpu<Align>>
     size_t adj = N + Align - 1;
     return {cuda_impl::allocate_gpu(adj)};  // zeros
   }
-  HOSTRPC_ANNOTATE static status destroy(raw x)
+  HOSTRPC_ANNOTATE static status destroy(raw *x)
   {
-    return cuda_impl::deallocate_gpu(x.ptr) == 0 ? success : failure;
+    return cuda_impl::deallocate_gpu(x->ptr) == 0 ? success : failure;
   }
-  HOSTRPC_ANNOTATE static local_t local_ptr(raw)
+  HOSTRPC_ANNOTATE static local_t local_ptr(const raw &)
   {
     // local is on the host (as only have a host cuda allocator at present)
     return {0};
   }
-  HOSTRPC_ANNOTATE static remote_t remote_ptr(raw x)
+  HOSTRPC_ANNOTATE static remote_t remote_ptr(const raw &x)
   {
     return {align_pointer_up(x.ptr, Align)};
   }
@@ -213,15 +223,15 @@ struct cuda_shared : public interface<Align, cuda_shared<Align>>
     size_t adj = N + Align - 1;
     return {cuda_impl::allocate_shared(adj)};  // zeros
   }
-  HOSTRPC_ANNOTATE static status destroy(raw x)
+  HOSTRPC_ANNOTATE static status destroy(raw *x)
   {
-    return cuda_impl::deallocate_shared(x.ptr) == 0 ? success : failure;
+    return cuda_impl::deallocate_shared(x->ptr) == 0 ? success : failure;
   }
-  HOSTRPC_ANNOTATE static local_t local_ptr(raw x)
+  HOSTRPC_ANNOTATE static local_t local_ptr(const raw &x)
   {
     return {align_pointer_up(x.ptr, Align)};
   }
-  HOSTRPC_ANNOTATE static remote_t remote_ptr(raw x)
+  HOSTRPC_ANNOTATE static remote_t remote_ptr(const raw &x)
   {
     if (!x.ptr)
       {
@@ -257,14 +267,14 @@ struct openmp_device : public interface<Align, openmp_device<Align, device_num>>
     size_t adj = N + Align - 1;
     return {openmp_impl::allocate_device(device_num, adj)};
   }
-  HOSTRPC_ANNOTATE static status destroy(raw x)
+  HOSTRPC_ANNOTATE static status destroy(raw *x)
   {
-    return (openmp_impl::deallocate_device(device_num, x.ptr) == 0) ? success
-                                                                    : failure;
+    return (openmp_impl::deallocate_device(device_num, x->ptr) == 0) ? success
+                                                                     : failure;
   }
 
-  HOSTRPC_ANNOTATE static local_t local_ptr(raw) { return {0}; }
-  HOSTRPC_ANNOTATE static remote_t remote_ptr(raw x)
+  HOSTRPC_ANNOTATE static local_t local_ptr(const raw &) { return {0}; }
+  HOSTRPC_ANNOTATE static remote_t remote_ptr(const raw &x)
   {
     return {align_pointer_up(x.ptr, Align)};
   }
@@ -286,20 +296,47 @@ struct openmp_shared : public interface<Align, openmp_shared<Align>>
     size_t adj = N + Align - 1;
     return {openmp_impl::allocate_shared(adj)};
   }
-  HOSTRPC_ANNOTATE static status destroy(raw x)
+  HOSTRPC_ANNOTATE static status destroy(raw *x)
   {
-    return (openmp_impl::deallocate_shared(x.ptr) == 0) ? success : failure;
+    return (openmp_impl::deallocate_shared(x->ptr) == 0) ? success : failure;
   }
 
-  HOSTRPC_ANNOTATE static local_t local_ptr(raw x)
+  HOSTRPC_ANNOTATE static local_t local_ptr(const raw &x)
   {
     return {align_pointer_up(x.ptr, Align)};
   }
-  HOSTRPC_ANNOTATE static remote_t remote_ptr(raw x)
+  HOSTRPC_ANNOTATE static remote_t remote_ptr(const raw &x)
   {
     return {align_pointer_up(x.ptr, Align)};
   }
 };
+
+namespace cxx
+{
+// std::move reimplemented
+template <class T>
+struct remove_reference
+{
+  typedef T type;
+};
+template <class T>
+struct remove_reference<T &>
+{
+  typedef T type;
+};
+template <class T>
+struct remove_reference<T &&>
+{
+  typedef T type;
+};
+
+template <class T>
+inline constexpr typename remove_reference<T>::type &&move(T &&x)
+{
+  typedef typename remove_reference<T>::type U;
+  return static_cast<U &&>(x);
+}
+}  // namespace cxx
 
 template <typename AllocBuffer, typename AllocInboxOutbox, typename AllocLocal,
           typename AllocRemote>
@@ -315,20 +352,20 @@ struct store_impl
 
   HOSTRPC_ANNOTATE store_impl() = default;
   HOSTRPC_ANNOTATE ~store_impl() = default;
-  HOSTRPC_ANNOTATE store_impl(typename AllocBuffer::raw buffer,
-                              typename AllocInboxOutbox::raw recv,
-                              typename AllocInboxOutbox::raw send,
-                              typename AllocLocal::raw local_lock,
-                              typename AllocLocal::raw local_staging,
-                              typename AllocRemote::raw remote_lock,
-                              typename AllocRemote::raw remote_staging)
-      : buffer(buffer),
-        recv(recv),
-        send(send),
-        local_lock(local_lock),
-        local_staging(local_staging),
-        remote_lock(remote_lock),
-        remote_staging(remote_staging)
+  HOSTRPC_ANNOTATE store_impl(typename AllocBuffer::raw &&buffer,
+                              typename AllocInboxOutbox::raw &&recv,
+                              typename AllocInboxOutbox::raw &&send,
+                              typename AllocLocal::raw &&local_lock,
+                              typename AllocLocal::raw &&local_staging,
+                              typename AllocRemote::raw &&remote_lock,
+                              typename AllocRemote::raw &&remote_staging)
+      : buffer(cxx::move(buffer)),
+        recv(cxx::move(recv)),
+        send(cxx::move(send)),
+        local_lock(cxx::move(local_lock)),
+        local_staging(cxx::move(local_staging)),
+        remote_lock(cxx::move(remote_lock)),
+        remote_staging(cxx::move(remote_staging))
   {
   }
 
@@ -371,7 +408,7 @@ struct store_impl
 
  private:
   template <typename T>
-  HOSTRPC_ANNOTATE status destroy_help(T raw, status acc)
+  HOSTRPC_ANNOTATE status destroy_help(T &raw, status acc)
   {
     // destroy on nullptr considered success
     status rc = raw.valid() ? raw.destroy() : success;

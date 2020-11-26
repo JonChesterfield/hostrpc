@@ -38,18 +38,15 @@ struct client_server_pair_t
                                         AllocInboxOutbox alloc_inbox_outbox,
                                         AllocLocal alloc_local,
                                         AllocRemote alloc_remote)
+      : storage(host_client(alloc_buffer, alloc_inbox_outbox, alloc_local,
+                            alloc_remote, sz, &server, &client))
   {
-    storage = host_client(alloc_buffer, alloc_inbox_outbox, alloc_local,
-                          alloc_remote, sz, &server, &client);
   }
 
   HOSTRPC_ANNOTATE ~client_server_pair_t() { storage.destroy(); }
   HOSTRPC_ANNOTATE client_server_pair_t(const client_server_pair_t &) = delete;
 
-  HOSTRPC_ANNOTATE bool valid()
-  {
-    return storage.valid();
-  }
+  HOSTRPC_ANNOTATE bool valid() { return storage.valid(); }
   HOSTRPC_ANNOTATE client_counters client_counters()
   {
     return client.get_counters();

@@ -193,7 +193,7 @@ fi
 $CXX_X64 prototype/states.cpp -c -o prototype/states.x64.bc
 
 
-
+if true; then
 # Sanity checks that the client and server compile successfully
 # and provide an example of the generated IR
 $CXX_X64 codegen/client.cpp -S -o codegen/client.x64.ll
@@ -260,7 +260,7 @@ $CLANG $XHIP -std=c++14 -O1 --cuda-host-only codegen/server.cpp -S -o codegen/se
 # Build as opencl/c++ too
 $CLANG $XOPENCL -S -emit-llvm codegen/client.cpp -S -o codegen/client.ocl.x64.ll
 $CLANG $XOPENCL -S -emit-llvm codegen/server.cpp -S -o codegen/server.ocl.x64.ll
-
+fi
 
 $CXX_X64 -I$HSAINC tests.cpp -c -o tests.x64.bc
 $CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc
@@ -305,11 +305,12 @@ $CLANG $XCUDA -std=c++14 hello.cu --cuda-device-only $PTX_VER -c -o hello.o  -I/
 
 fi
 
+$CLANG -std=c++14 -Wall -Wextra -O0 -g test_storage.cpp obj/openmp_support.x64.bc obj/host_support.x64.bc $RDIR/lib/libomptarget.so -o test_storage.exe -pthread -ldl -Wl,-rpath=$RDIR/lib && valgrind ./test_storage.exe
 
 if (($have_amdgcn)); then
     $LINK obj/openmp_support.x64.bc obj/hsa_support.x64.bc obj/syscall.x64.bc -o obj/demo_bitcode_gcn.omp.bc
     
-#    $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang obj/demo_bitcode_gcn.omp.bc -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR # && ./demo_openmp_gcn
+    $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang obj/demo_bitcode_gcn.omp.bc -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR # && ./demo_openmp_gcn
 fi
 
 if (($have_nvptx)); then
