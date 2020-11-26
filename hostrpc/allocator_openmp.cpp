@@ -146,6 +146,40 @@ HOSTRPC_ANNOTATE int deallocate_shared(void *ptr)
   return 0;
 }
 
+void *device_ptr_from_host_ptr(void *host)
+{
+  plugins p = hostrpc::find_plugins();
+  if (host)
+    {
+      if (p.amdgcn)
+        {
+          return hsa_impl::device_ptr_from_host_ptr(host);
+        }
+      if (p.nvptx)
+        {
+          return cuda_impl::device_ptr_from_host_ptr(host);
+        }
+    }
+  return 0;
+}
+
+void *host_ptr_from_device_ptr(void *device)
+{
+  plugins p = hostrpc::find_plugins();
+  if (device)
+    {
+      if (p.amdgcn)
+        {
+          return hsa_impl::host_ptr_from_device_ptr(device);
+        }
+      if (p.nvptx)
+        {
+          return cuda_impl::host_ptr_from_device_ptr(device);
+        }
+    }
+  return 0;
+}
+
 }  // namespace openmp_impl
 
 }  // namespace allocator

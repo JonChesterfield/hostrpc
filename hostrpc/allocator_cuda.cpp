@@ -75,9 +75,10 @@ int deallocate_gpu(void *ptr)
 // todo: recheck what the various cuda calls should be
 void *allocate_shared(size_t size)
 {
+  size = (size + 4095) & ~((size_t)4095);
   // cudaHostRegister may be a better choice as the memory can be more easily
   // aligned that way. should check cudaDevAttrHostRegisterSupported
-  fprintf(stderr, "call host alloc\n");
+  fprintf(stderr, "call host alloc for %zu bytes\n", size);
   cudaError_t rc;
 
 #if (VIA_MMAP)
@@ -91,15 +92,26 @@ void *allocate_shared(size_t size)
 
   fprintf(stderr, "call host register\n");
 
-  rc = cudaHostRegister(mapped, size, cudaHostRegisterDefault);
+  {
+    // only have one device
+    cudaDeviceProp deviceProp;
+    cudaGetDeviceProperties(&deviceProp, 0);
 
+    if (!deviceProp.canMapHostMemory)
+      {
+        fprintf(stderr, "Device %d cannot map host memory!\n", 0);
+        exit(EXIT_FAILURE);
+      }
+  }
+
+  rc = cudaHostRegister(mapped, size, cudaHostRegisterMapped);
   if (rc != cudaSuccess)
     {
       fprintf(stderr, "host register ret %u\n", rc);
       return nullptr;
     }
 
-  fprintf(stderr, "call memset\n");
+  fprintf(stderr, "call memset on %p, %zu bytes\n", mapped, size);
   memset(mapped, 0, size);
 
   fprintf(stderr, "allocate+registered %p\n", mapped);
@@ -151,6 +163,17 @@ void *device_ptr_from_host_ptr(void *host)
       return nullptr;
     }
   return device;
+}
+
+void *host_ptr_from_device_ptr(void *device)
+{
+  cudaPointerAttributes attr;
+  cudaError_t rc = cudaPointerGetAttributes(&attr, device);
+  if (rc != cudaSuccess)
+    {
+      return nullptr;
+    }
+  return attr.hostPointer;
 }
 
 }  // namespace cuda_impl

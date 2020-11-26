@@ -58,10 +58,11 @@ __global__ extern "C" void on_gpu(
     return invoke<hostrpc::x64_gcn_type<SZ>::client_type, true>(client, x);
   };
 
+  constexpr const uint64_t buffer_size = 16;
   printf("On gpu\n");
   uint64_t tmp[8];
-  tmp[0] = hostrpc::allocate_op;
-  tmp[1] = 16;
+  tmp[0] = hostrpc::allocate_op_hsa;
+  tmp[1] = buffer_size;
   printf("Invoke\n");
   inv(tmp);
 
@@ -88,8 +89,9 @@ __global__ extern "C" void on_gpu(
 
   inv(tmp);
 
-  tmp[0] = hostrpc::free_op;
+  tmp[0] = hostrpc::free_op_hsa;
   tmp[1] = (uint64_t)buf;
+  tmp[2] = buffer_size;
   inv(tmp);
 }
 

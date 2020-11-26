@@ -125,6 +125,9 @@ HOSTRPC_ANNOTATE void *allocate_fine_grain(size_t bytes);
 
 HOSTRPC_ANNOTATE int deallocate(void *);
 
+inline HOSTRPC_ANNOTATE void *device_ptr_from_host_ptr(void *x) { return x; }
+inline HOSTRPC_ANNOTATE void *host_ptr_from_device_ptr(void *x) { return x; }
+
 HOSTRPC_ANNOTATE int memsetzero_gpu(void *, size_t size);
 }  // namespace hsa_impl
 
@@ -175,6 +178,7 @@ HOSTRPC_ANNOTATE void *allocate_shared(size_t size);
 HOSTRPC_ANNOTATE int deallocate_shared(void *);
 
 HOSTRPC_ANNOTATE void *device_ptr_from_host_ptr(void *);
+HOSTRPC_ANNOTATE void *host_ptr_from_device_ptr(void *);
 
 HOSTRPC_ANNOTATE int memsetzero_gpu(void *, size_t size);
 }  // namespace cuda_impl
@@ -250,6 +254,9 @@ HOSTRPC_ANNOTATE int deallocate_device(int device_num, void *);
 HOSTRPC_ANNOTATE void *allocate_shared(size_t bytes);
 HOSTRPC_ANNOTATE int deallocate_shared(void *);
 
+HOSTRPC_ANNOTATE void *device_ptr_from_host_ptr(void *);
+HOSTRPC_ANNOTATE void *host_ptr_from_device_ptr(void *);
+
 }  // namespace openmp_impl
 
 template <size_t Align, int device_num>
@@ -307,7 +314,12 @@ struct openmp_shared : public interface<Align, openmp_shared<Align>>
   }
   HOSTRPC_ANNOTATE static remote_t remote_ptr(const raw &x)
   {
-    return {align_pointer_up(x.ptr, Align)};
+    if (!x.ptr)
+      {
+        return {0};
+      }
+    void *dev = openmp_impl::device_ptr_from_host_ptr(x.ptr);
+    return {align_pointer_up(dev, Align)};
   }
 };
 

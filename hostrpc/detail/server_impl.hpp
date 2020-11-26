@@ -82,6 +82,18 @@ struct server_impl : public SZT, public Counter
   {
   }
 
+  HOSTRPC_ANNOTATE void dump()
+  {
+#if HOSTRPC_HAVE_STDIO
+    fprintf(stderr, "remote_buffer %p\n", remote_buffer);
+    fprintf(stderr, "local_buffer  %p\n", local_buffer);
+    fprintf(stderr, "inbox         %p\n", inbox.a);
+    fprintf(stderr, "outbox        %p\n", outbox.a);
+    fprintf(stderr, "active        %p\n", active.a);
+    fprintf(stderr, "outbox stg    %p\n", staging.a);
+#endif
+  }
+
   HOSTRPC_ANNOTATE static void* operator new(size_t, server_impl* p)
   {
     return p;

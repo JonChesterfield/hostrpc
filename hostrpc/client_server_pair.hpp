@@ -55,6 +55,18 @@ struct client_server_pair_t
   {
     return server.get_counters();
   }
+
+  HOSTRPC_ANNOTATE void dump()
+  {
+#if HOSTRPC_HAVE_STDIO
+    fprintf(stderr, "storage:\n");
+    storage.dump();
+    fprintf(stderr, "server:\n");
+    server.dump();
+    fprintf(stderr, "client:\n");
+    client.dump();
+#endif
+  }
 };
 }  // namespace hostrpc
 #endif

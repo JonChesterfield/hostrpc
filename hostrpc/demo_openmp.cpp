@@ -1,3 +1,6 @@
+#define HOSTRPC_HAVE_STDIO 1
+#include <stdio.h>
+
 #pragma omp declare target
 
 #include "allocator.hpp"
@@ -82,8 +85,6 @@ constexpr static int device_num = 0;
 
 using base_type = hostrpc::x64_device_type<SZ, device_num>;
 
-// base_type::client_type client_instance;
-
 struct operate_test
 {
   void operator()(hostrpc::page_t *page)
@@ -115,8 +116,18 @@ struct clear_test
   }
 };
 
+#include <cuda_runtime.h>
+
 int main()
 {
+  // this is probably the default, setting it doesn't seem to help
+  cudaError_t rc = cudaSetDeviceFlags(cudaDeviceMapHost);
+  if (rc != cudaSuccess)
+    {
+      fprintf(stderr, "Failed to set device flags\n");
+      exit(1);
+    }
+
 #pragma omp target
   asm("// less lazy");
 
@@ -145,18 +156,34 @@ int main()
                                                operate_test{}, clear_test{});
     auto serv = hostrpc::make_thread(&s);
 
-    auto client_instance = p.client;
+    hostrpc::allocator::openmp_device<64, device_num> alloc;
+    auto dev_client_raw = alloc.allocate(sizeof(p.client));
+    void *dev_client = dev_client_raw.remote_ptr();
 
-#pragma omp target map(to : client_instance) device(0)
+    cudaError_t rc = cudaMemcpy(dev_client, &p.client, sizeof(p.client),
+                                cudaMemcpyHostToDevice);
+    if (rc != cudaSuccess)
+      {
+        fprintf(stderr, "Failed to copy client to gpu memory\n");
+        return 1;
+      }
+    
+#pragma omp target device(0) is_device_ptr(dev_client)
     {
+      base_type::client_type *client = (base_type::client_type *)dev_client;
+      // todo:
+      const uint64_t alloc_op = hostrpc::allocate_op_cuda;
+      const uint64_t free_op = hostrpc::free_op_cuda;
+
       printf("target region start\n");
       auto inv = [&](uint64_t x[8]) -> bool {
-        return invoke<base_type::client_type, true>(&client_instance, x);
+        return invoke<base_type::client_type, true>(client, x);
       };
+      constexpr const uint64_t buffer_size = 16;
 
       uint64_t tmp[8];
-      tmp[0] = hostrpc::allocate_op;
-      tmp[1] = 16;
+      tmp[0] = alloc_op;
+      tmp[1] = buffer_size;
       inv(tmp);
 
       char *buf = (char *)tmp[0];
@@ -166,10 +193,15 @@ int main()
       buf[2] = '\n';
       buf[3] = '\0';
 
+      tmp[0] = hostrpc::device_to_host_pointer_cuda;
+      tmp[1] = (uint64_t)buf;
+      inv(tmp);
+      uint64_t host_buf = tmp[0];
+
       tmp[0] = hostrpc::syscall_op;
       tmp[1] = __NR_write;
       tmp[2] = 2;
-      tmp[3] = (uint64_t)buf;
+      tmp[3] = host_buf;  // needs to be a host pointer here
       tmp[4] = 3;
 
       inv(tmp);
@@ -180,8 +212,9 @@ int main()
 
       inv(tmp);
 
-      tmp[0] = hostrpc::free_op;
-      tmp[1] = (uint64_t)buf;
+      tmp[0] = free_op;
+      tmp[1] = (uint64_t)buf;  // assuming a device pointer here
+      tmp[2] = buffer_size;
       inv(tmp);
       printf("target region done\n");
     }

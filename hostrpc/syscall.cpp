@@ -6,7 +6,7 @@ namespace hostrpc
 uint64_t syscall6(uint64_t n, uint64_t a0, uint64_t a1, uint64_t a2,
                   uint64_t a3, uint64_t a4, uint64_t a5)
 {
-  const bool verbose = false;
+  const bool verbose = true;
   uint64_t ret;
   // not in a target region, but clang errors on the unknown register anyway
   register uint64_t r10 __asm__("r10") = a3;
