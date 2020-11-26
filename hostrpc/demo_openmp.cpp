@@ -167,7 +167,17 @@ int main()
         fprintf(stderr, "Failed to copy client to gpu memory\n");
         return 1;
       }
-    
+
+      // A target region that maps data in/out resolves to:
+      // data_submit_async
+      // run_target_region_async
+      // data_retrieve_async
+      // The retrieve_async is launched before the kernel has finished running
+      // which means the memcpy_async it invokes can deadlock with a call within
+      // the target region
+      // This avoids map, thus avoids the memcpy_async deadlock, but a less
+      // fragile solution is required
+
 #pragma omp target device(0) is_device_ptr(dev_client)
     {
       base_type::client_type *client = (base_type::client_type *)dev_client;
@@ -220,6 +230,9 @@ int main()
     }
 
     fprintf(stderr, "Post target region\n");
+
+    // isn't waiting for the previous kernel to finish before launching the
+    // async exit
 
     platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
                            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
