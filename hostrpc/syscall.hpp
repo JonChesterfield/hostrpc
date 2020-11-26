@@ -27,6 +27,8 @@ uint64_t syscall6(uint64_t n, uint64_t a0, uint64_t a1, uint64_t a2,
 inline void syscall_on_cache_line(unsigned index, hostrpc::cacheline_t *line)
 {
   const bool verbose = false;
+  const bool amdgcn =
+      false;  // the logic for guessing platform is not totally robust
   if (verbose)
     {
       printf("%u: (%lu, %lu, %lu, %lu, %lu, %lu, %lu, %lu)\n", index,
@@ -44,7 +46,9 @@ inline void syscall_on_cache_line(unsigned index, hostrpc::cacheline_t *line)
     {
       uint64_t size = line->element[1];
       fprintf(stderr, "Call allocate_shared\n");
-      void *res = hostrpc::allocator::hsa_impl::allocate_fine_grain(size);
+      void *res = amdgcn
+                      ? hostrpc::allocator::hsa_impl::allocate_fine_grain(size)
+                      : hostrpc::allocator::cuda_impl::allocate_shared(size);
       fprintf(stderr, "Called allocate_shared -> %lu\n", (uint64_t)res);
       line->element[0] = (uint64_t)res;
       return;
@@ -53,7 +57,9 @@ inline void syscall_on_cache_line(unsigned index, hostrpc::cacheline_t *line)
   if (line->element[0] == free_op)
     {
       void *ptr = (void *)line->element[1];
-      line->element[0] = hostrpc::allocator::hsa_impl::deallocate(ptr);
+      line->element[0] =
+          amdgcn ? hostrpc::allocator::hsa_impl::deallocate(ptr)
+                 : hostrpc::allocator::cuda_impl::deallocate_shared(ptr);
 
       return;
     }

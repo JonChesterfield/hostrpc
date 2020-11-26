@@ -295,7 +295,7 @@ $CXX_PTX nvptx_main.cpp -ffreestanding -c -o nvptx_main.ptx.bc
 
 if (($have_nvptx)); then
 # One step at a time
-    $CLANG $XCUDA hello.cu -o hello -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcudart_static -ldl -lrt -pthread && ./hello
+    $CLANG $XCUDA hello.cu -o hello -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -lcudart_static -ldl -lrt -pthread && ./hello
 
 # hello.o is an executable elf, may be able to load it from cuda
 $CLANG $XCUDA -std=c++14 hello.cu --cuda-device-only $PTX_VER -c -o hello.o  -I/usr/local/cuda/include
@@ -316,7 +316,7 @@ fi
 if (($have_nvptx)); then
     $LINK obj/openmp_support.x64.bc obj/cuda_support.x64.bc obj/syscall.x64.bc -o demo_bitcode_ptx.omp.bc
     
-    $CLANG -I$HSAINC -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode_ptx.omp.bc -Xclang -mlink-builtin-bitcode -Xclang detail/platform.ptx.bc -o demo_openmp_ptx -L/usr/local/cuda/lib64/ -lcudart_static -ldl -lrt -pthread && ./demo_openmp_ptx
+    $CLANG -I$HSAINC -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode_ptx.omp.bc -Xclang -mlink-builtin-bitcode -Xclang detail/platform.ptx.bc -o demo_openmp_ptx -L/usr/local/cuda/lib64/ -lcuda -lcudart_static -ldl -lrt -pthread && ./demo_openmp_ptx
 fi
 
 
