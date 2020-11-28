@@ -14,9 +14,11 @@ struct server_thread_state
   Operate op;
   Clear cl;
 
+  server_thread_state() {}
+
   server_thread_state(Server* server, HOSTRPC_ATOMIC(uint32_t) * control,
                       Operate op, Clear cl)
-      : control(control), server(server), op(op), cl(cl)
+      : server(server), control(control), op(op), cl(cl)
   {
   }
 

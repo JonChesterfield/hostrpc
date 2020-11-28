@@ -34,6 +34,16 @@ struct client_server_pair_t
   server_type server;
   storage_type storage;
 
+  HOSTRPC_ANNOTATE client_server_pair_t(const client_server_pair_t &) = delete;
+  HOSTRPC_ANNOTATE client_server_pair_t &operator=(
+      const client_server_pair_t &) = delete;
+
+  HOSTRPC_ANNOTATE client_server_pair_t(client_server_pair_t &&) = default;
+  HOSTRPC_ANNOTATE client_server_pair_t &operator=(client_server_pair_t &&) =
+      default;
+
+  HOSTRPC_ANNOTATE client_server_pair_t() {}
+
   HOSTRPC_ANNOTATE client_server_pair_t(SZ sz, AllocBuffer alloc_buffer,
                                         AllocInboxOutbox alloc_inbox_outbox,
                                         AllocLocal alloc_local,
@@ -44,7 +54,6 @@ struct client_server_pair_t
   }
 
   HOSTRPC_ANNOTATE ~client_server_pair_t() { storage.destroy(); }
-  HOSTRPC_ANNOTATE client_server_pair_t(const client_server_pair_t &) = delete;
 
   HOSTRPC_ANNOTATE bool valid() { return storage.valid(); }
   HOSTRPC_ANNOTATE client_counters client_counters()
