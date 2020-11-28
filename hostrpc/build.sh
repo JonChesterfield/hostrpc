@@ -100,7 +100,7 @@ CXX_X64="$CLANG -std=c++14 $COMMONFLAGS $X64FLAGS"
 CXX_GCN="$CLANG -std=c++14 $COMMONFLAGS $GCNFLAGS"
 
 
-CXXCL="$CLANG -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 -D__OPENCL__"
+CXXCL="$CLANG -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 -D__OPENCL__ -D__OPENCL_C_VERSION__=200"
 CXXCL_GCN="$CXXCL -emit-llvm -ffreestanding $AMDGPU"
 CXXCL_PTX="$CXXCL -emit-llvm -ffreestanding $NVGPU"
 
@@ -117,6 +117,16 @@ CXX_CUDA="$CLANG -O2 $COMMONFLAGS $XCUDA -I/usr/local/cuda/include -nocudalib"
 CXX_X64_LD="$CXX"
 CXX_GCN_LD="$CXX $GCNFLAGS"
 
+
+$CLANG $XOPENCL -C -E -P run_on_hsa.hpp -o run_on_hsa.ocl.x64.pre1
+$CXXCL -C -E -P run_on_hsa.hpp -o run_on_hsa.ocl.x64.pre2
+
+$CLANG $XOPENCL -C -E -P -nogpulib -target amdgcn-amd-amdhsa -mcpu=$GFX run_on_hsa.hpp -o run_on_hsa.ocl.gcn.pre1
+$CXXCL_GCN -C -E -P run_on_hsa.hpp -o run_on_hsa.ocl.gcn.pre2
+
+$CXX_GCN -C -E -P run_on_hsa.hpp -o run_on_hsa.cxx.gcn.pre
+
+exit
 
 # Code running on the host can link in host, hsa or cuda support library.
 # Fills in gaps in the cuda/hsa libs, implements allocators
