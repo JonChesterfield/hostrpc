@@ -201,10 +201,14 @@ $CXX_GCN run_on_hsa_example.cpp -c -o obj/run_on_hsa_example.cxx.gcn.bc
 $CXXCL_GCN run_on_hsa_example.cpp -c -o obj/run_on_hsa_example.ocl.gcn.bc
 $LINK obj/run_on_hsa_example.cxx.gcn.bc obj/run_on_hsa_example.ocl.gcn.bc -o obj/run_on_hsa_example.gcn.bc
 
-$CXX_X64 run_on_hsa_example.cpp -c -o obj/run_on_hsa_example.cxx.x64.bc
+$CXX_GCN_LD obj/run_on_hsa_example.gcn.bc -o lib/run_on_hsa_example.gcn.so
+
+$CXX_X64 -I$HSAINC run_on_hsa_example.cpp -c -o obj/run_on_hsa_example.cxx.x64.bc
 $CXX_X64 -I$HSAINC run_on_hsa.cpp -c -o obj/run_on_hsa.x64.bc
 
 $CXX $LDFLAGS obj/run_on_hsa_example.cxx.x64.bc obj/run_on_hsa.x64.bc obj/hsa_support.x64.bc -o run_on_hsa.exe
+
+./run_on_hsa.exe
 
 exit
 
