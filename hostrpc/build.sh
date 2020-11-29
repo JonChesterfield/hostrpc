@@ -117,17 +117,6 @@ CXX_CUDA="$CLANG -O2 $COMMONFLAGS $XCUDA -I/usr/local/cuda/include -nocudalib"
 CXX_X64_LD="$CXX"
 CXX_GCN_LD="$CXX $GCNFLAGS"
 
-
-$CLANG $XOPENCL -C -E -P run_on_hsa.hpp -o run_on_hsa.ocl.x64.pre1
-$CXXCL -C -E -P run_on_hsa.hpp -o run_on_hsa.ocl.x64.pre2
-
-$CLANG $XOPENCL -C -E -P -nogpulib -target amdgcn-amd-amdhsa -mcpu=$GFX run_on_hsa.hpp -o run_on_hsa.ocl.gcn.pre1
-$CXXCL_GCN -C -E -P run_on_hsa.hpp -o run_on_hsa.ocl.gcn.pre2
-
-$CXX_GCN -C -E -P run_on_hsa.hpp -o run_on_hsa.cxx.gcn.pre
-
-exit
-
 # Code running on the host can link in host, hsa or cuda support library.
 # Fills in gaps in the cuda/hsa libs, implements allocators
 
@@ -207,6 +196,17 @@ fi
 
 $CXX_X64 prototype/states.cpp -c -o prototype/states.x64.bc
 
+
+$CXX_GCN run_on_hsa_example.cpp -c -o obj/run_on_hsa_example.cxx.gcn.bc
+$CXXCL_GCN run_on_hsa_example.cpp -c -o obj/run_on_hsa_example.ocl.gcn.bc
+$LINK obj/run_on_hsa_example.cxx.gcn.bc obj/run_on_hsa_example.ocl.gcn.bc -o obj/run_on_hsa_example.gcn.bc
+
+$CXX_X64 run_on_hsa_example.cpp -c -o obj/run_on_hsa_example.cxx.x64.bc
+$CXX_X64 -I$HSAINC run_on_hsa.cpp -c -o obj/run_on_hsa.x64.bc
+
+$CXX $LDFLAGS obj/run_on_hsa_example.cxx.x64.bc obj/run_on_hsa.x64.bc obj/hsa_support.x64.bc -o run_on_hsa.exe
+
+exit
 
 if true; then
 # Sanity checks that the client and server compile successfully

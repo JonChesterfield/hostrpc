@@ -8,50 +8,70 @@
 // provided that source containing 'HOSTRPC_ENTRY_POINT(foo)'
 // is compiled as opencl and as c++, which are then linked
 
+// Call extern "C" void NAME(TYPE*); defined in amdgcn source from the host
+// from an instantiation of HOSTRPC_ENTRY_POINT(NAME, TYPE) compiled as
+// amdgcn ocl/cxx and on the host
+
 #include "detail/platform_detect.h"
 
-#if defined(__AMDGCN__)
-
-#define HOSTRPC_ENTRY_POINT(STR) \
-  HOSTRPC_OPENCL_PART(STR)       \
-  HOSTRPC_CXX_PART(STR)
-
+#define HOSTRPC_ENTRY_POINT(NAME, TYPE) \
+  /* void NAME(TYPE*); */               \
+  HOSTRPC_OPENCL_PART(NAME, TYPE)       \
+  HOSTRPC_CXX_GCN_PART(NAME, TYPE)      \
+  HOSTRPC_CXX_X64_PART(NAME, TYPE)
 #define HOSTRPC_CAT(X, Y) X##Y
 
-#if defined(__OPENCL_C_VERSION__)
-#define HOSTRPC_OPENCL_PART(STR)                            \
-  void HOSTRPC_CAT(cast_, STR)(void *);                     \
-  kernel void HOSTRPC_CAT(kernel_, STR)(__global void *arg) \
-  {                                                         \
-    known_function_name(arg);                               \
-  }
-#define HOSTRPC_CXX_PART(STR)
-#else
-#define HOSTRPC_OPENCL_PART(STR)
-#define HOSTRPC_CXX_PART(STR)                                     \
-  extern "C" void HOSTRPC_CAT(                                    \
-      cast_, STR)(__attribute__((address_space(1))) void *asargs) \
-  {                                                               \
-    void *args = (void *)asargs;                                  \
-    STR(args);                                                    \
-  }
+#if HOSTRPC_HOST
 
-#endif
+#include <stddef.h>
 
-HOSTRPC_ENTRY_POINT(some_name)
-
-#endif
-
-
-struct example_arg
+namespace hostrpc
 {
-  int x;
-  int r;
-};
-void example_call(example_arg*);
+void run_on_hsa(void *arg, size_t len, const char *name);
 
-HOSTRPC_ENTRY_POINT(example_call)
+template <typename T>
+void run_on_hsa_typed(T *arg, const char *name)
+{
+  run_on_hsa((void *)arg, sizeof(T), name);
+}
+}  // namespace hostrpc
 
+#define HOSTRPC_OPENCL_PART(NAME, TYPE)
+#define HOSTRPC_CXX_GCN_PART(NAME, TYPE)
+#define HOSTRPC_CXX_X64_PART(NAME, TYPE)                   \
+  extern "C" void NAME(TYPE *arg)                          \
+  {                                                        \
+    hostrpc::run_on_hsa_typed<TYPE>(arg, "kernel_" #NAME); \
+  }
 
+#else
+
+#if defined(__OPENCL_C_VERSION__)
+
+#define HOSTRPC_OPENCL_PART(NAME, TYPE)                       \
+  void HOSTRPC_CAT(cast_, NAME)(__global TYPE *);             \
+  kernel void HOSTRPC_CAT(kernel_, NAME)(__global TYPE * arg) \
+  {                                                           \
+    HOSTRPC_CAT(cast_, NAME)(arg);                            \
+  }
+#define HOSTRPC_CXX_GCN_PART(NAME, TYPE)
+#define HOSTRPC_CXX_X64_PART(NAME, TYPE)
+
+#else
+
+#define HOSTRPC_OPENCL_PART(NAME, TYPE)
+#define HOSTRPC_CXX_GCN_PART(NAME, TYPE)                            \
+  extern "C" void NAME(TYPE *);                                          \
+  extern "C" void HOSTRPC_CAT(                                      \
+      cast_, NAME)(__attribute__((address_space(1))) TYPE * asargs) \
+  {                                                                 \
+    TYPE *args = (TYPE *)asargs;                                    \
+    NAME(args);                                                     \
+  }
+#define HOSTRPC_CXX_X64_PART(NAME, TYPE)
+
+#endif
+
+#endif
 
 #endif
