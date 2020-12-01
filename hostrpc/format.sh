@@ -1,6 +1,6 @@
 #!/bin/bash
 
-for i in `find . -type f -iname "*.?pp" -a -not -iname "catch.*"`; do
+for i in `find . -type f -iname "*.?pp" -a -not -iname "catch.*" -a -not -iwholename "./detail/platform_detect.hpp"`; do
     echo "Formatting $i"
     clang-format -i $i
 done

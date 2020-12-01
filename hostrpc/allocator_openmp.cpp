@@ -48,6 +48,11 @@ __attribute__((weak)) HOSTRPC_ANNOTATE int memsetzero_gpu(void *, size_t)
   fprintf(stderr, "Called weak symbol: %s\n", __func__);
   return 1;
 }
+__attribute__((weak)) HOSTRPC_ANNOTATE void *device_ptr_from_host_ptr(void *)
+{
+  fprintf(stderr, "Called weak symbol: %s\n", __func__);
+  return nullptr;
+}
 }  // namespace cuda_impl
 
 namespace openmp_impl

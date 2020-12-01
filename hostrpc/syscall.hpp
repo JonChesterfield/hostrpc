@@ -11,19 +11,28 @@
 #include <stdio.h>
 #endif
 
+// TODO: Factor out the cuda/nvptx part
+#if !(DEMO_AMDGCN) && !(DEMO_NVPTX)
+#error "Missing macro"
+#endif
+
 namespace hostrpc
 {
 static const uint64_t no_op = 0;
 
 static const uint64_t syscall_op = 42;
-static const uint64_t allocate_op_hsa = 21;
+
+#if DEMO_NVPTX
 static const uint64_t allocate_op_cuda = 22;
-
-static const uint64_t free_op_hsa = 31;
 static const uint64_t free_op_cuda = 32;
-
 // as hsa is known to be a no-op
 static const uint64_t device_to_host_pointer_cuda = 35;
+#endif
+
+#if DEMO_AMDGCN
+static const uint64_t allocate_op_hsa = 21;
+static const uint64_t free_op_hsa = 31;
+#endif
 
 #if HOSTRPC_HOST
 // call syscall n on arguments ai, does not set errno
@@ -47,16 +56,7 @@ inline void syscall_on_cache_line(unsigned index, hostrpc::cacheline_t *line)
       return;
     }
 
-  if (line->element[0] == allocate_op_hsa)
-    {
-      uint64_t size = line->element[1];
-      fprintf(stderr, "Call allocate_shared_hsa\n");
-      void *res = hostrpc::allocator::hsa_impl::allocate_fine_grain(size);
-
-      fprintf(stderr, "Called allocate_shared -> %lu\n", (uint64_t)res);
-      line->element[0] = (uint64_t)res;
-      return;
-    }
+#if DEMO_NVPTX
 
   if (line->element[0] == allocate_op_cuda)
     {
@@ -69,17 +69,6 @@ inline void syscall_on_cache_line(unsigned index, hostrpc::cacheline_t *line)
       line->element[0] = (uint64_t)res;
       return;
     }
-
-  if (line->element[0] == free_op_hsa)
-    {
-      fprintf(stderr, "Call free_hsa\n");
-      void *ptr = (void *)line->element[1];
-      uint64_t size = line->element[2];
-      line->element[0] = hostrpc::allocator::hsa_impl::deallocate(ptr);
-
-      return;
-    }
-
   if (line->element[0] == free_op_cuda)
     {
       fprintf(stderr, "Call free_cuda\n");
@@ -96,6 +85,30 @@ inline void syscall_on_cache_line(unsigned index, hostrpc::cacheline_t *line)
       void *host = hostrpc::allocator::cuda_impl::host_ptr_from_device_ptr(ptr);
       line->element[0] = (uint64_t)host;
     }
+
+#endif
+
+#if DEMO_AMDGCN
+  if (line->element[0] == free_op_hsa)
+    {
+      fprintf(stderr, "Call free_hsa\n");
+      void *ptr = (void *)line->element[1];
+      uint64_t size = line->element[2];
+      line->element[0] = hostrpc::allocator::hsa_impl::deallocate(ptr);
+
+      return;
+    }
+  if (line->element[0] == allocate_op_hsa)
+    {
+      uint64_t size = line->element[1];
+      fprintf(stderr, "Call allocate_shared_hsa\n");
+      void *res = hostrpc::allocator::hsa_impl::allocate_fine_grain(size);
+
+      fprintf(stderr, "Called allocate_shared -> %lu\n", (uint64_t)res);
+      line->element[0] = (uint64_t)res;
+      return;
+    }
+#endif
 
   if (line->element[0] == syscall_op)
     {

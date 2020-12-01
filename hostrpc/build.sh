@@ -210,8 +210,6 @@ $CXX $LDFLAGS obj/run_on_hsa_example.cxx.x64.bc obj/run_on_hsa.x64.bc obj/hsa_su
 
 ./run_on_hsa.exe
 
-exit
-
 if true; then
 # Sanity checks that the client and server compile successfully
 # and provide an example of the generated IR

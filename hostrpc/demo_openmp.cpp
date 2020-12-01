@@ -225,10 +225,14 @@ int main()
         buf[2] = '\n';
         buf[3] = '\0';
 
-        tmp[0] = hostrpc::device_to_host_pointer_cuda;
-        tmp[1] = (uint64_t)buf;
-        inv(tmp);
+#if DEMO_AMDGCN
         uint64_t host_buf = tmp[0];
+#else
+    tmp[0] = hostrpc::device_to_host_pointer_cuda;
+    tmp[1] = (uint64_t)buf;
+    inv(tmp);
+    uint64_t host_buf = tmp[0];
+#endif
 
         tmp[0] = hostrpc::syscall_op;
         tmp[1] = __NR_write;

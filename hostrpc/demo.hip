@@ -1,3 +1,5 @@
+#define DEMO_AMDGCN 1
+
 #include "hip/hip_runtime.h"
 
 #include "detail/client_impl.hpp"

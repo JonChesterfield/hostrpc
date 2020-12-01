@@ -1,3 +1,5 @@
+#define DEMO_AMDGCN 1
+#define DEMO_NVPTX 1
 #include "syscall.hpp"
 
 namespace hostrpc
