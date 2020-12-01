@@ -1,6 +1,6 @@
 #include "base_types.hpp"
 #include "catch.hpp"
-#include "detail/platform_detect.h"
+#include "detail/platform_detect.hpp"
 
 #include <cstring>
 #include <thread>

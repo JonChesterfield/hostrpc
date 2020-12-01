@@ -3,7 +3,7 @@
 
 #include "common.hpp"
 #include "counters.hpp"
-#include "platform_detect.h"
+#include "platform_detect.hpp"
 
 // Intend to have call and service working across gcn and x86
 // The normal terminology is:

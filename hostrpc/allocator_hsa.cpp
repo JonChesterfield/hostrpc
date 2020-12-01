@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <vector>
 
-#include "detail/platform_detect.h"
+#include "detail/platform_detect.hpp"
 #if !HOSTRPC_HOST
 #error "allocator_hsa relies on the hsa host library"
 #endif

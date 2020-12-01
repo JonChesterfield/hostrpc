@@ -9,7 +9,7 @@
 // 'foo' error: __host__ __device__ function 'foo' cannot overload __host__
 // function 'foo'
 
-#include "../detail/platform_detect.h"
+#include "../detail/platform_detect.hpp"
 
 #if defined(__OPENCL_C_VERSION__)
 #if defined(__HIP__) || defined(__CUDA__)

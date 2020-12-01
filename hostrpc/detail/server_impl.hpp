@@ -3,7 +3,7 @@
 
 #include "common.hpp"
 #include "counters.hpp"
-#include "platform_detect.h"
+#include "platform_detect.hpp"
 
 namespace hostrpc
 {

@@ -2,7 +2,7 @@
 #define HOSTCALL_HPP_INCLUDED
 
 #include "base_types.hpp"
-#include "detail/platform_detect.h"
+#include "detail/platform_detect.hpp"
 
 #include <stddef.h>
 #include <stdint.h>

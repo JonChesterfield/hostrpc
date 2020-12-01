@@ -1,6 +1,6 @@
 #include "allocator.hpp"
 
-#include "detail/platform_detect.h"
+#include "detail/platform_detect.hpp"
 #if !HOSTRPC_HOST
 #error "allocator_host_libc relies on the host libc library"
 #endif

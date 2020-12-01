@@ -1,5 +1,5 @@
 #include "x64_gcn_debug.hpp"
-#include "detail/platform_detect.h"
+#include "detail/platform_detect.hpp"
 #include "x64_gcn_type.hpp"
 
 using SZ = hostrpc::size_runtime;

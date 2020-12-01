@@ -13,7 +13,7 @@ kernel void __device_start(__global void *args) { __device_start_cast(args); }
 #include "base_types.hpp"
 #include "detail/client_impl.hpp"
 #include "detail/platform.hpp"
-#include "detail/platform_detect.h"
+#include "detail/platform_detect.hpp"
 #include "detail/server_impl.hpp"
 #include "timer.hpp"
 #include "x64_gcn_type.hpp"

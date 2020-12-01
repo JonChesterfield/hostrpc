@@ -1,4 +1,4 @@
-#include "platform_detect.h"
+#include "platform_detect.hpp"
 
 #define NOISY 0
 

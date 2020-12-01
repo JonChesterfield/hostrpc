@@ -1,5 +1,5 @@
 #include "base_types.hpp"
-#include "detail/platform_detect.h"
+#include "detail/platform_detect.hpp"
 #include "x64_ptx_type.hpp"
 
 // Implementation api. This construct is a singleton.

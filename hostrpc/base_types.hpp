@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "detail/platform_detect.h"
+#include "detail/platform_detect.hpp"
 
 #if HOSTRPC_HAVE_STDIO
 #include <stdio.h>

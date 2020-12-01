@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #include "../base_types.hpp"  // page_t
-#include "platform_detect.h"
+#include "platform_detect.hpp"
 
 // todo: this should all be under namespace hostrpc
 

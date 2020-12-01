@@ -1,5 +1,5 @@
-#ifndef PLATFORM_DETECT_H_INCLUDED
-#define PLATFORM_DETECT_H_INCLUDED
+#ifndef PLATFORM_DETECT_HPP_INCLUDED
+#define PLATFORM_DETECT_HPP_INCLUDED
 
 #if defined(__NVPTX__) && defined (__AMDGCN__)
 #error "NVPTX and AMDGCN both defined"

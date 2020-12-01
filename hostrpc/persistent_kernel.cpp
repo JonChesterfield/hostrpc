@@ -1,7 +1,7 @@
 #define VISIBLE __attribute__((visibility("default")))
 
 #include "cxa_atexit.hpp"
-#include "detail/platform_detect.h"
+#include "detail/platform_detect.hpp"
 
 #if !defined __OPENCL__
 #if defined(__AMDGCN__)
