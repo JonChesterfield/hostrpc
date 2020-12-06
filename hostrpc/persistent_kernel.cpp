@@ -124,27 +124,6 @@ struct kernel_args
 __attribute__((loader_uninitialized))
 VISIBLE hostrpc::gcn_x64_type::server_type server_instance[1];
 
-uint32_t cas_fetch_dec(HOSTRPC_ATOMIC(uint32_t) * addr)
-{
-  uint32_t current =
-      platform::atomic_load<uint32_t, __ATOMIC_RELAXED,
-                            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(addr);
-  while (1)
-    {
-      uint32_t replace = current - 1;
-
-      uint32_t loaded;
-      bool r = platform::atomic_compare_exchange_weak<
-          uint32_t, __ATOMIC_ACQ_REL, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
-          addr, current, replace, &loaded);
-
-      if (r)
-        {
-          return current;
-        }
-    }
-}
-
 extern "C" void __device_persistent_kernel_call(HOSTRPC_ATOMIC(uint32_t) *
                                                     control,
                                                 void *application_args)
@@ -182,10 +161,15 @@ extern "C" void __device_persistent_kernel_call(HOSTRPC_ATOMIC(uint32_t) *
 
   if (server_instance[0].rpc_handle(op, cl, &location_arg))
     {
-      uint32_t todo = platform::critical<uint32_t>(
-          [&]() { return cas_fetch_dec(control); });
-
-      if (todo == 1)
+      // did work
+    }
+  else
+    {
+      // May have been no work to do because we're shutting down
+      uint64_t ctrl =
+          platform::atomic_load<uint32_t, __ATOMIC_RELAXED,
+                                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(control);
+      if (ctrl == 0)
         {
           return;
         }
@@ -312,7 +296,7 @@ TEST_CASE("persistent_kernel")
     const uint32_t init_control = 32;
     platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
                            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
-        example.control, init_control);
+        example.control, 1);
     platform::fence_release();
 
     std::vector<launch_t<kernel_args>> l;
@@ -320,7 +304,7 @@ TEST_CASE("persistent_kernel")
     // illegal instruction
     // HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION
     // memory access fault
-    for (unsigned r = 0; r < 1; r++)
+    for (unsigned r = 0; r < 4; r++)
       {
         hsa_signal_t sig = {.handle = 0};
 
@@ -385,24 +369,12 @@ TEST_CASE("persistent_kernel")
                 tmp.cacheline[0].element[0]);
       }
 
-    uint32_t ld = init_control + 1;
-    while (ld != 0)
-      {
-        platform::fence_acquire();
+    // Client calls finished, tell server to wind down
+    platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
+                           __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+        example.control, 0);
 
-        uint32_t nld =
-            platform::atomic_load<uint32_t, __ATOMIC_ACQUIRE,
-                                  __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
-                example.control);
-
-        if (nld != ld)
-          {
-            ld = nld;
-            fprintf(stderr, "watching control, ld = %u\n", ld);
-          }
-      }
-
-    fprintf(stderr, "Instance set control to non-zero\n");
+    fprintf(stderr, "Server told to wind down\n");
 
     {
       auto c = hsa::allocate(fine_grained_region,
@@ -426,7 +398,16 @@ TEST_CASE("persistent_kernel")
     p.server.get_counters().dump();
     p.client.get_counters().dump();
 
-    // hsa_queue_destroy(queue); // segv, probably means better counting needed
+    // the wait() on the launch_t does nothing because there is no completion
+    // signal. This is therefore racy - need the server instance to report that
+    // it knows it is shutting down and will not read any memory, or possibly
+    // further - might not be able to tear down the queue before we know the
+    // kernel has finished
+    sleep(1);
+
+    l.clear();
+    hsa_queue_destroy(
+        queue);  // segv reasing packet->completion_signal in ~launch_t
   }
 }
 
