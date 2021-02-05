@@ -95,21 +95,19 @@ void bootstrap()
 
 #if HOSTRPC_AMDGCN
 
-// On the stack, this hits an infinite recursion in instcombine
-// Probably due to the address spaces
-// Ignore that for now, as the buffer can be elided later anyway
-alignas(64) __attribute__((address_space(3)))
-__attribute__((loader_uninitialized)) static unsigned char buf[64];
-
 __attribute__((always_inline)) int hsa_spawn_with_uuid(uint32_t UUID)
 {
   __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();
-  __builtin_memcpy(&buf, (char*)p, 64);
+  // __builtin_memcpy(&buf, (char*)p, 64);
 
-  uint64_t addr = UUID;  // derive from UUID somehow
-  __builtin_memcpy((char*)buf + 40, &addr, 8);
-
-  enqueue_dispatch((unsigned char*)buf);
+  auto func = [=](unsigned char * packet)
+              {
+                uint64_t addr = UUID;  // derive from UUID somehow
+                __builtin_memcpy(packet + 40, &addr, 8);
+                
+              };
+  
+  enqueue_dispatch(func, (const unsigned char*)p);
   return 0;  // succeeds
 }
 
