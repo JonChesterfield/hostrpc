@@ -117,6 +117,40 @@ CXX_CUDA="$CLANG -O2 $COMMONFLAGS $XCUDA -I/usr/local/cuda/include -nocudalib"
 CXX_X64_LD="$CXX"
 CXX_GCN_LD="$CXX $GCNFLAGS"
 
+if [ ! -f obj/catch.o ]; then
+    time $CXX -O3 catch.cpp -c -o obj/catch.o
+fi
+
+
+$CXX_GCN threads.cpp -O3 -c -o threads.gcn.bc
+$CXXCL_GCN threads_bootstrap.cpp -O3 -c -o threads_bootstrap.gcn.bc
+
+
+$LINK threads.gcn.bc threads_bootstrap.gcn.bc | $OPT -O2 -o obj/merged_threads_bootstrap.gcn.bc
+$DIS obj/merged_threads_bootstrap.gcn.bc
+
+$CXX_GCN_LD obj/merged_threads_bootstrap.gcn.bc -o threads_bootstrap.gcn.so
+
+
+$CXX_X64 threads.cpp -O3 -c -o threads.x64.bc
+$CXX_X64 threads_bootstrap.cpp -I$HSAINC -O3 -c -o threads_bootstrap.x64.bc
+$CXX_X64_LD threads.x64.bc obj/catch.o -pthread -o threads.x64.exe
+
+
+$OPT -strip-debug threads.x64.bc -S -o threads.x64.ll
+$OPT -strip-debug threads.gcn.bc -S -o threads.gcn.ll
+$OPT -strip-debug threads_bootstrap.x64.bc -S -o threads_bootstrap.x64.ll
+$OPT -strip-debug threads_bootstrap.gcn.bc -S -o threads_bootstrap.gcn.ll
+
+./threads.x64.exe
+
+
+$CXX_X64_LD threads_bootstrap.x64.bc $LDFLAGS -o threads_bootstrap.x64.exe
+# ./threads_bootstrap.x64.exe crashes the vega902 gui at present
+
+
+exit 0
+
 # Code running on the host can link in host, hsa or cuda support library.
 # Fills in gaps in the cuda/hsa libs, implements allocators
 
@@ -187,10 +221,6 @@ if (($have_nvptx)); then
  $CXX_PTX loader/opencl_loader_cast.cpp -c -o loader/opencl_loader_cast.ptx.bc
 
  $CLANG nvptx_loader.cpp obj/cuda_support.x64.bc --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -lcudart -pthread -o ../nvptx_loader.exe
-fi
-
-if [ ! -f obj/catch.o ]; then
-    time $CXX -O3 catch.cpp -c -o obj/catch.o
 fi
 
 
