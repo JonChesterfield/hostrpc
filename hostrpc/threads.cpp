@@ -122,7 +122,13 @@ __attribute__((always_inline)) extern "C" void hsa_start_routine()
   uint64_t addr;
   __builtin_memcpy(&addr, (char*)p + 40, 8);
 
-  uint32_t uuid = addr;  // derive from addr somehow
+  uint64_t res2;
+  __builtin_memcpy(&res2, (char*)p + 48, 8);
+
+  if (res2 == UINT64_MAX-2) {
+    __builtin_trap();
+  }
+  uint32_t uuid = res2; // addr;  // derive from addr somehow
 
   const unsigned rep = 1;
 

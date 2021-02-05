@@ -9,6 +9,8 @@
 #include "hostcall_hsa.hpp"
 #include "raiifile.hpp"
 
+#include "launch.hpp"
+
 namespace
 {
 std::vector<size_t> offsets_into_strtab(int argc, char **argv)
@@ -49,23 +51,6 @@ uint64_t find_entry_address(hsa::executable &ex)
   return hsa::symbol_get_info_kernel_object(symbol);
 }
 
-void packet_store_release(uint32_t *packet, uint16_t header, uint16_t rest)
-{
-  __atomic_store_n(packet, header | (rest << 16), __ATOMIC_RELEASE);
-}
-
-uint16_t header(hsa_packet_type_t type)
-{
-  uint16_t header = type << HSA_PACKET_HEADER_TYPE;
-  header |= HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_ACQUIRE_FENCE_SCOPE;
-  header |= HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_RELEASE_FENCE_SCOPE;
-  return header;
-}
-
-uint16_t kernel_dispatch_setup()
-{
-  return 1 << HSA_KERNEL_DISPATCH_PACKET_SETUP_DIMENSIONS;
-}
 }  // namespace
 
 static int main_with_hsa(int argc, char **argv)

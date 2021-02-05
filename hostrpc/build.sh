@@ -177,7 +177,7 @@ $OPT -strip-debug threads_bootstrap.gcn.bc -S -o threads_bootstrap.gcn.ll
 
 
 $CXX_X64_LD threads_bootstrap.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o threads_bootstrap.x64.exe
-# ./threads_bootstrap.x64.exe crashes the vega902 gui at present
+./threads_bootstrap.x64.exe crashes the vega902 gui at present
 
 exit 0
 

@@ -74,6 +74,7 @@ inline void syscall_on_cache_line(unsigned index, hostrpc::cacheline_t *line)
       fprintf(stderr, "Call free_cuda\n");
       void *ptr = (void *)line->element[1];
       uint64_t size = line->element[2];
+      (void)size;
       void *host = hostrpc::allocator::cuda_impl::host_ptr_from_device_ptr(ptr);
       line->element[0] = hostrpc::allocator::cuda_impl::deallocate_shared(host);
       return;
@@ -94,6 +95,7 @@ inline void syscall_on_cache_line(unsigned index, hostrpc::cacheline_t *line)
       fprintf(stderr, "Call free_hsa\n");
       void *ptr = (void *)line->element[1];
       uint64_t size = line->element[2];
+      (void)size;
       line->element[0] = hostrpc::allocator::hsa_impl::deallocate(ptr);
 
       return;
