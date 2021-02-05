@@ -42,6 +42,16 @@ HOSTRPC_ANNOTATE T atomic_fetch_add(
 }
 
 template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE T atomic_fetch_sub(
+    HOSTRPC_PLATFORM_ATOMIC_ADDRSPACE_ATTRIBUTE HOSTRPC_ATOMIC(T) * addr,
+    T value)
+{
+  static_assert(
+      platform::detail::atomic_params_readmodifywrite<memorder, scope>(), "");
+  return __opencl_atomic_fetch_sub(addr, value, memorder, scope);
+}
+
+template <typename T, size_t memorder, size_t scope>
 HOSTRPC_ANNOTATE T atomic_fetch_and(
     HOSTRPC_PLATFORM_ATOMIC_ADDRSPACE_ATTRIBUTE HOSTRPC_ATOMIC(T) * addr,
     T value)

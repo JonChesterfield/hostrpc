@@ -131,6 +131,7 @@ namespace detail
 
 #define HOSTRPC_STAMP_FETCH_OPS(TYPE)                                 \
   HOSTRPC_STAMP_FETCH(TYPE, fetch_add)                                \
+  HOSTRPC_STAMP_FETCH(TYPE, fetch_sub)                                \
   HOSTRPC_STAMP_FETCH(TYPE, fetch_and)                                \
   HOSTRPC_STAMP_FETCH(TYPE, fetch_or)                                 \
   DEVICE bool atomic_compare_exchange_weak_relaxed(                   \

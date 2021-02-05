@@ -83,6 +83,9 @@ template <typename T, size_t memorder, size_t scope>
 HOSTRPC_ANNOTATE T atomic_fetch_add(HOSTRPC_ATOMIC(T) *, T);
 
 template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE T atomic_fetch_sub(HOSTRPC_ATOMIC(T) *, T);
+
+template <typename T, size_t memorder, size_t scope>
 HOSTRPC_ANNOTATE T atomic_fetch_and(HOSTRPC_ATOMIC(T) *, T);
 
 template <typename T, size_t memorder, size_t scope>
@@ -528,6 +531,8 @@ namespace detail
 #define HOSTRPC_STAMP_FETCH_OPS(TYPE)                                         \
   HOSTRPC_ANNOTATE TYPE atomic_fetch_add_relaxed(HOSTRPC_ATOMIC(TYPE) * addr, \
                                                  TYPE value);                 \
+  HOSTRPC_ANNOTATE TYPE atomic_fetch_sub_relaxed(HOSTRPC_ATOMIC(TYPE) * addr, \
+                                                 TYPE value);                 \
   HOSTRPC_ANNOTATE TYPE atomic_fetch_and_relaxed(HOSTRPC_ATOMIC(TYPE) * addr, \
                                                  TYPE value);                 \
   HOSTRPC_ANNOTATE TYPE atomic_fetch_or_relaxed(HOSTRPC_ATOMIC(TYPE) * addr,  \
@@ -599,6 +604,15 @@ HOSTRPC_ANNOTATE T atomic_fetch_add(HOSTRPC_ATOMIC(T) * addr, T value)
   static_assert(
       platform::detail::atomic_params_readmodifywrite<memorder, scope>(), "");
   return detail::atomic_fetch_op<T, detail::atomic_fetch_add_relaxed, memorder,
+                                 scope>(addr, value);
+}
+
+template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE T atomic_fetch_sub(HOSTRPC_ATOMIC(T) * addr, T value)
+{
+  static_assert(
+      platform::detail::atomic_params_readmodifywrite<memorder, scope>(), "");
+  return detail::atomic_fetch_op<T, detail::atomic_fetch_sub_relaxed, memorder,
                                  scope>(addr, value);
 }
 
@@ -736,6 +750,12 @@ template <typename T, size_t memorder, size_t scope>
 HOSTRPC_ANNOTATE inline T atomic_fetch_add(HOSTRPC_ATOMIC(T) * a, T v)
 {
   return HOSTRPC_IMPL_NS::atomic_fetch_add<T, memorder, scope>(a, v);
+}
+
+template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE inline T atomic_fetch_sub(HOSTRPC_ATOMIC(T) * a, T v)
+{
+  return HOSTRPC_IMPL_NS::atomic_fetch_sub<T, memorder, scope>(a, v);
 }
 
 template <typename T, size_t memorder, size_t scope>
