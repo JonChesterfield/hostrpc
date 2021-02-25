@@ -125,27 +125,28 @@ __attribute__((always_inline)) extern "C" void hsa_bootstrap_routine(void)
   unsigned char* kernarg;
   __builtin_memcpy(&kernarg, (char*)p + 40, 8);
 
-  __attribute__((address_space(4))) void* ks = __builtin_amdgcn_kernarg_segment_ptr();
+  __attribute__((address_space(4))) void* ks =
+      __builtin_amdgcn_kernarg_segment_ptr();
   assert(kernarg == (unsigned char*)ks);
 
-  uint32_t UUID = instance.allocate(); // should be 0, isn't
+  uint32_t UUID = instance.allocate();
+  assert(UUID == 0);  // not presently called while threads are already running,
+                      // but could be
+  if (UUID != 0)
+    {
+      instance.deallocate();
+      return;
+    }
 
   // Inline argument used to set initial number of threads
   uint64_t res2;
   __builtin_memcpy(&res2, get_reserved_addr(), 8);
   instance.set_requested((uint32_t)res2);
 
-  auto func = [=](unsigned char* packet) {
-    uint64_t addr = UUID;  // strictly, a no-op
-    addr = 0;
-    __builtin_memcpy(packet + 40, &addr, 8);
-  };
-
   // Might need a fence here for new kernel to see the alloc result
 
-
   // This reports the packet is malformed
-  enqueue_dispatch(func, kernarg);
+  enqueue_dispatch([](unsigned char*) {}, kernarg);
 }
 
 __attribute__((always_inline)) extern "C" void hsa_set_requested()

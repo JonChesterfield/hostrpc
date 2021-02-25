@@ -125,7 +125,7 @@ void run_threads_bootstrap(hsa::executable &ex, hsa_agent_t kernel_agent)
     }
 
   // Sanity check we can launch the toplevel, it'll immediately return at present
-  {
+  if (0) {
     int rc = launch_kernel(ex,
                            queue,
                            "__device_threads_toplevel.kd",
