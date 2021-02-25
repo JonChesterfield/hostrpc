@@ -71,21 +71,24 @@ struct ty
     return true;
   }
 
- private:
+  // private:
   HOSTRPC_ATOMIC(uint32_t) live = 0;
   HOSTRPC_ATOMIC(uint32_t) req = 0;
 
-public:
   uint32_t allocate()
   {
-    return platform::atomic_fetch_add<uint32_t, __ATOMIC_ACQ_REL,
-                                      __OPENCL_MEMORY_SCOPE_DEVICE>(&live, 1);
+    return platform::critical<uint32_t>([&]() {
+      return platform::atomic_fetch_add<uint32_t, __ATOMIC_ACQ_REL,
+                                        __OPENCL_MEMORY_SCOPE_DEVICE>(&live, 1);
+    });
   }
 
   void deallocate()
   {
-    platform::atomic_fetch_sub<uint32_t, __ATOMIC_RELAXED,
-                               __OPENCL_MEMORY_SCOPE_DEVICE>(&live, 1);
+    platform::critical<uint32_t>([&]() {
+      return platform::atomic_fetch_sub<uint32_t, __ATOMIC_RELAXED,
+                                        __OPENCL_MEMORY_SCOPE_DEVICE>(&live, 1);
+    });
   }
 };
 
