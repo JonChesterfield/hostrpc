@@ -96,7 +96,6 @@ inline size_t hardware_doorbell()
 }
 }  // namespace offset
 
-
 template <typename F>
 inline void enqueue_dispatch(F func, const unsigned char *src)
 {
@@ -154,12 +153,12 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
 
       const uint32_t mask = size - 1;
 
- unsigned     char *base_address;
+      unsigned char *base_address;
       __builtin_memcpy(&base_address,
                        (char *)my_queue + offset::queue_base_address(),
                        sizeof(void *));
 
-unsigned      char *packet = (base_address) + packet_size * (packet_id & mask);
+      unsigned char *packet = (base_address) + packet_size * (packet_id & mask);
 
 #if (__HAVE_ROCR_HEADERS)
       static_assert(packet_size == sizeof(hsa_kernel_dispatch_packet_t), "");
@@ -168,11 +167,10 @@ unsigned      char *packet = (base_address) + packet_size * (packet_id & mask);
                                 (packet_id & mask)));
 #endif
 
-      
       __builtin_memcpy(packet, src, packet_size);
 
       func(packet);
-      
+
       using header_type =
           __attribute__((address_space(1))) HOSTRPC_ATOMIC(uint32_t);
 
@@ -218,10 +216,9 @@ unsigned      char *packet = (base_address) + packet_size * (packet_id & mask);
 
 inline void enqueue_dispatch(const unsigned char *src)
 {
-  auto F = [](unsigned char*/*packet*/) {};
+  auto F = [](unsigned char * /*packet*/) {};
   enqueue_dispatch(F, src);
 }
-
 
 #endif
 #endif

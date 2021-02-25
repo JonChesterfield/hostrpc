@@ -63,6 +63,7 @@ struct ty
 
     if (alive() < requested())
       {
+        // Could call spawn multiple times here
         spawn(spawn_with_uuid);
       }
 
@@ -74,6 +75,7 @@ struct ty
   HOSTRPC_ATOMIC(uint32_t) live = 0;
   HOSTRPC_ATOMIC(uint32_t) req = 0;
 
+public:
   uint32_t allocate()
   {
     return platform::atomic_fetch_add<uint32_t, __ATOMIC_ACQ_REL,

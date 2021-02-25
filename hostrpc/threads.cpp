@@ -97,47 +97,80 @@ void bootstrap()
 
 __attribute__((always_inline)) int hsa_spawn_with_uuid(uint32_t UUID)
 {
+  // Needs to be run from a kernel which runs hsa_start_routine as relaunches
+  // self
   __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();
-  // __builtin_memcpy(&buf, (char*)p, 64);
+  auto func = [=](unsigned char* packet) {
+    uint64_t addr = UUID;  // derive from UUID somehow
+    __builtin_memcpy(packet + 40, &addr, 8);
+  };
 
-  auto func = [=](unsigned char * packet)
-              {
-                uint64_t addr = UUID;  // derive from UUID somehow
-                __builtin_memcpy(packet + 40, &addr, 8);
-                
-              };
-  
+  // copies from p, then calls func
   enqueue_dispatch(func, (const unsigned char*)p);
   return 0;  // succeeds
 }
 
 // extern C as called from opencl
 // as __device_threads_bootstrap(__global char*)
-__attribute__((always_inline)) extern "C" void hsa_start_routine()
+
+__attribute__((always_inline)) static char* get_reserved_addr()
 {
   __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();
-  // p is a hsa_kernel_dispatch_packet_t, which contains a kernarg address at
-  // offset 40 required to be 16 byte aligned according to spec. Probably costs
-  // ~ 16 pages, maybe choose a better encoding.
-  uint64_t addr;
-  __builtin_memcpy(&addr, (char*)p + 40, 8);
+  return (char*)p + 48;
+}
 
+__attribute__((always_inline)) extern "C" void hsa_bootstrap_routine(void)
+{
+  __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();
+  unsigned char* kernarg;
+  __builtin_memcpy(&kernarg, (char*)p + 40, 8);
+
+  __attribute__((address_space(4))) void* ks = __builtin_amdgcn_kernarg_segment_ptr();
+  assert(kernarg == (unsigned char*)ks);
+
+  uint32_t UUID = instance.allocate(); // should be 0, isn't
+
+  // Inline argument used to set initial number of threads
   uint64_t res2;
-  __builtin_memcpy(&res2, (char*)p + 48, 8);
+  __builtin_memcpy(&res2, get_reserved_addr(), 8);
+  instance.set_requested((uint32_t)res2);
 
-  if (res2 == UINT64_MAX-2) {
-    __builtin_trap();
-  }
-  uint32_t uuid = res2; // addr;  // derive from addr somehow
+  auto func = [=](unsigned char* packet) {
+    uint64_t addr = UUID;  // strictly, a no-op
+    addr = 0;
+    __builtin_memcpy(packet + 40, &addr, 8);
+  };
 
-  const unsigned rep = 1;
+  // Might need a fence here for new kernel to see the alloc result
 
-  for (unsigned r = 0; r < rep; r++)
+
+  // This reports the packet is malformed
+  enqueue_dispatch(func, kernarg);
+}
+
+__attribute__((always_inline)) extern "C" void hsa_set_requested()
+{
+  // Requested number of threads in argument field
+  uint64_t res2;
+  __builtin_memcpy(&res2, get_reserved_addr(), 8);
+  instance.set_requested((uint32_t)res2);
+
+  // Would be useful to launch the top level kernel here, so as to make
+  // sure an instance is running. To make that work, would need to pass
+  // the 64 byte packet to run in the kernarg
+}
+
+__attribute__((always_inline)) extern "C" void hsa_toplevel()
+{
+  // Read my uuid argument from reserved field
+  uint64_t res2;
+  __builtin_memcpy(&res2, get_reserved_addr(), 8);
+  uint32_t uuid = res2;
+
+  if (!instance.innerloop(toimpl, hsa_spawn_with_uuid, uuid))
     {
-      if (!instance.innerloop(toimpl, hsa_spawn_with_uuid, uuid))
-        {
-          return;
-        }
+      // uuid exceeds requested, don't reschedule self
+      return;
     }
 
   enqueue_self();
