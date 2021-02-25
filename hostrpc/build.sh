@@ -177,9 +177,7 @@ $OPT -strip-debug threads_bootstrap.gcn.bc -S -o threads_bootstrap.gcn.ll
 
 
 $CXX_X64_LD threads_bootstrap.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o threads_bootstrap.x64.exe
-./threads_bootstrap.x64.exe crashes the vega902 gui at present
-
-exit 0
+# ./threads_bootstrap.x64.exe crashes the vega902 gui at present
 
 
 
@@ -338,7 +336,8 @@ if (($have_amdgcn)); then
     # internal hook -mlink-builtin-bitcode that can be used to the same end effect
     $LINK obj/hsa_support.x64.bc obj/syscall.x64.bc -o obj/demo.hip.link.x64.bc
     
-    $CLANG -I$HSAINC -std=c++11 -x hip demo.hip -o demo --offload-arch=gfx906 -Xclang -mlink-builtin-bitcode -Xclang obj/demo.hip.link.x64.bc -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 -L$HSALIBDIR -lhsa-runtime64 -Wl,-rpath=$HSALIBDIR -pthread -ldl && ./demo
+    $CLANG -I$HSAINC -std=c++11 -x hip demo.hip -o demo --offload-arch=gfx906 -Xclang -mlink-builtin-bitcode -Xclang obj/demo.hip.link.x64.bc -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 -L$HSALIBDIR -lhsa-runtime64 -Wl,-rpath=$HSALIBDIR -pthread -ldl
+    # ./demo hsa runtime presently segfaults in hip's library
 fi
 
 $CXX_PTX nvptx_main.cpp -ffreestanding -c -o nvptx_main.ptx.bc

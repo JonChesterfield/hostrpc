@@ -35,7 +35,6 @@ namespace cuda_impl
 __attribute__((weak)) HOSTRPC_ANNOTATE void *allocate_shared(size_t)
 {
   fprintf(stderr, "Called weak symbol: %s\n", __func__);
-
   return nullptr;
 }
 __attribute__((weak)) HOSTRPC_ANNOTATE int deallocate_shared(void *)
@@ -49,6 +48,11 @@ __attribute__((weak)) HOSTRPC_ANNOTATE int memsetzero_gpu(void *, size_t)
   return 1;
 }
 __attribute__((weak)) HOSTRPC_ANNOTATE void *device_ptr_from_host_ptr(void *)
+{
+  fprintf(stderr, "Called weak symbol: %s\n", __func__);
+  return nullptr;
+}
+__attribute__((weak)) HOSTRPC_ANNOTATE void *host_ptr_from_device_ptr(void *)
 {
   fprintf(stderr, "Called weak symbol: %s\n", __func__);
   return nullptr;
