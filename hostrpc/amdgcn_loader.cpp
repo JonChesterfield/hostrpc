@@ -286,9 +286,9 @@ static int main_with_hsa(int argc, char **argv)
       exit(1);
     }
 
-  packet_store_release((uint32_t *)packet,
-                       header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
-                       kernel_dispatch_setup());
+  hsa::packet_store_release((uint32_t *)packet,
+                            hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
+                            hsa::kernel_dispatch_setup());
 
   hsa_signal_store_release(queue->doorbell_signal, packet_id);
 

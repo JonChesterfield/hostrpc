@@ -11,25 +11,6 @@
 
 namespace
 {
-inline void packet_store_release(uint32_t *packet, uint16_t header,
-                                 uint16_t rest)
-{
-  __atomic_store_n(packet, header | (rest << 16), __ATOMIC_RELEASE);
-}
-
-inline uint16_t header(hsa_packet_type_t type)
-{
-  uint16_t header = type << HSA_PACKET_HEADER_TYPE;
-  header |= HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_ACQUIRE_FENCE_SCOPE;
-  header |= HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_RELEASE_FENCE_SCOPE;
-  return header;
-}
-
-inline uint16_t kernel_dispatch_setup()
-{
-  return 1 << HSA_KERNEL_DISPATCH_PACKET_SETUP_DIMENSIONS;
-}
-
 template <typename T>
 struct with_implicit_args
 {
@@ -148,9 +129,9 @@ struct launch_t
 
     memcpy(&packet->completion_signal, &completion, sizeof(hsa_signal_t));
 
-    packet_store_release((uint32_t *)packet,
-                         header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
-                         kernel_dispatch_setup());
+    hsa::    packet_store_release((uint32_t *)packet,
+                                  hsa::                         header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
+                                  hsa::                         kernel_dispatch_setup());
 
     hsa_signal_store_release(queue->doorbell_signal, packet_id);
   }

@@ -181,10 +181,17 @@ $CXX_X64_LD threads_bootstrap.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o threads_
 
 
 
+$CXX_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.code.bc
+$CXXCL_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.kern.bc
+$LINK obj/x64_gcn_debug.gcn.code.bc obj/x64_gcn_debug.gcn.kern.bc -o obj/x64_gcn_debug.gcn.bc
+
+$CXX_GCN_LD obj/x64_gcn_debug.gcn.bc -o x64_gcn_debug.gcn.so
+
 $CXX_X64 -I$HSAINC x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.x64.bc
-$CXX_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.bc
 
 $CXX obj/x64_gcn_debug.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o x64_gcn_debug.exe
+
+./x64_gcn_debug.exe
 
 $CXX_X64 syscall.cpp -c -o obj/syscall.x64.bc 
 

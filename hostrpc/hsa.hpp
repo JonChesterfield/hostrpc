@@ -3,9 +3,11 @@
 
 // A C++ wrapper around a subset of the hsa api
 #include "hsa.h"
+#include "hsa_ext_amd.h"
 #include <array>
 #include <cstdio>
 #include <unordered_map>
+#include <vector>
 
 #include <cassert>
 #include <cstring>
@@ -157,6 +159,27 @@ inline uint16_t agent_get_info_version_major(hsa_agent_t agent)
 inline uint16_t agent_get_info_version_minor(hsa_agent_t agent)
 {
   return agent_get_info<uint16_t, HSA_AGENT_INFO_VERSION_MINOR>::call(agent);
+}
+
+inline uint32_t agent_get_info_compute_unit_count(hsa_agent_t agent)
+{
+  return agent_get_info<
+      uint32_t, static_cast<hsa_agent_info_t>(
+                    HSA_AMD_AGENT_INFO_COMPUTE_UNIT_COUNT)>::call(agent);
+}
+
+inline uint32_t agent_get_info_num_simds_per_cu(hsa_agent_t agent)
+{
+  return agent_get_info<uint32_t,
+                        static_cast<hsa_agent_info_t>(
+                            HSA_AMD_AGENT_INFO_NUM_SIMDS_PER_CU)>::call(agent);
+}
+
+inline uint32_t agent_get_info_max_waves_per_cu(hsa_agent_t agent)
+{
+  return agent_get_info<uint32_t,
+                        static_cast<hsa_agent_info_t>(
+                            HSA_AMD_AGENT_INFO_MAX_WAVES_PER_CU)>::call(agent);
 }
 
 template <typename T, hsa_executable_symbol_info_t req>
@@ -620,6 +643,25 @@ inline hsa_agent_t find_a_gpu_or_exit()
   return kernel_agent;
 }
 
+inline std::vector<hsa_agent_t> find_gpus()
+{
+  std::vector<hsa_agent_t> result;
+  if (HSA_STATUS_SUCCESS !=
+      hsa::iterate_agents([&](hsa_agent_t agent) -> hsa_status_t {
+        auto features = hsa::agent_get_info_feature(agent);
+        if (features & HSA_AGENT_FEATURE_KERNEL_DISPATCH)
+          {
+            result.push_back(agent);
+          }
+        return HSA_STATUS_SUCCESS;
+      }))
+    {
+      fprintf(stderr, "Fail while listing kernel agents\n");
+      exit(1);
+    }
+  return result;
+}
+
 inline uint64_t acquire_available_packet_id(hsa_queue_t* queue)
 {
   uint64_t packet_id = hsa_queue_add_write_index_relaxed(queue, 1);
@@ -653,11 +695,93 @@ inline void initialize_packet_defaults(hsa_kernel_dispatch_packet_t* packet)
   packet->kernarg_address = NULL;
 }
 
+inline hsa_queue_t* create_queue(hsa_agent_t kernel_agent)
+{
+  hsa_queue_t* queue;
+
+  hsa_status_t rc = hsa_queue_create(
+      kernel_agent /* make the queue on this agent */,
+      131072 /* todo: size it, this hardcodes max size for vega20 */,
+      HSA_QUEUE_TYPE_MULTI /* baseline */,
+      NULL /* called on every async event? */,
+      NULL /* data passed to previous */,
+      // If sizes exceed these values, things are supposed to work slowly
+      UINT32_MAX /* private_segment_size, 32_MAX is unknown */,
+      UINT32_MAX /* group segment size, as above */, &queue);
+  if (rc != HSA_STATUS_SUCCESS)
+    {
+      return nullptr;
+    }
+  return queue;
+}
+
+inline void packet_store_release(uint32_t* packet, uint16_t header,
+                                 uint16_t rest)
+{
+  __atomic_store_n(packet, header | (rest << 16), __ATOMIC_RELEASE);
+}
+
+inline uint16_t header(hsa_packet_type_t type)
+{
+  uint16_t header = type << HSA_PACKET_HEADER_TYPE;
+  header |= HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_ACQUIRE_FENCE_SCOPE;
+  header |= HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_RELEASE_FENCE_SCOPE;
+  return header;
+}
+
+inline uint16_t kernel_dispatch_setup()
+{
+  return 1 << HSA_KERNEL_DISPATCH_PACKET_SETUP_DIMENSIONS;
+}
+
+// kernarg, signal may be zero
+inline int launch_kernel(hsa::executable& ex, hsa_queue_t* queue,
+                         const char* kernel_entry, uint64_t inline_argument,
+                         uint64_t kernarg_address,
+                         hsa_signal_t completion_signal)
+{
+  uint64_t packet_id = hsa::acquire_available_packet_id(queue);
+  hsa_kernel_dispatch_packet_t* packet =
+      (hsa_kernel_dispatch_packet_t*)queue->base_address +
+      (packet_id & (queue->size - 1));
+
+  hsa::initialize_packet_defaults(packet);
+
+  uint64_t symbol_address = ex.get_symbol_address_by_name(kernel_entry);
+  auto m = ex.get_kernel_info();
+  auto it = m.find(std::string(kernel_entry));
+  if (it == m.end() || symbol_address == 0)
+    {
+      return 1;
+    }
+
+  packet->kernel_object = symbol_address;
+  packet->private_segment_size = it->second.private_segment_fixed_size;
+  packet->group_segment_size = it->second.group_segment_fixed_size;
+
+  memcpy(&packet->kernarg_address, &kernarg_address, 8);
+  memcpy(&packet->completion_signal, &completion_signal, 8);
+
+  // HSA marks this reserved, must be zero.
+  // gfx9 passes the value through accurately, without error
+  // will therefore use it as an implementation-defined arg slot
+  memcpy(&packet->reserved2, &inline_argument, 8);
+
+  packet_store_release((uint32_t*)packet,
+                       hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
+                       kernel_dispatch_setup());
+
+  hsa_signal_store_release(queue->doorbell_signal, packet_id);
+
+  return 0;
+}
+
 inline int copy_host_to_gpu(hsa_agent_t agent, void* dst, const void* src,
                             size_t size)
 {
   // memcpy works for gfx9, should see which is quicker. need this fallback for
   // gfx8
+  // may want to copy via fine grain memory
   hsa_signal_t sig;
   hsa_status_t rc = hsa_signal_create(1, 0, 0, &sig);
   if (rc != HSA_STATUS_SUCCESS)
