@@ -208,10 +208,11 @@ $CXX_GCN amdgcn_main.cpp -c -o amdgcn_main.gcn.bc
 # Register amdhsa elf magic with kernel
 # One off
 # cd /proc/sys/fs/binfmt_misc/ && echo ':amdgcn:M:0:\x7f\x45\x4c\x46\x02\x01\x01\x40\x01\x00\x00\x00\x00\x00\x00\x00::/home/amd/hostrpc/amdgcn_loader.exe:' > register
+# cd /proc/sys/fs/binfmt_misc/ && echo ':amdgcn:M:0:\x7f\x45\x4c\x46\x02\x01\x01\x40\x02\x00\x00\x00\x00\x00\x00\x00::/home/amd/hostrpc/amdgcn_loader.exe:' > register
 
 # Persistent
 # echo ':amdgcn:M:0:\x7f\x45\x4c\x46\x02\x01\x01\x40\x01\x00\x00\x00\x00\x00\x00\x00::/home/amd/hostrpc/amdgcn_loader.exe:' >> /etc/binfmt.d/amdgcn.conf
-
+# echo ':amdgcn:M:0:\x7f\x45\x4c\x46\x02\x01\x01\x40\x02\x00\x00\x00\x00\x00\x00\x00::/home/amd/hostrpc/amdgcn_loader.exe:' >> /etc/binfmt.d/amdgcn.conf
 
 if (($have_amdgcn)); then
   $CXXCL_GCN loader/amdgcn_loader_entry.cl -c -o loader/amdgcn_loader_entry.gcn.bc
