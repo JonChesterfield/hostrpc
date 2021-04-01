@@ -95,7 +95,7 @@ void hostrpc::print_base(const char *str, uint64_t x0, uint64_t x1, uint64_t x2)
 
   fill f(&i);
   use u;
-  hostrpc_x64_gcn_debug_client[0].rpc_invoke<fill, use, true>(f, u);
+  hostrpc_x64_gcn_debug_client[0].rpc_invoke<fill, use>(f, u);
 }
 
 #endif

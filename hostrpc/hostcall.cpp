@@ -78,7 +78,14 @@ static void hostcall_impl(uint64_t data[8])
   bool success = false;
   while (!success)
     {
-      success = c->rpc_invoke<decltype(f), decltype(u), C>(f, u);
+      if (C)
+        {
+          success = c->rpc_invoke<decltype(f), decltype(u)>(f, u);
+        }
+      else
+        {
+          success = c->rpc_invoke<decltype(f)>(f, u);
+        }
     }
 }
 

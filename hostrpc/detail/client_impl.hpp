@@ -136,6 +136,26 @@ struct client_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE client_counters get_counters() { return Counter::get(); }
 
   // Returns true if it successfully launched the task
+  template <typename Fill>
+  HOSTRPC_ANNOTATE bool rpc_invoke(Fill fill) noexcept
+  {
+    struct Use
+    {
+      HOSTRPC_ANNOTATE void operator()(hostrpc::page_t*){};
+    };
+
+    Use u;
+    return rpc_invoke<Fill, Use, false>(fill, u);
+  }
+
+  // Returns true if it successfully launched the task
+  template <typename Fill, typename Use>
+  HOSTRPC_ANNOTATE bool rpc_invoke(Fill fill, Use use) noexcept
+  {
+    return rpc_invoke<Fill, Use, true>(fill, use);
+  }
+
+ private:
   template <typename Fill, typename Use, bool have_continuation>
   HOSTRPC_ANNOTATE bool rpc_invoke(Fill fill, Use use) noexcept
   {
@@ -184,18 +204,28 @@ struct client_impl : public SZT, public Counter
               {
                 // Success, got the lock.
                 Counter::cas_lock_fail(cas_fail_count);
-                bool r = rpc_invoke_given_slot<Fill, Use, have_continuation>(
-                    fill, use, slot);
 
-                // wave release slot
-                platform::critical<uint32_t>([&]() {
-                  active.release_slot(size, slot);
-                  return 0;
-                });
-                // returning if the invoke garbage collected is inefficient
-                // as the caller will need to try again, better to keep the
-                // position in the loop.
-                return r;
+                // Test if it is available, e.g. isn't garbage
+                if (rpc_invoke_verify_slot_available(slot))
+                  {
+                    bool r = rpc_invoke_fill_given_slot<Fill>(fill, slot);
+
+                    if (r && have_continuation)
+                      {
+                        // if only garbage collected, don't call use
+                        rpc_invoke_use_given_slot(use, slot);
+                      }
+
+                    // wave release slot
+                    platform::critical<uint32_t>([&]() {
+                      active.release_slot(size, slot);
+                      return 0;
+                    });
+                    // returning if the invoke garbage collected is inefficient
+                    // as the caller will need to try again, better to keep the
+                    // position in the loop.
+                    return r;
+                  }
               }
             else
               {
@@ -208,7 +238,6 @@ struct client_impl : public SZT, public Counter
     return false;
   }
 
- private:
   HOSTRPC_ANNOTATE uint32_t find_candidate_client_slot(uint32_t w)
   {
     Word i = inbox.load_word(size(), w);
@@ -224,9 +253,6 @@ struct client_impl : public SZT, public Counter
     // Take those that client can act on and are not locked
     Word garbage_todo = i & o & ~a;
 
-    // could also let through inbox == 1 on the basis that
-    // the client may have
-
     Word candidate = available | garbage_todo;
     if (candidate != 0)
       {
@@ -234,6 +260,25 @@ struct client_impl : public SZT, public Counter
       }
 
     return UINT32_MAX;
+  }
+
+  HOSTRPC_ANNOTATE void release_slot(uint32_t slot)
+  {
+    const uint32_t size = this->size();
+    platform::fence_release();
+    uint64_t cas_fail_count = 0;
+    uint64_t cas_help_count = 0;
+    // opencl has incomplete support for lambdas, can't pass address of
+    // captured variable.
+    if (platform::is_master_lane())
+      {
+        staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
+                            &cas_help_count);
+      }
+    cas_fail_count = platform::broadcast_master(cas_fail_count);
+    cas_help_count = platform::broadcast_master(cas_help_count);
+    Counter::garbage_cas_fail(cas_fail_count);
+    Counter::garbage_cas_help(cas_help_count);
   }
 
   HOSTRPC_ANNOTATE void dump_word(uint32_t size, Word word)
@@ -247,9 +292,11 @@ struct client_impl : public SZT, public Counter
 
   // true if it successfully made a call, false if no work to do or only gc
   // If there's no continuation, shouldn't require a use_application_state
-  template <typename Fill, typename Use, bool have_continuation>
-  HOSTRPC_ANNOTATE bool rpc_invoke_given_slot(Fill fill, Use use,
-                                              uint32_t slot) noexcept
+
+  // Series of functions called with lock[slot] held. Garbage collect if
+  // necessary, use slot if possible, wait & call continuationo if necessary
+
+  HOSTRPC_ANNOTATE bool rpc_invoke_verify_slot_available(uint32_t slot) noexcept
   {
     assert(slot != UINT32_MAX);
     const uint32_t element = index_to_element<Word>(slot);
@@ -278,20 +325,7 @@ struct client_impl : public SZT, public Counter
 
     if (garbage_todo)
       {
-        platform::fence_release();
-        uint64_t cas_fail_count = 0;
-        uint64_t cas_help_count = 0;
-        // opencl has incomplete support for lambdas, can't pass address of
-        // captured variable.
-        if (platform::is_master_lane())
-          {
-            staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
-                                &cas_help_count);
-          }
-        cas_fail_count = platform::broadcast_master(cas_fail_count);
-        cas_help_count = platform::broadcast_master(cas_help_count);
-        Counter::garbage_cas_fail(cas_fail_count);
-        Counter::garbage_cas_help(cas_help_count);
+        release_slot(slot);
         return false;
       }
 
@@ -300,6 +334,17 @@ struct client_impl : public SZT, public Counter
         Counter::got_lock_after_work_done();
         return false;
       }
+
+    // Slot is available for use.
+    return true;
+  }
+
+  template <typename Fill>
+  HOSTRPC_ANNOTATE bool rpc_invoke_fill_given_slot(Fill fill,
+                                                   uint32_t slot) noexcept
+  {
+    assert(slot != UINT32_MAX);
+    const uint32_t size = this->size();
 
     // wave_populate
     // Fill may have no precondition, in which case this doesn't need to run
@@ -329,71 +374,6 @@ struct client_impl : public SZT, public Counter
     // with a continuation, outbox is cleared before this thread returns
     // otherwise, garbage collection needed to clear that outbox
 
-    if (have_continuation)
-      {
-        // wait for H1, result available
-        Word loaded = 0;
-
-        while (true)
-          {
-            uint32_t got = 0;
-            if (platform::is_master_lane())
-              {
-                got = inbox(size, slot, &loaded);
-              }
-            got = platform::broadcast_master(got);
-            loaded = platform::broadcast_master(loaded);
-
-            if (got == 1)
-              {
-                break;
-              }
-
-            Counter::waiting_for_result();
-
-            // make this spin slightly cheaper
-            // todo: can the client do useful work while it waits? e.g. gc?
-            // need to avoid taking too many locks at a time given forward
-            // progress which makes gc tricky
-            // could attempt to propagate the current word from staging to
-            // outbox - that's safe because a lock is held, maintaining linear
-            // time - but may conflict with other clients trying to do the same
-            platform::sleep();
-          }
-
-        platform::fence_acquire();
-
-        Copy::pull_to_client_from_server(&local_buffer[slot],
-                                         &remote_buffer[slot]);
-        // call the continuation
-        use(&local_buffer[slot]);
-
-        // Copying the state back to the server is a nop for aliased case,
-        // and is only necessary if the server has a non-nop garbage clear
-        // callback
-        Copy::push_from_client_to_server(&remote_buffer[slot],
-                                         &local_buffer[slot]);
-
-        // mark the work as no longer in use
-        // todo: is it better to leave this for the GC?
-        // can free slots more lazily by updating the staging outbox and
-        // leaving the visible one. In that case the update may be transfered
-        // for free, or it may never become visible in which case the server
-        // won't realise the slot is no longer in use
-        platform::fence_release();
-        uint64_t cas_fail_count = 0;
-        uint64_t cas_help_count = 0;
-        if (platform::is_master_lane())
-          {
-            staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
-                                &cas_help_count);
-          }
-        cas_fail_count = platform::broadcast_master(cas_fail_count);
-        cas_help_count = platform::broadcast_master(cas_help_count);
-        Counter::finished_cas_fail(cas_fail_count);
-        Counter::finished_cas_help(cas_help_count);
-      }
-
     // if we don't have a continuation, would return on 0b010
     // this wouldn't be considered garbage by client as inbox is clear
     // the server gets 0b100, does the work, sets the result to 0b110
@@ -404,9 +384,68 @@ struct client_impl : public SZT, public Counter
     // I think that will need an extra client side bitmap
 
     // We could wait for inbox[slot] != 0 which indicates the result
-    // has been garbage collected, but that stalls the wave waiting for the hose
+    // has been garbage collected, but that stalls the wave waiting for the host
     // Instead, drop the warp and let the allocator skip occupied inbox slots
     return true;
+  }
+
+  template <typename Use>
+  HOSTRPC_ANNOTATE void rpc_invoke_use_given_slot(Use use,
+                                                  uint32_t slot) noexcept
+  {
+    const uint32_t size = this->size();
+    {
+      // wait for H1, result available
+      Word loaded = 0;
+
+      while (true)
+        {
+          uint32_t got = 0;
+          if (platform::is_master_lane())
+            {
+              got = inbox(size, slot, &loaded);
+            }
+          got = platform::broadcast_master(got);
+          loaded = platform::broadcast_master(loaded);
+
+          if (got == 1)
+            {
+              break;
+            }
+
+          Counter::waiting_for_result();
+
+          // make this spin slightly cheaper
+          // todo: can the client do useful work while it waits? e.g. gc?
+          // need to avoid taking too many locks at a time given forward
+          // progress which makes gc tricky
+          // could attempt to propagate the current word from staging to
+          // outbox - that's safe because a lock is held, maintaining linear
+          // time - but may conflict with other clients trying to do the same
+          platform::sleep();
+        }
+
+      platform::fence_acquire();
+
+      Copy::pull_to_client_from_server(&local_buffer[slot],
+                                       &remote_buffer[slot]);
+      // call the continuation
+      use(&local_buffer[slot]);
+
+      // Copying the state back to the server is a nop for aliased case,
+      // and is only necessary if the server has a non-nop garbage clear
+      // callback
+      Copy::push_from_client_to_server(&remote_buffer[slot],
+                                       &local_buffer[slot]);
+
+      // mark the work as no longer in use
+      // todo: is it better to leave this for the GC?
+      // can free slots more lazily by updating the staging outbox and
+      // leaving the visible one. In that case the update may be transfered
+      // for free, or it may never become visible in which case the server
+      // won't realise the slot is no longer in use
+      release_slot(slot);
+    }
   }
 };
 

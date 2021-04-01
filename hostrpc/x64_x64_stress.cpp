@@ -122,7 +122,7 @@ TEST_CASE("x64_x64_stress")
         init_page(&scratch, id + r);
         init_page(&expect, id + r + 1);
 
-        if (p.client.rpc_invoke<decltype(fill), decltype(use), true>(fill, use))
+        if (p.client.rpc_invoke<decltype(fill), decltype(use)>(fill, use))
           {
             count++;
             if (__builtin_memcmp(&scratch, &expect, sizeof(hostrpc::page_t)) !=

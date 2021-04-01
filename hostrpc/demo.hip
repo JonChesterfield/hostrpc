@@ -21,7 +21,7 @@ using SZ = hostrpc::size_runtime;
 
 __device__ extern "C" int printf(const char *format, ...);
 
-template <typename C, bool have_continuation>
+template <typename C>
 __device__ static bool invoke(C *client, uint64_t x[8])
 {
   auto fill = [&](hostrpc::page_t *page) -> void {
@@ -49,7 +49,7 @@ __device__ static bool invoke(C *client, uint64_t x[8])
   };
 
   return client
-      ->template rpc_invoke<decltype(fill), decltype(use), have_continuation>(
+      ->template rpc_invoke<decltype(fill), decltype(use)>(
           fill, use);
 }
 
@@ -57,7 +57,7 @@ __global__ extern "C" void on_gpu(
     hostrpc::x64_gcn_type<SZ>::client_type *client, int, char **, int *)
 {
   auto inv = [=](uint64_t x[8]) -> bool {
-    return invoke<hostrpc::x64_gcn_type<SZ>::client_type, true>(client, x);
+    return invoke<hostrpc::x64_gcn_type<SZ>::client_type>(client, x);
   };
 
   constexpr const uint64_t buffer_size = 16;

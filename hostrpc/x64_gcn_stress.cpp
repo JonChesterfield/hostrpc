@@ -207,7 +207,7 @@ uint64_t gpu_call(hostrpc::x64_gcn_type<SZ>::client_type *client, uint32_t id,
       bool rb = false;
       do
         {
-          rb = client->rpc_invoke<fill, use, true>(f, u);
+          rb = client->rpc_invoke<fill, use>(f, u);
         }
       while (rb == false);
 

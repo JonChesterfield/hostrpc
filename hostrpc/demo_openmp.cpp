@@ -36,7 +36,7 @@ struct x64_device_type : public x64_device_type_base<SZ, device_num>
 };
 }  // namespace hostrpc
 
-template <typename C, bool have_continuation>
+template <typename C>
 static bool invoke(C *client, uint64_t x[8])
 {
   auto fill = [&](hostrpc::page_t *page) -> void {
@@ -64,7 +64,7 @@ static bool invoke(C *client, uint64_t x[8])
   };
 
   return client
-      ->template rpc_invoke<decltype(fill), decltype(use), have_continuation>(
+      ->template rpc_invoke<decltype(fill), decltype(use)>(
           fill, use);
 }
 
@@ -197,7 +197,7 @@ int main()
       const uint64_t alloc_op = hostrpc::allocate_op_cuda;
       const uint64_t free_op = hostrpc::free_op_cuda;
       auto inv = [&](uint64_t x[8]) -> bool {
-        return invoke<base_type::client_type, true>(client, x);
+        return invoke<base_type::client_type>(client, x);
       };
 #endif
 #if DEMO_AMDGCN
@@ -206,7 +206,7 @@ int main()
         const uint64_t alloc_op = hostrpc::allocate_op_hsa;
         const uint64_t free_op = hostrpc::free_op_hsa;
         auto inv = [&](uint64_t x[8]) -> bool {
-          return invoke<base_type::client_type, true>(&client, x);
+          return invoke<base_type::client_type>(&client, x);
         };
 #endif
 

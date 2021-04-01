@@ -118,11 +118,11 @@ TEST_CASE("set up single word system")
       use u;
       while (calls_launched < calls_planned)
         {
-          if (cl.rpc_invoke<fill, use, false>(f, u))
+          if (cl.rpc_invoke<fill>(f))
             {
               calls_launched++;
             }
-          if (false && cl.rpc_invoke<fill, use, true>(f, u))
+          if (false && cl.rpc_invoke<fill, use>(f, u))
             {
               calls_launched++;
             }
