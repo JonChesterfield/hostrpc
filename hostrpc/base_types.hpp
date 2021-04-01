@@ -59,19 +59,58 @@ static_assert(sizeof(page_t) == 4096, "");
 
 struct size_runtime
 {
-  HOSTRPC_ANNOTATE size_runtime(size_t N) : SZ(hostrpc::round64(N)) {}
-  HOSTRPC_ANNOTATE size_t N() const { return SZ; }
+  HOSTRPC_ANNOTATE size_runtime(uint32_t N) : SZ(hostrpc::round64(N)) {}
+  using type = uint32_t;
+  HOSTRPC_ANNOTATE type N() const { return SZ; }
 
  private:
-  size_t SZ;
+  uint32_t SZ;
 };
 
-template <size_t SZ>
+namespace size_detail
+{
+template <uint64_t T>
+struct bits
+{
+  enum : uint8_t
+  {
+    value =
+        T <= UINT8_MAX ? 8 : T <= UINT16_MAX ? 16 : T <= UINT32_MAX ? 32 : 64
+  };
+};
+
+template <uint8_t bits>
+struct select
+{
+  using type = uint64_t;
+};
+template <>
+struct select<8>
+{
+  using type = uint8_t;
+};
+template <>
+struct select<16>
+{
+  using type = uint64_t;
+};
+template <>
+struct select<32>
+{
+  using type = uint32_t;
+};
+
+}  // namespace size_detail
+
+template <uint32_t SZ>
 struct size_compiletime
 {
   HOSTRPC_ANNOTATE size_compiletime() {}
-  HOSTRPC_ANNOTATE size_compiletime(size_t) {}
-  HOSTRPC_ANNOTATE constexpr size_t N() const { return hostrpc::round64(SZ); }
+  HOSTRPC_ANNOTATE size_compiletime(uint32_t) {}
+  using type = typename size_detail::select<
+      size_detail::bits<hostrpc::round64(SZ)>::value>::type;
+
+  HOSTRPC_ANNOTATE constexpr type N() const { return hostrpc::round64(SZ); }
 };
 
 template <size_t Size, size_t Align>

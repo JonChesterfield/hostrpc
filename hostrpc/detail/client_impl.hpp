@@ -107,7 +107,7 @@ struct client_impl : public SZT, public Counter
     constexpr bool SZ_empty = sizeof(SZ_local) == sizeof(float);
     constexpr bool Counter_empty = sizeof(Counter_local) == sizeof(float);
 
-    constexpr size_t SZ_size = SZ_empty ? 0 : sizeof(SZ);
+    constexpr size_t SZ_size = hostrpc::round8(SZ_empty ? 0 : sizeof(SZ));
     constexpr size_t Counter_size = Counter_empty ? 0 : sizeof(Counter);
 
     constexpr size_t total_size = client_size + SZ_size + Counter_size;
