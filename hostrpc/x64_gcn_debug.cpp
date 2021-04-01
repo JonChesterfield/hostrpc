@@ -11,7 +11,35 @@ kernel void __device_example(void) { example(); }
 
 namespace
 {
-static constexpr unsigned debug_print_chars() { return 40; }
+struct print_instance
+{
+  uint64_t ID = 0;
+  char fmt[32] = {0};
+  uint64_t arg0 = 0;
+  uint64_t arg1 = 0;
+  uint64_t arg2 = 0;
+
+  print_instance() = default;
+  print_instance(const char *d)
+  {
+    __builtin_memcpy(&ID, d, sizeof(ID));
+    d += sizeof(ID);
+    __builtin_memcpy(&fmt, d, sizeof(fmt));
+    d += sizeof(fmt);
+    __builtin_memcpy(&arg0, d, sizeof(arg0));
+    d += sizeof(arg0);
+    __builtin_memcpy(&arg1, d, sizeof(arg1));
+    d += sizeof(arg1);
+    __builtin_memcpy(&arg2, d, sizeof(arg2));
+    d += sizeof(arg2);
+  }
+};
+
+static constexpr unsigned debug_print_chars()
+{
+  return sizeof(print_instance::fmt);
+}
+
 using SZ = hostrpc::size_runtime;
 
 }  // namespace
@@ -37,17 +65,14 @@ void hostrpc::print_base(const char *str, uint64_t x0, uint64_t x1, uint64_t x2)
 {
   struct fill
   {
-    fill(uint64_t *d) : d(d) {}
-    uint64_t *d;
+    fill(print_instance *i) : i(i) {}
+    print_instance *i;
 
     void operator()(hostrpc::page_t *page)
     {
       unsigned id = platform::get_lane_id();
       hostrpc::cacheline_t *dline = &page->cacheline[id];
-      for (unsigned e = 0; e < 8; e++)
-        {
-          dline->element[e] = d[e];
-        }
+      __builtin_memcpy(dline, i, 64);
     };
   };
 
@@ -56,11 +81,19 @@ void hostrpc::print_base(const char *str, uint64_t x0, uint64_t x1, uint64_t x2)
     void operator()(hostrpc::page_t *){};
   };
 
+  constexpr uint64_t print_base_id = 42;
+
   unsigned N = count_chars(str);
-  static_assert(debug_print_chars() == 5 * 8, "");
-  uint64_t data[8] = {0, 0, 0, 0, 0, x0, x1, x2};
-  __builtin_memcpy(&data, str, N);
-  fill f(data);
+
+  print_instance i;
+  i.ID = print_base_id;
+  i.arg0 = x0;
+  i.arg1 = x1;
+  i.arg2 = x2;
+
+  __builtin_memcpy(i.fmt, str, N);
+
+  fill f(&i);
   use u;
   hostrpc_x64_gcn_debug_client[0].rpc_invoke<fill, use, true>(f, u);
 }
@@ -94,12 +127,9 @@ struct operate
     for (unsigned c = 0; c < 64; c++)
       {
         hostrpc::cacheline_t *line = &page->cacheline[c];
-        if (line->element[0] == 0)
-          {
-            continue;
-          }
+        print_instance i(reinterpret_cast<const char *>(&line->element[0]));
 
-        memcpy(&fmt[pre], line, debug_print_chars());
+        memcpy(&fmt[pre], i.fmt, sizeof(i.fmt));
         fmt[sizeof(fmt) - 1] = '\0';
         printf(fmt, c, line->element[5], line->element[6], line->element[7]);
       }

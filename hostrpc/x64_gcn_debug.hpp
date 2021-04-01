@@ -1,8 +1,8 @@
 #ifndef HOSTRPC_X64_GCN_DEBUG_HPP_INCLUDE
 #define HOSTRPC_X64_GCN_DEBUG_HPP_INCLUDE
 
-#include <stdint.h>
 #include "detail/platform_detect.hpp"
+#include <stdint.h>
 
 namespace hostrpc
 {
