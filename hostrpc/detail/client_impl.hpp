@@ -145,19 +145,19 @@ struct client_impl : public SZT, public Counter
     };
 
     Use u;
-    return rpc_invoke<Fill, Use, false>(fill, u);
+    return rpc_invoke_impl<Fill, Use, false>(fill, u);
   }
 
   // Returns true if it successfully launched the task
   template <typename Fill, typename Use>
   HOSTRPC_ANNOTATE bool rpc_invoke(Fill fill, Use use) noexcept
   {
-    return rpc_invoke<Fill, Use, true>(fill, use);
+    return rpc_invoke_impl<Fill, Use, true>(fill, use);
   }
 
  private:
   template <typename Fill, typename Use, bool have_continuation>
-  HOSTRPC_ANNOTATE bool rpc_invoke(Fill fill, Use use) noexcept
+  HOSTRPC_ANNOTATE bool rpc_invoke_impl(Fill fill, Use use) noexcept
   {
     const uint32_t size = this->size();
     const uint32_t words = this->words();
@@ -396,17 +396,16 @@ struct client_impl : public SZT, public Counter
     const uint32_t size = this->size();
     {
       // wait for H1, result available
-      Word loaded = 0;
 
       while (true)
         {
+          Word loaded = 0;
           uint32_t got = 0;
           if (platform::is_master_lane())
             {
               got = inbox(size, slot, &loaded);
             }
           got = platform::broadcast_master(got);
-          loaded = platform::broadcast_master(loaded);
 
           if (got == 1)
             {

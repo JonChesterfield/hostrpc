@@ -110,6 +110,49 @@ struct server_impl : public SZT, public Counter
     printf("%lu %lu %lu\n", i, o, a);
   }
 
+  // rpc_handle return true if it handled one task, does not attempt multiple.
+
+  // Requires Operate argument.
+  // If passed Clear, will call it on garbage collection
+  // If passed location, will use it to round robin across slots
+
+  template <typename Operate, typename Clear>
+  __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle(
+      Operate op, Clear cl, uint32_t* location) noexcept
+  {
+    return rpc_handle_impl<Operate, Clear, true>(op, cl, location);
+  }
+
+  template <typename Operate>
+  __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle(
+      Operate op, uint32_t* location) noexcept
+  {
+    struct Clear
+    {
+      HOSTRPC_ANNOTATE void operator()(hostrpc::page_t*){};
+    };
+    Clear cl;
+    return rpc_handle_impl<Operate, Clear, false>(op, cl, location);
+  }
+
+  // Default location to always start from zero
+  template <typename Operate, typename Clear>
+  __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle(
+      Operate op, Clear cl) noexcept
+  {
+    uint32_t location = 0;
+    return rpc_handle<Operate, Clear>(op, cl, &location);
+  }
+
+  template <typename Operate>
+  __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle(
+      Operate op) noexcept
+  {
+    uint32_t location = 0;
+    return rpc_handle<Operate>(op, &location);
+  }
+
+ private:
   HOSTRPC_ANNOTATE Word find_candidate_server_available_bitmap(uint32_t w,
                                                                Word mask)
   {
@@ -126,18 +169,8 @@ struct server_impl : public SZT, public Counter
     return available;
   }
 
-  // Returns true if it handled one task. Does not attempt multiple tasks
-  template <typename Operate, typename Clear>
-  __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle(
-      Operate op, Clear cl) noexcept
-  {
-    uint32_t location = 0;
-    return rpc_handle<Operate, Clear>(op, cl, &location);
-  }
-
-  // location != NULL, used to round robin across slots
-  template <typename Operate, typename Clear>
-  __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle(
+  template <typename Operate, typename Clear, bool have_precondition>
+  __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle_impl(
       Operate op, Clear cl, uint32_t* location_arg) noexcept
   {
     const uint32_t size = this->size();
@@ -177,7 +210,9 @@ struct server_impl : public SZT, public Counter
                 // Success, got the lock. Aim location_arg at next slot
                 *location_arg = slot + 1;
 
-                bool r = rpc_handle_given_slot<Operate, Clear>(op, cl, slot);
+                bool r =
+                    rpc_handle_given_slot<Operate, Clear, have_precondition>(
+                        op, cl, slot);
 
                 platform::critical<uint32_t>([&]() {
                   active.release_slot(size, slot);
@@ -203,8 +238,7 @@ struct server_impl : public SZT, public Counter
     return false;
   }
 
- private:
-  template <typename Operate, typename Clear>
+  template <typename Operate, typename Clear, bool have_precondition>
   __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle_given_slot(
       Operate op, Clear cl, uint32_t slot)
   {
@@ -241,12 +275,15 @@ struct server_impl : public SZT, public Counter
     if (garbage_todo)
       {
         assert((o & this_slot) != 0);
-        // Move data and clear. TODO: Elide the copy for nop clear
-        Copy::pull_to_server_from_client(&local_buffer[slot],
-                                         &remote_buffer[slot]);
-        cl(&local_buffer[slot]);
-        Copy::push_from_server_to_client(&remote_buffer[slot],
-                                         &local_buffer[slot]);
+        if (have_precondition)
+          {
+            // Move data and clear. TODO: Elide the copy for nop clear
+            Copy::pull_to_server_from_client(&local_buffer[slot],
+                                             &remote_buffer[slot]);
+            cl(&local_buffer[slot]);
+            Copy::push_from_server_to_client(&remote_buffer[slot],
+                                             &local_buffer[slot]);
+          }
 
         platform::fence_release();
         uint64_t cas_fail_count = 0;

@@ -63,9 +63,7 @@ static bool invoke(C *client, uint64_t x[8])
     x[7] = line->element[7];
   };
 
-  return client
-      ->template rpc_invoke<decltype(fill), decltype(use)>(
-          fill, use);
+  return client->template rpc_invoke<decltype(fill), decltype(use)>(fill, use);
 }
 
 #pragma omp end declare target
