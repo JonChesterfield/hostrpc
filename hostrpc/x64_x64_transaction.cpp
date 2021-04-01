@@ -17,7 +17,7 @@ using x64_x64_type_base = client_server_pair_t<
     hostrpc::size_runtime, copy_functor_given_alias, uint64_t,
     hostrpc::allocator::host_libc<alignof(page_t)>,
     hostrpc::allocator::host_libc<64>, hostrpc::allocator::host_libc<64>,
-    hostrpc::allocator::host_libc<64> >;
+    hostrpc::allocator::host_libc<64>, counters::client, counters::server>;
 
 struct x64_x64_type : public x64_x64_type_base
 {
@@ -44,7 +44,7 @@ static void init_page(hostrpc::page_t *page, uint64_t v)
     }
 }
 
-TEST_CASE("x64_x64_stress")
+TEST_CASE("x64_x64_transaction")
 {
   using namespace hostrpc;
   hostrpc::x64_x64_type p(100);
@@ -110,14 +110,24 @@ TEST_CASE("x64_x64_stress")
     auto use = [&](hostrpc::page_t *page) {
       __builtin_memcpy(&scratch, page, sizeof(hostrpc::page_t));
     };
-
+    const bool verbose = false;
     for (unsigned r = 0; r < reps; r++)
       {
         init_page(&scratch, id + r);
         init_page(&expect, id + r + 1);
 
-        if (p.client.rpc_invoke<decltype(fill), decltype(use)>(fill, use))
+        uint32_t token;
+        if (p.client.rpc_transaction_start(fill, &token))
           {
+            if (verbose)
+              {
+                printf("Started transaction,  [%u] got  token %u\n", id, token);
+                platform::sleep_briefly();
+                printf("Finished transaction, [%u] drop token %u\n", id, token);
+              }
+
+            p.client.rpc_transaction_finish(use, token);
+
             count++;
             if (__builtin_memcmp(&scratch, &expect, sizeof(hostrpc::page_t)) !=
                 0)
@@ -136,8 +146,8 @@ TEST_CASE("x64_x64_stress")
     return failures;
   };
 
-  unsigned nservers = 32;
-  unsigned nclients = 32;  // was 128
+  unsigned nservers = 16;
+  unsigned nclients = 128;  // was 128
 
   std::vector<std::thread> server_store;
   for (unsigned i = 0; i < nservers; i++)
@@ -164,6 +174,7 @@ TEST_CASE("x64_x64_stress")
       i.join();
     }
 
-  printf("x64_x64_stress counters:\n");
+  printf("x64_x64_transaction counters:\n");
+  p.server_counters().dump();
   p.client_counters().dump();
 }

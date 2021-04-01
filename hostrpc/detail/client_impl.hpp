@@ -48,6 +48,7 @@ struct client_impl : public SZT, public Counter
 {
   using Word = WordT;
   using SZ = SZT;
+  using slot_type = typename SZ::type;
   using lock_t = lock_bitmap<Word>;
   using inbox_t = message_bitmap<Word>;
   using outbox_t = message_bitmap<Word>;
@@ -56,8 +57,8 @@ struct client_impl : public SZT, public Counter
   {
     return 8 * sizeof(Word);
   }
-  HOSTRPC_ANNOTATE uint32_t size() const { return SZ::N(); }
-  HOSTRPC_ANNOTATE uint32_t words() const { return size() / wordBits(); }
+  HOSTRPC_ANNOTATE slot_type size() const { return SZ::N(); }
+  HOSTRPC_ANNOTATE slot_type words() const { return size() / wordBits(); }
 
   page_t* remote_buffer;
   page_t* local_buffer;
@@ -147,24 +148,56 @@ struct client_impl : public SZT, public Counter
     {
       HOSTRPC_ANNOTATE void operator()(hostrpc::page_t*){};
     };
-
     Use u;
-    return rpc_invoke_impl<Fill, Use, false>(fill, u);
+    slot_type token;
+    return rpc_invoke_impl<Fill, Use, false, false>(fill, u, &token);
   }
 
   // Return after calling use(), i.e. waits for server
   template <typename Fill, typename Use>
   HOSTRPC_ANNOTATE bool rpc_invoke(Fill fill, Use use) noexcept
   {
-    return rpc_invoke_impl<Fill, Use, true>(fill, use);
+    slot_type token;
+    return rpc_invoke_impl<Fill, Use, true, false>(fill, use, &token);
+  }
+
+  // Return true & populate token on success, false on failure to find slot
+  template <typename Fill>
+  HOSTRPC_ANNOTATE bool rpc_transaction_start(Fill fill,
+                                              slot_type* token) noexcept
+  {
+    struct Use
+    {
+      HOSTRPC_ANNOTATE void operator()(hostrpc::page_t*){};
+    };
+    Use u;
+    return rpc_invoke_impl<Fill, Use, false, true>(fill, u, token);
+  }
+
+  template <typename Use>
+  HOSTRPC_ANNOTATE void rpc_transaction_finish(Use use,
+                                               slot_type token) noexcept
+  {
+    const slot_type size = this->size();
+    uint32_t slot = token;
+    rpc_invoke_use_given_slot(use, slot);
+
+    if (platform::is_master_lane())
+      {
+        active.release_slot(size, slot);
+      }
   }
 
  private:
-  template <typename Fill, typename Use, bool have_continuation>
-  HOSTRPC_ANNOTATE bool rpc_invoke_impl(Fill fill, Use use) noexcept
+  template <typename Fill, typename Use, bool have_continuation,
+            bool is_transaction>
+  HOSTRPC_ANNOTATE bool rpc_invoke_impl(Fill fill, Use use,
+                                        slot_type* token) noexcept
   {
-    const uint32_t size = this->size();
-    const uint32_t words = this->words();
+    static_assert(!(have_continuation && is_transaction), "");
+
+    const slot_type size = this->size();
+    const slot_type words = this->words();
     // 0b111 is posted request, waited for it, got it
     // 0b110 is posted request, nothing waited, got one
     // 0b101 is got a result, don't need it, only spun up a thread for cleanup
@@ -203,16 +236,24 @@ struct client_impl : public SZT, public Counter
                   {
                     rpc_invoke_fill_given_slot<Fill>(fill, slot);
 
+                    static_assert(!(have_continuation && is_transaction), "");
                     if (have_continuation)
                       {
                         // if only garbage collected, don't call use
                         rpc_invoke_use_given_slot(use, slot);
                       }
-
-                    // wave release slot
-                    if (platform::is_master_lane())
+                    if (is_transaction)
                       {
-                        active.release_slot(size, slot);
+                        // leave lock held
+                        *token = static_cast<slot_type>(slot);
+                      }
+                    else
+                      {
+                        // wave release slot
+                        if (platform::is_master_lane())
+                          {
+                            active.release_slot(size, slot);
+                          }
                       }
 
                     // invoke() garbage collecting is transparent

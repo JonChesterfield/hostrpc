@@ -62,6 +62,7 @@ struct size_runtime
   HOSTRPC_ANNOTATE size_runtime(uint32_t N) : SZ(hostrpc::round64(N)) {}
   using type = uint32_t;
   HOSTRPC_ANNOTATE type N() const { return SZ; }
+  constexpr static uint32_t reserved() { return UINT32_MAX; }
 
  private:
   uint32_t SZ;
@@ -74,15 +75,14 @@ struct bits
 {
   enum : uint8_t
   {
-    value =
-        T <= UINT8_MAX ? 8 : T <= UINT16_MAX ? 16 : T <= UINT32_MAX ? 32 : 64
+    value = T <= UINT8_MAX ? 8 : T <= UINT16_MAX ? 16 : 32
   };
 };
 
 template <uint8_t bits>
 struct select
 {
-  using type = uint64_t;
+  using type = uint32_t;
 };
 template <>
 struct select<8>
@@ -92,12 +92,7 @@ struct select<8>
 template <>
 struct select<16>
 {
-  using type = uint64_t;
-};
-template <>
-struct select<32>
-{
-  using type = uint32_t;
+  using type = uint16_t;
 };
 
 }  // namespace size_detail
@@ -111,6 +106,7 @@ struct size_compiletime
       size_detail::bits<hostrpc::round64(SZ)>::value>::type;
 
   HOSTRPC_ANNOTATE constexpr type N() const { return hostrpc::round64(SZ); }
+  constexpr static uint32_t reserved() { return UINT32_MAX; }
 };
 
 template <size_t Size, size_t Align>

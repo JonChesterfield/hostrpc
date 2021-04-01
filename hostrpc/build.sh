@@ -316,6 +316,7 @@ fi
 
 $CXX_X64 -I$HSAINC tests.cpp -c -o tests.x64.bc
 $CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc
+$CXX_X64 -I$HSAINC x64_x64_transaction.cpp -c -o x64_x64_transaction.x64.bc
 
 $CXX_GCN -DDERIVE_VAL=$DERIVE x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.code.bc
 $CXXCL_GCN -DDERIVE_VAL=$DERIVE x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.kern.bc
@@ -363,7 +364,7 @@ $CLANG -std=c++14 -Wall -Wextra -O0 -g test_storage.cpp obj/openmp_support.x64.b
 if (($have_amdgcn)); then
     $LINK obj/openmp_support.x64.bc obj/hsa_support.x64.bc obj/syscall.x64.bc -o obj/demo_bitcode_gcn.omp.bc
 
-# openmp is taking an excessive amount of time to compile, drop it for now
+# openmp is taking an excessive amount of time to compile, drop it for nowOO
 #     $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  -DDEMO_AMDGCN=1 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang obj/demo_bitcode_gcn.omp.bc -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR # && ./demo_openmp_gcn
 fi
 
@@ -420,6 +421,7 @@ fi
 $CXX_X64_LD prototype/states.x64.bc obj/catch.o $LDFLAGS -o prototype/states.exe
 
 $CXX_X64_LD x64_x64_stress.x64.bc obj/host_support.x64.bc obj/catch.o $LDFLAGS -o x64_x64_stress.exe
+$CXX_X64_LD x64_x64_transaction.x64.bc obj/host_support.x64.bc obj/catch.o $LDFLAGS -o x64_x64_transaction.exe
 
 $CXX_X64_LD x64_gcn_stress.x64.bc obj/hsa_support.x64.bc obj/catch.o $LDFLAGS -o x64_gcn_stress.exe
 
@@ -447,6 +449,7 @@ fi
 
 time ./tests.exe
 time ./x64_x64_stress.exe
+time ./x64_x64_transaction.exe
 
 if (($have_amdgcn)); then
 echo "Call hostcall/loader executable"

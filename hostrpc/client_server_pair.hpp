@@ -13,7 +13,8 @@ namespace hostrpc
 {
 template <typename SZ_, typename Copy_, typename Word_, typename AllocBuffer_,
           typename AllocInboxOutbox_, typename AllocLocal_,
-          typename AllocRemote_>
+          typename AllocRemote_, typename client_counter = counters::client_nop,
+          typename server_counter = counters::server_nop>
 struct client_server_pair_t
 {
   using SZ = SZ_;
@@ -24,8 +25,8 @@ struct client_server_pair_t
   using AllocLocal = AllocLocal_;
   using AllocRemote = AllocRemote_;
 
-  using client_type = client_impl<Word, SZ, Copy, counters::client_nop>;
-  using server_type = server_impl<Word, SZ, Copy, counters::server_nop>;
+  using client_type = client_impl<Word, SZ, Copy, client_counter>;
+  using server_type = server_impl<Word, SZ, Copy, server_counter>;
 
   using storage_type = allocator::store_impl<AllocBuffer, AllocInboxOutbox,
                                              AllocLocal, AllocRemote>;
