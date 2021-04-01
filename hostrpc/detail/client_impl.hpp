@@ -135,10 +135,14 @@ struct client_impl : public SZT, public Counter
 
   HOSTRPC_ANNOTATE client_counters get_counters() { return Counter::get(); }
 
-  // Returns true if it successfully launched the task
+  // rpc_invoke returns true if it successfully launched the task
+  // returns false if no slot was available
+
+  // Return after calling fill(), i.e. does not wait for server
   template <typename Fill>
   HOSTRPC_ANNOTATE bool rpc_invoke(Fill fill) noexcept
   {
+    // maybe name this async
     struct Use
     {
       HOSTRPC_ANNOTATE void operator()(hostrpc::page_t*){};
@@ -148,7 +152,7 @@ struct client_impl : public SZT, public Counter
     return rpc_invoke_impl<Fill, Use, false>(fill, u);
   }
 
-  // Returns true if it successfully launched the task
+  // Return after calling use(), i.e. waits for server
   template <typename Fill, typename Use>
   HOSTRPC_ANNOTATE bool rpc_invoke(Fill fill, Use use) noexcept
   {
@@ -178,19 +182,8 @@ struct client_impl : public SZT, public Counter
     // if the invoke call performed garbage collection, the word is not
     // known to be contended so it may be worth trying a different slot
     // before trying a different word
-#define CLIENT_OFFSET 0
-
-#if CLIENT_OFFSET
-    const uint32_t wstart = platform::client_start_slot();
-    const uint32_t wend = wstart + words;
-    for (uint32_t wi = wstart; wi != wend; wi++)
-      {
-        uint32_t w =
-            wi % words;  // modulo may hurt here, and probably want 32 bit iv
-#else
     for (uint32_t w = 0; w < words; w++)
       {
-#endif
         slot = find_candidate_client_slot(w);
         if (slot == UINT32_MAX)
           {
@@ -208,23 +201,24 @@ struct client_impl : public SZT, public Counter
                 // Test if it is available, e.g. isn't garbage
                 if (rpc_invoke_verify_slot_available(slot))
                   {
-                    bool r = rpc_invoke_fill_given_slot<Fill>(fill, slot);
+                    rpc_invoke_fill_given_slot<Fill>(fill, slot);
 
-                    if (r && have_continuation)
+                    if (have_continuation)
                       {
                         // if only garbage collected, don't call use
                         rpc_invoke_use_given_slot(use, slot);
                       }
 
                     // wave release slot
-                    platform::critical<uint32_t>([&]() {
-                      active.release_slot(size, slot);
-                      return 0;
-                    });
-                    // returning if the invoke garbage collected is inefficient
-                    // as the caller will need to try again, better to keep the
-                    // position in the loop.
-                    return r;
+                    if (platform::is_master_lane())
+                      {
+                        active.release_slot(size, slot);
+                      }
+
+                    // invoke() garbage collecting is transparent
+                    // to caller, so only returns true on non-garbage
+                    // work done
+                    return true;
                   }
               }
             else
@@ -234,7 +228,7 @@ struct client_impl : public SZT, public Counter
           }
       }
 
-    // couldn't get a slot, won't launch
+    // couldn't get a slot in any word, won't launch
     return false;
   }
 
@@ -340,7 +334,7 @@ struct client_impl : public SZT, public Counter
   }
 
   template <typename Fill>
-  HOSTRPC_ANNOTATE bool rpc_invoke_fill_given_slot(Fill fill,
+  HOSTRPC_ANNOTATE void rpc_invoke_fill_given_slot(Fill fill,
                                                    uint32_t slot) noexcept
   {
     assert(slot != UINT32_MAX);
@@ -386,7 +380,6 @@ struct client_impl : public SZT, public Counter
     // We could wait for inbox[slot] != 0 which indicates the result
     // has been garbage collected, but that stalls the wave waiting for the host
     // Instead, drop the warp and let the allocator skip occupied inbox slots
-    return true;
   }
 
   template <typename Use>

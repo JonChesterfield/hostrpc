@@ -48,6 +48,9 @@ static T x64_alloc(size_t size, x64_alloc_deleter *store)
 
 TEST_CASE("set up single word system")
 {
+  CHECK(0);
+  return;  // disable for now
+
   using namespace hostrpc;
   constexpr size_t N = 64;
   page_t client_buffer[N];

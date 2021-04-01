@@ -173,12 +173,9 @@ $OPT -strip-debug threads.gcn.bc -S -o threads.gcn.ll
 $OPT -strip-debug threads_bootstrap.x64.bc -S -o threads_bootstrap.x64.ll
 $OPT -strip-debug threads_bootstrap.gcn.bc -S -o threads_bootstrap.gcn.ll
 
-./threads.x64.exe
 
 
 $CXX_X64_LD threads_bootstrap.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o threads_bootstrap.x64.exe
-# ./threads_bootstrap.x64.exe crashes the vega902 gui at present
-
 
 
 $CXX_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.code.bc
@@ -191,7 +188,6 @@ $CXX_X64 -I$HSAINC x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.x64.bc
 
 $CXX obj/x64_gcn_debug.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o x64_gcn_debug.exe
 
-./x64_gcn_debug.exe
 
 $CXX_X64 syscall.cpp -c -o obj/syscall.x64.bc 
 
@@ -366,8 +362,9 @@ $CLANG -std=c++14 -Wall -Wextra -O0 -g test_storage.cpp obj/openmp_support.x64.b
 
 if (($have_amdgcn)); then
     $LINK obj/openmp_support.x64.bc obj/hsa_support.x64.bc obj/syscall.x64.bc -o obj/demo_bitcode_gcn.omp.bc
-    
-    $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  -DDEMO_AMDGCN=1 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang obj/demo_bitcode_gcn.omp.bc -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR # && ./demo_openmp_gcn
+
+# openmp is taking an excessive amount of time to compile, drop it for now
+#     $CLANG -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  -DDEMO_AMDGCN=1 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang obj/demo_bitcode_gcn.omp.bc -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR # && ./demo_openmp_gcn
 fi
 
 if (($have_nvptx)); then
@@ -432,6 +429,17 @@ $CXX_X64_LD tests.x64.bc obj/host_support.x64.bc obj/catch.o $LDFLAGS -o tests.e
 $CXX_X64_LD persistent_kernel.x64.bc obj/catch.o obj/hsa_support.x64.bc $LDFLAGS -o persistent_kernel.exe
 
 time valgrind --leak-check=full --fair-sched=yes ./prototype/states.exe
+
+
+set +e # Keep running tests after one fails
+
+./threads.x64.exe
+
+if (($have_amdgcn)); then
+    ./x64_gcn_debug.exe
+fi
+
+# ./threads_bootstrap.x64.exe crashes the vega902 gui at present
 
 if (($have_amdgcn)); then
 time ./persistent_kernel.exe

@@ -238,19 +238,21 @@ struct server_impl : public SZT, public Counter
     return false;
   }
 
-  template <typename Operate, typename Clear, bool have_precondition>
-  __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle_given_slot(
-      Operate op, Clear cl, uint32_t slot)
+  HOSTRPC_ANNOTATE bool lock_held(uint32_t slot)
+  {
+    const uint32_t element = index_to_element<Word>(slot);
+    const uint32_t subindex = index_to_subindex<Word>(slot);
+    return bits::nthbitset(active.load_word(size(), element), subindex);
+  }
+
+  template <typename Clear, bool have_precondition>
+  __attribute__((always_inline)) HOSTRPC_ANNOTATE bool
+  rpc_handle_verify_slot_available(Clear cl, uint32_t slot)
   {
     assert(slot != SIZE_MAX);
 
     const uint32_t element = index_to_element<Word>(slot);
     const uint32_t subindex = index_to_subindex<Word>(slot);
-
-    auto lock_held = [&]() -> bool {
-      return bits::nthbitset(active.load_word(size(), element), subindex);
-    };
-    (void)lock_held;
 
     const uint32_t size = this->size();
 
@@ -270,7 +272,7 @@ struct server_impl : public SZT, public Counter
     Word garbage_todo = (~i & o) & this_slot;
 
     assert((work_todo & garbage_todo) == 0);  // disjoint
-    assert(lock_held());
+    assert(lock_held(slot));
 
     if (garbage_todo)
       {
@@ -298,16 +300,32 @@ struct server_impl : public SZT, public Counter
         Counter::garbage_cas_fail(cas_fail_count);
         Counter::garbage_cas_help(cas_help_count);
 
-        assert(lock_held());
+        assert(lock_held(slot));
         return false;
       }
 
     if (!work_todo)
       {
         Counter::got_lock_after_work_done();
-        assert(lock_held());
+        assert(lock_held(slot));
         return false;
       }
+
+    return true;
+  }
+
+  template <typename Operate, typename Clear, bool have_precondition>
+  __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle_given_slot(
+      Operate op, Clear cl, uint32_t slot)
+  {
+    assert(slot != SIZE_MAX);
+
+    if (!rpc_handle_verify_slot_available<Clear, have_precondition>(cl, slot))
+      {
+        return false;
+      }
+
+    const uint32_t size = this->size();
 
     // make the calls
     Copy::pull_to_server_from_client(&local_buffer[slot], &remote_buffer[slot]);
@@ -331,7 +349,7 @@ struct server_impl : public SZT, public Counter
     }
 
     // leaves outbox live
-    assert(lock_held());
+    assert(lock_held(slot));
     return true;
   }
 };
