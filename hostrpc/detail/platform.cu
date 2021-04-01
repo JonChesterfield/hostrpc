@@ -50,7 +50,8 @@ static DEVICE uint32_t ballot()
 DEVICE int32_t __impl_shfl_down_sync(int32_t var, uint32_t laneDelta)
 {
   // danger: Probably want something more like:
-  // return __nvvm_shfl_sync_down_i32(Mask, Var, Delta, (( WARPSIZE - Width) << 8) | 0x1f);
+  // return __nvvm_shfl_sync_down_i32(Mask, Var, Delta, (( WARPSIZE - Width) <<
+  // 8) | 0x1f);
   return __nvvm_shfl_sync_down_i32(UINT32_MAX, var, laneDelta, WARPSIZE - 1);
 }
 
