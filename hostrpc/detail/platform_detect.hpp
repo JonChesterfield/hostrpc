@@ -40,17 +40,6 @@
 
 #endif
 
-// clang -x cuda errors on __device__, __host__ but seems to do the right thing with __attribute__
-
-// openmp presently defines __HIP__
-#if (defined(__CUDA__) || defined (__HIP__)) && !defined(_OPENMP)
-#define HOSTRPC_ANNOTATE_HOST __attribute__((host))
-#define HOSTRPC_ANNOTATE_DEVICE __attribute__((device))
-#else
-#define HOSTRPC_ANNOTATE_HOST
-#define HOSTRPC_ANNOTATE_DEVICE
-#endif
-#define HOSTRPC_ANNOTATE HOSTRPC_ANNOTATE_HOST HOSTRPC_ANNOTATE_DEVICE
 
 #if !defined (__NVPTX__) & !defined(__AMDGCN__)
 // TODO: Consider simplifying the following based on this
@@ -135,5 +124,26 @@
 #if (HOSTRPC_AMDGCN + HOSTRPC_NVPTX + HOSTRPC_HOST) != 1
 #error "Platform detection failed"
 #endif
+
+
+// clang -x cuda errors on __device__, __host__ but seems to do the right thing with __attribute__
+
+// openmp presently defines __HIP__
+// distinction between host/device is used in some coodegen tests, can be
+// removed before production
+#if (defined(__CUDA__) || defined (__HIP__)) && !defined(_OPENMP)
+  #define HOSTRPC_ANNOTATE_HOST __attribute__((host))
+  #define HOSTRPC_ANNOTATE_DEVICE __attribute__((device))
+#else
+  #if HOSTRPC_HOST
+    #define HOSTRPC_ANNOTATE_HOST
+    #define HOSTRPC_ANNOTATE_DEVICE
+  #else
+    #define HOSTRPC_ANNOTATE_HOST
+    #define HOSTRPC_ANNOTATE_DEVICE __attribute__((convergent))
+  #endif
+#endif
+#define HOSTRPC_ANNOTATE HOSTRPC_ANNOTATE_HOST HOSTRPC_ANNOTATE_DEVICE
+
 
 #endif
