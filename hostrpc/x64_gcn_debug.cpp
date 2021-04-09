@@ -11,16 +11,53 @@ kernel void __device_example(void) { example(); }
 
 namespace
 {
-struct print_instance
+enum : uint64_t
 {
-  uint64_t ID = 0;
+  func_print_nop = 0,
+  func_print_uuu = 1,
+  func_print_start = 2,
+  func_print_finish = 3,
+  func_print_append_str = 4,
+};
+
+static size_t fs_strnlen(const char *str, size_t limit)
+{
+  for (size_t i = 0; i < limit; i++)
+    {
+      if (str[i] == '\0')
+        {
+          return i;
+        }
+    }
+  return limit;
+}
+
+static size_t fs_strlen(const char *str)
+{
+  for (size_t i = 0;; i++)
+    {
+      if (str[i] == '\0')
+        {
+          return i;
+        }
+    }
+}
+
+struct print_uuu_instance
+{
+  uint64_t ID = func_print_uuu;
   char fmt[32] = {0};
   uint64_t arg0 = 0;
   uint64_t arg1 = 0;
   uint64_t arg2 = 0;
 
-  print_instance() = default;
-  print_instance(const char *d)
+  print_uuu_instance(const char *fmt_, uint64_t x0, uint64_t x1, uint64_t x2)
+      : arg0(x0), arg1(x1), arg2(x2)
+  {
+    __builtin_memcpy(fmt, fmt_, fs_strnlen(fmt_, sizeof(fmt)));
+  }
+
+  print_uuu_instance(const char *d)
   {
     __builtin_memcpy(&ID, d, sizeof(ID));
     d += sizeof(ID);
@@ -35,10 +72,40 @@ struct print_instance
   }
 };
 
-static constexpr unsigned debug_print_chars()
+struct print_start
 {
-  return sizeof(print_instance::fmt);
-}
+  uint64_t ID = func_print_start;
+  char unused[56];
+  print_start() {}
+};
+struct print_finish
+{
+  uint64_t ID = func_print_finish;
+  char unused[56];
+  print_finish() {}
+};
+
+struct print_append_str
+{
+  uint64_t ID = func_print_append_str;
+  uint64_t position;
+  char payload[48] = {0};
+
+  print_append_str(uint64_t position, const char *str) : position(position)
+  {
+    __builtin_memcpy(payload, str, fs_strnlen(str, sizeof(payload)));
+  }
+
+  print_append_str(const char *d)
+  {
+    __builtin_memcpy(&ID, d, sizeof(ID));
+    d += sizeof(ID);
+    __builtin_memcpy(&position, d, sizeof(position));
+    d += sizeof(position);
+    __builtin_memcpy(&payload, d, sizeof(payload));
+    d += sizeof(payload);
+  }
+};
 
 using SZ = hostrpc::size_runtime;
 
@@ -49,31 +116,34 @@ using SZ = hostrpc::size_runtime;
 __attribute__((visibility("default")))
 hostrpc::x64_gcn_type<SZ>::client_type hostrpc_x64_gcn_debug_client[1];
 
-static unsigned count_chars(const char *str)
+template <typename T>
+struct fill_by_copy
 {
-  for (unsigned i = 0; i < debug_print_chars(); i++)
-    {
-      if (str[i] == '\0')
-        {
-          return i;
-        }
-    }
-  return debug_print_chars();
-}
+  static_assert(sizeof(T) == 64, "");
+  fill_by_copy(T *i) : i(i) {}
+  T *i;
+
+  void operator()(hostrpc::page_t *page)
+  {
+    unsigned id = platform::get_lane_id();
+    hostrpc::cacheline_t *dline = &page->cacheline[id];
+    __builtin_memcpy(dline, i, 64);
+  }
+};
 
 void hostrpc::print_base(const char *str, uint64_t x0, uint64_t x1, uint64_t x2)
 {
   struct fill
   {
-    fill(print_instance *i) : i(i) {}
-    print_instance *i;
+    fill(print_uuu_instance *i) : i(i) {}
+    print_uuu_instance *i;
 
     void operator()(hostrpc::page_t *page)
     {
       unsigned id = platform::get_lane_id();
       hostrpc::cacheline_t *dline = &page->cacheline[id];
       __builtin_memcpy(dline, i, 64);
-    };
+    }
   };
 
   struct use
@@ -81,21 +151,53 @@ void hostrpc::print_base(const char *str, uint64_t x0, uint64_t x1, uint64_t x2)
     void operator()(hostrpc::page_t *){};
   };
 
-  constexpr uint64_t print_base_id = 42;
+  print_uuu_instance i(str, x0, x1, x2);
 
-  unsigned N = count_chars(str);
-
-  print_instance i;
-  i.ID = print_base_id;
-  i.arg0 = x0;
-  i.arg1 = x1;
-  i.arg2 = x2;
-
-  __builtin_memcpy(i.fmt, str, N);
-
-  fill f(&i);
+  fill_by_copy<print_uuu_instance> f(&i);
   use u;
-  hostrpc_x64_gcn_debug_client[0].rpc_invoke<fill, use>(f, u);
+  hostrpc_x64_gcn_debug_client[0].rpc_invoke(f, u);
+}
+
+void print_string(const char *str)
+{
+  size_t N = fs_strlen(str);
+  (void)N;
+  // Get a token
+  uint32_t token;
+  {
+    print_start inst;
+    fill_by_copy<print_start> f(&inst);
+    while (!hostrpc_x64_gcn_debug_client[0].rpc_transaction_start(f, &token))
+      {
+      }
+  }
+
+  // Append the string, in pieces
+  {
+    print_append_str inst(token, str);
+    fill_by_copy<print_append_str> f(&inst);
+    hostrpc_x64_gcn_debug_client[0].rpc_invoke(f);
+    // hostrpc::print("BADGER Token: %u\n", token);
+  }
+
+  {
+    print_append_str inst(token, "wombat");
+    fill_by_copy<print_append_str> f(&inst);
+    hostrpc_x64_gcn_debug_client[0].rpc_invoke(f);
+  }
+
+  // Emit the string
+  {
+    print_finish inst;
+    fill_by_copy<print_finish> f(&inst);
+    hostrpc_x64_gcn_debug_client[0].rpc_transaction_finish(f, token);
+  }
+
+  {
+    print_append_str inst(token, "what?");
+    fill_by_copy<print_append_str> f(&inst);
+    hostrpc_x64_gcn_debug_client[0].rpc_invoke(f);
+  }
 }
 
 #endif
@@ -109,29 +211,87 @@ void hostrpc::print_base(const char *str, uint64_t x0, uint64_t x1, uint64_t x2)
 
 #include <pthread.h>
 #include <stdio.h>
+#include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 namespace
 {
+using buffer_t = std::unordered_map<
+    uint32_t, std::array<std::unordered_map<uint64_t, std::string>, 64> >;
+
 struct operate
 {
+  buffer_t *buffer = nullptr;
+  hostrpc::page_t *start_local_buffer = nullptr;
+  operate(buffer_t *buffer, hostrpc::page_t *s)
+      : buffer(buffer), start_local_buffer(s)
+  {
+  }
+  operate() = default;
+
   void operator()(hostrpc::page_t *page)
   {
-    constexpr unsigned pre = 7;
-    const char *prefix = "[%.2u] ";
+    uint32_t slot = page - start_local_buffer;
 
-    char fmt[pre + debug_print_chars() + 1];
-    __builtin_memcpy(&fmt, prefix, pre);
+    auto &slot_buffer = (*buffer)[slot];
 
     for (unsigned c = 0; c < 64; c++)
       {
+        auto &thread_buffer = slot_buffer[c];
         hostrpc::cacheline_t *line = &page->cacheline[c];
-        print_instance i(reinterpret_cast<const char *>(&line->element[0]));
 
-        memcpy(&fmt[pre], i.fmt, sizeof(i.fmt));
-        fmt[sizeof(fmt) - 1] = '\0';
-        printf(fmt, c, line->element[5], line->element[6], line->element[7]);
+        uint64_t ID = line->element[0];
+
+        switch (ID)
+          {
+            case 0:
+            default:
+              {
+                break;
+              }
+
+            case func_print_start:
+              {
+                printf("[%.2u] got print_start\n", c);
+                (*buffer)[slot] = {};
+                break;
+              }
+            case func_print_finish:
+              {
+                uint64_t pos = line->element[1];
+                printf("[%.2u] got print_finish[%lu]\n", c, pos);
+                break;
+              }
+
+            case func_print_append_str:
+              {
+                print_append_str i(
+                    reinterpret_cast<const char *>(&line->element[0]));
+                auto &entry = thread_buffer[i.position];
+                printf("[%.2u] inserting [%lu/%s]\n", c, i.position, i.payload);
+                entry = std::string(i.payload);
+                break;
+              }
+
+            case func_print_uuu:
+              {
+                print_uuu_instance i(
+                    reinterpret_cast<const char *>(&line->element[0]));
+
+                constexpr unsigned pre = 7;
+                const char *prefix = "[%.2u] ";
+
+                char fmt[pre + sizeof(print_uuu_instance::fmt) + 1];
+                __builtin_memcpy(&fmt, prefix, pre);
+                __builtin_memcpy(&fmt[pre], i.fmt, sizeof(i.fmt));
+                fmt[sizeof(fmt) - 1] = '\0';
+                printf(fmt, c, line->element[5], line->element[6],
+                       line->element[7]);
+                break;
+              }
+          }
       }
 
     (void)page;
@@ -165,6 +325,8 @@ struct wrap_state
 
   sts_ty server_state;
   std::unique_ptr<hostrpc::thread<sts_ty> > thrd;
+
+  std::unique_ptr<buffer_t> buffer;
 
   wrap_state(wrap_state &&) = delete;
   wrap_state &operator=(wrap_state &&) = delete;
@@ -200,7 +362,10 @@ struct wrap_state
                            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
         &server_control, 1);
 
-    server_state = sts_ty(&p->server, &server_control, operate{}, clear{});
+    buffer = std::make_unique<buffer_t>();
+
+    operate op(buffer.get(), p->server.local_buffer);
+    server_state = sts_ty(&p->server, &server_control, op, clear{});
 
     thrd =
         std::make_unique<hostrpc::thread<sts_ty> >(make_thread(&server_state));
@@ -219,6 +384,8 @@ struct wrap_state
         &server_control, 0);
 
     thrd->join();
+
+    buffer.reset();
   }
 };
 
@@ -304,6 +471,10 @@ int hostrpc::print_enable(hsa_executable_t ex, hsa_agent_t kernel_agent)
 #if (HOSTRPC_AMDGCN)
 extern "C" void example(void)
 {
+  print_string("badger");
+
+  platform::sleep();
+
   hostrpc::print("test %lu call\n", 42, 0, 0);
 
   unsigned id = platform::get_lane_id();

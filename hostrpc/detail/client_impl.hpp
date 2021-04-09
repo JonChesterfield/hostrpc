@@ -136,66 +136,8 @@ struct client_impl : public SZT, public Counter
 
   HOSTRPC_ANNOTATE client_counters get_counters() { return Counter::get(); }
 
-  // rpc_invoke returns true if it successfully launched the task
-  // returns false if no slot was available
-
-  // Return after calling fill(), i.e. does not wait for server
-  template <typename Fill>
-  HOSTRPC_ANNOTATE bool rpc_invoke(Fill fill) noexcept
+  HOSTRPC_ANNOTATE uint32_t rpc_open_port()  // UINT32_MAX on failure
   {
-    // maybe name this async
-    struct Use
-    {
-      HOSTRPC_ANNOTATE void operator()(hostrpc::page_t*){};
-    };
-    Use u;
-    slot_type token;
-    return rpc_invoke_impl<Fill, Use, false, false>(fill, u, &token);
-  }
-
-  // Return after calling use(), i.e. waits for server
-  template <typename Fill, typename Use>
-  HOSTRPC_ANNOTATE bool rpc_invoke(Fill fill, Use use) noexcept
-  {
-    slot_type token;
-    return rpc_invoke_impl<Fill, Use, true, false>(fill, use, &token);
-  }
-
-  // Return true & populate token on success, false on failure to find slot
-  template <typename Fill>
-  HOSTRPC_ANNOTATE bool rpc_transaction_start(Fill fill,
-                                              slot_type* token) noexcept
-  {
-    struct Use
-    {
-      HOSTRPC_ANNOTATE void operator()(hostrpc::page_t*){};
-    };
-    Use u;
-    return rpc_invoke_impl<Fill, Use, false, true>(fill, u, token);
-  }
-
-  template <typename Use>
-  HOSTRPC_ANNOTATE void rpc_transaction_finish(Use use,
-                                               slot_type token) noexcept
-  {
-    const slot_type size = this->size();
-    uint32_t slot = token;
-    rpc_invoke_use_given_slot(use, slot);
-
-    if (platform::is_master_lane())
-      {
-        active.release_slot(size, slot);
-      }
-  }
-
- private:
-  template <typename Fill, typename Use, bool have_continuation,
-            bool is_transaction>
-  HOSTRPC_ANNOTATE bool rpc_invoke_impl(Fill fill, Use use,
-                                        slot_type* token) noexcept
-  {
-    static_assert(!(have_continuation && is_transaction), "");
-
     const slot_type size = this->size();
     const slot_type words = this->words();
     // 0b111 is posted request, waited for it, got it
@@ -203,7 +145,6 @@ struct client_impl : public SZT, public Counter
     // 0b101 is got a result, don't need it, only spun up a thread for cleanup
     // 0b100 is got a result, don't need it
 
-    uint32_t slot = UINT32_MAX;
     // tries each word in sequnce. A cas failing suggests contention, in which
     // case try the next word instead of the next slot
     // may be worth supporting non-zero starting word for cache locality effects
@@ -217,7 +158,7 @@ struct client_impl : public SZT, public Counter
     // before trying a different word
     for (uint32_t w = 0; w < words; w++)
       {
-        slot = find_candidate_client_slot(w);
+        uint32_t slot = find_candidate_client_slot(w);
         if (slot == UINT32_MAX)
           {
             // no slot
@@ -234,32 +175,8 @@ struct client_impl : public SZT, public Counter
                 // Test if it is available, e.g. isn't garbage
                 if (rpc_invoke_verify_slot_available(slot))
                   {
-                    rpc_invoke_fill_given_slot<Fill>(fill, slot);
-
-                    static_assert(!(have_continuation && is_transaction), "");
-                    if (have_continuation)
-                      {
-                        // if only garbage collected, don't call use
-                        rpc_invoke_use_given_slot(use, slot);
-                      }
-                    if (is_transaction)
-                      {
-                        // leave lock held
-                        *token = static_cast<slot_type>(slot);
-                      }
-                    else
-                      {
-                        // wave release slot
-                        if (platform::is_master_lane())
-                          {
-                            active.release_slot(size, slot);
-                          }
-                      }
-
-                    // invoke() garbage collecting is transparent
-                    // to caller, so only returns true on non-garbage
-                    // work done
-                    return true;
+                    // Yep, got it and it's good to go
+                    return slot;
                   }
               }
             else
@@ -269,10 +186,129 @@ struct client_impl : public SZT, public Counter
           }
       }
 
-    // couldn't get a slot in any word, won't launch
-    return false;
+    // couldn't get a slot in any word
+    return UINT32_MAX;
   }
 
+  HOSTRPC_ANNOTATE void rpc_close_port(
+      uint32_t port)  // Require != UINT32_MAX, not already closed
+  {
+    assert(port != UINT32_MAX);
+    assert(port < size());
+
+    if (platform::is_master_lane())
+      {
+        active.release_slot(size(), port);
+      }
+  }
+
+  template <typename Op>
+  HOSTRPC_ANNOTATE void rpc_port_send(uint32_t port, Op op)
+  {
+    rpc_invoke_fill_given_slot<Op>(op, port);
+  }
+
+  template <typename Op>
+  HOSTRPC_ANNOTATE void rpc_port_recv(uint32_t port, Op op)
+  {
+    // wait for H1, result available
+    while (!result_available(port))
+      {
+        // todo: useful work here?
+        Counter::waiting_for_result();
+        platform::sleep();
+      }
+
+    rpc_invoke_use_given_slot(op, port);
+  }
+
+  template <typename Op>
+  HOSTRPC_ANNOTATE bool rpc_port_invoke_async(Op op)
+  {
+    uint32_t port = rpc_open_port();
+    if (port == UINT32_MAX)
+      {
+        return false;
+      }
+    rpc_port_send(port, op);
+    rpc_close_port(port);
+    return true;
+  }
+
+  template <typename Fill, typename Use>
+  HOSTRPC_ANNOTATE bool rpc_port_invoke(Fill f, Use u)
+  {
+    uint32_t port = rpc_open_port();
+    if (port == UINT32_MAX)
+      {
+        return false;
+      }
+    rpc_port_send(port, f);
+    rpc_port_recv(port, u);  // implicit wait
+    rpc_close_port(port);
+    return true;
+  }
+
+  template <typename Op>
+  HOSTRPC_ANNOTATE uint32_t rpc_port_transaction_start(Op op)
+  {
+    uint32_t port = rpc_open_port();
+    if (port != UINT32_MAX)
+      {
+        rpc_port_send(port, op);
+      }
+    return port;
+  }
+
+  template <typename Op>
+  HOSTRPC_ANNOTATE void rpc_port_transaction_finish(uint32_t port, Op op)
+  {
+    rpc_port_recv(port, op);
+    rpc_close_port(port);
+  }
+
+  // rpc_invoke returns true if it successfully launched the task
+  // returns false if no slot was available
+
+  // Return after calling fill(), i.e. does not wait for server
+  template <typename Fill>
+  HOSTRPC_ANNOTATE bool rpc_invoke(Fill fill) noexcept
+  {
+    return rpc_port_invoke_async(fill);
+  }
+
+  // Return after calling use(), i.e. waits for server
+  template <typename Fill, typename Use>
+  HOSTRPC_ANNOTATE bool rpc_invoke(Fill fill, Use use) noexcept
+  {
+    return rpc_port_invoke(fill, use);
+  }
+
+  // Return true & populate token on success, false on failure to find slot
+  template <typename Fill>
+  HOSTRPC_ANNOTATE bool rpc_transaction_start(Fill fill,
+                                              slot_type* token) noexcept
+  {
+    uint32_t r = rpc_port_transaction_start(fill);
+    if (r == UINT32_MAX)
+      {
+        return false;
+      }
+    else
+      {
+        *token = r;
+        return true;
+      }
+  }
+
+  template <typename Use>
+  HOSTRPC_ANNOTATE void rpc_transaction_finish(Use use,
+                                               slot_type token) noexcept
+  {
+    rpc_port_transaction_finish(token, use);
+  }
+
+ private:
   HOSTRPC_ANNOTATE uint32_t find_candidate_client_slot(uint32_t w)
   {
     Word i = inbox.load_word(size(), w);
@@ -423,62 +459,42 @@ struct client_impl : public SZT, public Counter
     // Instead, drop the warp and let the allocator skip occupied inbox slots
   }
 
+  HOSTRPC_ANNOTATE bool result_available(uint32_t slot)
+  {
+    const uint32_t size = this->size();
+    Word loaded = 0;
+    uint32_t got = 0;
+    if (platform::is_master_lane())
+      {
+        got = inbox(size, slot, &loaded);
+      }
+    got = platform::broadcast_master(got);
+
+    return (got == 1);
+  }
+
   template <typename Use>
   HOSTRPC_ANNOTATE void rpc_invoke_use_given_slot(Use use,
                                                   uint32_t slot) noexcept
   {
-    const uint32_t size = this->size();
-    {
-      // wait for H1, result available
+    platform::fence_acquire();
 
-      while (true)
-        {
-          Word loaded = 0;
-          uint32_t got = 0;
-          if (platform::is_master_lane())
-            {
-              got = inbox(size, slot, &loaded);
-            }
-          got = platform::broadcast_master(got);
+    Copy::pull_to_client_from_server(&local_buffer[slot], &remote_buffer[slot]);
+    // call the continuation
+    use(&local_buffer[slot]);
 
-          if (got == 1)
-            {
-              break;
-            }
+    // Copying the state back to the server is a nop for aliased case,
+    // and is only necessary if the server has a non-nop garbage clear
+    // callback
+    Copy::push_from_client_to_server(&remote_buffer[slot], &local_buffer[slot]);
 
-          Counter::waiting_for_result();
-
-          // make this spin slightly cheaper
-          // todo: can the client do useful work while it waits? e.g. gc?
-          // need to avoid taking too many locks at a time given forward
-          // progress which makes gc tricky
-          // could attempt to propagate the current word from staging to
-          // outbox - that's safe because a lock is held, maintaining linear
-          // time - but may conflict with other clients trying to do the same
-          platform::sleep();
-        }
-
-      platform::fence_acquire();
-
-      Copy::pull_to_client_from_server(&local_buffer[slot],
-                                       &remote_buffer[slot]);
-      // call the continuation
-      use(&local_buffer[slot]);
-
-      // Copying the state back to the server is a nop for aliased case,
-      // and is only necessary if the server has a non-nop garbage clear
-      // callback
-      Copy::push_from_client_to_server(&remote_buffer[slot],
-                                       &local_buffer[slot]);
-
-      // mark the work as no longer in use
-      // todo: is it better to leave this for the GC?
-      // can free slots more lazily by updating the staging outbox and
-      // leaving the visible one. In that case the update may be transfered
-      // for free, or it may never become visible in which case the server
-      // won't realise the slot is no longer in use
-      release_slot(slot);
-    }
+    // mark the work as no longer in use
+    // todo: is it better to leave this for the GC?
+    // can free slots more lazily by updating the staging outbox and
+    // leaving the visible one. In that case the update may be transfered
+    // for free, or it may never become visible in which case the server
+    // won't realise the slot is no longer in use
+    release_slot(slot);
   }
 };
 
