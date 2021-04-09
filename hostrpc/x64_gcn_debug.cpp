@@ -162,42 +162,74 @@ void print_string(const char *str)
 {
   size_t N = fs_strlen(str);
   (void)N;
-  // Get a token
-  uint32_t token;
+  // Get a port
+  uint32_t port = hostrpc_x64_gcn_debug_client[0].rpc_open_port();
+  if (port == UINT32_MAX) {
+    // failure
+    return;
+  }
+
+  // hostrpc::print("Print str using base port %lu\n", (uint64_t)port);
+
+  // Start a transaction
   {
     print_start inst;
     fill_by_copy<print_start> f(&inst);
-    while (!hostrpc_x64_gcn_debug_client[0].rpc_transaction_start(f, &token))
-      {
-      }
+hostrpc_x64_gcn_debug_client[0].    rpc_port_send(port, f); // require f() to have been called before this return
   }
 
-  // Append the string, in pieces
+ 
+  // Append the string, in pieces, via various ports
   {
-    print_append_str inst(token, str);
+    print_append_str inst(port, str);
     fill_by_copy<print_append_str> f(&inst);
-    hostrpc_x64_gcn_debug_client[0].rpc_invoke(f);
-    // hostrpc::print("BADGER Token: %u\n", token);
+    hostrpc_x64_gcn_debug_client[0].rpc_invoke_async(f);
   }
-
   {
-    print_append_str inst(token, "wombat");
+    print_append_str inst(port, "wombat");
     fill_by_copy<print_append_str> f(&inst);
-    hostrpc_x64_gcn_debug_client[0].rpc_invoke(f);
+    hostrpc_x64_gcn_debug_client[0].rpc_invoke_async(f);
   }
 
-  // Emit the string
-  {
+
+   hostrpc::print("Synchronous call %u\n",__LINE__);
+
+#if 1
+  
+  // Emit the string, using the original port. Will therefore
+  // execute after the print_start
+  if (1) {
     print_finish inst;
     fill_by_copy<print_finish> f(&inst);
-    hostrpc_x64_gcn_debug_client[0].rpc_transaction_finish(f, token);
+    
+     hostrpc_x64_gcn_debug_client[0].rpc_port_recv(port,hostrpc::fill_nop{}); // TODO: send should do this
+
+    hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
   }
 
-  {
-    print_append_str inst(token, "what?");
+
+#endif
+
+
+    print_append_str inst(port, "why no finish");
     fill_by_copy<print_append_str> f(&inst);
-    hostrpc_x64_gcn_debug_client[0].rpc_invoke(f);
+    hostrpc_x64_gcn_debug_client[0].rpc_invoke_async(f);
+
+  
+  // Wait for the above to flush before returning from this call
+  {
+     hostrpc_x64_gcn_debug_client[0].rpc_port_wait_then_discard_result(port);
   }
+
+
+   hostrpc::print("Synchronous call %u\n",__LINE__);
+  
+  
+  // Clean up
+  hostrpc_x64_gcn_debug_client[0].  rpc_close_port(port);
+
+  // hostrpc::print("Synchronous call %u\n",__LINE__);
+
 }
 
 #endif
@@ -232,12 +264,13 @@ struct operate
   operate() = default;
 
   void operator()(hostrpc::page_t *page)
-  {
+  {       
     uint32_t slot = page - start_local_buffer;
+    fprintf(stderr, "Invoked operate on slot %u\n",slot);
 
     auto &slot_buffer = (*buffer)[slot];
 
-    for (unsigned c = 0; c < 64; c++)
+    for (unsigned c = 0; c < 8 /*64*/; c++)
       {
         auto &thread_buffer = slot_buffer[c];
         hostrpc::cacheline_t *line = &page->cacheline[c];
@@ -260,8 +293,7 @@ struct operate
               }
             case func_print_finish:
               {
-                uint64_t pos = line->element[1];
-                printf("[%.2u] got print_finish[%lu]\n", c, pos);
+                printf("[%.2u] got print_finish\n", c);
                 break;
               }
 
@@ -295,7 +327,6 @@ struct operate
       }
 
     (void)page;
-    fprintf(stderr, "Invoked operate\n");
   }
 };
 
@@ -473,6 +504,8 @@ extern "C" void example(void)
 {
   print_string("badger");
 
+  return;
+  
   platform::sleep();
 
   hostrpc::print("test %lu call\n", 42, 0, 0);
@@ -529,6 +562,8 @@ int main()
 
       hsa_signal_destroy(sig);
       hsa_queue_destroy(queue);
+
+      return 0; // skip the second gpuo
     }
 }
 

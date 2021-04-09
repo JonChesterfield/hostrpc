@@ -6,6 +6,7 @@ set -o pipefail
 ./clean.sh
 
 DERIVE=${1:-4}
+
 # Aomp
 RDIR=$HOME/rocm/aomp
 

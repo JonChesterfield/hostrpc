@@ -193,6 +193,9 @@ struct client_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE void rpc_close_port(
       uint32_t port)  // Require != UINT32_MAX, not already closed
   {
+    // something needs to release() the buffer element before
+    // dropping this lock
+    
     assert(port != UINT32_MAX);
     assert(port < size());
 
@@ -205,26 +208,66 @@ struct client_impl : public SZT, public Counter
   template <typename Op>
   HOSTRPC_ANNOTATE void rpc_port_send(uint32_t port, Op op)
   {
+    // If the port has just been opened, can call invoke immediately
+    // However it may not have just been opened
+#if 0
+    const uint32_t size = this->size();
+    Word loaded = 0;
+    uint32_t got = 0;
+
+    if (platform::is_master_lane())
+      {
+        got = staging(size, port, &loaded); // all lanes should be uniform anyway
+      }
+    got = platform::broadcast_master(got);
+    
+    platform::fence_acquire(); // not sure req
+    
+    if (got == 1)
+      {
+        // Port is already in use (assumed by this thread at present)
+        // Reached when called as
+        // open
+        // send
+        // send <- here
+        // recv
+        // close
+
+        rpc_port_wait_then_discard_result(port);       
+      }
+#endif
     rpc_invoke_fill_given_slot<Op>(op, port);
   }
 
-  template <typename Op>
-  HOSTRPC_ANNOTATE void rpc_port_recv(uint32_t port, Op op)
+  HOSTRPC_ANNOTATE void rpc_port_wait_then_discard_result(uint32_t port)
   {
-    // wait for H1, result available
+    rpc_port_wait_for_result(port);
+    rpc_invoke_drop_given_slot(port);
+  }
+  
+  HOSTRPC_ANNOTATE void rpc_port_wait_for_result(uint32_t port)
+  {
     while (!result_available(port))
       {
         // todo: useful work here?
         Counter::waiting_for_result();
         platform::sleep();
       }
-
+  }
+    
+  template <typename Op>
+  HOSTRPC_ANNOTATE void rpc_port_recv(uint32_t port, Op op)
+  {
+    // wait for H1, result available
+    // if outbox is clear, which is detectable, this will not terminate
+    rpc_port_wait_for_result(port);
     rpc_invoke_use_given_slot(op, port);
   }
 
   template <typename Op>
-  HOSTRPC_ANNOTATE bool rpc_port_invoke_async(Op op)
+  HOSTRPC_ANNOTATE bool rpc_invoke_async(Op op)
   {
+    // get a port, send it, don't wait
     uint32_t port = rpc_open_port();
     if (port == UINT32_MAX)
       {
@@ -233,6 +276,12 @@ struct client_impl : public SZT, public Counter
     rpc_port_send(port, op);
     rpc_close_port(port);
     return true;
+  }
+  
+  template <typename Op>
+  HOSTRPC_ANNOTATE bool rpc_port_invoke_async(Op op)
+  {
+    return rpc_invoke_async(op);
   }
 
   template <typename Fill, typename Use>
@@ -244,7 +293,7 @@ struct client_impl : public SZT, public Counter
         return false;
       }
     rpc_port_send(port, f);
-    rpc_port_recv(port, u);  // implicit wait
+    rpc_port_recv(port, u);  // implicit wait for result
     rpc_close_port(port);
     return true;
   }
@@ -496,6 +545,15 @@ struct client_impl : public SZT, public Counter
     // won't realise the slot is no longer in use
     release_slot(slot);
   }
+
+  // no-op specialization of invoke_use_given_slot
+  HOSTRPC_ANNOTATE void rpc_invoke_drop_given_slot(
+                                                  uint32_t slot) noexcept
+  {
+    platform::fence_acquire();
+    release_slot(slot);
+  }
+  
 };
 
 }  // namespace hostrpc
