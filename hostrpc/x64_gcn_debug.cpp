@@ -81,17 +81,28 @@ struct print_start
 struct print_finish
 {
   uint64_t ID = func_print_finish;
-  char unused[56];
-  print_finish() {}
+  uint64_t packets;
+  char unused[48];
+  print_finish(uint64_t packets) : packets(packets) {}
+
+  print_finish(const char *d)
+  {
+    __builtin_memcpy(&ID, d, sizeof(ID));
+    d += sizeof(ID);
+    __builtin_memcpy(&packets, d, sizeof(packets));
+    d += sizeof(packets);
+  }
 };
 
 struct print_append_str
 {
   uint64_t ID = func_print_append_str;
+  uint64_t start_port;
   uint64_t position;
-  char payload[48] = {0};
-
-  print_append_str(uint64_t position, const char *str) : position(position)
+  char payload[8] = {0};
+  char unused[32];
+  print_append_str(uint64_t start_port, uint64_t position, const char *str)
+      : start_port(start_port), position(position)
   {
     __builtin_memcpy(payload, str, fs_strnlen(str, sizeof(payload)));
   }
@@ -100,6 +111,8 @@ struct print_append_str
   {
     __builtin_memcpy(&ID, d, sizeof(ID));
     d += sizeof(ID);
+    __builtin_memcpy(&start_port, d, sizeof(start_port));
+    d += sizeof(start_port);
     __builtin_memcpy(&position, d, sizeof(position));
     d += sizeof(position);
     __builtin_memcpy(&payload, d, sizeof(payload));
@@ -178,22 +191,35 @@ void print_string(const char *str)
         port, f);  // require f() to have been called before this return
   }
 
+  uint64_t pos = 0;
+  uint64_t length = fs_strlen(str);
+  constexpr size_t chunk = sizeof(print_append_str::payload);
+  uint64_t pieces = (length + chunk - 1) / chunk;
+
   // Append the string, in pieces, via various ports
-  {
-    print_append_str inst(port, str);
-    fill_by_copy<print_append_str> f(&inst);
-    hostrpc_x64_gcn_debug_client[0].rpc_invoke_async(f);
-  }
-  {
-    print_append_str inst(port, "wombat");
-    fill_by_copy<print_append_str> f(&inst);
-    hostrpc_x64_gcn_debug_client[0].rpc_invoke_async(f);
-  }
+  // Probably want try_invoke or similar, don't need to
+  // fill the whole buffer either
+  // Also, there may be zero available, in which case some can be
+  // sent down the existing pipe
+  for (uint64_t i = 0; i < pieces; i++)
+    {
+      print_append_str inst(port, pos++, &str[i * chunk]);
+      fill_by_copy<print_append_str> f(&inst);
+      hostrpc_x64_gcn_debug_client[0].rpc_invoke_async(f);
+    }
 
   // Emit the string, using the original port. Will therefore
   // execute after the print_start
+  // TODO: Also need to wait for the pieces to land, probably on
+  // the gpu side. Needs an invoke_async that returns a handle
+  // that can be waited on or similar, or for the host to wait
+  // until the 'pos' packets have arrived. That's tricky without
+  // coroutines or similar on the server, as once the finish has
+  // started there may be no thread handling the pieces
+  // Or send them all down the same pipe, simpler but expected
+  // slower
   {
-    print_finish inst;
+    print_finish inst(pos);
     fill_by_copy<print_finish> f(&inst);
     hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
   }
@@ -243,12 +269,13 @@ struct operate
 
   void operator()(hostrpc::page_t *page)
   {
+    const bool verbose = false;
     uint32_t slot = page - start_local_buffer;
-    fprintf(stderr, "Invoked operate on slot %u\n", slot);
+    if (verbose) fprintf(stderr, "Invoked operate on slot %u\n", slot);
 
     auto &slot_buffer = (*buffer)[slot];
 
-    for (unsigned c = 0; c < 8 /*64*/; c++)
+    for (unsigned c = 0; c < 64; c++)
       {
         auto &thread_buffer = slot_buffer[c];
         hostrpc::cacheline_t *line = &page->cacheline[c];
@@ -265,13 +292,35 @@ struct operate
 
             case func_print_start:
               {
-                printf("[%.2u] got print_start\n", c);
-                (*buffer)[slot] = {};
+                if (verbose)
+                  printf("[%.2u] got print_start, clear slot %u\n", c, slot);
+                thread_buffer = {};
                 break;
               }
+
             case func_print_finish:
               {
-                printf("[%.2u] got print_finish\n", c);
+                print_finish i(
+                    reinterpret_cast<const char *>(&line->element[0]));
+
+                if (verbose)
+                  printf(
+                      "[%.2u] got print_finish on slot %u, packets %lu, buffer "
+                      "size %zu\n",
+                      c, slot, i.packets, thread_buffer.size());
+
+                std::string acc;
+
+                for (size_t p = 0; p < i.packets; p++)
+                  {
+                    acc.append(thread_buffer[p]);
+                    if (verbose)
+                      printf("[%.2u] part [%zu]: %s\n", c, p,
+                             thread_buffer[p].c_str());
+                  }
+
+                printf("[%.2u] %s\n", c, acc.c_str());
+
                 break;
               }
 
@@ -279,9 +328,17 @@ struct operate
               {
                 print_append_str i(
                     reinterpret_cast<const char *>(&line->element[0]));
-                auto &entry = thread_buffer[i.position];
-                printf("[%.2u] inserting [%lu/%s]\n", c, i.position, i.payload);
-                entry = std::string(i.payload);
+                auto &start_thread_buffer = (*buffer)[i.start_port][c];
+                // this constructor can lead to embedded nul + noise, but
+                // finish using c_str means said nul/noise is ignored
+                start_thread_buffer[i.position] =
+                    std::string(i.payload, sizeof(i.payload));
+                if (verbose)
+                  printf("[%.2u] (*buffer-%p)[%lu][%u][%lu] (sz %zu) = %s\n", c,
+                         buffer, i.start_port, c, i.position,
+                         start_thread_buffer.size(),
+                         start_thread_buffer[i.position].c_str());
+
                 break;
               }
 
@@ -480,7 +537,18 @@ int hostrpc::print_enable(hsa_executable_t ex, hsa_agent_t kernel_agent)
 #if (HOSTRPC_AMDGCN)
 extern "C" void example(void)
 {
-  print_string("badger");
+  unsigned id = platform::get_lane_id();
+
+  if (id % 3 == 0)
+    {
+      print_string(
+          "this string is somewhat too long to fit in a single buffer so "
+          "splits across several");
+    }
+  else
+    {
+      print_string("mostly short though");
+    }
 
   return;
 
@@ -488,7 +556,6 @@ extern "C" void example(void)
 
   hostrpc::print("test %lu call\n", 42, 0, 0);
 
-  unsigned id = platform::get_lane_id();
   if (id % 2) hostrpc::print("second %lu/%lu/%lu call\n", 101, 5, 2);
 }
 
@@ -541,7 +608,7 @@ int main()
       hsa_signal_destroy(sig);
       hsa_queue_destroy(queue);
 
-      return 0;  // skip the second gpuo
+      return 0;  // skip the second gpu
     }
 }
 
