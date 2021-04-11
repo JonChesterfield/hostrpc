@@ -53,7 +53,11 @@ static_assert(sizeof(cacheline_t) == 64, "");
 
 struct page_t
 {
-  alignas(4096) cacheline_t cacheline[64];
+  enum
+  {
+    width = 64
+  };
+  alignas(4096) cacheline_t cacheline[width];
 };
 static_assert(sizeof(page_t) == 4096, "");
 

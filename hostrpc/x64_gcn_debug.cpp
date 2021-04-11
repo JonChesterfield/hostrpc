@@ -43,7 +43,8 @@ enum : uint64_t
   func_print_append_str = 4,
 
   func_debug_print_start = 5,
-  func_debug_print_end = 5,
+  func_debug_print_end = 6,
+  func_debug_print_pass_cstr = 6,
 
 };
 
@@ -297,11 +298,25 @@ uint32_t debug_print_start(const char *fmt)
   return port;
 }
 
+int debug_print_end(uint32_t port)
+{
+  {
+    debug_print_end_t inst;
+    fill_by_copy<debug_print_end_t> f(&inst);
+    hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
+  }
+
+  hostrpc_x64_gcn_debug_client[0].rpc_close_port(port);
+  return 0;  // should be return code from printf
+}
+
 void debug_print_pass_uint64(uint32_t port, uint64_t);
 
-void debug_print_pass_cstr(uint32_t port, const char *) { (void)port; }
-
-int debug_print_end(uint32_t port);
+void debug_print_pass_cstr(uint32_t port, const char *str)
+{
+  (void)str;
+  (void)port;
+}
 
 #endif
 
@@ -312,6 +327,7 @@ int debug_print_end(uint32_t port);
 #include "incbin.h"
 #include "server_thread_state.hpp"
 
+#include <algorithm>
 #include <pthread.h>
 #include <stdio.h>
 #include <string>
@@ -324,15 +340,60 @@ namespace
 using buffer_t = std::unordered_map<
     uint32_t, std::array<std::unordered_map<uint64_t, std::string>, 64> >;
 
+template <typename ServerType>
 struct operate
 {
   buffer_t *buffer = nullptr;
+  ServerType *ThisServer;
   hostrpc::page_t *start_local_buffer = nullptr;
-  operate(buffer_t *buffer, hostrpc::page_t *s)
-      : buffer(buffer), start_local_buffer(s)
+  operate(buffer_t *buffer, ServerType *ThisServer)
+      : buffer(buffer), ThisServer(ThisServer)
   {
+    start_local_buffer = ThisServer->local_buffer;
   }
   operate() = default;
+
+  uint64_t op(hostrpc::page_t *page, unsigned wave)
+  {
+    hostrpc::cacheline_t *line = &page->cacheline[wave];
+    return line->element[0];
+  }
+
+  bool uniform(hostrpc::page_t *page)
+  {
+    bool uniform = true;
+    uint64_t first = op(page, 0);
+    for (unsigned c = 1; c < 64; c++)
+      {
+        uniform &= (first == op(page, c));
+      }
+    return uniform;
+  }
+
+  // if all ops are zero or x, return x. Else return zero
+  uint64_t unique_op_except_zero(hostrpc::page_t *page)
+  {
+    hostrpc::cacheline_t *end = &page->cacheline[hostrpc::page_t::width];
+
+    printf("unique?\n");
+    hostrpc::cacheline_t *line = std::find_if(
+        &page->cacheline[0], end,
+        [](hostrpc::cacheline_t &line) { return line.element[0] != 0; });
+
+    if (line != end)
+      {
+        uint64_t op = line->element[0];
+        if (std::all_of(line, end, [=](hostrpc::cacheline_t &line) {
+              uint64_t e = line.element[0];
+              return e != op || e != 0;
+            }))
+          {
+            return op;
+          }
+      }
+
+    return 0;
+  }
 
   void operator()(hostrpc::page_t *page)
   {
@@ -342,12 +403,68 @@ struct operate
 
     auto &slot_buffer = (*buffer)[slot];
 
+    if (uint64_t o = unique_op_except_zero(page))
+      {
+        printf("got unique op %lu on slot %u\n", o, slot);
+        if (o == func_debug_print_start)
+          {
+            // Need to conclude this current packet before recursing
+            // haven't written anything, so probably no point calling
+            // push from server too client, but need to tell the client
+            // this packet has been recieved before the recursive call
+            // can work
+
+            // Claim this operate call has returned
+
+            // Will wait, probably need to clear the packet
+
+            bool got_end_packet = false;
+
+            // The transition is roughly
+            // 1/ wait until available
+            // 2/ operate given available
+            // 3/ publish result
+            // At this point in the control flow, we are at 2/
+            // Further packets can be processed with 3->1->2
+            // Then drop out of this function to pick up publish
+
+            while (!got_end_packet)
+              {
+                // Close this operation
+                ThisServer->rpc_port_operate_publish_operate_done(slot);
+
+                // Wait for next task
+                ThisServer->rpc_port_wait_until_available(slot);
+
+                // Do next task, but don't publish the result
+                ThisServer->rpc_port_operate_given_available_nopublish(
+                    [&](hostrpc::page_t *page) {
+                      if (unique_op_except_zero(page) == func_debug_print_end)
+                        {
+                          got_end_packet = true;
+                          printf("Nested operate got end signal\n");
+                          // This operate call returning will signal
+                          // the client, need more control than that
+                          return;
+                        }
+
+                      printf("Nested operate got work to do\n");
+                    },
+                    slot);
+              }
+
+            printf("jury rigged needed\n");
+
+            return;
+          }
+      }
+
     for (unsigned c = 0; c < 64; c++)
       {
         auto &thread_buffer = slot_buffer[c];
         hostrpc::cacheline_t *line = &page->cacheline[c];
 
-        uint64_t ID = line->element[0];
+        uint64_t ID = op(page, c);
 
         switch (ID)
           {
@@ -428,6 +545,11 @@ struct operate
 
             case func_debug_print_start:
               {
+                printf(
+                    "[%.2u] Non-uniform func_debug_print_start unsupported\n",
+                    c);
+
+                break;
               }
           }
       }
@@ -451,9 +573,9 @@ struct clear
   }
 };
 
-using sts_ty =
-    hostrpc::server_thread_state<hostrpc::x64_gcn_type<SZ>::server_type,
-                                 operate, clear>;
+using sts_ty = hostrpc::server_thread_state<
+    hostrpc::x64_gcn_type<SZ>::server_type,
+    operate<hostrpc::x64_gcn_type<SZ>::server_type>, clear>;
 
 struct wrap_state
 {
@@ -501,7 +623,8 @@ struct wrap_state
 
     buffer = std::make_unique<buffer_t>();
 
-    operate op(buffer.get(), p->server.local_buffer);
+    operate<hostrpc::x64_gcn_type<SZ>::server_type> op(buffer.get(),
+                                                       &p->server);
     server_state = sts_ty(&p->server, &server_control, op, clear{});
 
     thrd =
@@ -610,6 +733,12 @@ extern "C" void example(void)
 {
   unsigned id = platform::get_lane_id();
 
+  uint32_t port = debug_print_start("some format %u too long with %s fields\n");
+  debug_print_end(port);
+
+  print_string("some unrelated packet");
+
+  return;
   if (id % 3 == 0)
     {
       print_string(

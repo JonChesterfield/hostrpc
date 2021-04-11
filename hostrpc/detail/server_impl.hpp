@@ -107,7 +107,9 @@ struct server_impl : public SZT, public Counter
     Word o = staging.load_word(size, word);
     Word a = active.load_word(size, word);
     (void)(i + o + a);
-    printf("%lu %lu %lu\n", i, o, a);
+#if HOSTRPC_HAVE_STDIO
+    // printf("%lu %lu %lu\n", i, o, a);
+#endif
   }
 
   // rpc_handle return true if it handled one task, does not attempt multiple.
@@ -117,15 +119,14 @@ struct server_impl : public SZT, public Counter
   // If passed location, will use it to round robin across slots
 
   template <typename Operate, typename Clear>
-  __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle(
-      Operate op, Clear cl, uint32_t* location) noexcept
+  HOSTRPC_ANNOTATE bool rpc_handle(Operate op, Clear cl,
+                                   uint32_t* location) noexcept
   {
     return rpc_handle_impl<Operate, Clear, true>(op, cl, location);
   }
 
   template <typename Operate>
-  __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle(
-      Operate op, uint32_t* location) noexcept
+  HOSTRPC_ANNOTATE bool rpc_handle(Operate op, uint32_t* location) noexcept
   {
     struct Clear
     {
@@ -137,16 +138,14 @@ struct server_impl : public SZT, public Counter
 
   // Default location to always start from zero
   template <typename Operate, typename Clear>
-  __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle(
-      Operate op, Clear cl) noexcept
+  HOSTRPC_ANNOTATE bool rpc_handle(Operate op, Clear cl) noexcept
   {
     uint32_t location = 0;
     return rpc_handle<Operate, Clear>(op, cl, &location);
   }
 
   template <typename Operate>
-  __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle(
-      Operate op) noexcept
+  HOSTRPC_ANNOTATE bool rpc_handle(Operate op) noexcept
   {
     uint32_t location = 0;
     return rpc_handle<Operate>(op, &location);
@@ -203,7 +202,6 @@ struct server_impl : public SZT, public Counter
   {
     rpc_port_wait_until_available_impl<Clear, true>(port, cl);
   }
-
   void rpc_port_wait_until_available(uint32_t port)
   {
     struct Clear
@@ -217,6 +215,9 @@ struct server_impl : public SZT, public Counter
   template <typename Operate, typename Clear>
   HOSTRPC_ANNOTATE void rpc_port_operate(Operate op, Clear cl, uint32_t slot)
   {
+#if HOSTRPC_HAVE_STDIO
+    // printf("rpc port operate slot %u, L%u\n", slot,__LINE__);
+#endif
     rpc_port_wait_until_available<Clear>(slot, cl);
     rpc_port_operate_given_available(op, slot);
   }
@@ -224,38 +225,52 @@ struct server_impl : public SZT, public Counter
   template <typename Operate>
   HOSTRPC_ANNOTATE void rpc_port_operate(Operate op, uint32_t slot)
   {
+#if HOSTRPC_HAVE_STDIO
+    // printf("rpc port operate slot %u, L%u\n", slot,__LINE__);
+#endif
     rpc_port_wait_until_available(slot);
     rpc_port_operate_given_available(op, slot);
   }
 
+  HOSTRPC_ANNOTATE void rpc_port_operate_publish_operate_done(uint32_t slot)
+  {
+    const uint32_t size = this->size();
+    platform::fence_release();
+    uint64_t cas_fail_count = 0;
+    uint64_t cas_help_count = 0;
+    if (platform::is_master_lane())
+      {
+        staged_claim_slot(size, slot, &staging, &outbox, &cas_fail_count,
+                          &cas_help_count);
+      }
+    cas_fail_count = platform::broadcast_master(cas_fail_count);
+    cas_help_count = platform::broadcast_master(cas_help_count);
+    Counter::publish_cas_fail(cas_fail_count);
+    Counter::publish_cas_help(cas_help_count);
+  }
+
   template <typename Operate>
-  __attribute__((always_inline)) HOSTRPC_ANNOTATE void
-  rpc_port_operate_given_available(Operate op, uint32_t slot)
+  HOSTRPC_ANNOTATE void rpc_port_operate_given_available_nopublish(
+      Operate op, uint32_t slot)
   {
     assert(slot != UINT32_MAX);
-
-    const uint32_t size = this->size();
+#if HOSTRPC_HAVE_STDIO
+    // printf("rpc port operate_given_available slot %u, L%u\n", slot,__LINE__);
+#endif
 
     // make the calls
     Copy::pull_to_server_from_client(&local_buffer[slot], &remote_buffer[slot]);
     op(&local_buffer[slot]);
     Copy::push_from_server_to_client(&remote_buffer[slot], &local_buffer[slot]);
+  }
 
+  template <typename Operate>
+  HOSTRPC_ANNOTATE void rpc_port_operate_given_available(Operate op,
+                                                         uint32_t slot)
+  {
+    rpc_port_operate_given_available_nopublish(op, slot);
     // publish result
-    {
-      platform::fence_release();
-      uint64_t cas_fail_count = 0;
-      uint64_t cas_help_count = 0;
-      if (platform::is_master_lane())
-        {
-          staged_claim_slot(size, slot, &staging, &outbox, &cas_fail_count,
-                            &cas_help_count);
-        }
-      cas_fail_count = platform::broadcast_master(cas_fail_count);
-      cas_help_count = platform::broadcast_master(cas_help_count);
-      Counter::publish_cas_fail(cas_fail_count);
-      Counter::publish_cas_help(cas_help_count);
-    }
+    rpc_port_operate_publish_operate_done(slot);
 
     // leaves outbox live
     assert(lock_held(slot));
@@ -281,6 +296,9 @@ struct server_impl : public SZT, public Counter
   template <typename Clear, bool have_precondition>
   HOSTRPC_ANNOTATE void garbage_collect(uint32_t slot, Clear cl)
   {
+#if HOSTRPC_HAVE_STDIO
+    // printf("gc slot %u\n", slot);
+#endif
     const uint32_t size = this->size();
     if (have_precondition)
       {
@@ -408,6 +426,11 @@ struct server_impl : public SZT, public Counter
     bool out = bits::nthbitset(o, subindex);
     bool in = bits::nthbitset(i, subindex);
 
+#if HOSTRPC_HAVE_STDIO
+    // printf("rpc port wait until available slot %u, L%u [%u%u]\n",
+    // port,__LINE__,in,out);
+#endif
+
     // io io io io
     // 00 01 10 11
 
@@ -458,8 +481,8 @@ struct server_impl : public SZT, public Counter
   }
 
   template <typename Operate, typename Clear, bool have_precondition>
-  __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle_impl(
-      Operate op, Clear cl, uint32_t* location_arg) noexcept
+  HOSTRPC_ANNOTATE bool rpc_handle_impl(Operate op, Clear cl,
+                                        uint32_t* location_arg) noexcept
   {
     const uint32_t port =
         rpc_open_port_impl<Clear, have_precondition>(cl, location_arg);
@@ -482,8 +505,8 @@ struct server_impl : public SZT, public Counter
   }
 
   template <typename Clear, bool have_precondition>
-  __attribute__((always_inline)) HOSTRPC_ANNOTATE bool
-  rpc_handle_verify_slot_available(Clear cl, uint32_t slot)
+  HOSTRPC_ANNOTATE bool rpc_handle_verify_slot_available(Clear cl,
+                                                         uint32_t slot)
   {
     assert(slot != UINT32_MAX);
 
