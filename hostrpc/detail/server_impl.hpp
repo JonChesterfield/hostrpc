@@ -152,6 +152,83 @@ struct server_impl : public SZT, public Counter
     return rpc_handle<Operate>(op, &location);
   }
 
+  HOSTRPC_ANNOTATE uint32_t rpc_open_port(uint32_t* location_arg)
+  {
+    // will return UINT32_MAX if found no port had work or garbage to do
+
+    const uint32_t size = this->size();
+    const uint32_t words = this->words();
+
+    const uint32_t location = *location_arg % size;
+    const uint32_t element = index_to_element<Word>(location);
+
+    // skip bits in the first word <= subindex
+    static_assert((sizeof(Word) == 8) || (sizeof(Word) == 4), "");
+    Word mask = (sizeof(Word) == 8)
+                    ? detail::setbitsrange64(index_to_subindex<Word>(location),
+                                             wordBits() - 1)
+                    : detail::setbitsrange32(index_to_subindex<Word>(location),
+                                             wordBits() - 1);
+
+    // Tries a few bits in element, then all bits in all the other words, then
+    // all bits in element. This overshoots somewhat but ensures that all
+    // slots are checked. Could truncate the last word to check each slot
+    // exactly once
+    for (uint32_t wc = 0; wc < words + 1; wc++)
+      {
+        uint32_t w = (element + wc) % words;
+        Word available = find_candidate_server_available_bitmap(w, mask);
+        if (available == 0)
+          {
+            Counter::no_candidate_bitmap();
+          }
+        while (available != 0)
+          {
+            uint32_t idx = bits::ctz(available);
+            assert(bits::nthbitset(available, idx));
+            uint32_t slot = wordBits() * w + idx;
+            uint64_t cas_fail_count = 0;
+            if (active.try_claim_empty_slot(size, slot, &cas_fail_count))
+              {
+                Counter::cas_lock_fail(cas_fail_count);
+                // Success, got the lock. Aim location_arg at next slot
+                *location_arg = slot + 1;
+
+                return slot;
+              }
+            else
+              {
+                Counter::missed_lock_on_candidate_bitmap();
+              }
+
+            // don't try the same slot repeatedly
+            available = bits::clearnthbit(available, idx);
+          }
+
+        mask = ~((Word)0);
+        Counter::missed_lock_on_word();
+      }
+
+    // Nothing hit, may as well go from the same location on the next call
+    return UINT32_MAX;
+  }
+
+  HOSTRPC_ANNOTATE void rpc_close_port(
+      uint32_t port)  // Require != UINT32_MAX, not already closed
+  {
+    const uint32_t size = this->size();
+    // something needs to release() the buffer element before
+    // dropping this lock
+
+    assert(port != UINT32_MAX);
+    assert(port < size);
+
+    if (platform::is_master_lane())
+      {
+        active.release_slot(size, port);
+      }
+  }
+
  private:
   HOSTRPC_ANNOTATE Word find_candidate_server_available_bitmap(uint32_t w,
                                                                Word mask)
@@ -173,69 +250,17 @@ struct server_impl : public SZT, public Counter
   __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle_impl(
       Operate op, Clear cl, uint32_t* location_arg) noexcept
   {
-    const uint32_t size = this->size();
-    const uint32_t words = this->words();
-
-    const uint32_t location = *location_arg % size;
-    const uint32_t element = index_to_element<Word>(location);
-
-    // skip bits in the first word <= subindex
-    static_assert((sizeof(Word) == 8) || (sizeof(Word) == 4), "");
-    Word mask = (sizeof(Word) == 8)
-                    ? detail::setbitsrange64(index_to_subindex<Word>(location),
-                                             wordBits() - 1)
-                    : detail::setbitsrange32(index_to_subindex<Word>(location),
-                                             wordBits() - 1);
-
-    // Tries a few bits in element, then all bits in all the other words, then
-    // all bits in element. This overshoots somewhat but ensures that all slots
-    // are checked. Could truncate the last word to check each slot exactly once
-    for (uint32_t wc = 0; wc < words + 1; wc++)
+    const uint32_t port = rpc_open_port(location_arg);
+    if (port == UINT32_MAX)
       {
-        uint32_t w = (element + wc) % words;
-        Word available = find_candidate_server_available_bitmap(w, mask);
-        if (available == 0)
-          {
-            Counter::no_candidate_bitmap();
-          }
-        while (available != 0)
-          {
-            uint32_t idx = bits::ctz(available);
-            assert(bits::nthbitset(available, idx));
-            uint32_t slot = wordBits() * w + idx;
-            uint64_t cas_fail_count = 0;
-            if (active.try_claim_empty_slot(size, slot, &cas_fail_count))
-              {
-                Counter::cas_lock_fail(cas_fail_count);
-                // Success, got the lock. Aim location_arg at next slot
-                *location_arg = slot + 1;
-
-                bool r =
-                    rpc_handle_given_slot<Operate, Clear, have_precondition>(
-                        op, cl, slot);
-
-                platform::critical<uint32_t>([&]() {
-                  active.release_slot(size, slot);
-                  return 0;
-                });
-
-                return r;
-              }
-            else
-              {
-                Counter::missed_lock_on_candidate_bitmap();
-              }
-
-            // don't try the same slot repeatedly
-            available = bits::clearnthbit(available, idx);
-          }
-
-        mask = ~((Word)0);
-        Counter::missed_lock_on_word();
+        return false;
       }
 
-    // Nothing hit, may as well go from the same location on the next call
-    return false;
+    bool r =
+        rpc_handle_given_slot<Operate, Clear, have_precondition>(op, cl, port);
+
+    rpc_close_port(port);
+    return r;
   }
 
   HOSTRPC_ANNOTATE bool lock_held(uint32_t slot)
@@ -249,7 +274,7 @@ struct server_impl : public SZT, public Counter
   __attribute__((always_inline)) HOSTRPC_ANNOTATE bool
   rpc_handle_verify_slot_available(Clear cl, uint32_t slot)
   {
-    assert(slot != SIZE_MAX);
+    assert(slot != UINT32_MAX);
 
     const uint32_t element = index_to_element<Word>(slot);
     const uint32_t subindex = index_to_subindex<Word>(slot);
@@ -318,7 +343,7 @@ struct server_impl : public SZT, public Counter
   __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle_given_slot(
       Operate op, Clear cl, uint32_t slot)
   {
-    assert(slot != SIZE_MAX);
+    assert(slot != UINT32_MAX);
 
     if (!rpc_handle_verify_slot_available<Clear, have_precondition>(cl, slot))
       {
@@ -352,7 +377,7 @@ struct server_impl : public SZT, public Counter
     assert(lock_held(slot));
     return true;
   }
-};
+};  // namespace hostrpc
 
 }  // namespace hostrpc
 #endif
