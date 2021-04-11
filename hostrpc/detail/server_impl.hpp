@@ -152,8 +152,162 @@ struct server_impl : public SZT, public Counter
     return rpc_handle<Operate>(op, &location);
   }
 
-  template <typename Clear, bool have_precondition>
+  template <typename Clear>
   HOSTRPC_ANNOTATE uint32_t rpc_open_port(Clear cl, uint32_t* location_arg)
+  {
+    return rpc_open_port_impl<Clear, true>(cl, location_arg);
+  }
+
+  HOSTRPC_ANNOTATE uint32_t rpc_open_port(uint32_t* location_arg)
+  {
+    struct Clear
+    {
+      HOSTRPC_ANNOTATE void operator()(hostrpc::page_t*){};
+    };
+    Clear cl;
+    return rpc_open_port_impl<Clear, false>(cl, location_arg);
+  }
+
+  // default location_arg to zero and discard returned hint
+  template <typename Clear>
+  HOSTRPC_ANNOTATE uint32_t rpc_open_port(Clear cl)
+  {
+    uint32_t location_arg = 0;
+    return rpc_open_port<Clear>(cl, &location_arg);
+  }
+
+  HOSTRPC_ANNOTATE uint32_t rpc_open_port()
+  {
+    uint32_t location_arg = 0;
+    return rpc_open_port(&location_arg);
+  }
+
+  HOSTRPC_ANNOTATE void rpc_close_port(
+      uint32_t port)  // Require != UINT32_MAX, not already closed
+  {
+    const uint32_t size = this->size();
+    // something needs to release() the buffer element before
+    // dropping this lock
+
+    assert(port != UINT32_MAX);
+    assert(port < size);
+
+    if (platform::is_master_lane())
+      {
+        active.release_slot(size, port);
+      }
+  }
+
+  template <typename Clear>
+  void rpc_port_wait_until_available(uint32_t port, Clear cl)
+  {
+    rpc_port_wait_until_available_impl<Clear, true>(port, cl);
+  }
+
+  void rpc_port_wait_until_available(uint32_t port)
+  {
+    struct Clear
+    {
+      HOSTRPC_ANNOTATE void operator()(hostrpc::page_t*){};
+    };
+    Clear cl;
+    rpc_port_wait_until_available_impl<Clear, false>(port, cl);
+  }
+
+  template <typename Operate, typename Clear>
+  HOSTRPC_ANNOTATE void rpc_port_operate(Operate op, Clear cl, uint32_t slot)
+  {
+    rpc_port_wait_until_available<Clear>(slot, cl);
+    rpc_port_operate_given_available(op, slot);
+  }
+
+  template <typename Operate>
+  HOSTRPC_ANNOTATE void rpc_port_operate(Operate op, uint32_t slot)
+  {
+    rpc_port_wait_until_available(slot);
+    rpc_port_operate_given_available(op, slot);
+  }
+
+  template <typename Operate>
+  __attribute__((always_inline)) HOSTRPC_ANNOTATE void
+  rpc_port_operate_given_available(Operate op, uint32_t slot)
+  {
+    assert(slot != UINT32_MAX);
+
+    const uint32_t size = this->size();
+
+    // make the calls
+    Copy::pull_to_server_from_client(&local_buffer[slot], &remote_buffer[slot]);
+    op(&local_buffer[slot]);
+    Copy::push_from_server_to_client(&remote_buffer[slot], &local_buffer[slot]);
+
+    // publish result
+    {
+      platform::fence_release();
+      uint64_t cas_fail_count = 0;
+      uint64_t cas_help_count = 0;
+      if (platform::is_master_lane())
+        {
+          staged_claim_slot(size, slot, &staging, &outbox, &cas_fail_count,
+                            &cas_help_count);
+        }
+      cas_fail_count = platform::broadcast_master(cas_fail_count);
+      cas_help_count = platform::broadcast_master(cas_help_count);
+      Counter::publish_cas_fail(cas_fail_count);
+      Counter::publish_cas_help(cas_help_count);
+    }
+
+    // leaves outbox live
+    assert(lock_held(slot));
+  }
+
+ private:
+  HOSTRPC_ANNOTATE Word find_candidate_server_available_bitmap(uint32_t w,
+                                                               Word mask)
+  {
+    const uint32_t size = this->size();
+    Word i = inbox.load_word(size, w);
+    Word o = staging.load_word(size, w);
+    Word a = active.load_word(size, w);
+    platform::fence_acquire();
+
+    Word work = i & ~o;
+    Word garbage = ~i & o;
+    Word todo = work | garbage;
+    Word available = todo & ~a & mask;
+    return available;
+  }
+
+  template <typename Clear, bool have_precondition>
+  HOSTRPC_ANNOTATE void garbage_collect(uint32_t slot, Clear cl)
+  {
+    const uint32_t size = this->size();
+    if (have_precondition)
+      {
+        // Move data and clear. TODO: Elide the copy for nop clear
+        Copy::pull_to_server_from_client(&local_buffer[slot],
+                                         &remote_buffer[slot]);
+        cl(&local_buffer[slot]);
+        Copy::push_from_server_to_client(&remote_buffer[slot],
+                                         &local_buffer[slot]);
+      }
+
+    platform::fence_release();
+    uint64_t cas_fail_count = 0;
+    uint64_t cas_help_count = 0;
+    if (platform::is_master_lane())
+      {
+        staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
+                            &cas_help_count);
+      }
+    cas_fail_count = platform::broadcast_master(cas_fail_count);
+    cas_help_count = platform::broadcast_master(cas_help_count);
+    Counter::garbage_cas_fail(cas_fail_count);
+    Counter::garbage_cas_help(cas_help_count);
+  }
+
+  template <typename Clear, bool have_precondition>
+  HOSTRPC_ANNOTATE uint32_t rpc_open_port_impl(Clear cl, uint32_t* location_arg)
   {
     // if an opened port needs garbage collection, does the gc here and
     // continues looking for a port with work to do
@@ -230,37 +384,77 @@ struct server_impl : public SZT, public Counter
     return UINT32_MAX;
   }
 
-  HOSTRPC_ANNOTATE void rpc_close_port(
-      uint32_t port)  // Require != UINT32_MAX, not already closed
+  template <typename Clear, bool have_precondition>
+  void rpc_port_wait_until_available_impl(uint32_t port, Clear cl)
   {
+    // port may be:
+    // work available
+    // garbage available (which will need to call cl)
+    // nothing to do
+    // work already done
+
     const uint32_t size = this->size();
-    // something needs to release() the buffer element before
-    // dropping this lock
+    const uint32_t w = index_to_element<Word>(port);
+    const uint32_t subindex = index_to_subindex<Word>(port);
 
-    assert(port != UINT32_MAX);
-    assert(port < size);
-
-    if (platform::is_master_lane())
-      {
-        active.release_slot(size, port);
-      }
-  }
-
- private:
-  HOSTRPC_ANNOTATE Word find_candidate_server_available_bitmap(uint32_t w,
-                                                               Word mask)
-  {
-    const uint32_t size = this->size();
     Word i = inbox.load_word(size, w);
     Word o = staging.load_word(size, w);
-    Word a = active.load_word(size, w);
+
+    // current thread assumed to hold lock, thus lock is held
+    assert(bits::nthbitset(active.load_word(size, w), subindex));
+
     platform::fence_acquire();
 
-    Word work = i & ~o;
-    Word garbage = ~i & o;
-    Word todo = work | garbage;
-    Word available = todo & ~a & mask;
-    return available;
+    bool out = bits::nthbitset(o, subindex);
+    bool in = bits::nthbitset(i, subindex);
+
+    // io io io io
+    // 00 01 10 11
+
+    if (in & out)
+      {
+        // work already done, inbox will clear before outbox
+        while (in)
+          {
+            Word i = inbox.load_word(size, w);
+            in = bits::nthbitset(i, subindex);
+            platform::fence_acquire();  // may not need this
+          }
+      }
+    // io io io io
+    // 00 01 10 --
+
+    if (!in & out)
+      {
+        // garbage to do
+        garbage_collect<Clear, have_precondition>(port, cl);
+        out = false;  // would be false if reloaded
+      }
+    // io io io io
+    // 00 -- 10 --
+
+    if (!in & !out)
+      {
+        // idle, no work to do. Need to wait for work
+        while (!in)
+          {
+            Word i = inbox.load_word(size, w);
+            in = bits::nthbitset(i, subindex);
+            platform::fence_acquire();  // may not need this
+          }
+      }
+    // io io io io
+    // -- -- 10 --
+
+    if (in & !out)
+      {
+        // work to do
+        return;
+      }
+    // io io io io
+    // -- -- -- --
+
+    __builtin_unreachable();
   }
 
   template <typename Operate, typename Clear, bool have_precondition>
@@ -268,16 +462,16 @@ struct server_impl : public SZT, public Counter
       Operate op, Clear cl, uint32_t* location_arg) noexcept
   {
     const uint32_t port =
-        rpc_open_port<Clear, have_precondition>(cl, location_arg);
+        rpc_open_port_impl<Clear, have_precondition>(cl, location_arg);
     if (port == UINT32_MAX)
       {
         return false;
       }
 
-    bool r = rpc_handle_given_slot<Operate, have_precondition>(op, port);
+    rpc_port_operate_given_available<Operate>(op, port);
 
     rpc_close_port(port);
-    return r;
+    return true;
   }
 
   HOSTRPC_ANNOTATE bool lock_held(uint32_t slot)
@@ -319,29 +513,7 @@ struct server_impl : public SZT, public Counter
     if (garbage_todo)
       {
         assert((o & this_slot) != 0);
-        if (have_precondition)
-          {
-            // Move data and clear. TODO: Elide the copy for nop clear
-            Copy::pull_to_server_from_client(&local_buffer[slot],
-                                             &remote_buffer[slot]);
-            cl(&local_buffer[slot]);
-            Copy::push_from_server_to_client(&remote_buffer[slot],
-                                             &local_buffer[slot]);
-          }
-
-        platform::fence_release();
-        uint64_t cas_fail_count = 0;
-        uint64_t cas_help_count = 0;
-        if (platform::is_master_lane())
-          {
-            staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
-                                &cas_help_count);
-          }
-        cas_fail_count = platform::broadcast_master(cas_fail_count);
-        cas_help_count = platform::broadcast_master(cas_help_count);
-        Counter::garbage_cas_fail(cas_fail_count);
-        Counter::garbage_cas_help(cas_help_count);
-
+        garbage_collect<Clear, have_precondition>(slot, cl);
         assert(lock_held(slot));
         return false;
       }
@@ -355,41 +527,7 @@ struct server_impl : public SZT, public Counter
 
     return true;
   }
-
-  template <typename Operate, bool have_precondition>
-  __attribute__((always_inline)) HOSTRPC_ANNOTATE bool rpc_handle_given_slot(
-      Operate op, uint32_t slot)
-  {
-    assert(slot != UINT32_MAX);
-
-    const uint32_t size = this->size();
-
-    // make the calls
-    Copy::pull_to_server_from_client(&local_buffer[slot], &remote_buffer[slot]);
-    op(&local_buffer[slot]);
-    Copy::push_from_server_to_client(&remote_buffer[slot], &local_buffer[slot]);
-
-    // publish result
-    {
-      platform::fence_release();
-      uint64_t cas_fail_count = 0;
-      uint64_t cas_help_count = 0;
-      if (platform::is_master_lane())
-        {
-          staged_claim_slot(size, slot, &staging, &outbox, &cas_fail_count,
-                            &cas_help_count);
-        }
-      cas_fail_count = platform::broadcast_master(cas_fail_count);
-      cas_help_count = platform::broadcast_master(cas_help_count);
-      Counter::publish_cas_fail(cas_fail_count);
-      Counter::publish_cas_help(cas_help_count);
-    }
-
-    // leaves outbox live
-    assert(lock_held(slot));
-    return true;
-  }
-};  // namespace hostrpc
+};
 
 }  // namespace hostrpc
 #endif

@@ -221,7 +221,6 @@ struct client_impl : public SZT, public Counter
     platform::fence_acquire();
 
     bool out = bits::nthbitset(o, subindex);
-
     bool in = bits::nthbitset(i, subindex);
 
     // io io io io
@@ -240,7 +239,7 @@ struct client_impl : public SZT, public Counter
         // need to wait for result to be available
         while (!in)
           {
-            i = inbox.load_word(size, w);
+            Word i = inbox.load_word(size, w);
             in = bits::nthbitset(i, subindex);
             platform::fence_acquire();  // may not need this
           }
@@ -253,24 +252,22 @@ struct client_impl : public SZT, public Counter
 
     if (in & out)
       {
-        // garbage todo
+        // garbage to do
         release_slot(port);
-        // out will now be false if reloaded
-        out = false;
+        out = false;  // would be false if reloaded
       }
     // io io io io
     // -- -- 10 --
 
-    if (in & !out)
+    if (in & !out)  // always true
       {
         // need to to wait for in to clear
         while (in)
           {
-            i = inbox.load_word(size, w);
+            Word i = inbox.load_word(size, w);
             in = bits::nthbitset(i, subindex);
             platform::fence_acquire();  // may not need this
           }
-        assert(!in);
         return;  // ready
       }
     // io io io io
@@ -282,8 +279,15 @@ struct client_impl : public SZT, public Counter
   template <typename Op>
   HOSTRPC_ANNOTATE void rpc_port_send(uint32_t port, Op op)
   {
-    // If the port has just been opened, can call invoke immediately
-    // However it may not have just been opened
+    // If the port has just been opened, we know it is available to
+    // submit work to. In general, send might be called while the
+    // state machine is elsewhere, so conservatively progress it
+    // until the slot is empty.
+    // There is a potential bug here if 'use' is being used to
+    // reset the state, instead of the server clean, as 'use'
+    // is not being called, but that might be deemed a API misuse
+    // as the callee could have used recv() explicitly instead of
+    // dropping the result
     rpc_port_wait_until_available(port);  // expensive
     rpc_port_send_given_available<Op>(port, op);
   }
