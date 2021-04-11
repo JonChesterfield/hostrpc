@@ -275,7 +275,7 @@ struct print_wip
 };
 #endif
 
-void debug_print_pass_cstr(uint32_t port, const char *); // used to pass fmt
+void debug_print_pass_cstr(uint32_t port, const char *);  // used to pass fmt
 
 uint32_t debug_print_start(const char *fmt)
 {
@@ -297,11 +297,9 @@ uint32_t debug_print_start(const char *fmt)
   return port;
 }
 
-
-
 void debug_print_pass_uint64(uint32_t port, uint64_t);
 
-void debug_print_pass_cstr(uint32_t port, const char *) {(void)port;}
+void debug_print_pass_cstr(uint32_t port, const char *) { (void)port; }
 
 int debug_print_end(uint32_t port);
 
@@ -428,13 +426,9 @@ struct operate
                 break;
               }
 
-
-          case func_debug_print_start:
-            {
-              
-
-            }
-            
+            case func_debug_print_start:
+              {
+              }
           }
       }
 
