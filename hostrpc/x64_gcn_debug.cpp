@@ -11,16 +11,7 @@ kernel void __device_example(void) { example(); }
 
 namespace
 {
-enum : uint64_t
-{
-  func_print_nop = 0,
-  func_print_uuu = 1,
-  func_print_start = 2,
-  func_print_finish = 3,
-  func_print_append_str = 4,
-};
-
-static size_t fs_strnlen(const char *str, size_t limit)
+size_t fs_strnlen(const char *str, size_t limit)
 {
   for (size_t i = 0; i < limit; i++)
     {
@@ -32,7 +23,7 @@ static size_t fs_strnlen(const char *str, size_t limit)
   return limit;
 }
 
-static size_t fs_strlen(const char *str)
+size_t fs_strlen(const char *str)
 {
   for (size_t i = 0;; i++)
     {
@@ -42,6 +33,19 @@ static size_t fs_strlen(const char *str)
         }
     }
 }
+
+enum : uint64_t
+{
+  func_print_nop = 0,
+  func_print_uuu = 1,
+  func_print_start = 2,
+  func_print_finish = 3,
+  func_print_append_str = 4,
+
+  func_debug_print_start = 5,
+  func_debug_print_end = 5,
+
+};
 
 struct print_uuu_instance
 {
@@ -118,6 +122,20 @@ struct print_append_str
     __builtin_memcpy(&payload, d, sizeof(payload));
     d += sizeof(payload);
   }
+};
+
+struct debug_print_start_t
+{
+  uint64_t ID = func_debug_print_start;
+  char unused[56];
+  debug_print_start_t() {}
+};
+
+struct debug_print_end_t
+{
+  uint64_t ID = func_debug_print_end;
+  char unused[56];
+  debug_print_end_t() {}
 };
 
 using SZ = hostrpc::size_runtime;
@@ -235,6 +253,57 @@ void print_string(const char *str)
   // Clean up
   hostrpc_x64_gcn_debug_client[0].rpc_close_port(port);
 }
+
+#if 0
+// server cases are much easier to write if one port is used
+// for multiple packets
+struct print_wip
+{
+  std::vector<char> format;
+
+  struct field
+  {
+    uint64_t tag;
+    union {
+      uint64_t u64;
+      std::vector<char> cstr;
+    };
+    
+  };
+
+  std::vector<field> args;
+};
+#endif
+
+void debug_print_pass_cstr(uint32_t port, const char *); // used to pass fmt
+
+uint32_t debug_print_start(const char *fmt)
+{
+  uint32_t port = hostrpc_x64_gcn_debug_client[0].rpc_open_port();
+  if (port == UINT32_MAX)
+    {
+      // failure
+      UINT32_MAX;
+    }
+
+  {
+    debug_print_start_t inst;
+    fill_by_copy<debug_print_start_t> f(&inst);
+    hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
+  }
+
+  debug_print_pass_cstr(port, fmt);
+
+  return port;
+}
+
+
+
+void debug_print_pass_uint64(uint32_t port, uint64_t);
+
+void debug_print_pass_cstr(uint32_t port, const char *) {(void)port;}
+
+int debug_print_end(uint32_t port);
 
 #endif
 
@@ -358,6 +427,14 @@ struct operate
                        line->element[7]);
                 break;
               }
+
+
+          case func_debug_print_start:
+            {
+              
+
+            }
+            
           }
       }
 
