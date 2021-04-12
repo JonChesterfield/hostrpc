@@ -21,6 +21,11 @@ inline void print(const char *str) { return print(str, 0); }
 
 }  // namespace hostrpc
 
+uint32_t piecewise_print_start(const char *fmt);
+void piecewise_print_pass_uint64(uint32_t port, uint64_t v);
+void piecewise_print_pass_cstr(uint32_t port, const char *str);
+int piecewise_print_end(uint32_t port);
+
 #if (HOSTRPC_HOST)
 #include "hsa.h"
 

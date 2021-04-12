@@ -23,6 +23,19 @@ size_t fs_strnlen(const char *str, size_t limit)
   return limit;
 }
 
+bool fs_contains_nul(const char *str, size_t limit)
+{
+  bool r = false;
+  for (size_t i = 0; i < limit; i++)
+    {
+      if (str[i] == '\0')
+        {
+          r = true;
+        }
+    }
+  return r;
+}
+
 size_t fs_strlen(const char *str)
 {
   for (size_t i = 0;; i++)
@@ -42,9 +55,10 @@ enum : uint64_t
   func_print_finish = 3,
   func_print_append_str = 4,
 
-  func_debug_print_start = 5,
-  func_debug_print_end = 6,
-  func_debug_print_pass_cstr = 6,
+  func_piecewise_print_start = 5,
+  func_piecewise_print_end = 6,
+  func_piecewise_print_pass_cstr = 7,
+  func_piecewise_print_pass_u64 = 8,
 
 };
 
@@ -125,18 +139,41 @@ struct print_append_str
   }
 };
 
-struct debug_print_start_t
+struct piecewise_print_start_t
 {
-  uint64_t ID = func_debug_print_start;
+  uint64_t ID = func_piecewise_print_start;
   char unused[56];
-  debug_print_start_t() {}
+  piecewise_print_start_t() {}
 };
 
-struct debug_print_end_t
+struct piecewise_print_end_t
 {
-  uint64_t ID = func_debug_print_end;
+  uint64_t ID = func_piecewise_print_end;
   char unused[56];
-  debug_print_end_t() {}
+  piecewise_print_end_t() {}
+};
+
+struct piecewise_print_pass_cstr_t
+{
+  uint64_t ID = func_piecewise_print_pass_cstr;
+  enum
+  {
+    width = 56
+  };
+  char payload[width];
+  piecewise_print_pass_cstr_t(const char *s, size_t N)
+  {
+    __builtin_memset(payload, 0, width);
+    __builtin_memcpy(payload, s, N);
+  }
+};
+
+struct piecewise_print_pass_u64_t
+{
+  uint64_t ID = func_piecewise_print_pass_u64;
+  uint64_t payload;
+  char unused[48];
+  piecewise_print_pass_u64_t(uint64_t x) : payload(x) {}
 };
 
 using SZ = hostrpc::size_runtime;
@@ -165,6 +202,24 @@ struct fill_by_copy
 
 void hostrpc::print_base(const char *str, uint64_t x0, uint64_t x1, uint64_t x2)
 {
+  const bool via_piecewise = true;
+
+  if (via_piecewise)
+    {
+      uint32_t port = piecewise_print_start(str);
+      if (port == UINT32_MAX)
+        {
+          return;
+        }
+
+      piecewise_print_pass_uint64(port, x0);
+      piecewise_print_pass_uint64(port, x1);
+      piecewise_print_pass_uint64(port, x2);
+
+      piecewise_print_end(port);
+      return;
+    }
+
   struct fill
   {
     fill(print_uuu_instance *i) : i(i) {}
@@ -192,93 +247,19 @@ void hostrpc::print_base(const char *str, uint64_t x0, uint64_t x1, uint64_t x2)
 
 void print_string(const char *str)
 {
-  size_t N = fs_strlen(str);
-  (void)N;
-  // Get a port
-  uint32_t port = hostrpc_x64_gcn_debug_client[0].rpc_open_port();
+  uint32_t port = piecewise_print_start(str);
   if (port == UINT32_MAX)
     {
-      // failure
       return;
     }
 
-  // Start a transaction
-  {
-    print_start inst;
-    fill_by_copy<print_start> f(&inst);
-    hostrpc_x64_gcn_debug_client[0].rpc_port_send(
-        port, f);  // require f() to have been called before this return
-  }
-
-  uint64_t pos = 0;
-  uint64_t length = fs_strlen(str);
-  constexpr size_t chunk = sizeof(print_append_str::payload);
-  uint64_t pieces = (length + chunk - 1) / chunk;
-
-  // Append the string, in pieces, via various ports
-  // Probably want try_invoke or similar, don't need to
-  // fill the whole buffer either
-  // Also, there may be zero available, in which case some can be
-  // sent down the existing pipe
-  for (uint64_t i = 0; i < pieces; i++)
-    {
-      print_append_str inst(port, pos++, &str[i * chunk]);
-      fill_by_copy<print_append_str> f(&inst);
-      hostrpc_x64_gcn_debug_client[0].rpc_invoke_async(f);
-    }
-
-  // Emit the string, using the original port. Will therefore
-  // execute after the print_start
-  // TODO: Also need to wait for the pieces to land, probably on
-  // the gpu side. Needs an invoke_async that returns a handle
-  // that can be waited on or similar, or for the host to wait
-  // until the 'pos' packets have arrived. That's tricky without
-  // coroutines or similar on the server, as once the finish has
-  // started there may be no thread handling the pieces
-  // Or send them all down the same pipe, simpler but expected
-  // slower
-  {
-    print_finish inst(pos);
-    fill_by_copy<print_finish> f(&inst);
-    hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
-  }
-
-  // Wait for the above to flush before returning from this call
-  {
-    // wait until the server process has run the function
-    // but don't need too wait until the slot is available again
-    // as it's about to close anyway
-    hostrpc_x64_gcn_debug_client[0].rpc_port_wait_for_result(port);
-  }
-
-  // Clean up
-  hostrpc_x64_gcn_debug_client[0].rpc_close_port(port);
+  piecewise_print_end(port);
 }
 
-#if 0
-// server cases are much easier to write if one port is used
-// for multiple packets
-struct print_wip
-{
-  std::vector<char> format;
+void piecewise_print_pass_cstr(uint32_t port,
+                               const char *);  // used to pass fmt
 
-  struct field
-  {
-    uint64_t tag;
-    union {
-      uint64_t u64;
-      std::vector<char> cstr;
-    };
-    
-  };
-
-  std::vector<field> args;
-};
-#endif
-
-void debug_print_pass_cstr(uint32_t port, const char *);  // used to pass fmt
-
-uint32_t debug_print_start(const char *fmt)
+uint32_t piecewise_print_start(const char *fmt)
 {
   uint32_t port = hostrpc_x64_gcn_debug_client[0].rpc_open_port();
   if (port == UINT32_MAX)
@@ -288,21 +269,21 @@ uint32_t debug_print_start(const char *fmt)
     }
 
   {
-    debug_print_start_t inst;
-    fill_by_copy<debug_print_start_t> f(&inst);
+    piecewise_print_start_t inst;
+    fill_by_copy<piecewise_print_start_t> f(&inst);
     hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
   }
 
-  debug_print_pass_cstr(port, fmt);
+  piecewise_print_pass_cstr(port, fmt);
 
   return port;
 }
 
-int debug_print_end(uint32_t port)
+int piecewise_print_end(uint32_t port)
 {
   {
-    debug_print_end_t inst;
-    fill_by_copy<debug_print_end_t> f(&inst);
+    piecewise_print_end_t inst;
+    fill_by_copy<piecewise_print_end_t> f(&inst);
     hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
   }
 
@@ -310,12 +291,35 @@ int debug_print_end(uint32_t port)
   return 0;  // should be return code from printf
 }
 
-void debug_print_pass_uint64(uint32_t port, uint64_t);
-
-void debug_print_pass_cstr(uint32_t port, const char *str)
+void piecewise_print_pass_uint64(uint32_t port, uint64_t v)
 {
-  (void)str;
-  (void)port;
+  piecewise_print_pass_u64_t inst(v);
+  fill_by_copy<piecewise_print_pass_u64_t> f(&inst);
+  hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
+}
+
+void piecewise_print_pass_cstr(uint32_t port, const char *str)
+{
+  uint64_t L = fs_strlen(str);
+
+  const constexpr size_t w = piecewise_print_pass_cstr_t::width;
+
+  uint64_t chunks = L / w;
+  uint64_t remainder = L - (chunks * w);
+  for (uint64_t c = 0; c < chunks; c++)
+    {
+      piecewise_print_pass_cstr_t inst(&str[c * w], w);
+      fill_by_copy<piecewise_print_pass_cstr_t> f(&inst);
+      hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
+    }
+
+  // remainder < width, possibly zero. sending even when zero ensures null
+  // terminated.
+  {
+    piecewise_print_pass_cstr_t inst(&str[chunks * w], remainder);
+    fill_by_copy<piecewise_print_pass_cstr_t> f(&inst);
+    hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
+  }
 }
 
 #endif
@@ -337,17 +341,87 @@ void debug_print_pass_cstr(uint32_t port, const char *str)
 
 namespace
 {
+// server cases are much easier to write if one port is used
+// for multiple packets
+struct print_wip
+{
+  // first expected to be cstr for format
+  struct field
+  {
+    field() = default;
+    static field u64(uint64_t x)
+    {
+      field r;
+      r.tag = func_piecewise_print_pass_u64;
+      r.u64_ = x;
+      return r;
+    }
+
+    static field cstr()
+    {
+      field r;
+      r.tag = func_piecewise_print_pass_cstr;
+      return r;
+    }
+
+    template <size_t N>
+    void append_cstr(const char *s)
+    {
+      assert(tag == func_piecewise_print_pass_cstr);
+      cstr_.insert(cstr_.end(), s, s + N);
+    }
+
+    uint64_t tag = func_print_nop;
+    uint64_t u64_;
+    std::vector<char> cstr_;
+  };
+
+  uint64_t operator()(size_t i)
+  {
+    switch (args_[i].tag)
+      {
+        default:
+        case func_print_nop:
+          return 0;
+        case func_piecewise_print_pass_u64:
+          return args_[i].u64_;
+        case func_piecewise_print_pass_cstr:
+          return reinterpret_cast<uint64_t>(args_[i].cstr_.data());
+      }
+  }
+
+  void append_acc()
+  {
+    assert(acc.tag != func_print_nop);
+    args_.push_back(acc);
+    acc = {};
+  }
+
+  void clear()
+  {
+    acc = {};
+    args_.clear();
+  }
+
+  field acc;
+  std::vector<field> args_;
+};
+
 using buffer_t = std::unordered_map<
     uint32_t, std::array<std::unordered_map<uint64_t, std::string>, 64> >;
+
+using print_buffer_t = std::vector<std::array<print_wip, 64> >;
 
 template <typename ServerType>
 struct operate
 {
   buffer_t *buffer = nullptr;
+  print_buffer_t *print_buffer = nullptr;
   ServerType *ThisServer;
   hostrpc::page_t *start_local_buffer = nullptr;
-  operate(buffer_t *buffer, ServerType *ThisServer)
-      : buffer(buffer), ThisServer(ThisServer)
+  operate(buffer_t *buffer, print_buffer_t *print_buffer,
+          ServerType *ThisServer)
+      : buffer(buffer), print_buffer(print_buffer), ThisServer(ThisServer)
   {
     start_local_buffer = ThisServer->local_buffer;
   }
@@ -371,11 +445,10 @@ struct operate
   }
 
   // if all ops are zero or x, return x. Else return zero
-  uint64_t unique_op_except_zero(hostrpc::page_t *page)
+  static uint64_t unique_op_except_zero(hostrpc::page_t *page)
   {
     hostrpc::cacheline_t *end = &page->cacheline[hostrpc::page_t::width];
 
-    printf("unique?\n");
     hostrpc::cacheline_t *line = std::find_if(
         &page->cacheline[0], end,
         [](hostrpc::cacheline_t &line) { return line.element[0] != 0; });
@@ -395,6 +468,162 @@ struct operate
     return 0;
   }
 
+  bool recur(hostrpc::page_t *page, uint32_t slot)
+  {
+    auto &slot_buffer = (*print_buffer)[slot];
+
+    uint64_t op = unique_op_except_zero(page);
+    if (op == 0)
+      {
+        // failure time
+        printf("invalid recur\n");
+        return true;
+      }
+
+    if (op == func_piecewise_print_end)
+      {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wformat-security"
+        for (unsigned c = 0; c < 64; c++)
+          {
+            auto &thread_print = slot_buffer[c];
+            size_t N = thread_print.args_.size();
+
+            switch (N)
+              {
+                case 0:
+                  {
+                    thread_print.acc.append_cstr<8>("(null)\n");
+                    thread_print.append_acc();
+                    printf(reinterpret_cast<const char *>(thread_print(0)), c);
+                    break;
+                  }
+                case 1:
+                  {
+                    printf(reinterpret_cast<const char *>(thread_print(0)), c);
+                    break;
+                  }
+                case 2:
+                  {
+                    printf(reinterpret_cast<const char *>(thread_print(0)), c,
+                           thread_print(1));
+                    break;
+                  }
+                case 3:
+                  {
+                    printf(reinterpret_cast<const char *>(thread_print(0)), c,
+                           thread_print(1), thread_print(2));
+                    break;
+                  }
+
+                case 4:
+                  {
+                    printf(reinterpret_cast<const char *>(thread_print(0)), c,
+                           thread_print(1), thread_print(2), thread_print(3));
+                    break;
+                  }
+                case 5:
+                  {
+                    printf(reinterpret_cast<const char *>(thread_print(0)), c,
+                           thread_print(1), thread_print(2), thread_print(3),
+                           thread_print(4));
+                    break;
+                  }
+                case 6:
+                  {
+                    printf(reinterpret_cast<const char *>(thread_print(0)), c,
+                           thread_print(1), thread_print(2), thread_print(3),
+                           thread_print(4), thread_print(5));
+                    break;
+                  }
+
+                default:
+                  {
+                    printf("[%.2u] %s took %lu args\n", c,
+                           reinterpret_cast<const char *>(thread_print(0)),
+                           N - 1);
+                    break;
+                  }
+              }
+          }
+#pragma clang diagnostic pop
+        return true;
+      }
+
+    if (op == func_piecewise_print_pass_cstr)
+      {
+        for (unsigned c = 0; c < 64; c++)
+          {
+            auto &thread_print = slot_buffer[c];
+            hostrpc::cacheline_t *line = &page->cacheline[c];
+            if (line->element[0] == func_print_nop)
+              {
+                continue;
+              }
+
+            piecewise_print_pass_cstr_t *p =
+                reinterpret_cast<piecewise_print_pass_cstr_t *>(
+                    &line->element[0]);
+
+            if (thread_print.acc.tag == func_print_nop)
+              {
+                thread_print.acc = print_wip::field::cstr();
+              }
+
+            if (thread_print.acc.tag == func_piecewise_print_pass_cstr)
+              {
+                thread_print.acc
+                    .append_cstr<piecewise_print_pass_cstr_t::width>(
+                        p->payload);
+
+                if (fs_contains_nul(p->payload,
+                                    piecewise_print_pass_cstr_t::width))
+                  {
+                    // end of string
+                    thread_print.append_acc();
+                  }
+              }
+            else
+              {
+                printf("invalid print cstr\n");
+                return true;
+              }
+          }
+        return false;
+      }
+
+    if (op == func_piecewise_print_pass_u64)
+      {
+        for (unsigned c = 0; c < 64; c++)
+          {
+            auto &thread_print = slot_buffer[c];
+            hostrpc::cacheline_t *line = &page->cacheline[c];
+            if (line->element[0] == func_print_nop)
+              {
+                continue;
+              }
+
+            piecewise_print_pass_u64_t *p =
+                reinterpret_cast<piecewise_print_pass_u64_t *>(
+                    &line->element[0]);
+
+            if (thread_print.acc.tag == func_print_nop)
+              {
+                thread_print.acc = print_wip::field::u64(p->payload);
+                thread_print.append_acc();
+              }
+            else
+              {
+                printf("invalid pass u64\n");
+              }
+          }
+        return false;
+      }
+
+    printf("Nested operate got work to do\n");
+    return false;
+  }
+
   void operator()(hostrpc::page_t *page)
   {
     const bool verbose = false;
@@ -402,12 +631,20 @@ struct operate
     if (verbose) fprintf(stderr, "Invoked operate on slot %u\n", slot);
 
     auto &slot_buffer = (*buffer)[slot];
+    auto &print_slot_buffer = (*print_buffer)[slot];
 
     if (uint64_t o = unique_op_except_zero(page))
       {
-        printf("got unique op %lu on slot %u\n", o, slot);
-        if (o == func_debug_print_start)
+        if (o == func_piecewise_print_start)
           {
+            for (unsigned c = 0; c < 64; c++)
+              {
+                auto &thread_print = print_slot_buffer[c];
+                thread_print.clear();
+                thread_print.acc = print_wip::field::cstr();
+                thread_print.acc.append_cstr<7>("[%.2u] ");
+              }
+
             // Need to conclude this current packet before recursing
             // haven't written anything, so probably no point calling
             // push from server too client, but need to tell the client
@@ -439,21 +676,10 @@ struct operate
                 // Do next task, but don't publish the result
                 ThisServer->rpc_port_operate_given_available_nopublish(
                     [&](hostrpc::page_t *page) {
-                      if (unique_op_except_zero(page) == func_debug_print_end)
-                        {
-                          got_end_packet = true;
-                          printf("Nested operate got end signal\n");
-                          // This operate call returning will signal
-                          // the client, need more control than that
-                          return;
-                        }
-
-                      printf("Nested operate got work to do\n");
+                      got_end_packet = recur(page, slot);
                     },
                     slot);
               }
-
-            printf("jury rigged needed\n");
 
             return;
           }
@@ -543,10 +769,11 @@ struct operate
                 break;
               }
 
-            case func_debug_print_start:
+            case func_piecewise_print_start:
               {
                 printf(
-                    "[%.2u] Non-uniform func_debug_print_start unsupported\n",
+                    "[%.2u] Non-uniform func_piecewise_print_start "
+                    "unsupported\n",
                     c);
 
                 break;
@@ -586,6 +813,7 @@ struct wrap_state
   std::unique_ptr<hostrpc::thread<sts_ty> > thrd;
 
   std::unique_ptr<buffer_t> buffer;
+  std::unique_ptr<print_buffer_t> print_buffer;
 
   wrap_state(wrap_state &&) = delete;
   wrap_state &operator=(wrap_state &&) = delete;
@@ -614,7 +842,7 @@ struct wrap_state
     SZ N{nonblocking_size};
 
     // having trouble getting clang to call the move constructor, work around
-    // with heap
+    // with hoeap
     p = std::make_unique<hostrpc::x64_gcn_type<SZ> >(
         N, fine_grained_region.handle, coarse_grained_region.handle);
     platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
@@ -622,9 +850,11 @@ struct wrap_state
         &server_control, 1);
 
     buffer = std::make_unique<buffer_t>();
+    print_buffer = std::make_unique<print_buffer_t>();
+    print_buffer->resize(N.N());
 
-    operate<hostrpc::x64_gcn_type<SZ>::server_type> op(buffer.get(),
-                                                       &p->server);
+    operate<hostrpc::x64_gcn_type<SZ>::server_type> op(
+        buffer.get(), print_buffer.get(), &p->server);
     server_state = sts_ty(&p->server, &server_control, op, clear{});
 
     thrd =
@@ -644,8 +874,6 @@ struct wrap_state
         &server_control, 0);
 
     thrd->join();
-
-    buffer.reset();
   }
 };
 
@@ -733,24 +961,22 @@ extern "C" void example(void)
 {
   unsigned id = platform::get_lane_id();
 
-  uint32_t port = debug_print_start("some format %u too long with %s fields\n");
-  debug_print_end(port);
+  uint32_t port =
+      piecewise_print_start("some format %u too loffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffng with %s fields\n");
+  piecewise_print_pass_uint64(port, 42);
+  piecewise_print_pass_cstr(port, "stringy");
+  piecewise_print_end(port);
 
-  print_string("some unrelated packet");
-
-  return;
   if (id % 3 == 0)
     {
       print_string(
           "this string is somewhat too long to fit in a single buffer so "
-          "splits across several");
+          "splits across several\n");
     }
   else
     {
-      print_string("mostly short though");
+      print_string("mostly short though\n");
     }
-
-  return;
 
   platform::sleep();
 
