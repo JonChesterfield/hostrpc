@@ -1,15 +1,89 @@
 # hostrpc
-RPC within a shared address space
-
-Primary intended use is for asking an x86 process to run code on behalf of an amdgpu attached over pcie.
+Remote procedure calls within a shared address space. Expecting 'remote' to mean across pcie.
 
 Assumptions:
+- host may be any of x64, amdgcn, pre-volta nvptx64
+- client may be any of x64, amdgcn, pre-volta nvptx64
+- implementation may be cuda, hip, openmp or freestanding c++
 - client scheduler is not fair under contention
 - host scheduler is fair under contention
 - cas/faa over pci-e is expensive
 - zero acceptable probability of deadlock
 
-# State machines
+Opencl c++, powerpc, arch64 are intended to work but not yet tested.
+Volta nvptx needs refactoring to pass control flow masks around.
+Across network, as opposed to across pcie, should be implementable
+
+Interface:
+
+Assume for the moment that an instance of a 'client type' exists on the client, and a matching instance of a 'server type' exists on the server. How those are constructed is described further down.
+
+One method on the client instance is:
+```
+template <typename Fill, typename Use>
+bool rpc_invoke(Fill f, Use u);
+```
+where Fill and Use are types that expose
+```
+struct cacheline_t {
+  uint64_t element[8];
+};
+struct page_t {
+  cacheline_t cacheline[64];
+};
+struct some_fill {
+  void operator()(page_t *);
+};
+```
+
+Similarly, a method on the server instance is:
+```
+template <typename Operate, typename Clear>
+bool rpc_handle(Operate op, Clear cl); 
+```
+
+Given a server (thread or wavefront) that repeatedly calls rpc_handle, the behaviour exposed then follows:
+
+```
+// On the client
+Fill fill;
+Use use;
+client.rpc_invoke(fill, use)
+{
+  page_t * page = get_page();
+  fill(page); // write stuff to page
+
+  // time passes
+
+  use(page);
+  drop_page(page);
+}
+```
+
+```
+// On the server
+Operate operate;
+Clear clear;
+
+// given data from invoke(fill):
+server.rpc_handle(operate, clear)
+{
+  page_t * page = get_page();
+  operate(page);
+}
+
+// given data from invoke(use):
+server.rpc_handle(operate, clear)
+{
+  page_t * page = get_page();
+  clear(page);
+}
+
+```
+
+The clear() hook is useful for writing no-op across the page before it gets reused by another fill/operate/use sequence.
+
+# State machine description
 All assume one server, one client. Muliple devices or queues can use multiple RPC structures.
 'Inbox' and 'outbox' refer to single element queues.
 
