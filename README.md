@@ -1,7 +1,7 @@
 # hostrpc
 Remote procedure calls within a shared address space. Expecting 'remote' to mean across pcie.
 
-Assumptions:
+## Assumptions
 - host may be any of x64, amdgcn, pre-volta nvptx64
 - client may be any of x64, amdgcn, pre-volta nvptx64
 - implementation may be cuda, hip, openmp or freestanding c++
@@ -14,7 +14,7 @@ Opencl c++, powerpc, arch64 are intended to work but not yet tested.
 Volta nvptx needs refactoring to pass control flow masks around.
 Across network, as opposed to across pcie, should be implementable
 
-Interface:
+## Interface
 
 Assume for the moment that an instance of a 'client type' exists on the client, and a matching instance of a 'server type' exists on the server. How those are constructed is described further down.
 
