@@ -25,23 +25,49 @@ TMP
 #include <stdio.h>
 #endif
 
-                size_t
-                next_specifier(const char *input_format, size_t input_offset)
+    enum spec_t {
+      spec_normal,
+      spec_string,
+      spec_output,
+      spec_none,
+    };
+
+const char *spec_str(enum spec_t s)
 {
-  const bool verbose = true;
-
-  // offset assumed within nul terminated format
-  if (input_offset == SIZE_MAX)
+  switch (s)
     {
-      if (verbose)
-        {
-          printf("at limit, ret max\n");
-          return SIZE_MAX;
-        }
+      case spec_normal:
+        return "spec_normal";
+      case spec_string:
+        return "spec_string";
+      case spec_output:
+        return "spec_output";
+      case spec_none:
+        return "spec_none";
     }
+}
+static bool length_modifier_p(char c)
+{
+  switch (c)
+    {
+      case 'h':
+      case 'l':
+      case 'j':
+      case 'z':
+      case 't':
+      case 'L':
+        return true;
+      default:
+        return false;
+    }
+}
 
-  const char *format = &input_format[input_offset];
-  size_t offset = input_offset;
+enum spec_t next_specifier(const char *input_format, size_t *input_offset)
+{
+  const bool verbose = false;
+
+  size_t offset = *input_offset;
+  const char *format = &input_format[offset];
 
   for (;;)
     {
@@ -49,22 +75,61 @@ TMP
         {
           case '\0':
             {
-              printf("str %s offset %zu is '0\n", format, offset);
-              return SIZE_MAX;
+              if (verbose)
+                {
+                  printf("str %s offset %zu is '0\n", format, offset);
+                }
+              *input_offset = offset;
+              return spec_none;
             }
           case '%':
             {
-              if (format[1] == '%')
+              offset++;
+              format++;
+              if (*format == '%')
                 {
-                  format += 2;
-                  offset += 2;
+                  // not a specifier after all
+                  format++;
+                  offset++;
                   break;
                 }
-              else
+
+              while (length_modifier_p(*format))
+                {
+                  format++;
+                  offset++;
+                }
+
+              switch (*format)
+                {
+                  case '\0':
+                    {
+                      // %'\0 ill formed
+                      *input_offset = offset;
+                      return spec_none;
+                    }
+                  case 's':
+                    {
+                      format++;
+                      offset++;
+                      *input_offset = offset;
+                      return spec_string;
+                    }
+                  case 'n':
+                    {
+                      format++;
+                      offset++;
+                      *input_offset = offset;
+                      return spec_output;
+                    }
+                }
+
+              if (verbose)
                 {
                   printf("str %s offset %zu is %%\n", format, offset);
-                  return offset;
                 }
+              *input_offset = offset;
+              return spec_normal;
             }
 
           default:
@@ -108,70 +173,131 @@ TMP
 
 #define PP_NARG(...) PP_NARG_(__VA_ARGS__, PP_RSEQ_N())
 
-__attribute__((overloadable)) void piecewise_print_element(int x)
+__attribute__((overloadable)) void piecewise_print_element(enum spec_t spec,
+                                                           int x)
 {
   printf("%d", x);
 }
 
-__attribute__((overloadable)) void piecewise_print_element(unsigned x)
+__attribute__((overloadable)) void piecewise_print_element(enum spec_t spec,
+                                                           unsigned x)
 {
   printf("%u", x);
 }
 
-__attribute__((overloadable)) void piecewise_print_element(long x)
+__attribute__((overloadable)) void piecewise_print_element(enum spec_t spec,
+                                                           long x)
 {
   printf("%ld", x);
 }
 
-__attribute__((overloadable)) void piecewise_print_element(long long x)
+__attribute__((overloadable)) void piecewise_print_element(enum spec_t spec,
+                                                           long long x)
 {
   printf("%lld", x);
 }
 
-__attribute__((overloadable)) void piecewise_print_element(unsigned long x)
+__attribute__((overloadable)) void piecewise_print_element(enum spec_t spec,
+                                                           unsigned long x)
 {
   printf("%lu", x);
 }
 
-__attribute__((overloadable)) void piecewise_print_element(unsigned long long x)
+__attribute__((overloadable)) void piecewise_print_element(enum spec_t spec,
+                                                           unsigned long long x)
 {
   printf("%llu", x);
 }
 
-__attribute__((overloadable)) void piecewise_print_element(double x)
+__attribute__((overloadable)) void piecewise_print_element(enum spec_t spec,
+                                                           double x)
 {
   printf("%f", x);
 }
 
-__attribute__((overloadable)) void piecewise_print_element(const void *x)
+// Need the complete overload set in scope or implicit casts to void cause self
+// recursion
+__attribute__((overloadable)) void piecewise_print_element(enum spec_t spec,
+                                                           const char *x);
+__attribute__((overloadable)) void piecewise_print_element(
+    enum spec_t spec, const signed char *x);
+__attribute__((overloadable)) void piecewise_print_element(
+    enum spec_t spec, const unsigned char *x);
+__attribute__((overloadable)) void piecewise_print_element(enum spec_t spec,
+                                                           const void *x);
+
+__attribute__((overloadable)) void piecewise_print_element(enum spec_t spec,
+                                                           const char *x)
 {
-  printf("%%P: %p", x);
+  // (printf)("In func %s/L%u\n", __func__,__LINE__);
+  if (spec != spec_string)
+    {
+      piecewise_print_element(spec, (const void *)x);
+    }
+  else
+    {
+      printf("%%_S: %s", x);
+    }
+}
+
+__attribute__((overloadable)) void piecewise_print_element(enum spec_t spec,
+                                                           const signed char *x)
+{
+  // (printf)("In func %s/L%u\n", __func__,__LINE__);
+  printf("%%sS: %s", x);
+}
+
+__attribute__((overloadable)) void piecewise_print_element(
+    enum spec_t spec, const unsigned char *x)
+{
+  // (printf)("In func %s/L%u\n", __func__,__LINE__);
+  printf("%%uS: %s", x);
+}
+
+__attribute__((overloadable)) void piecewise_print_element(enum spec_t spec,
+                                                           const void *x)
+{
+  // (printf)("In func %s/L%u\n", __func__,__LINE__);
+  if (spec == spec_string)
+    {
+      piecewise_print_element(spec, (const char *)x);
+    }
+  else
+    {
+      printf("%%P: %p", x);
+    }
 }
 
 // Redundant types via argument promotion
-__attribute__((overloadable)) void piecewise_print_element(bool x)
+__attribute__((overloadable)) void piecewise_print_element(enum spec_t spec,
+                                                           bool x)
 {
-  piecewise_print_element((int)x);
+  piecewise_print_element(spec, (int)x);
 }
-__attribute__((overloadable)) void piecewise_print_element(signed char x)
+__attribute__((overloadable)) void piecewise_print_element(enum spec_t spec,
+                                                           signed char x)
 {
-  piecewise_print_element((int)x);
+  piecewise_print_element(spec, (int)x);
 }
-__attribute__((overloadable)) void piecewise_print_element(unsigned char x)
+__attribute__((overloadable)) void piecewise_print_element(enum spec_t spec,
+                                                           unsigned char x)
 {
-  piecewise_print_element((unsigned int)x);
+  piecewise_print_element(spec, (unsigned int)x);
 }
-__attribute__((overloadable)) void piecewise_print_element(short x)
+__attribute__((overloadable)) void piecewise_print_element(enum spec_t spec,
+                                                           short x)
 {
-  piecewise_print_element((int)x);
+  piecewise_print_element(spec, (int)x);
 }
-__attribute__((overloadable)) void piecewise_print_element(unsigned short x)
+__attribute__((overloadable)) void piecewise_print_element(enum spec_t spec,
+                                                           unsigned short x)
 {
-  piecewise_print_element((unsigned int)x);
+  piecewise_print_element(spec, (unsigned int)x);
 }
-__attribute__((overloadable)) void piecewise_print_element(float x)
+__attribute__((overloadable)) void piecewise_print_element(enum spec_t spec,
+                                                           float x)
 {
-  piecewise_print_element((double)x);
+  piecewise_print_element(spec, (double)x);
 }
 
 uint32_t piecewise_print_start(const char *fmt)
@@ -194,38 +320,98 @@ void piecewise_print_pass_cstr(uint32_t port, const char *str);
 #define PASTE(X, Y) PASTE_(X, Y)
 #define EXPAND(X) X
 
-#define printf(FMT, ...)                                                  \
-  {                                                                       \
-    uint32_t __port = piecewise_print_start(FMT);                         \
-    __lib_printf_args(UNUSED, ##__VA_ARGS__) piecewise_print_end(__port); \
+#define printf(FMT, ...)                                                       \
+  {                                                                            \
+    size_t offset = 0;                                                         \
+    (void)offset;                                                              \
+    uint32_t __port = piecewise_print_start(FMT);                              \
+    __lib_printf_args(FMT, UNUSED, ##__VA_ARGS__) piecewise_print_end(__port); \
   }
 
-#define WRAP(X) piecewise_print_element(X);
-#define WRAP1(U)
-#define WRAP2(U, X) WRAP(X)
-#define WRAP3(U, X, Y) WRAP2(U, X) WRAP(Y)
-#define WRAP4(U, X, Y, Z) WRAP3(U, X, Y) WRAP(Z)
+#define WRAP(FMT, X) piecewise_print_element(next_specifier(FMT, &offset), X);
+#define WRAP1(FMT, U)
+#define WRAP2(FMT, U, X) WRAP(FMT, X)
+#define WRAP3(FMT, U, X, Y) WRAP2(FMT, U, X) WRAP(FMT, Y)
+#define WRAP4(FMT, U, X, Y, Z) WRAP3(FMT, U, X, Y) WRAP(FMT, Z)
 
-#define __lib_printf_args(...) PASTE(WRAP, PP_NARG(__VA_ARGS__))(__VA_ARGS__)
+#define __lib_printf_args(FMT, ...) \
+  PASTE(WRAP, PP_NARG(__VA_ARGS__))(FMT, __VA_ARGS__)
+
+static enum spec_t next_spec(const char *format)
+{
+  size_t offset = 0;
+  return next_specifier(format, &offset);
+}
 
 MODULE(format)
 {
   TEST("count")
   {
-    CHECK(next_specifier("%", 0) == 0);
-    CHECK(next_specifier("%a", 0) == 0);
-    CHECK(next_specifier("a%a", 0) == 1);
-    CHECK(next_specifier("a%a", 1) == 1);
-    CHECK(next_specifier("a%a", 2) == SIZE_MAX);
+    CHECK(next_spec("%") == spec_none);
+    CHECK(next_spec("%a") == spec_normal);
+    CHECK(next_spec("a%a") == spec_normal);
+    CHECK(next_spec("a%a") == spec_normal);
   }
 
   TEST("literal %")
   {
-    CHECK(next_specifier("%%", 0) == SIZE_MAX);
-    CHECK(next_specifier(" %%", 0) == SIZE_MAX);
+    CHECK(next_spec("%%") == spec_none);
+    CHECK(next_spec(" %%") == spec_none);
+  }
 
-    // Strictly a parsing failure, but fine assuming iteration from start
-    CHECK(next_specifier("%%", 1) == 1);
+  TEST("string literal")
+  {
+    CHECK(next_spec("%s") == spec_string);
+    CHECK(next_spec("%ls") == spec_string);
+    CHECK(next_spec(" %s") == spec_string);
+    CHECK(next_spec(" %ls") == spec_string);
+    CHECK(next_spec("s%s") == spec_string);
+    CHECK(next_spec("s%ls") == spec_string);
+    CHECK(next_spec("s%%s") == spec_none);
+    CHECK(next_spec("s%%ls") == spec_none);
+  }
+
+  TEST("output")
+  {
+    CHECK(next_spec("%hhn") == spec_output);
+    CHECK(next_spec("%hn") == spec_output);
+    CHECK(next_spec("%n") == spec_output);
+    CHECK(next_spec("%ln") == spec_output);
+    CHECK(next_spec("%lln") == spec_output);
+    CHECK(next_spec("%jn") == spec_output);
+    CHECK(next_spec("%zn") == spec_output);
+    CHECK(next_spec("%tn") == spec_output);
+  }
+
+  TEST("check stays within bounds")
+  {
+    size_t offset = 0;
+
+    // empty
+    offset = 0;
+    CHECK(next_specifier("", &offset) == spec_none);
+    CHECK(offset == 0);
+
+    // single %
+    offset = 0;
+    CHECK(next_specifier("%", &offset) == spec_none);
+    CHECK(offset == 1);
+    CHECK(next_specifier("%", &offset) == spec_none);
+    CHECK(offset == 1);
+
+    // literal
+    offset = 0;
+    CHECK(next_specifier("%%", &offset) == spec_none);
+    CHECK(offset == 2);
+    CHECK(next_specifier("%%", &offset) == spec_none);
+    CHECK(offset == 2);
+
+    // string
+    offset = 0;
+    CHECK(next_specifier("%s", &offset) == spec_string);
+    CHECK(offset == 2);
+    CHECK(next_specifier("%s", &offset) == spec_none);
+    CHECK(offset == 2);
   }
 }
 
@@ -242,7 +428,12 @@ EVILUNIT_MAIN_MODULE()
     printf("uint %u", 42);
     printf("int %d", LIFE);
     printf("flt %g %d", 3.14, 81);
-
+    {
+      size_t offset = 0;
+      enum spec_t s = next_specifier("str %s", &offset);
+      (printf)("calling print_element on %s, moved offset to %zu\n",
+               spec_str(s), offset);
+    }
     printf("str %s", "strings");
 
     void *p = (void *)0;
@@ -252,6 +443,7 @@ EVILUNIT_MAIN_MODULE()
 
     printf("fmt ptr %p take ptr", p);
     printf("fmt ptr %p take str", "careful");
+
     printf("fmt str %s take ptr", (void *)"suspect");
     printf("fmt str %s take str", "good");
 
