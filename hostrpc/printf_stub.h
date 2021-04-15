@@ -77,3 +77,22 @@ void piecewise_pass_element_void(uint32_t port, const void *x)
   (void)port;
   (printf)("%p", x);
 }
+
+void piecewise_pass_element_write_int32(uint32_t port, int32_t *x)
+{
+  (void)port;
+  (printf)("%n", x);
+}
+
+void piecewise_pass_element_write_int64(uint32_t port, int64_t *x)
+{
+  (void)port;
+  if (sizeof(long) == sizeof(int64_t))
+    {
+      (printf)("%ln", (long*)x);
+    }
+  else if (sizeof(long long) == sizeof(int64_t))
+    {
+      (printf)("%lln", (long long*)x);
+    }
+}

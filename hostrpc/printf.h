@@ -29,14 +29,39 @@ TMP
 #include <stdio.h>
 #endif
 
-    enum spec_t {
-      spec_normal,
-      spec_string,
-      spec_output,
-      spec_none,
-    };
+// printf call rewritten on the gpu to calls to these
 
-const char *spec_str(enum spec_t s)
+#define API __attribute__((noinline))
+
+                    API uint32_t
+                    piecewise_print_start(const char *fmt);
+API int piecewise_print_end(uint32_t port);
+
+// simple types
+API void piecewise_pass_element_int32(uint32_t port, int32_t x);
+API void piecewise_pass_element_uint32(uint32_t port, uint32_t x);
+API void piecewise_pass_element_int64(uint32_t port, int64_t x);
+API void piecewise_pass_element_uint64(uint32_t port, uint64_t x);
+API void piecewise_pass_element_double(uint32_t port, double x);
+
+// copy null terminated string starting at x, print the string
+API void piecewise_pass_element_cstr(uint32_t port, const char *x);
+// print the address of the argument on the gpu
+API void piecewise_pass_element_void(uint32_t port, const void *x);
+
+// implement %n specifier
+API void piecewise_pass_element_write_int32(uint32_t port, int32_t *x);
+API void piecewise_pass_element_write_int64(uint32_t port, int64_t *x);
+
+enum spec_t
+{
+  spec_normal,
+  spec_string,
+  spec_output,
+  spec_none,
+};
+
+static __attribute__((unused)) const char *spec_str(enum spec_t s)
 {
   switch (s)
     {
@@ -50,6 +75,7 @@ const char *spec_str(enum spec_t s)
         return "spec_none";
     }
 }
+
 static bool length_modifier_p(char c)
 {
   switch (c)
@@ -177,21 +203,12 @@ enum spec_t next_specifier(const char *input_format, size_t *input_offset)
 
 #define PP_NARG(...) PP_NARG_(__VA_ARGS__, PP_RSEQ_N())
 
-// printf call rewritten on the gpu to calls to these
-uint32_t piecewise_print_start(const char *fmt);
-int piecewise_print_end(uint32_t port);
-void piecewise_pass_element_int32(uint32_t port, int32_t x);
-void piecewise_pass_element_uint32(uint32_t port, uint32_t x);
-void piecewise_pass_element_int64(uint32_t port, int64_t x);
-void piecewise_pass_element_uint64(uint32_t port, uint64_t x);
-void piecewise_pass_element_double(uint32_t port, double x);
-void piecewise_pass_element_cstr(uint32_t port, const char *x);
-void piecewise_pass_element_void(uint32_t port, const void *x);
+#define __PRINTF_DISPATCH \
+  __attribute__((overloadable)) __attribute__((unused)) static inline
 
 // Straightforward mapping from integer/double onto the lower calls
-__attribute__((overloadable)) void piecewise_print_element(uint32_t port,
-                                                           enum spec_t spec,
-                                                           int x)
+__PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
+                                               int x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   (void)spec;
@@ -199,9 +216,8 @@ __attribute__((overloadable)) void piecewise_print_element(uint32_t port,
   piecewise_pass_element_int32(port, x);
 }
 
-__attribute__((overloadable)) void piecewise_print_element(uint32_t port,
-                                                           enum spec_t spec,
-                                                           unsigned x)
+__PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
+                                               unsigned x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   (void)spec;
@@ -209,9 +225,8 @@ __attribute__((overloadable)) void piecewise_print_element(uint32_t port,
   piecewise_pass_element_uint32(port, x);
 }
 
-__attribute__((overloadable)) void piecewise_print_element(uint32_t port,
-                                                           enum spec_t spec,
-                                                           long x)
+__PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
+                                               long x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   (void)spec;
@@ -228,9 +243,8 @@ __attribute__((overloadable)) void piecewise_print_element(uint32_t port,
     }
 }
 
-__attribute__((overloadable)) void piecewise_print_element(uint32_t port,
-                                                           enum spec_t spec,
-                                                           unsigned long x)
+__PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
+                                               unsigned long x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   (void)spec;
@@ -247,9 +261,8 @@ __attribute__((overloadable)) void piecewise_print_element(uint32_t port,
     }
 }
 
-__attribute__((overloadable)) void piecewise_print_element(uint32_t port,
-                                                           enum spec_t spec,
-                                                           long long x)
+__PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
+                                               long long x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   (void)spec;
@@ -257,9 +270,8 @@ __attribute__((overloadable)) void piecewise_print_element(uint32_t port,
   piecewise_pass_element_int64(port, x);
 }
 
-__attribute__((overloadable)) void piecewise_print_element(uint32_t port,
-                                                           enum spec_t spec,
-                                                           unsigned long long x)
+__PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
+                                               unsigned long long x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   (void)spec;
@@ -267,9 +279,8 @@ __attribute__((overloadable)) void piecewise_print_element(uint32_t port,
   piecewise_pass_element_uint64(port, x);
 }
 
-__attribute__((overloadable)) void piecewise_print_element(uint32_t port,
-                                                           enum spec_t spec,
-                                                           double x)
+__PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
+                                               double x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   (void)spec;
@@ -277,83 +288,120 @@ __attribute__((overloadable)) void piecewise_print_element(uint32_t port,
 }
 
 // char* and void* check the format string to distinguish copy string vs pointer
-__attribute__((overloadable)) void piecewise_print_element(uint32_t port,
-                                                           enum spec_t spec,
-                                                           const char *x)
+// signed char* can also used with %n
+__PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
+                                               const char *x)
 {
-  // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
-  if (spec != spec_string)
+  (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
+  switch (spec)
     {
-      piecewise_pass_element_void(port, (const void *)x);
-    }
-  else
-    {
-      piecewise_pass_element_cstr(port, x);
+      case spec_string:
+        return piecewise_pass_element_cstr(port, x);
+      case spec_normal:
+        return piecewise_pass_element_void(port, (const void *)x);
+      case spec_output:
+        {
+          // This is somewhat dubious.
+          // In C, a string literal has type char[]
+          // Overloading works on const char* or char*, but clang
+          // considers a call with a "literal" ambiguous
+          // Bug https://bugs.llvm.org/show_bug.cgi?id=49978
+          // Preference would be to instantiate on char* and
+          // const char*, where the latter ignores %n
+          // For present, passing a const char* too write to via
+          // printf is UB anyway, so assume the argument is actually
+          // a mutable char that has been cast
+          int32_t tmp;
+          piecewise_pass_element_write_int32(port, &tmp);
+          *(char *)x = (char)tmp;
+          break;
+        }
+      case spec_none:
+        break;
     }
 }
 
-__attribute__((overloadable)) void piecewise_print_element(uint32_t port,
-                                                           enum spec_t spec,
-                                                           const void *x)
+__PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
+                                               signed short *x)
 {
-  // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
-  if (spec == spec_string)
+  (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
+  int32_t tmp;
+  piecewise_pass_element_write_int32(port, &tmp);
+  *x = (signed short)tmp;
+}
+
+__PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
+                                               int *x)
+{
+  (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
+  _Static_assert(sizeof(int) == sizeof(int32_t), "");
+  piecewise_pass_element_write_int32(port, x);
+}
+
+__PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
+                                               long *x)
+{
+  (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
+
+  if (sizeof(long) == sizeof(int32_t))
     {
-      piecewise_pass_element_cstr(port, (const char *)x);
+      piecewise_pass_element_write_int32(port, (int32_t *)x);
     }
-  else
+  if (sizeof(long) == sizeof(int64_t))
     {
-      piecewise_pass_element_void(port, x);
+      piecewise_pass_element_write_int64(port, (int64_t *)x);
     }
 }
 
-// Redundant types via argument promotion or char redundancy
-__attribute__((overloadable)) void piecewise_print_element(uint32_t port,
-                                                           enum spec_t spec,
-                                                           bool x)
+__PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
+                                               size_t *x)
 {
-  // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
-  piecewise_print_element(port, spec, (int)x);
+  (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
+
+  if (sizeof(size_t) == sizeof(int32_t))
+    {
+      piecewise_pass_element_write_int32(port, (int32_t *)x);
+    }
+  if (sizeof(size_t) == sizeof(int64_t))
+    {
+      piecewise_pass_element_write_int64(port, (int64_t *)x);
+    }
 }
-__attribute__((overloadable)) void piecewise_print_element(uint32_t port,
-                                                           enum spec_t spec,
-                                                           signed char x)
+
+__PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
+                                               long long *x)
 {
-  // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
-  piecewise_print_element(port, spec, (int)x);
+  (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
+  _Static_assert(sizeof(long long) == sizeof(int64_t), "");
+  piecewise_pass_element_write_int64(port, (int64_t *)x);
 }
-__attribute__((overloadable)) void piecewise_print_element(uint32_t port,
-                                                           enum spec_t spec,
-                                                           unsigned char x)
-{
-  // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
-  piecewise_print_element(port, spec, (unsigned int)x);
-}
-__attribute__((overloadable)) void piecewise_print_element(uint32_t port,
-                                                           enum spec_t spec,
-                                                           short x)
-{
-  // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
-  piecewise_print_element(port, spec, (int)x);
-}
-__attribute__((overloadable)) void piecewise_print_element(uint32_t port,
-                                                           enum spec_t spec,
-                                                           unsigned short x)
-{
-  // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
-  piecewise_print_element(port, spec, (unsigned int)x);
-}
-__attribute__((overloadable)) void piecewise_print_element(uint32_t port,
-                                                           enum spec_t spec,
-                                                           float x)
-{
-  // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
-  piecewise_print_element(port, spec, (double)x);
-}
+
+#define __PRINTF_DISPATCH_INDIRECT(TYPE, VIA)                              \
+  __PRINTF_DISPATCH void piecewise_print_element(uint32_t port,            \
+                                                 enum spec_t spec, TYPE x) \
+  {                                                                        \
+    piecewise_print_element(port, spec, (VIA)x);                           \
+  }
+
+// Implement types that undergo argument promotion as promotions
+__PRINTF_DISPATCH_INDIRECT(bool, int)
+__PRINTF_DISPATCH_INDIRECT(signed char, int)
+__PRINTF_DISPATCH_INDIRECT(unsigned char, unsigned int)
+__PRINTF_DISPATCH_INDIRECT(short, int)
+__PRINTF_DISPATCH_INDIRECT(unsigned short, unsigned int)
+__PRINTF_DISPATCH_INDIRECT(float, double)
+
+// Pointers take behaviour from the format string (%s/%p/%n), so redirect
+// signed/unsigned/void via the const char* which contains the switch
+__PRINTF_DISPATCH_INDIRECT(const void *, const char *)
+__PRINTF_DISPATCH_INDIRECT(const signed char *, const char *)
+__PRINTF_DISPATCH_INDIRECT(const unsigned char *, const char *)
+
+#undef __PRINTF_DISPATCH_INDIRECT
+#undef __PRINTF_DISPATCH
 
 #define PASTE_(X, Y) X##Y
 #define PASTE(X, Y) PASTE_(X, Y)
-#define EXPAND(X) X
 
 #define printf(FMT, ...)                                                       \
   {                                                                            \
@@ -451,6 +499,13 @@ MODULE(format)
   }
 }
 
+void codegen(uint32_t __port)
+{
+  size_t offset = 0;
+  piecewise_print_element(__port, next_specifier("flt %g %d", &offset), 3.14);
+  // printf("flt %g %d", 3.14, 81);
+}
+
 EVILUNIT_MAIN_MODULE()
 {
   DEPENDS(format);
@@ -471,11 +526,18 @@ EVILUNIT_MAIN_MODULE()
 
     printf("void2 %p", (void *)4);
 
+    char mutable[8] = "mutable";
+
     printf("fmt ptr %p take ptr", p);
     printf("fmt ptr %p take str", "careful");
-
+    printf("fmt ptr %p take mut", mutable);
     printf("fmt str %s take ptr", (void *)"suspect");
+
     printf("fmt str %s take str", "good");
+    printf("fmt str %s take cstr", (const char *)"const");
+    printf("fmt str %s take mut", mutable);
+
+    printf("fmt str %n mutable", mutable);
 
     printf("bool %u", false);
     printf("raw char %c", (char)11);
@@ -510,8 +572,60 @@ EVILUNIT_MAIN_MODULE()
     printf("size_t %zd", (size_t)36);
     printf("ptrdiff %td", (ptrdiff_t)37);
 
-    
-    
+    printf("float %f", (float)3.1f);
+    printf("double %lf", (double)4.1f);
+  }
+
+  TEST("long double")
+  {
+    // Postponing until checking what long double turns into on
+    // amdgcn. May need to accept passing a 16 byte value.
+    _Static_assert(sizeof(long double) == 2 * sizeof(double), "");
+    // printf("long double %Lf", (long double)4.1f);
+  }
+
+  TEST("output")
+  {
+    {
+      signed char x = 0;
+      printf("%n sc", &x);
+      CHECK(x == 0);
+    }
+    {
+      short x = 0;
+      printf("%n sh", &x);
+      CHECK(x == 0);
+    }
+    {
+      int x = 0;
+      printf("%n it", &x);
+      CHECK(x == 0);
+    }
+    {
+      long x = 0;
+      printf("%n lg", &x);
+      CHECK(x == 0);
+    }
+    {
+      long long x = 0;
+      printf("%n ll ", &x);
+      CHECK(x == 0);
+    }
+    {
+      intmax_t x = 0;
+      printf("%n im", &x);
+      CHECK(x == 0);
+    }
+    {
+      size_t x = 0;
+      printf("%n st", &x);
+      CHECK(x == 0);
+    }
+    {
+      ptrdiff_t x = 0;
+      printf("%n pd", &x);
+      CHECK(x == 0);
+    }
   }
 }
 
