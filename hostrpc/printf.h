@@ -10,17 +10,21 @@ TMP
 #endif
 
 #ifdef PRECOMPILE
+#define TMP #include <stdbool.h>
+                TMP
+#undef TMP
+#define TMP #include <stddef.h>
+        TMP
+#undef TMP
 #define TMP #include <stdint.h>
     TMP
 #undef TMP
 #define TMP #include <stdio.h>
-        TMP
-#undef TMP
-#define TMP #include <stdbool.h>
             TMP
 #undef TMP
 #else
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #endif
@@ -477,6 +481,37 @@ EVILUNIT_MAIN_MODULE()
     printf("raw char %c", (char)11);
     printf("signed char %c", (signed char)12);
     printf("unsigned char %c", (unsigned char)13);
+
+    printf("signed char int %hhd", (signed char)14);
+    printf("signed char int %hhi", (signed char)15);
+    printf("signed short int %hd", (signed short int)16);
+    printf("signed short int %hi", (signed short int)17);
+    printf("signed int %d", (signed int)18);
+    printf("signed int %i", (signed int)19);
+    printf("signed long %ld", (signed long)20);
+    printf("signed long %li", (signed long)21);
+    printf("signed long long %lld", (signed long long)22);
+    printf("signed long long %lli", (signed long long)23);
+
+    printf("unsigned char int %hhu", (unsigned char)24);
+    printf("unsigned short int %hu", (unsigned short int)25);
+    printf("unsigned int %u", (unsigned int)26);
+    printf("unsigned long %lu", (unsigned long)27);
+    printf("unsigned long long %llu", (unsigned long long)28);
+
+    printf("intmax %jd", (intmax_t)29);
+    printf("intmax %ji", (intmax_t)30);
+    printf("size_t %zd", (size_t)31);
+    printf("size_t %zi", (size_t)32);
+    printf("ptrdiff %td", (ptrdiff_t)33);
+    printf("ptrdiff %ti", (ptrdiff_t)34);
+
+    printf("uintmax %jd", (uintmax_t)35);
+    printf("size_t %zd", (size_t)36);
+    printf("ptrdiff %td", (ptrdiff_t)37);
+
+    
+    
   }
 }
 

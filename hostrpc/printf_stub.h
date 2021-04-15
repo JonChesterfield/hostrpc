@@ -41,7 +41,7 @@ void piecewise_pass_element_int64(uint32_t port, int64_t x)
     {
       (printf)("%ld", (long)x);
     }
-  if (sizeof(long long) == sizeof(int64_t))
+  else if (sizeof(long long) == sizeof(int64_t))
     {
       (printf)("%lld", (long long)x);
     }
@@ -54,7 +54,7 @@ void piecewise_pass_element_uint64(uint32_t port, uint64_t x)
     {
       (printf)("%lu", (unsigned long)x);
     }
-  if (sizeof(unsigned long long) == sizeof(uint64_t))
+  else if (sizeof(unsigned long long) == sizeof(uint64_t))
     {
       (printf)("%llu", (unsigned long long)x);
     }
