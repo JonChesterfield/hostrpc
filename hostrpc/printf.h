@@ -11,18 +11,22 @@ TMP
 
 #ifdef PRECOMPILE
 #define TMP #include <stdbool.h>
-                TMP
+    TMP
 #undef TMP
 #define TMP #include <stddef.h>
         TMP
 #undef TMP
 #define TMP #include <stdint.h>
-    TMP
-#undef TMP
-#define TMP #include <stdio.h>
             TMP
 #undef TMP
+#define TMP #include <stdio.h>
+                TMP
+#undef TMP
+#define TMP #include <assert.h>
+                    TMP
+#undef TMP
 #else
+#include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -33,8 +37,8 @@ TMP
 
 #define API __attribute__((noinline))
 
-                    API uint32_t
-                    piecewise_print_start(const char *fmt);
+                        API uint32_t
+                        piecewise_print_start(const char *fmt);
 API int piecewise_print_end(uint32_t port);
 
 // simple types
@@ -92,84 +96,222 @@ static bool length_modifier_p(char c)
     }
 }
 
-enum spec_t next_specifier(const char *input_format, size_t *input_offset)
+bool pred(int i)
+{
+  uint8_t hash = (uint8_t)(i * ((i ^ 218) + 1));
+  return hash == 0;
+}
+
+void scan(void)
+{
+  for (int i = 0; i < 256; i++)
+    {
+      if (pred(i))
+        {
+          printf("Hit at i = %u\n", i);
+        }
+    }
+}
+
+static size_t find_perc(const char *format, size_t len, size_t from)
+{
+  printf("Got %zu %zu\n", len, from);
+  for (size_t o = from; o < len; o++)
+    {
+      if (format[o] == '%')
+        {
+          return o;
+        }
+    }
+  return SIZE_MAX;
+}
+
+__attribute__((always_inline)) enum spec_t next_specifier(const char *format,
+                                                          size_t len,
+                                                          size_t *input_offset)
 {
   const bool verbose = false;
 
-  size_t offset = *input_offset;
-  const char *format = &input_format[offset];
+  (printf)("got length %zu\n", len);
 
-  for (;;)
+  size_t perc = find_perc(format, len, *input_offset);
+  if (perc == SIZE_MAX)
     {
-      switch (*format)
+      return spec_none;
+    }
+
+  size_t offset = perc;
+
+  offset++;
+
+  (printf)("got offset %zu\n", offset);
+
+  {
+    if (format[offset] == '%')
+      {
+        // not a specifier after all
+        offset++;
+        *input_offset = offset;
+        return next_specifier(format, len, input_offset);
+      }
+
+    while (length_modifier_p(format[offset]))
+      {
+        offset++;
+      }
+
+    switch (format[offset])
+      {
+        case '\0':
+          {
+            // %'\0 ill formed
+            *input_offset = offset;
+            return spec_none;
+          }
+        case 's':
+          {
+            offset++;
+            *input_offset = offset;
+            return spec_string;
+          }
+        case 'n':
+          {
+            offset++;
+            *input_offset = offset;
+            return spec_output;
+          }
+      }
+
+    if (verbose)
+      {
+        printf("str %s offset %zu is %%\n", format, offset);
+      }
+    *input_offset = offset;
+    return spec_normal;
+  }
+}
+
+__attribute__((always_inline)) enum spec_t specifier_classify(
+    const char *format, size_t loc)
+{
+  switch (format[loc])
+    {
+      case '\0':
         {
-          case '\0':
+          // %'\0 ill formed
+          return spec_none;
+        }
+      case 's':
+        {
+          return spec_string;
+        }
+      case 'n':
+        {
+          return spec_output;
+        }
+      default:
+        {
+          return spec_normal;
+        }
+    }
+}
+
+bool is_nonperc_conversion_specifier(char c)
+{
+  switch (c)
+    {
+      case 'c':
+      case 's':
+      case 'd':
+      case 'i':
+      case 'x':
+      case 'X':
+      case 'u':
+      case 'f':
+      case 'F':
+      case 'e':
+      case 'E':
+      case 'a':
+      case 'A':
+      case 'g':
+      case 'G':
+      case 'n':
+      case 'p':
+        return true;
+      default:
+        return false;
+    }
+}
+
+__attribute__((always_inline)) size_t next_specifier_location(
+    const char *format, size_t len, size_t input_offset)
+{
+  // more heuristics than one would like, but probably viable
+  // c++ version can be totally robust
+  if (__builtin_constant_p(len) && (len < 64))
+    {
+#pragma unroll 16
+      for (size_t o = input_offset; o < len; o++)
+        {
+          if (format[o] == '%')
             {
-              if (verbose)
+              o++;
+              if (format[o] == '%')
                 {
-                  printf("str %s offset %zu is '0\n", format, offset);
-                }
-              *input_offset = offset;
-              return spec_none;
-            }
-          case '%':
-            {
-              offset++;
-              format++;
-              if (*format == '%')
-                {
-                  // not a specifier after all
-                  format++;
-                  offset++;
-                  break;
+                  continue;
                 }
 
-              while (length_modifier_p(*format))
+              for (; o < len; o++)
                 {
-                  format++;
-                  offset++;
-                }
-
-              switch (*format)
-                {
-                  case '\0':
+                  if (is_nonperc_conversion_specifier(format[o]))
                     {
-                      // %'\0 ill formed
-                      *input_offset = offset;
-                      return spec_none;
-                    }
-                  case 's':
-                    {
-                      format++;
-                      offset++;
-                      *input_offset = offset;
-                      return spec_string;
-                    }
-                  case 'n':
-                    {
-                      format++;
-                      offset++;
-                      *input_offset = offset;
-                      return spec_output;
+                      return o;
                     }
                 }
-
-              if (verbose)
-                {
-                  printf("str %s offset %zu is %%\n", format, offset);
-                }
-              *input_offset = offset;
-              return spec_normal;
-            }
-
-          default:
-            {
-              format++;
-              offset++;
-              break;
             }
         }
     }
+  else
+    {
+      for (size_t o = input_offset; o < len; o++)
+        {
+          if (format[o] == '%')
+            {
+              o++;
+              if (format[o] == '%')
+                {
+                  continue;
+                }
+
+              for (; o < len; o++)
+                {
+                  if (is_nonperc_conversion_specifier(format[o]))
+                    {
+                      return o;
+                    }
+                }
+            }
+        }
+    }
+
+  return len;
+}
+
+__attribute__((always_inline)) size_t nth_specifier_location(const char *format,
+                                                             size_t N)
+{
+  size_t len = __builtin_strlen(format);
+
+  size_t loc = next_specifier_location(format, len, 0);
+
+#pragma unroll 2
+  while (N > 0)
+    {
+      loc = next_specifier_location(format, len, loc);
+      N--;
+    }
+
+  return loc;
 }
 
 #if 0
@@ -411,8 +553,9 @@ __PRINTF_DISPATCH_INDIRECT(const unsigned char *, const char *)
     __lib_printf_args(FMT, UNUSED, ##__VA_ARGS__) piecewise_print_end(__port); \
   }
 
-#define WRAP(FMT, X) \
-  piecewise_print_element(__port, next_specifier(FMT, &offset), X);
+#define WRAP(FMT, X)       \
+  piecewise_print_element( \
+      __port, next_specifier(FMT, __builtin_strlen(FMT), &offset), X);
 #define WRAP1(FMT, U)
 #define WRAP2(FMT, U, X) WRAP(FMT, X)
 #define WRAP3(FMT, U, X, Y) WRAP2(FMT, U, X) WRAP(FMT, Y)
@@ -424,7 +567,7 @@ __PRINTF_DISPATCH_INDIRECT(const unsigned char *, const char *)
 static enum spec_t next_spec(const char *format)
 {
   size_t offset = 0;
-  return next_specifier(format, &offset);
+  return next_specifier(format, __builtin_strlen(format), &offset);
 }
 
 MODULE(format)
@@ -473,37 +616,54 @@ MODULE(format)
 
     // empty
     offset = 0;
-    CHECK(next_specifier("", &offset) == spec_none);
+    CHECK(next_specifier("", 0, &offset) == spec_none);
     CHECK(offset == 0);
 
     // single %
     offset = 0;
-    CHECK(next_specifier("%", &offset) == spec_none);
+    CHECK(next_specifier("%", __builtin_strlen("%"), &offset) == spec_none);
     CHECK(offset == 1);
-    CHECK(next_specifier("%", &offset) == spec_none);
+    CHECK(next_specifier("%", __builtin_strlen("%"), &offset) == spec_none);
     CHECK(offset == 1);
 
     // literal
     offset = 0;
-    CHECK(next_specifier("%%", &offset) == spec_none);
+    CHECK(next_specifier("%%", __builtin_strlen("%%"), &offset) == spec_none);
     CHECK(offset == 2);
-    CHECK(next_specifier("%%", &offset) == spec_none);
+    CHECK(next_specifier("%%", __builtin_strlen("%%"), &offset) == spec_none);
     CHECK(offset == 2);
 
     // string
     offset = 0;
-    CHECK(next_specifier("%s", &offset) == spec_string);
+    CHECK(next_specifier("%s", __builtin_strlen("%s"), &offset) == spec_string);
     CHECK(offset == 2);
-    CHECK(next_specifier("%s", &offset) == spec_none);
+    CHECK(next_specifier("%s", __builtin_strlen("%s"), &offset) == spec_none);
     CHECK(offset == 2);
   }
 }
 
-void codegen(uint32_t __port)
+void codegenA(uint32_t __port)
 {
   size_t offset = 0;
-  piecewise_print_element(__port, next_specifier("flt %g %d", &offset), 3.14);
-  // printf("flt %g %d", 3.14, 81);
+
+  const char *fmt = "flt %g %d";
+
+  size_t first = next_specifier_location(fmt, __builtin_strlen(fmt), 0);
+  size_t second = next_specifier_location(fmt, __builtin_strlen(fmt), first);
+
+  (printf)("size %zu, first %zu, second %zu\n", __builtin_strlen(fmt), first,
+           second);
+}
+
+void codegen(uint32_t __port)
+{
+  const char *fmt = "flst %g %d %s longer!!!!";
+
+  (printf)("size %zu, first %zu, second %zu, third %zu\n",
+           __builtin_strlen(fmt), nth_specifier_location(fmt, 0),
+           nth_specifier_location(fmt, 1), nth_specifier_location(fmt, 2)
+
+  );
 }
 
 EVILUNIT_MAIN_MODULE()
