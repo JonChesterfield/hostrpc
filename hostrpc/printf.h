@@ -115,7 +115,6 @@ void scan(void)
 
 static size_t find_perc(const char *format, size_t len, size_t from)
 {
-  printf("Got %zu %zu\n", len, from);
   for (size_t o = from; o < len; o++)
     {
       if (format[o] == '%')
@@ -132,8 +131,6 @@ __attribute__((always_inline)) enum spec_t next_specifier(const char *format,
 {
   const bool verbose = false;
 
-  (printf)("got length %zu\n", len);
-
   size_t perc = find_perc(format, len, *input_offset);
   if (perc == SIZE_MAX)
     {
@@ -143,8 +140,6 @@ __attribute__((always_inline)) enum spec_t next_specifier(const char *format,
   size_t offset = perc;
 
   offset++;
-
-  (printf)("got offset %zu\n", offset);
 
   {
     if (format[offset] == '%')
@@ -216,7 +211,7 @@ __attribute__((always_inline)) enum spec_t specifier_classify(
     }
 }
 
-bool is_nonperc_conversion_specifier(char c)
+static bool is_nonperc_conversion_specifier(char c)
 {
   switch (c)
     {
@@ -248,9 +243,9 @@ __attribute__((always_inline)) size_t next_specifier_location(
 {
   // more heuristics than one would like, but probably viable
   // c++ version can be totally robust
-  if (__builtin_constant_p(len) && (len < 64))
+  if (__builtin_constant_p(len) && (len < 32))
     {
-#pragma unroll 16
+#pragma unroll 32
       for (size_t o = input_offset; o < len; o++)
         {
           if (format[o] == '%')
@@ -273,6 +268,7 @@ __attribute__((always_inline)) size_t next_specifier_location(
     }
   else
     {
+#pragma unroll 32
       for (size_t o = input_offset; o < len; o++)
         {
           if (format[o] == '%')
@@ -314,10 +310,17 @@ __attribute__((always_inline)) size_t nth_specifier_location(const char *format,
   return loc;
 }
 
+__attribute__((always_inline)) static enum spec_t nth_specifier_type(
+    const char *format, size_t N)
+{
+  size_t loc = nth_specifier_location(format, N);
+  return specifier_classify(format, loc);
+}
+
 #if 0
 /*
  * I believe I first saw this trick on stack overflow. Possibly at the
- * following:
+ * following:o
  * http://stackoverflow.com/questions/11317474/macro-to-count-number-of-arguments
  * This is considered to be a standard preprocessor technique in common
  * knowledge.
@@ -377,11 +380,11 @@ __PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
       "");
   if (sizeof(long) == sizeof(int32_t))
     {
-      piecewise_pass_element_int32(port, x);
+      piecewise_pass_element_int32(port, (int32_t)x);
     }
   if (sizeof(long) == sizeof(int64_t))
     {
-      piecewise_pass_element_int64(port, x);
+      piecewise_pass_element_int64(port, (int64_t)x);
     }
 }
 
@@ -395,11 +398,11 @@ __PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
                  "");
   if (sizeof(unsigned long) == sizeof(uint32_t))
     {
-      piecewise_pass_element_uint32(port, x);
+      piecewise_pass_element_uint32(port, (uint32_t)x);
     }
   if (sizeof(unsigned long) == sizeof(uint64_t))
     {
-      piecewise_pass_element_uint64(port, x);
+      piecewise_pass_element_uint64(port, (uint64_t)x);
     }
 }
 
@@ -434,7 +437,7 @@ __PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
 __PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
                                                const char *x)
 {
-  (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
+  // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   switch (spec)
     {
       case spec_string:
@@ -466,7 +469,7 @@ __PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
 __PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
                                                signed short *x)
 {
-  (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
+  // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
   int32_t tmp;
   piecewise_pass_element_write_int32(port, &tmp);
   *x = (signed short)tmp;
@@ -475,7 +478,7 @@ __PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
 __PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
                                                int *x)
 {
-  (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
+  // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
   _Static_assert(sizeof(int) == sizeof(int32_t), "");
   piecewise_pass_element_write_int32(port, x);
 }
@@ -483,7 +486,7 @@ __PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
 __PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
                                                long *x)
 {
-  (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
+  // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
 
   if (sizeof(long) == sizeof(int32_t))
     {
@@ -498,7 +501,7 @@ __PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
 __PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
                                                size_t *x)
 {
-  (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
+  // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
 
   if (sizeof(size_t) == sizeof(int32_t))
     {
@@ -513,7 +516,7 @@ __PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
 __PRINTF_DISPATCH void piecewise_print_element(uint32_t port, enum spec_t spec,
                                                long long *x)
 {
-  (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
+  // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
   _Static_assert(sizeof(long long) == sizeof(int64_t), "");
   piecewise_pass_element_write_int64(port, (int64_t *)x);
 }
@@ -545,21 +548,53 @@ __PRINTF_DISPATCH_INDIRECT(const unsigned char *, const char *)
 #define PASTE_(X, Y) X##Y
 #define PASTE(X, Y) PASTE_(X, Y)
 
-#define printf(FMT, ...)                                                       \
-  {                                                                            \
-    size_t offset = 0;                                                         \
-    (void)offset;                                                              \
-    uint32_t __port = piecewise_print_start(FMT);                              \
-    __lib_printf_args(FMT, UNUSED, ##__VA_ARGS__) piecewise_print_end(__port); \
+#define printf(FMT, ...)                            \
+  {                                                 \
+    size_t __offset = 0;                            \
+    (void)__offset;                                 \
+    const char *__fmt = FMT;                        \
+    size_t __strlen = __builtin_strlen(__fmt);      \
+    (void)__strlen;                                 \
+    uint32_t __port = piecewise_print_start(__fmt); \
+    __lib_printf_args(__fmt, UNUSED, ##__VA_ARGS__) \
+        piecewise_print_end(__port);                \
   }
 
-#define WRAP(FMT, X)       \
-  piecewise_print_element( \
-      __port, next_specifier(FMT, __builtin_strlen(FMT), &offset), X);
+__attribute__((always_inline)) void VERIFY(const char *format, size_t POS,
+                                           size_t offset)
+{
+  return;
+
+  enum spec_t c = next_specifier(format, __builtin_strlen(format), &offset);
+  enum spec_t n = nth_specifier_type(format, POS);
+  if (c != n)
+    {
+      (printf)("Disagreement on %s, pos %zu. %s != %s\n", format, POS,
+               spec_str(c), spec_str(n));
+    }
+  assert(c == n);
+}
+
+const bool use_direct = true;
+
+#define WRAP(FMT, POS, X)                                                 \
+  VERIFY(FMT, POS, __offset);                                             \
+  piecewise_print_element(__port,                                         \
+                          use_direct                                      \
+                              ? nth_specifier_type(FMT, POS)              \
+                              : next_specifier(FMT, __strlen, &__offset), \
+                          X);
 #define WRAP1(FMT, U)
-#define WRAP2(FMT, U, X) WRAP(FMT, X)
-#define WRAP3(FMT, U, X, Y) WRAP2(FMT, U, X) WRAP(FMT, Y)
-#define WRAP4(FMT, U, X, Y, Z) WRAP3(FMT, U, X, Y) WRAP(FMT, Z)
+#define WRAP2(FMT, U, X) WRAP(FMT, 0, X)
+#define WRAP3(FMT, U, X, Y) WRAP2(FMT, U, X) WRAP(FMT, 1, Y)
+#define WRAP4(FMT, U, X, Y, Z) WRAP3(FMT, U, X, Y) WRAP(FMT, 2, Z)
+#define WRAP5(FMT, U, X0, X1, X2, X3) WRAP4(FMT, U, X0, X1, X2) WRAP(FMT, 3, X3)
+#define WRAP6(FMT, U, X0, X1, X2, X3, X4) \
+  WRAP5(FMT, U, X0, X1, X2, X3) WRAP(FMT, 4, X4)
+#define WRAP7(FMT, U, X0, X1, X2, X3, X4, X5) \
+  WRAP6(FMT, U, X0, X1, X2, X3, X4) WRAP(FMT, 5, X5)
+#define WRAP8(FMT, U, X0, X1, X2, X3, X4, X5, X6) \
+  WRAP7(FMT, U, X0, X1, X2, X3, X4, X5) WRAP(FMT, 6, X6)
 
 #define __lib_printf_args(FMT, ...) \
   PASTE(WRAP, PP_NARG(__VA_ARGS__))(FMT, __VA_ARGS__)
@@ -644,8 +679,6 @@ MODULE(format)
 
 void codegenA(uint32_t __port)
 {
-  size_t offset = 0;
-
   const char *fmt = "flt %g %d";
 
   size_t first = next_specifier_location(fmt, __builtin_strlen(fmt), 0);
@@ -655,7 +688,7 @@ void codegenA(uint32_t __port)
            second);
 }
 
-void codegen(uint32_t __port)
+void codegenB(uint32_t __port)
 {
   const char *fmt = "flst %g %d %s longer!!!!";
 
@@ -665,6 +698,43 @@ void codegen(uint32_t __port)
 
   );
 }
+
+#define EVILUNIT_ANSI_COLOUR_RED "\x1b[31m"
+#define EVILUNIT_ANSI_COLOUR_GREEN "\x1b[32m"
+#define EVILUNIT_ANSI_COLOUR_RESET "\x1b[0m"
+
+void codegen_evilunit_pass(uint32_t failures, uint32_t checks,
+                           const char *modulename)
+{
+  const char * fmt =  "[ " EVILUNIT_ANSI_COLOUR_GREEN "Pass" EVILUNIT_ANSI_COLOUR_RESET " ]"
+                   "%u/%u %s\n";
+
+ size_t len = __builtin_strlen(fmt);
+
+ size_t loc0 =next_specifier_location(fmt, len, 0);
+ if (0) (printf)("Lowers to %u %u %u\n",
+          specifier_classify(fmt,loc0),
+          nth_specifier_type(fmt, 1),
+          0/**nth_specifier_type(fmt, 2)*/);
+          
+ 
+ if (1) printf(fmt,
+         failures, checks, modulename);
+}
+
+void codegen_evilunit_fail(uint32_t failures, uint32_t checks,
+                           const char *modulename, const char *filename,
+                           uint32_t line, const char *testname,
+                           const char *check)
+{
+  printf("[ " EVILUNIT_ANSI_COLOUR_RED "Fail" EVILUNIT_ANSI_COLOUR_RESET
+         " ] %u/%u %s %s(%u): \"%s\" %s\n",
+         failures, checks, modulename, filename, line, testname, check);
+}
+
+#undef EVILUNIT_ANSI_COLOUR_RED
+#undef EVILUNIT_ANSI_COLOUR_GREEN
+#undef EVILUNIT_ANSI_COLOUR_RESET
 
 EVILUNIT_MAIN_MODULE()
 {
