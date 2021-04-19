@@ -385,13 +385,20 @@ struct print_wip
   struct field
   {
     field() = default;
-    static field u64(uint64_t x)
+
+    field(int32_t x) : tag(func_piecewise_pass_element_int32)
     {
-      field r;
-      r.tag = func_piecewise_pass_element_uint64;
-      r.u64_ = x;
-      return r;
+      int64_t tmp = x;
+      __builtin_memcpy(&u64_, &tmp, 8);
     }
+    field(int64_t x) : tag(func_piecewise_pass_element_int64)
+    {
+      __builtin_memcpy(&u64_, &x, 8);
+    }
+    field(uint32_t x) : tag(func_piecewise_pass_element_uint32) { u64_ = x; }
+    field(uint64_t x) : tag(func_piecewise_pass_element_uint64) { u64_ = x; }
+
+    field(double x) : tag(func_piecewise_pass_element_double) { dbl_ = x; }
 
     static field cstr()
     {
@@ -409,6 +416,7 @@ struct print_wip
 
     uint64_t tag = func_print_nop;
     uint64_t u64_;
+    double dbl_;
     std::vector<char> cstr_;
   };
 
@@ -649,7 +657,7 @@ struct operate
                   {
                     if (thread_print.acc.tag == func_print_nop)
                       {
-                        thread_print.acc = print_wip::field::u64(p->payload);
+                        thread_print.acc = {p->payload};
                         thread_print.append_acc();
                       }
                     else
