@@ -341,8 +341,9 @@ if (($have_amdgcn)); then
     # The clang driver can't handle some hip input + some bitcode input, but does have the
     # internal hook -mlink-builtin-bitcode that can be used to the same end effect
     $LINK obj/hsa_support.x64.bc obj/syscall.x64.bc -o obj/demo.hip.link.x64.bc
-    
-    $CLANG -I$HSAINC -std=c++11 -x hip demo.hip -o demo --offload-arch=gfx906 -Xclang -mlink-builtin-bitcode -Xclang obj/demo.hip.link.x64.bc -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 -L$HSALIBDIR -lhsa-runtime64 -Wl,-rpath=$HSALIBDIR -pthread -ldl
+
+    # hip presently fails to build, so the library will be missing
+    # $CLANG -I$HSAINC -std=c++11 -x hip demo.hip -o demo --offload-arch=gfx906 -Xclang -mlink-builtin-bitcode -Xclang obj/demo.hip.link.x64.bc -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 -L$HSALIBDIR -lhsa-runtime64 -Wl,-rpath=$HSALIBDIR -pthread -ldl
     # ./demo hsa runtime presently segfaults in hip's library
 fi
 
