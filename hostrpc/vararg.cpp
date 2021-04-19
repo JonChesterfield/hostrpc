@@ -131,6 +131,12 @@ struct interpT
 
     switch (f.tag)
       {
+        // This is (fortunately, given compile time) not necessary
+        // Not only to int32&uint32 fold, but they're passed in
+        // eight byte registers. As are the pointers.
+        // May need to specialise on long double (though amd64 thinks that
+        // is a 80 bit value, so interop with amdgpu may be poor) or on
+        // 16 bytes types
         case func_piecewise_pass_element_int32:
           using T = interpT<ToDerive, NextDerived, Ts..., int32_t>;
           return T{}(args);
