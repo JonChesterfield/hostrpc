@@ -47,7 +47,7 @@ size_t fs_strlen(const char *str)
     }
 }
 
-enum : uint64_t
+enum func_type : uint64_t
 {
   func_print_nop = 0,
   func_print_uuu = 1,
@@ -58,11 +58,13 @@ enum : uint64_t
   func_piecewise_print_start = 5,
   func_piecewise_print_end = 6,
   func_piecewise_pass_element_cstr = 7,
-  func_piecewise_pass_element_uint64 = 8,
+
+  func_piecewise_pass_element_scalar = 8,
 
   func_piecewise_pass_element_int32,
   func_piecewise_pass_element_uint32,
   func_piecewise_pass_element_int64,
+  func_piecewise_pass_element_uint64,
   func_piecewise_pass_element_double,
   func_piecewise_pass_element_void,
   func_piecewise_pass_element_write_int32,
@@ -176,12 +178,16 @@ struct piecewise_pass_element_cstr_t
   }
 };
 
-struct piecewise_pass_element_uint64_t
+struct piecewise_pass_element_scalar_t
 {
-  uint64_t ID = func_piecewise_pass_element_uint64;
+  uint64_t ID = func_piecewise_pass_element_scalar;
+  uint64_t Type;
   uint64_t payload;
-  char unused[48];
-  piecewise_pass_element_uint64_t(uint64_t x) : payload(x) {}
+  char unused[40];
+  piecewise_pass_element_scalar_t(enum func_type type, uint64_t x)
+      : Type(type), payload(x)
+  {
+  }
 };
 
 using SZ = hostrpc::size_runtime;
@@ -323,8 +329,8 @@ int piecewise_print_end(uint32_t port)
 
 void piecewise_pass_element_uint64(uint32_t port, uint64_t v)
 {
-  piecewise_pass_element_uint64_t inst(v);
-  fill_by_copy<piecewise_pass_element_uint64_t> f(&inst);
+  piecewise_pass_element_scalar_t inst(func_piecewise_pass_element_uint64, v);
+  fill_by_copy<piecewise_pass_element_scalar_t> f(&inst);
   hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
 }
 
@@ -622,7 +628,7 @@ struct operate
         return false;
       }
 
-    if (op == func_piecewise_pass_element_uint64)
+    if (op == func_piecewise_pass_element_scalar)
       {
         for (unsigned c = 0; c < 64; c++)
           {
@@ -633,18 +639,30 @@ struct operate
                 continue;
               }
 
-            piecewise_pass_element_uint64_t *p =
-                reinterpret_cast<piecewise_pass_element_uint64_t *>(
+            piecewise_pass_element_scalar_t *p =
+                reinterpret_cast<piecewise_pass_element_scalar_t *>(
                     &line->element[0]);
 
-            if (thread_print.acc.tag == func_print_nop)
+            switch (p->Type)
               {
-                thread_print.acc = print_wip::field::u64(p->payload);
-                thread_print.append_acc();
-              }
-            else
-              {
-                printf("invalid pass u64\n");
+                case func_piecewise_pass_element_uint64:
+                  {
+                    if (thread_print.acc.tag == func_print_nop)
+                      {
+                        thread_print.acc = print_wip::field::u64(p->payload);
+                        thread_print.append_acc();
+                      }
+                    else
+                      {
+                        printf("invalid pass u64\n");
+                      }
+                    break;
+                  }
+                default:
+                  {
+                    printf("unimplemented scalar element: %lu\n", p->Type);
+                    break;
+                  }
               }
           }
         return false;
