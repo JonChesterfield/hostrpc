@@ -204,18 +204,18 @@ EVILUNIT_MAIN_MODULE()
 
     printf("void2 %p", (void *)4);
 
-    char mutable[8] = "mutable";
+    char mutable_buffer[8] = "mutable";
 
     printf("fmt ptr %p take ptr", p);
     printf("fmt ptr %p take str", "careful");
-    printf("fmt ptr %p take mut", mutable);
+    printf("fmt ptr %p take mut", mutable_buffer);
     printf("fmt str %s take ptr", (void *)"suspect");
 
     printf("fmt str %s take str", "good");
     printf("fmt str %s take cstr", (const char *)"const");
-    printf("fmt str %s take mut", mutable);
+    printf("fmt str %s take mut", mutable_buffer);
 
-    printf("fmt str %n mutable", mutable);
+    printf("fmt str %n mutable", mutable_buffer);
 
     printf("bool %u", false);
     printf("raw char %c", (char)11);

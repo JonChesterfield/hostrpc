@@ -27,27 +27,43 @@ TMP
 
 // printf calls rewritten on the gpu to calls to these
 
-#define API __attribute__((noinline))
+#ifdef __cplusplus
+#define __PRINTF_API_EXTERNAL __attribute__((noinline)) extern "C"
+#define __PRINTF_API_INTERNAL static inline __attribute__((unused))
+#else
+#define __PRINTF_API_EXTERNAL __attribute__((noinline))
+#define __PRINTF_API_INTERNAL \
+  static inline __attribute__((unused)) __attribute__((overloadable))
+#endif
 
-                    API uint32_t
+                    __PRINTF_API_EXTERNAL uint32_t
                     piecewise_print_start(const char *fmt);
-API int piecewise_print_end(uint32_t port);
+__PRINTF_API_EXTERNAL int piecewise_print_end(uint32_t port);
 
 // simple types
-API void piecewise_pass_element_int32(uint32_t port, int32_t x);
-API void piecewise_pass_element_uint32(uint32_t port, uint32_t x);
-API void piecewise_pass_element_int64(uint32_t port, int64_t x);
-API void piecewise_pass_element_uint64(uint32_t port, uint64_t x);
-API void piecewise_pass_element_double(uint32_t port, double x);
+__PRINTF_API_EXTERNAL void piecewise_pass_element_int32(uint32_t port,
+                                                        int32_t x);
+__PRINTF_API_EXTERNAL void piecewise_pass_element_uint32(uint32_t port,
+                                                         uint32_t x);
+__PRINTF_API_EXTERNAL void piecewise_pass_element_int64(uint32_t port,
+                                                        int64_t x);
+__PRINTF_API_EXTERNAL void piecewise_pass_element_uint64(uint32_t port,
+                                                         uint64_t x);
+__PRINTF_API_EXTERNAL void piecewise_pass_element_double(uint32_t port,
+                                                         double x);
 
 // copy null terminated string starting at x, print the string
-API void piecewise_pass_element_cstr(uint32_t port, const char *x);
+__PRINTF_API_EXTERNAL void piecewise_pass_element_cstr(uint32_t port,
+                                                       const char *x);
 // print the address of the argument on the gpu
-API void piecewise_pass_element_void(uint32_t port, const void *x);
+__PRINTF_API_EXTERNAL void piecewise_pass_element_void(uint32_t port,
+                                                       const void *x);
 
 // implement %n specifier
-API void piecewise_pass_element_write_int32(uint32_t port, int32_t *x);
-API void piecewise_pass_element_write_int64(uint32_t port, int64_t *x);
+__PRINTF_API_EXTERNAL void piecewise_pass_element_write_int32(uint32_t port,
+                                                              int32_t *x);
+__PRINTF_API_EXTERNAL void piecewise_pass_element_write_int64(uint32_t port,
+                                                              int64_t *x);
 
 enum __printf_spec_t
 {
@@ -57,8 +73,8 @@ enum __printf_spec_t
   spec_none,
 };
 
-static __attribute__((always_inline)) enum __printf_spec_t
-__printf_specifier_classify(const char *format, size_t loc)
+__PRINTF_API_INTERNAL
+enum __printf_spec_t __printf_specifier_classify(const char *format, size_t loc)
 {
   switch (format[loc])
     {
@@ -82,12 +98,12 @@ __printf_specifier_classify(const char *format, size_t loc)
     }
 }
 
-static bool __printf_haszero(uint32_t v)
+__PRINTF_API_INTERNAL bool __printf_haszero(uint32_t v)
 {
   return ((v - UINT32_C(0x01010101)) & ~v & UINT32_C(0x80808080));
 }
 
-static bool __printf_length_modifier_p(char c)
+__PRINTF_API_INTERNAL bool __printf_length_modifier_p(char c)
 {
   // test if 'c' is one of hljztL, as if so, need to keep scanning to
   // find the s/n/p
@@ -113,7 +129,8 @@ static bool __printf_length_modifier_p(char c)
          __printf_haszero(broadcast ^ haystackB);
 }
 
-static __attribute__((always_inline)) size_t __printf_next_specifier_location(
+__PRINTF_API_INTERNAL
+__attribute__((always_inline)) size_t __printf_next_specifier_location(
     const char *format, size_t len, size_t input_offset)
 {
   // more heuristics than one would like, but probably viable
@@ -162,12 +179,10 @@ static __attribute__((always_inline)) size_t __printf_next_specifier_location(
     }
 }
 
-#define __PRINTF_DISPATCH \
-  __attribute__((overloadable)) __attribute__((unused)) static inline
-
 // Straightforward mapping from integer/double onto the lower calls
-__PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
-                                               enum __printf_spec_t spec, int x)
+__PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
+                                                   enum __printf_spec_t spec,
+                                                   int x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   (void)spec;
@@ -175,9 +190,9 @@ __PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
   piecewise_pass_element_int32(port, x);
 }
 
-__PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
-                                               enum __printf_spec_t spec,
-                                               unsigned x)
+__PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
+                                                   enum __printf_spec_t spec,
+                                                   unsigned x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   (void)spec;
@@ -185,9 +200,9 @@ __PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
   piecewise_pass_element_uint32(port, x);
 }
 
-__PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
-                                               enum __printf_spec_t spec,
-                                               long x)
+__PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
+                                                   enum __printf_spec_t spec,
+                                                   long x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   (void)spec;
@@ -204,9 +219,9 @@ __PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
     }
 }
 
-__PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
-                                               enum __printf_spec_t spec,
-                                               unsigned long x)
+__PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
+                                                   enum __printf_spec_t spec,
+                                                   unsigned long x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   (void)spec;
@@ -223,9 +238,9 @@ __PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
     }
 }
 
-__PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
-                                               enum __printf_spec_t spec,
-                                               long long x)
+__PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
+                                                   enum __printf_spec_t spec,
+                                                   long long x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   (void)spec;
@@ -233,9 +248,9 @@ __PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
   piecewise_pass_element_int64(port, x);
 }
 
-__PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
-                                               enum __printf_spec_t spec,
-                                               unsigned long long x)
+__PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
+                                                   enum __printf_spec_t spec,
+                                                   unsigned long long x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   (void)spec;
@@ -243,9 +258,9 @@ __PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
   piecewise_pass_element_uint64(port, x);
 }
 
-__PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
-                                               enum __printf_spec_t spec,
-                                               double x)
+__PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
+                                                   enum __printf_spec_t spec,
+                                                   double x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   (void)spec;
@@ -254,9 +269,9 @@ __PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
 
 // char* and void* check the format string to distinguish copy string vs pointer
 // signed char* can also used with %n
-__PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
-                                               enum __printf_spec_t spec,
-                                               const char *x)
+__PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
+                                                   enum __printf_spec_t spec,
+                                                   const char *x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   switch (spec)
@@ -287,9 +302,9 @@ __PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
     }
 }
 
-__PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
-                                               enum __printf_spec_t spec,
-                                               signed short *x)
+__PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
+                                                   enum __printf_spec_t spec,
+                                                   signed short *x)
 {
   // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
   int32_t tmp;
@@ -297,18 +312,18 @@ __PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
   *x = (signed short)tmp;
 }
 
-__PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
-                                               enum __printf_spec_t spec,
-                                               int *x)
+__PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
+                                                   enum __printf_spec_t spec,
+                                                   int *x)
 {
   // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
   _Static_assert(sizeof(int) == sizeof(int32_t), "");
   piecewise_pass_element_write_int32(port, x);
 }
 
-__PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
-                                               enum __printf_spec_t spec,
-                                               long *x)
+__PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
+                                                   enum __printf_spec_t spec,
+                                                   long *x)
 {
   // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
 
@@ -322,9 +337,9 @@ __PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
     }
 }
 
-__PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
-                                               enum __printf_spec_t spec,
-                                               size_t *x)
+__PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
+                                                   enum __printf_spec_t spec,
+                                                   size_t *x)
 {
   // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
 
@@ -338,9 +353,9 @@ __PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
     }
 }
 
-__PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
-                                               enum __printf_spec_t spec,
-                                               long long *x)
+__PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
+                                                   enum __printf_spec_t spec,
+                                                   long long *x)
 {
   // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
   _Static_assert(sizeof(long long) == sizeof(int64_t), "");
@@ -348,7 +363,7 @@ __PRINTF_DISPATCH void piecewise_print_element(uint32_t port,
 }
 
 #define __PRINTF_DISPATCH_INDIRECT(TYPE, VIA)           \
-  __PRINTF_DISPATCH void piecewise_print_element(       \
+  __PRINTF_API_INTERNAL void piecewise_print_element(   \
       uint32_t port, enum __printf_spec_t spec, TYPE x) \
   {                                                     \
     piecewise_print_element(port, spec, (VIA)x);        \
@@ -369,7 +384,6 @@ __PRINTF_DISPATCH_INDIRECT(const signed char *, const char *)
 __PRINTF_DISPATCH_INDIRECT(const unsigned char *, const char *)
 
 #undef __PRINTF_DISPATCH_INDIRECT
-#undef __PRINTF_DISPATCH
 
 #define __PRINTF_PASTE_(X, Y) X##Y
 #define __PRINTF_PASTE(X, Y) __PRINTF_PASTE_(X, Y)
