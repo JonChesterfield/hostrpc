@@ -281,19 +281,20 @@ void hostrpc::print_base(const char *str, uint64_t x0, uint64_t x1, uint64_t x2)
   hostrpc_x64_gcn_debug_client[0].rpc_invoke(f, u);
 }
 
+void piecewise_pass_element_cstr(uint32_t port,
+                                 const char *);  // used to pass fmt
+
 static void print_string(const char *str)
 {
-  uint32_t port = piecewise_print_start(str);
+  uint32_t port = piecewise_print_start("%s");
   if (port == UINT32_MAX)
     {
       return;
     }
 
+  piecewise_pass_element_cstr(port, str);
   piecewise_print_end(port);
 }
-
-void piecewise_pass_element_cstr(uint32_t port,
-                                 const char *);  // used to pass fmt
 
 uint32_t piecewise_print_start(const char *fmt)
 {
@@ -340,6 +341,7 @@ void piecewise_pass_element_cstr(uint32_t port, const char *str)
 
   const constexpr size_t w = piecewise_pass_element_cstr_t::width;
 
+  // this appears to behave poorly when different threads make different numbers of calls
   uint64_t chunks = L / w;
   uint64_t remainder = L - (chunks * w);
   for (uint64_t c = 0; c < chunks; c++)
@@ -459,7 +461,7 @@ using print_buffer_t = std::vector<std::array<print_wip, 64> >;
 template <typename ServerType>
 struct operate
 {
-  buffer_t *buffer = nullptr;
+  buffer_t *buffer = nullptr; // now unused
   print_buffer_t *print_buffer = nullptr;
   ServerType *ThisServer;
   hostrpc::page_t *start_local_buffer = nullptr;
@@ -471,140 +473,98 @@ struct operate
   }
   operate() = default;
 
-  uint64_t op(hostrpc::page_t *page, unsigned wave)
+
+  void doprint(unsigned c, print_wip &thread_print)
   {
-    hostrpc::cacheline_t *line = &page->cacheline[wave];
-    return line->element[0];
-  }
-
-  bool uniform(hostrpc::page_t *page)
-  {
-    bool uniform = true;
-    uint64_t first = op(page, 0);
-    for (unsigned c = 1; c < 64; c++)
-      {
-        uniform &= (first == op(page, c));
-      }
-    return uniform;
-  }
-
-  // if all ops are zero or x, return x. Else return zero
-  static uint64_t unique_op_except_zero(hostrpc::page_t *page)
-  {
-    hostrpc::cacheline_t *end = &page->cacheline[hostrpc::page_t::width];
-
-    hostrpc::cacheline_t *line = std::find_if(
-        &page->cacheline[0], end,
-        [](hostrpc::cacheline_t &line) { return line.element[0] != 0; });
-
-    if (line != end)
-      {
-        uint64_t op = line->element[0];
-        if (std::all_of(line, end, [=](hostrpc::cacheline_t &line) {
-              uint64_t e = line.element[0];
-              return e != op || e != 0;
-            }))
-          {
-            return op;
-          }
-      }
-
-    return 0;
-  }
-
-  bool recur(hostrpc::page_t *page, uint32_t slot)
-  {
-    auto &slot_buffer = (*print_buffer)[slot];
-
-    uint64_t op = unique_op_except_zero(page);
-    if (op == 0)
-      {
-        // failure time
-        printf("invalid recur\n");
-        return true;
-      }
-
-    if (op == func_piecewise_print_end)
-      {
+    size_t N = thread_print.args_.size();
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wformat-security"
-        for (unsigned c = 0; c < 64; c++)
-          {
-            auto &thread_print = slot_buffer[c];
-            size_t N = thread_print.args_.size();
 
-            switch (N)
-              {
-                case 0:
-                  {
-                    thread_print.acc.append_cstr<8>("(null)\n");
-                    thread_print.append_acc();
-                    printf(reinterpret_cast<const char *>(thread_print(0)), c);
-                    break;
-                  }
-                case 1:
-                  {
-                    printf(reinterpret_cast<const char *>(thread_print(0)), c);
-                    break;
-                  }
-                case 2:
-                  {
-                    printf(reinterpret_cast<const char *>(thread_print(0)), c,
-                           thread_print(1));
-                    break;
-                  }
-                case 3:
-                  {
-                    printf(reinterpret_cast<const char *>(thread_print(0)), c,
-                           thread_print(1), thread_print(2));
-                    break;
-                  }
-
-                case 4:
-                  {
-                    printf(reinterpret_cast<const char *>(thread_print(0)), c,
-                           thread_print(1), thread_print(2), thread_print(3));
-                    break;
-                  }
-                case 5:
-                  {
-                    printf(reinterpret_cast<const char *>(thread_print(0)), c,
-                           thread_print(1), thread_print(2), thread_print(3),
-                           thread_print(4));
-                    break;
-                  }
-                case 6:
-                  {
-                    printf(reinterpret_cast<const char *>(thread_print(0)), c,
-                           thread_print(1), thread_print(2), thread_print(3),
-                           thread_print(4), thread_print(5));
-                    break;
-                  }
-
-                default:
-                  {
-                    printf("[%.2u] %s took %lu args\n", c,
-                           reinterpret_cast<const char *>(thread_print(0)),
-                           N - 1);
-                    break;
-                  }
-              }
-          }
-#pragma clang diagnostic pop
-        return true;
-      }
-
-    if (op == func_piecewise_pass_element_cstr)
+    switch (N)
       {
-        for (unsigned c = 0; c < 64; c++)
+        case 0:
           {
-            auto &thread_print = slot_buffer[c];
-            hostrpc::cacheline_t *line = &page->cacheline[c];
-            if (line->element[0] == func_print_nop)
-              {
-                continue;
-              }
+            thread_print.acc.append_cstr<8>("(null)\n");
+            thread_print.append_acc();
+            printf(reinterpret_cast<const char *>(thread_print(0)), c);
+            break;
+          }
+        case 1:
+          {
+            printf(reinterpret_cast<const char *>(thread_print(0)), c);
+            break;
+          }
+        case 2:
+          {
+            printf(reinterpret_cast<const char *>(thread_print(0)), c,
+                   thread_print(1));
+            break;
+          }
+        case 3:
+          {
+            printf(reinterpret_cast<const char *>(thread_print(0)), c,
+                   thread_print(1), thread_print(2));
+            break;
+          }
+        case 4:
+          {
+            printf(reinterpret_cast<const char *>(thread_print(0)), c,
+                   thread_print(1), thread_print(2), thread_print(3));
+            break;
+          }
+        case 5:
+          {
+            printf(reinterpret_cast<const char *>(thread_print(0)), c,
+                   thread_print(1), thread_print(2), thread_print(3),
+                   thread_print(4));
+            break;
+          }
+        case 6:
+          {
+            printf(reinterpret_cast<const char *>(thread_print(0)), c,
+                   thread_print(1), thread_print(2), thread_print(3),
+                   thread_print(4), thread_print(5));
+            break;
+          }
 
+        default:
+          {
+            printf("[%.2u] %s took %lu args\n", c,
+                   reinterpret_cast<const char *>(thread_print(0)), N - 1);
+            break;
+          }
+      }
+#pragma clang diagnostic pop
+  }
+
+  void perthread(unsigned c, hostrpc::cacheline_t *line,
+                 print_wip &thread_print)
+  {
+    uint64_t ID = line->element[0];
+
+    switch (ID)
+      {
+        case func_print_nop:
+          {
+            break;
+          }
+
+        case func_piecewise_print_start:
+          {
+            thread_print.clear();
+            thread_print.acc = print_wip::field::cstr();
+            thread_print.acc.append_cstr<7>("[%.2u] ");
+            break;
+          }
+
+        case func_piecewise_print_end:
+          {
+            doprint(c, thread_print);
+            break;
+          }
+
+        case func_piecewise_pass_element_cstr:
+          {
             piecewise_pass_element_cstr_t *p =
                 reinterpret_cast<piecewise_pass_element_cstr_t *>(
                     &line->element[0]);
@@ -630,23 +590,13 @@ struct operate
             else
               {
                 printf("invalid print cstr\n");
-                return true;
               }
+
+            break;
           }
-        return false;
-      }
 
-    if (op == func_piecewise_pass_element_scalar)
-      {
-        for (unsigned c = 0; c < 64; c++)
+        case func_piecewise_pass_element_scalar:
           {
-            auto &thread_print = slot_buffer[c];
-            hostrpc::cacheline_t *line = &page->cacheline[c];
-            if (line->element[0] == func_print_nop)
-              {
-                continue;
-              }
-
             piecewise_pass_element_scalar_t *p =
                 reinterpret_cast<piecewise_pass_element_scalar_t *>(
                     &line->element[0]);
@@ -672,12 +622,15 @@ struct operate
                     break;
                   }
               }
-          }
-        return false;
-      }
 
-    printf("Nested operate got work to do\n");
-    return false;
+            break;
+          }
+
+        default:
+          {
+            printf("Unhandled op: %lu\n", ID);
+          }
+      }
   }
 
   void operator()(hostrpc::page_t *page)
@@ -686,158 +639,12 @@ struct operate
     uint32_t slot = page - start_local_buffer;
     if (verbose) fprintf(stderr, "Invoked operate on slot %u\n", slot);
 
-    auto &slot_buffer = (*buffer)[slot];
-    auto &print_slot_buffer = (*print_buffer)[slot];
-
-    if (uint64_t o = unique_op_except_zero(page))
-      {
-        if (o == func_piecewise_print_start)
-          {
-            for (unsigned c = 0; c < 64; c++)
-              {
-                auto &thread_print = print_slot_buffer[c];
-                thread_print.clear();
-                thread_print.acc = print_wip::field::cstr();
-                thread_print.acc.append_cstr<7>("[%.2u] ");
-              }
-
-            // Need to conclude this current packet before recursing
-            // haven't written anything, so probably no point calling
-            // push from server too client, but need to tell the client
-            // this packet has been recieved before the recursive call
-            // can work
-
-            // Claim this operate call has returned
-
-            // Will wait, probably need to clear the packet
-
-            bool got_end_packet = false;
-
-            // The transition is roughly
-            // 1/ wait until available
-            // 2/ operate given available
-            // 3/ publish result
-            // At this point in the control flow, we are at 2/
-            // Further packets can be processed with 3->1->2
-            // Then drop out of this function to pick up publish
-
-            while (!got_end_packet)
-              {
-                // Close this operation
-                ThisServer->rpc_port_operate_publish_operate_done(slot);
-
-                // Wait for next task
-                ThisServer->rpc_port_wait_until_available(slot);
-
-                // Do next task, but don't publish the result
-                ThisServer->rpc_port_operate_given_available_nopublish(
-                    [&](hostrpc::page_t *page) {
-                      got_end_packet = recur(page, slot);
-                    },
-                    slot);
-              }
-
-            return;
-          }
-      }
+    std::array<print_wip, 64> &print_slot_buffer = (*print_buffer)[slot];
 
     for (unsigned c = 0; c < 64; c++)
       {
-        auto &thread_buffer = slot_buffer[c];
-        hostrpc::cacheline_t *line = &page->cacheline[c];
-
-        uint64_t ID = op(page, c);
-
-        switch (ID)
-          {
-            case 0:
-            default:
-              {
-                break;
-              }
-
-            case func_print_start:
-              {
-                if (verbose)
-                  printf("[%.2u] got print_start, clear slot %u\n", c, slot);
-                thread_buffer = {};
-                break;
-              }
-
-            case func_print_finish:
-              {
-                print_finish i(
-                    reinterpret_cast<const char *>(&line->element[0]));
-
-                if (verbose)
-                  printf(
-                      "[%.2u] got print_finish on slot %u, packets %lu, buffer "
-                      "size %zu\n",
-                      c, slot, i.packets, thread_buffer.size());
-
-                std::string acc;
-
-                for (size_t p = 0; p < i.packets; p++)
-                  {
-                    acc.append(thread_buffer[p]);
-                    if (verbose)
-                      printf("[%.2u] part [%zu]: %s\n", c, p,
-                             thread_buffer[p].c_str());
-                  }
-
-                printf("[%.2u] %s\n", c, acc.c_str());
-
-                break;
-              }
-
-            case func_print_append_str:
-              {
-                print_append_str i(
-                    reinterpret_cast<const char *>(&line->element[0]));
-                auto &start_thread_buffer = (*buffer)[i.start_port][c];
-                // this constructor can lead to embedded nul + noise, but
-                // finish using c_str means said nul/noise is ignored
-                start_thread_buffer[i.position] =
-                    std::string(i.payload, sizeof(i.payload));
-                if (verbose)
-                  printf("[%.2u] (*buffer-%p)[%lu][%u][%lu] (sz %zu) = %s\n", c,
-                         buffer, i.start_port, c, i.position,
-                         start_thread_buffer.size(),
-                         start_thread_buffer[i.position].c_str());
-
-                break;
-              }
-
-            case func_print_uuu:
-              {
-                print_uuu_instance i(
-                    reinterpret_cast<const char *>(&line->element[0]));
-
-                constexpr unsigned pre = 7;
-                const char *prefix = "[%.2u] ";
-
-                char fmt[pre + sizeof(print_uuu_instance::fmt) + 1];
-                __builtin_memcpy(&fmt, prefix, pre);
-                __builtin_memcpy(&fmt[pre], i.fmt, sizeof(i.fmt));
-                fmt[sizeof(fmt) - 1] = '\0';
-                printf(fmt, c, line->element[5], line->element[6],
-                       line->element[7]);
-                break;
-              }
-
-            case func_piecewise_print_start:
-              {
-                printf(
-                    "[%.2u] Non-uniform func_piecewise_print_start "
-                    "unsupported\n",
-                    c);
-
-                break;
-              }
-          }
+        perthread(c, &page->cacheline[c], print_slot_buffer[c]);
       }
-
-    (void)page;
   }
 };
 
@@ -1029,6 +836,12 @@ extern "C" void example(void)
   piecewise_pass_element_cstr(port, "stringy");
   piecewise_print_end(port);
 
+  print_string("string with %s formatting %% chars\n");
+
+#if 0
+  // this is interesting because the first generates more packets
+  // than the second. Presently that doesn't work - the short ones
+  // are printed, then later operations, then the machine faults
   if (id % 3 == 0)
     {
       print_string(
@@ -1039,6 +852,7 @@ extern "C" void example(void)
     {
       print_string("mostly short though\n");
     }
+#endif
 
   platform::sleep();
 
