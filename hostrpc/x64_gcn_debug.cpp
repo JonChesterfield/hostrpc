@@ -453,21 +453,17 @@ struct print_wip
   std::vector<field> args_;
 };
 
-using buffer_t = std::unordered_map<
-    uint32_t, std::array<std::unordered_map<uint64_t, std::string>, 64> >;
-
 using print_buffer_t = std::vector<std::array<print_wip, 64> >;
 
 template <typename ServerType>
 struct operate
 {
-  buffer_t *buffer = nullptr; // now unused
   print_buffer_t *print_buffer = nullptr;
   ServerType *ThisServer;
   hostrpc::page_t *start_local_buffer = nullptr;
-  operate(buffer_t *buffer, print_buffer_t *print_buffer,
+  operate( print_buffer_t *print_buffer,
           ServerType *ThisServer)
-      : buffer(buffer), print_buffer(print_buffer), ThisServer(ThisServer)
+      :  print_buffer(print_buffer), ThisServer(ThisServer)
   {
     start_local_buffer = ThisServer->local_buffer;
   }
@@ -675,7 +671,6 @@ struct wrap_state
   sts_ty server_state;
   std::unique_ptr<hostrpc::thread<sts_ty> > thrd;
 
-  std::unique_ptr<buffer_t> buffer;
   std::unique_ptr<print_buffer_t> print_buffer;
 
   wrap_state(wrap_state &&) = delete;
@@ -712,12 +707,11 @@ struct wrap_state
                            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
         &server_control, 1);
 
-    buffer = std::make_unique<buffer_t>();
     print_buffer = std::make_unique<print_buffer_t>();
     print_buffer->resize(N.N());
 
     operate<hostrpc::x64_gcn_type<SZ>::server_type> op(
-        buffer.get(), print_buffer.get(), &p->server);
+        print_buffer.get(), &p->server);
     server_state = sts_ty(&p->server, &server_control, op, clear{});
 
     thrd =
