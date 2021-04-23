@@ -191,16 +191,16 @@ struct interpT
 
     switch (f.tag)
       {
-        // This is (fortunately, given compile time) not necessary
-        // Not only to int32&uint32 fold, but they're passed in
-        // eight byte registers. As are the pointers.
-        // May need to specialise on long double (though amd64 thinks that
-        // is a 80 bit value, so interop with amdgpu may be poor) or on
-        // 16 bytes types
+          // This is (fortunately, given compile time) not necessary
+          // Not only to int32&uint32 fold, but they're passed in
+          // eight byte registers. As are the pointers.
+          // May need to specialise on long double (though amd64 thinks that
+          // is a 80 bit value, so interop with amdgpu may be poor) or on
+          // 16 bytes types
 
-        // x64 promotes 32 to 64 bit integer, haven't checked other arch so keep
-        // the distinction here
-        
+          // x64 promotes 32 to 64 bit integer, haven't checked other arch so
+          // keep the distinction here
+
         case func_piecewise_pass_element_uint32:
           return interpT<ToDerive, NextDerived, Ts..., uint32_t>::call(args);
 

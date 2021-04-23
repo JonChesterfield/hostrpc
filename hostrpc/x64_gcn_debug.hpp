@@ -6,6 +6,8 @@
 
 namespace hostrpc
 {
+// Can be used to print a string, provided it doesn't contain any
+// format characters (as it will be passed to printf with no args)
 void print_base(const char *, uint64_t, uint64_t, uint64_t);
 
 inline void print(const char *str, uint64_t x0, uint64_t x1, uint64_t x2)

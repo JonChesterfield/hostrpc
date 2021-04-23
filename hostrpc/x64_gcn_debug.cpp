@@ -281,7 +281,7 @@ void hostrpc::print_base(const char *str, uint64_t x0, uint64_t x1, uint64_t x2)
   hostrpc_x64_gcn_debug_client[0].rpc_invoke(f, u);
 }
 
-void print_string(const char *str)
+static void print_string(const char *str)
 {
   uint32_t port = piecewise_print_start(str);
   if (port == UINT32_MAX)
