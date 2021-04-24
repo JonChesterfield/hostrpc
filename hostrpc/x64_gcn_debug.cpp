@@ -197,7 +197,7 @@ using SZ = hostrpc::size_runtime;
 #if (HOSTRPC_AMDGCN)
 
 // Implementing on gcn, maybe also on x64:
-#define API  // __attribute__((noinline))
+#define API  __attribute__((convergent))
 
 API uint32_t piecewise_print_start(const char *fmt);
 API int piecewise_print_end(uint32_t port);
@@ -284,7 +284,7 @@ void hostrpc::print_base(const char *str, uint64_t x0, uint64_t x1, uint64_t x2)
 void piecewise_pass_element_cstr(uint32_t port,
                                  const char *);  // used to pass fmt
 
-static void print_string(const char *str)
+__attribute__((convergent)) static void print_string(const char *str)
 {
   uint32_t port = piecewise_print_start("%s");
   if (port == UINT32_MAX)
@@ -832,7 +832,7 @@ extern "C" void example(void)
 
   print_string("string with %s formatting %% chars\n");
 
-#if 0
+#if 1
   // this is interesting because the first generates more packets
   // than the second. Presently that doesn't work - the short ones
   // are printed, then later operations, then the machine faults
