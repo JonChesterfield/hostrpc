@@ -2,6 +2,8 @@
 #include "hostcall.hpp"
 #include <stddef.h>
 
+#include "hostrpc_printf.h"
+
 __attribute__((unused)) static const uint64_t no_op =
     UINT64_MAX;  // Warning: Update hostcall.cpp if changing this
 
@@ -198,6 +200,10 @@ extern "C" __attribute__((visibility("default"))) int main(int argc,
 
   // The hostrpc buffer is zero init, but no_op is not zero. Can somewhat bodge
   // that by an initial no_op call, but really should zero all the buffer.
+
+  // this worked, but printed after the syscall. If the printf implementation
+  // calls fflush, this is printed first. Quirk of bypassing stdio below.
+  printf("With %s syntax\n", "printf");
 
   if (platform::get_lane_id() == 0)
     {

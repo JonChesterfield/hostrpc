@@ -9,7 +9,9 @@
 #include "hostcall_hsa.hpp"
 #include "raiifile.hpp"
 
+#include "hostrpc_printf.h"
 #include "launch.hpp"
+#undef printf
 
 namespace
 {
@@ -221,6 +223,12 @@ static int main_with_hsa(int argc, char **argv)
         exit(1);
       }
   }
+
+  if (hostrpc_print_enable_on_hsa_agent(ex, kernel_agent) != 0)
+    {
+      fprintf(stderr, "Failed to create host printf thread\n");
+      exit(1);
+    }
 
   hostcall hc(kernel_agent);
   if (!hc.valid())

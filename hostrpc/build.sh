@@ -125,6 +125,9 @@ fi
 # Code running on the host can link in host, hsa or cuda support library.
 # Fills in gaps in the cuda/hsa libs, implements allocators
 
+$CXX_GCN hostrpc_printf.cpp -O3 -c -o obj/hostrpc_printf.gcn.bc
+$CXX_X64 -I$HSAINC hostrpc_printf.cpp -O3 -c -o obj/hostrpc_printf.x64.bc
+
 # host support library
 $CXX_X64 allocator_host_libc.cpp -c -o obj/allocator_host_libc.x64.bc
 # wraps pthreads, cuda miscompiled <thread>
@@ -136,7 +139,7 @@ if (($have_amdgcn)); then
 $CXX_X64 ../impl/msgpack.cpp -c -o obj/msgpack.x64.bc
 $CXX_X64 find_metadata.cpp -c -o obj/find_metadata.x64.bc
 $CXX_X64 -I$HSAINC allocator_hsa.cpp -c -o obj/allocator_hsa.x64.bc
-$LINK  obj/host_support.x64.bc obj/msgpack.x64.bc obj/find_metadata.x64.bc obj/allocator_hsa.x64.bc -o obj/hsa_support.x64.bc
+$LINK  obj/host_support.x64.bc obj/msgpack.x64.bc obj/find_metadata.x64.bc obj/allocator_hsa.x64.bc obj/hostrpc_printf.x64.bc -o obj/hsa_support.x64.bc
 fi
 
 # cuda support library
@@ -175,13 +178,12 @@ $OPT -strip-debug threads_bootstrap.x64.bc -S -o threads_bootstrap.x64.ll
 $OPT -strip-debug threads_bootstrap.gcn.bc -S -o threads_bootstrap.gcn.ll
 
 
-
 $CXX_X64_LD threads_bootstrap.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o threads_bootstrap.x64.exe
 
 
 $CXX_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.code.bc
 $CXXCL_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.kern.bc
-$LINK obj/x64_gcn_debug.gcn.code.bc obj/x64_gcn_debug.gcn.kern.bc -o obj/x64_gcn_debug.gcn.bc
+$LINK obj/x64_gcn_debug.gcn.code.bc obj/x64_gcn_debug.gcn.kern.bc obj/hostrpc_printf.gcn.bc -o obj/x64_gcn_debug.gcn.bc
 
 $CXX_GCN_LD obj/x64_gcn_debug.gcn.bc -o x64_gcn_debug.gcn.so
 
@@ -383,7 +385,7 @@ fi
 
 
 
-$LINK amdgcn_main.gcn.bc amdgcn_loader_device.gcn.bc  hostcall.gcn.bc  -o executable_device.gcn.bc
+$LINK amdgcn_main.gcn.bc amdgcn_loader_device.gcn.bc  hostcall.gcn.bc obj/hostrpc_printf.gcn.bc -o executable_device.gcn.bc
 
 # Link the device image
 $CXX_GCN_LD executable_device.gcn.bc -o a.gcn.out
