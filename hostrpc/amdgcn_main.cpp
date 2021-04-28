@@ -1,8 +1,9 @@
 #include "detail/platform.hpp"
+#undef printf
 #include "hostcall.hpp"
 #include <stddef.h>
 
-#include "hostrpc_printf.h"
+#include "EvilUnit.h"
 
 __attribute__((unused)) static const uint64_t no_op =
     UINT64_MAX;  // Warning: Update hostcall.cpp if changing this
@@ -188,6 +189,46 @@ static void deallocate(void *ptr)
 }
 
 extern "C" __attribute__((visibility("default"))) int main(int argc,
+                                                           char **argv);
+
+#if 0
+MAIN_MODULE()
+{
+  TEST("nop") {}
+
+#if 0
+      
+  TEST("printf")
+       {
+  printf("With %s syntax\n", "printf");
+
+       }
+
+#endif
+
+#if 1
+  TEST("syscall")
+  {
+    if (platform::get_lane_id() == 0)
+      {
+        char *buf = (char *)allocate(16);
+
+        buf[0] = 'h';
+        buf[1] = 'i';
+        buf[2] = '\n';
+        buf[3] = '\0';
+
+        syscall6(__NR_write, 2, (uint64_t)buf, 3, 0, 0, 0);
+
+        syscall6(__NR_fsync, 2, 0, 0, 0, 0, 0);
+
+        deallocate(buf);
+      }
+  }
+#endif
+}
+#else
+extern "C" __attribute__((visibility("default"))) int main(int argc,
                                                            char **argv)
 {
   (void)argc;
@@ -196,6 +237,7 @@ extern "C" __attribute__((visibility("default"))) int main(int argc,
   // Sometimes seeing:
   // fatal error: error in backend: Error while trying to spill SGPR4_SGPR5 from
   // class SReg_64: Cannot
+
   //     scavenge register without an emergency spill slot!
 
   // The hostrpc buffer is zero init, but no_op is not zero. Can somewhat bodge
@@ -223,4 +265,5 @@ extern "C" __attribute__((visibility("default"))) int main(int argc,
 
   return 0;
 }
+#endif
 #endif
