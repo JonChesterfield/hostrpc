@@ -233,6 +233,8 @@ __PRINTF_API_EXTERNAL int piecewise_print_end(uint32_t port)
     hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
   }
 
+  hostrpc_x64_gcn_debug_client[0].rpc_port_wait_for_result(port);
+  
   hostrpc_x64_gcn_debug_client[0].rpc_close_port(port);
   return 0;  // should be return code from printf
 }

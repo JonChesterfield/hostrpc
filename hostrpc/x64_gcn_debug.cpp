@@ -32,15 +32,8 @@ extern "C" void example(void)
 
   print_string("string with %s formatting %% chars\n");
 
-#if 0
   // this is interesting because the first generates more packets
-  // than the second. Presently that doesn't work - the short ones
-  // are printed, then later operations, then the machine faults
-  // current theory is this lowers to a loop with a different number
-  // of branches for some lanes, and that non-uniform branch codegens
-  // badly. If so, can fix by making every lane in the warp call the
-  // append_string function the same number of times, with nops for
-  // some calls. Disabling the test for now
+  // than the second.
   if (id % 3 == 0)
     {
       print_string(
@@ -51,7 +44,6 @@ extern "C" void example(void)
     {
       print_string("mostly short though\n");
     }
-#endif
 
   platform::sleep();
 
