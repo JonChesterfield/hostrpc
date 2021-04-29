@@ -204,11 +204,16 @@ hostrpc_inline_printf()
 // the assert when any lane is false avoids this.
 #define assert_str(x) assert_str_1(x)
 #define assert_str_1(x) #x
+
+#if 1
+#define assert(x) (void)0
+#else
 #define assert(x)                                                          \
   ((void)(platform::all_true(x) ||                                         \
           (platform::detail::assert_fail("L:" assert_str(__LINE__) " " #x, \
                                          __FILE__, __LINE__, __func__),    \
            0)))
+#endif
 
 #endif
 
