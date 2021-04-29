@@ -191,22 +191,17 @@ static void deallocate(void *ptr)
 extern "C" __attribute__((visibility("default"))) int main(int argc,
                                                            char **argv);
 
-#if 0
 MAIN_MODULE()
 {
-  TEST("nop") {}
+  TEST("first print")
+  {
+    if (platform::get_lane_id() % 2 == 1)
+      {
+        printf("EvUn with %s syntax\n", "printf");
+        CHECK(0);
+      }
+  }
 
-#if 0
-      
-  TEST("printf")
-       {
-  printf("With %s syntax\n", "printf");
-
-       }
-
-#endif
-
-#if 1
   TEST("syscall")
   {
     if (platform::get_lane_id() == 0)
@@ -225,45 +220,15 @@ MAIN_MODULE()
         deallocate(buf);
       }
   }
-#endif
+
+  TEST("second print\n")
+  {
+    if (platform::get_lane_id() % 2 == 0)
+      {
+        CHECK(0);
+        printf("second\n");
+      }
+  }
 }
-#else
-extern "C" __attribute__((visibility("default"))) int main(int argc,
-                                                           char **argv)
-{
-  (void)argc;
-  (void)argv;
 
-  // Sometimes seeing:
-  // fatal error: error in backend: Error while trying to spill SGPR4_SGPR5 from
-  // class SReg_64: Cannot
-
-  //     scavenge register without an emergency spill slot!
-
-  // The hostrpc buffer is zero init, but no_op is not zero. Can somewhat bodge
-  // that by an initial no_op call, but really should zero all the buffer.
-
-  // this worked, but printed after the syscall. If the printf implementation
-  // calls fflush, this is printed first. Quirk of bypassing stdio below.
-  printf("With %s syntax\n", "printf");
-
-  if (platform::get_lane_id() == 0)
-    {
-      char *buf = (char *)allocate(16);
-
-      buf[0] = 'h';
-      buf[1] = 'i';
-      buf[2] = '\n';
-      buf[3] = '\0';
-
-      syscall6(__NR_write, 2, (uint64_t)buf, 3, 0, 0, 0);
-
-      syscall6(__NR_fsync, 2, 0, 0, 0, 0, 0);
-
-      deallocate(buf);
-    }
-
-  return 0;
-}
-#endif
 #endif
