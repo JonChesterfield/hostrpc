@@ -234,7 +234,7 @@ __PRINTF_API_EXTERNAL int piecewise_print_end(uint32_t port)
   }
 
   hostrpc_x64_gcn_debug_client[0].rpc_port_wait_for_result(port);
-  
+
   hostrpc_x64_gcn_debug_client[0].rpc_close_port(port);
   return 0;  // should be return code from printf
 }
@@ -456,7 +456,21 @@ struct operate
                    thread_print(4), thread_print(5));
             break;
           }
-
+        case 7:
+          {
+            printf(reinterpret_cast<const char *>(thread_print(0)), c,
+                   thread_print(1), thread_print(2), thread_print(3),
+                   thread_print(4), thread_print(5), thread_print(6));
+            break;
+          }
+        case 8:
+          {
+            printf(reinterpret_cast<const char *>(thread_print(0)), c,
+                   thread_print(1), thread_print(2), thread_print(3),
+                   thread_print(4), thread_print(5), thread_print(6),
+                   thread_print(7));
+            break;
+          }
         default:
           {
             printf("[%.2u] %s took %lu args\n", c,
@@ -468,8 +482,9 @@ struct operate
   }
 
   void perthread(unsigned c, hostrpc::cacheline_t *line,
-                 print_wip &thread_print)
+                 print_wip &thread_print, bool verbose)
   {
+    (void)verbose;
     uint64_t ID = line->element[0];
 
     switch (ID)
@@ -573,7 +588,7 @@ struct operate
 
     for (unsigned c = 0; c < 64; c++)
       {
-        perthread(c, &page->cacheline[c], print_slot_buffer[c]);
+        perthread(c, &page->cacheline[c], print_slot_buffer[c], verbose);
       }
   }
 };
