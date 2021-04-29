@@ -127,6 +127,7 @@ __attribute__((always_inline)) extern "C" void hsa_bootstrap_routine(void)
 
   __attribute__((address_space(4))) void* ks =
       __builtin_amdgcn_kernarg_segment_ptr();
+  (void)ks;
   assert(kernarg == (unsigned char*)ks);
 
   uint32_t UUID = instance.allocate();

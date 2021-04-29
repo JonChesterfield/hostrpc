@@ -1,5 +1,6 @@
 #include "hsa.hpp"
 #include <cassert>
+#include <cstdio>
 #include <cstring>
 #include <vector>
 
@@ -57,6 +58,7 @@ uint64_t find_entry_address(hsa::executable &ex)
 
 static int main_with_hsa(int argc, char **argv)
 {
+  const bool verbose = false;
   if (argc < 2)
     {
       fprintf(stderr, "Require at least one argument\n");
@@ -206,6 +208,10 @@ static int main_with_hsa(int argc, char **argv)
     kernarg += extra_implicit_size;
   }
 
+  if (verbose)
+    {
+      printf("Spawn queue\n");
+    }
   hsa_queue_t *queue;
   {
     hsa_status_t rc = hsa_queue_create(
@@ -300,6 +306,10 @@ static int main_with_hsa(int argc, char **argv)
 
   hsa_signal_store_release(queue->doorbell_signal, packet_id);
 
+  if (verbose)
+    {
+      printf("Launch kernel\n");
+    }
   do
     {
       // TODO: Polling is better than waiting here as it lets the initial
@@ -309,6 +319,10 @@ static int main_with_hsa(int argc, char **argv)
                                  HSA_SIGNAL_CONDITION_EQ, 0, 5000 /*000000*/,
                                  HSA_WAIT_STATE_ACTIVE) != 0);
 
+  if (verbose)
+    {
+      printf("Kernel signalled\n");
+    }
   int result[number_return_values];
   memcpy(&result, result_location, sizeof(int) * number_return_values);
 
@@ -341,6 +355,10 @@ static int main_with_hsa(int argc, char **argv)
         }
     }
 
+  if (verbose)
+    {
+      printf("Result[0] %d\n", result[0]);
+    }
   return result[0];
 }
 

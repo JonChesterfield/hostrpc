@@ -10,7 +10,7 @@ DERIVE=${1:-4}
 # Aomp
 RDIR=$HOME/rocm/aomp
 
-CLANGINCLUDE=$RDIR/lib/clang/11.0.0/include
+CLANGINCLUDE=$RDIR/lib/clang/13.0.0/include
 
 # Needs to resolve to gfx906, gfx1010 or similar
 GFX=`$RDIR/bin/mygpu -d gfx906` # lost the entry for gfx750 at some point
@@ -82,7 +82,7 @@ LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR -lelf"
 
 NOINC="-nostdinc -nostdinc++ -isystem $CLANGINCLUDE -DHOSTRPC_HAVE_STDIO=0"
 
-AMDGPU="--target=amdgcn-amd-amdhsa -march=$GFX -mcpu=$GFX -mllvm -amdgpu-fixed-function-abi -nogpulib"
+AMDGPU="--target=amdgcn-amd-amdhsa -march=$GFX -mcpu=$GFX -mllvm -amdgpu-fixed-function-abi -Xclang -fconvergent-functions -nogpulib"
 
 # Not sure why CUDACC isn't being set by clang here, probably a bad sign
 PTX_VER="-Xclang -target-feature -Xclang +ptx63"
