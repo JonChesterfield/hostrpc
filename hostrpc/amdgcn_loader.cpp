@@ -245,9 +245,10 @@ static int main_with_hsa(int argc, char **argv)
 
   if (hc.enable_executable(ex) != 0)
     {
-      fprintf(stderr, "Failed to enable executable\n");
-      exit(1);
+      fprintf(stderr, "Warning: Failed to enable hostcall on executable\n");
     }
+  else
+    {
   if (hc.enable_queue(queue) != 0)
     {
       fprintf(stderr, "Failed to enable queue\n");
@@ -261,7 +262,8 @@ static int main_with_hsa(int argc, char **argv)
           exit(1);
         }
     }
-
+    }
+  
   // Claim a packet
   uint64_t packet_id = hsa::acquire_available_packet_id(queue);
 
@@ -296,7 +298,7 @@ static int main_with_hsa(int argc, char **argv)
     }
   else
     {
-      printf("Error: get_kernel_info failed\n");
+      printf("Error: get_kernel_info failed for kernel %s\n",kernel_entry);
       exit(1);
     }
 

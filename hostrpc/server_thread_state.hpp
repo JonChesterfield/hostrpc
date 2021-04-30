@@ -51,10 +51,7 @@ struct server_thread_state
           }
 
         // nothing to do, but not told to stop. spin.
-        for (unsigned j = 0; j < 1000; j++)
-          {
-            platform::sleep();
-          }
+        platform::sleep();
       }
   }
 };

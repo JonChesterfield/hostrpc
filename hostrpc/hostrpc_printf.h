@@ -32,6 +32,11 @@ extern "C"
 #define __PRINTF_API_INTERNAL __PRINTF_API_INTERNAL_
 #else
 #define __PRINTF_API_EXTERNAL __PRINTF_API_EXTERNAL_
+
+#ifdef __attribute__
+#warning "__attribute__ is a macro, missing freestanding?"
+#endif
+
 #define __PRINTF_API_INTERNAL \
   __PRINTF_API_INTERNAL_ __attribute__((overloadable))
 #endif

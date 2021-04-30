@@ -727,7 +727,7 @@ int hostrpc_print_enable_on_hsa_agent(hsa_executable_t ex,
                                                         &kernel_agent, &symbol);
     if (rc != HSA_STATUS_SUCCESS)
       {
-        if (verbose) fprintf(stderr, "can't find symbool %s\n", gpu_local_ptr);
+        if (verbose) fprintf(stderr, "can't find symbol %s\n", gpu_local_ptr);
         return 1;
       }
 
