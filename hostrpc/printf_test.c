@@ -28,121 +28,6 @@ spec_str(enum __printf_spec_t s)
     }
 }
 
-static bool length_modifier_p_slow(char c)
-{
-  switch (c)
-    {
-      case 'h':
-      case 'l':
-      case 'j':
-      case 'z':
-      case 't':
-      case 'L':
-        return true;
-      default:
-        return false;
-    }
-}
-
-MODULE(length_modifier)
-{
-  TEST("compare")
-  {
-    for (unsigned i = 0; i < 256; i++)
-      {
-        unsigned char uc = (unsigned char)i;
-        char tmp;
-        __builtin_memcpy(&tmp, &uc, 1);
-        CHECK(__printf_length_modifier_p(tmp) == length_modifier_p_slow(tmp));
-      }
-  }
-}
-
-static enum __printf_spec_t next_specifier(const char *format, size_t len,
-                                  size_t *input_offset)
-{
-  size_t loc = __printf_next_specifier_location(format, len, *input_offset);
-  *input_offset = loc;
-  return __printf_specifier_classify(format, loc);
-}
-
-static enum __printf_spec_t next_spec(const char *format)
-{
-  size_t offset = 0;
-  return next_specifier(format, __builtin_strlen(format), &offset);
-}
-
-MODULE(format)
-{
-  TEST("count")
-  {
-    CHECK(next_spec("%") == spec_none);
-    CHECK(next_spec("%a") == spec_normal);
-    CHECK(next_spec("a%a") == spec_normal);
-    CHECK(next_spec("a%a") == spec_normal);
-  }
-
-  TEST("literal %")
-  {
-    CHECK(next_spec("%%") == spec_none);
-    CHECK(next_spec(" %%") == spec_none);
-  }
-
-  TEST("string literal")
-  {
-    CHECK(next_spec("%s") == spec_string);
-    CHECK(next_spec("%ls") == spec_string);
-    CHECK(next_spec(" %s") == spec_string);
-    CHECK(next_spec(" %ls") == spec_string);
-    CHECK(next_spec("s%s") == spec_string);
-    CHECK(next_spec("s%ls") == spec_string);
-    CHECK(next_spec("s%%s") == spec_none);
-    CHECK(next_spec("s%%ls") == spec_none);
-  }
-
-  TEST("output")
-  {
-    CHECK(next_spec("%hhn") == spec_output);
-    CHECK(next_spec("%hn") == spec_output);
-    CHECK(next_spec("%n") == spec_output);
-    CHECK(next_spec("%ln") == spec_output);
-    CHECK(next_spec("%lln") == spec_output);
-    CHECK(next_spec("%jn") == spec_output);
-    CHECK(next_spec("%zn") == spec_output);
-    CHECK(next_spec("%tn") == spec_output);
-  }
-
-  TEST("check stays within bounds")
-  {
-    size_t offset = 0;
-
-    // empty
-    offset = 0;
-    CHECK(next_specifier("", 0, &offset) == spec_none);
-    CHECK(offset == 0);
-
-    // single %
-    offset = 0;
-    CHECK(next_specifier("%", __builtin_strlen("%"), &offset) == spec_none);
-    CHECK(offset == 1);
-    CHECK(next_specifier("%", __builtin_strlen("%"), &offset) == spec_none);
-    CHECK(offset == 1);
-
-    // literal
-    offset = 0;
-    CHECK(next_specifier("%%", __builtin_strlen("%%"), &offset) == spec_none);
-    CHECK(offset == 2);
-    CHECK(next_specifier("%%", __builtin_strlen("%%"), &offset) == spec_none);
-    CHECK(offset == 2);
-
-    // string
-    offset = 0;
-    CHECK(next_specifier("%s", __builtin_strlen("%s"), &offset) == spec_string);
-    CHECK(offset == 1);  // return offset of s
-    CHECK(next_specifier("%s", __builtin_strlen("%s"), &offset) == spec_none);
-    CHECK(offset == 2);
-  }
-}
 
 void codegenA(uint32_t __port)
 {
@@ -183,10 +68,11 @@ void codegen_evilunit_fail(uint32_t failures, uint32_t checks,
 #undef EVILUNIT_ANSI_COLOUR_GREEN
 #undef EVILUNIT_ANSI_COLOUR_RESET
 
+#include "printf_specifier.data"
+
 EVILUNIT_MAIN_MODULE()
 {
-  DEPENDS(format);
-  DEPENDS(length_modifier);
+  DEPENDS(specifier);
 
   TEST("ex")
   {

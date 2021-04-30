@@ -21,7 +21,6 @@ extern "C"
 #endif
 #endif
 
-
 // printf implementation macros
 #define __PRINTF_API_EXTERNAL_ HOSTRPC_ANNOTATE __attribute__((noinline))
 #define __PRINTF_API_INTERNAL_ \
@@ -122,7 +121,8 @@ extern "C"
   }
 
 // Functions implemented out of header. printf resolves to multiple calls to
-// these. Some implemented on gcn. All should probably be implemented on gcn/ptx/x64
+// these. Some implemented on gcn. All should probably be implemented on
+// gcn/ptx/x64
 __PRINTF_API_EXTERNAL uint32_t piecewise_print_start(const char *fmt);
 __PRINTF_API_EXTERNAL int piecewise_print_end(uint32_t port);
 
@@ -443,6 +443,49 @@ __PRINTF_API_INTERNAL bool __printf_length_modifier_p(char c)
 }
 
 __PRINTF_API_INTERNAL
+size_t __printf_next_start(const char *format, size_t len, size_t input_offset)
+{
+  if (len < 2)
+    {
+      return len;
+    }
+  for (size_t o = input_offset; o < len - 1; o++)
+    {
+      if (format[o] == '%')
+        {
+          if (format[o + 1] == '%')
+            {
+              o++;
+              continue;
+            }
+          else
+            {
+              return o;
+            }
+        }
+    }
+  return len;
+}
+
+__PRINTF_API_INTERNAL
+size_t __printf_next_end(const char *format, size_t len, size_t input_offset)
+{
+  // assert(format[input_offset] == '%');
+  size_t o = input_offset;
+  o++; /* step over the % */
+  for (; o < len; o++)
+    {
+      { /* todo: this loop should be < 3 iters */
+        if (!__printf_length_modifier_p(format[o]))
+          {
+            return o;
+          }
+      }
+    }
+  return len;
+}
+
+__PRINTF_API_INTERNAL
 __attribute__((always_inline)) size_t __printf_next_specifier_location(
     const char *format, size_t len, size_t input_offset)
 {
@@ -456,31 +499,8 @@ __attribute__((always_inline)) size_t __printf_next_specifier_location(
   // changing to scan multiple bytes at a time may help with that, problem
   // is unrolling creates a lot of IR, and instcombine gives up before
   // reducing it fully
-
+#if 0
   size_t length_to_scan = len - input_offset;
-
-#define IMPL()                                            \
-  for (size_t o = input_offset; o < len; o++)             \
-    {                                                     \
-      if (format[o] == '%')                               \
-        {                                                 \
-          o++;                                            \
-          if (format[o] == '%')                           \
-            {                                             \
-              continue;                                   \
-            }                                             \
-          for (; o < len; o++)                            \
-            { /* todo: this loop should be < 3 iters */   \
-              if (!__printf_length_modifier_p(format[o])) \
-                {                                         \
-                  return o;                               \
-                }                                         \
-            }                                             \
-        }                                                 \
-    }                                                     \
-  return len
-
-  // May be worth peeling the loop manually
   if (__builtin_constant_p(length_to_scan))
     {
 #pragma unroll 32
@@ -490,6 +510,12 @@ __attribute__((always_inline)) size_t __printf_next_specifier_location(
     {
       IMPL();
     }
+#endif
+  
+  return __printf_next_end(format, len,
+                           __printf_next_start(format, len, input_offset));
+
+
 }
 
 // redundant parts of API / convenience hacks
