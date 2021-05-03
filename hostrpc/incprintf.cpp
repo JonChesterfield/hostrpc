@@ -9,26 +9,10 @@
 
 #include "hostrpc_printf.h"
 
-struct incr
+#include "incprintf.hpp"
+
+namespace
 {
-  std::vector<char> format;
-  size_t loc;
-
-  std::vector<char> output;
-
-  incr() : incr("") {}
-  incr(const char *fmt)
-  {
-    loc = 0;
-    format = {fmt, fmt + strlen(fmt)};
-    output.push_back('\0');
-  }
-};
-
-incr glob("");
-
-const char *as_cstr(incr *glob) { return glob->output.data(); }
-
 void append_bytes(const char *from, size_t N, incr &glob)
 {
   assert(*glob.output.rbegin() == '\0');
@@ -50,7 +34,15 @@ void append_bytes(const char *from, size_t N, incr &glob)
   glob.output.push_back('\0');
 }
 
-void append_until_next_loc(uint32_t port, incr &glob)
+void space_for_n_bytes(incr &glob, size_t bytes)
+{
+  for (size_t i = 0; i < bytes; i++)
+    {
+      glob.output.push_back('\0');
+    }
+}
+
+void append_until_next_loc(incr &glob)
 {
   char *fmt = glob.format.data();
   size_t len = glob.format.size();
@@ -63,63 +55,67 @@ void append_until_next_loc(uint32_t port, incr &glob)
     }
 }
 
-uint32_t piecewise_print_start(const char *fmt, incr &glob)
+}  // namespace
+
+
+namespace
 {
-  uint32_t port = 0;
-  incr tmp(fmt);
-  glob = tmp;
-  append_until_next_loc(port, glob);
-  return port;
-}
-
-int piecewise_print_end(uint32_t port, incr &glob)
+struct inject_nul_in_format
 {
-  (void)port;
-  (void)glob;
-  append_until_next_loc(port, glob);
-  return 0;
-}
+  // write a \0 to the format string at position at,
+  // reversing the write in the destructor
+  char *loc;
+  char previous;
+  inject_nul_in_format(char *fmt, size_t at)
+  {
+    loc = &fmt[at];
+    previous = *loc;
+    *loc = '\0';
+  }
 
-int _exit(int);
+  ~inject_nul_in_format() { *loc = previous; }
+};
 
-size_t bytes_for_arg(char *fmt, size_t next_start, size_t next_end, uint64_t v)
+template <typename T>
+size_t bytes_for_arg(char *fmt, size_t next_start, size_t next_end, T v)
 {
   size_t one_past = next_end + 1;
-  char term = fmt[one_past];
-  fmt[one_past] = '\0';
-  size_t r = snprintf(NULL, 0, &fmt[next_start], v);
-  fmt[one_past] = term;
-  return r;
+  inject_nul_in_format nul(fmt, one_past);
+  return snprintf(NULL, 0, &fmt[next_start], v);
 }
 
-void piecewise_pass_element_uint64(uint32_t port, uint64_t v, incr &glob)
+}  // namespace
+
+
+
+
+template <typename T>
+void incr::piecewise_pass_element_T(T value)
 {
-  char *fmt = glob.format.data();
-  size_t len = glob.format.size();
-  size_t next_start = __printf_next_start(fmt, len, glob.loc);
+  char *fmt = format.data();
+  size_t len = format.size();
+  size_t next_start = __printf_next_start(fmt, len, loc);
   size_t next_end = __printf_next_end(fmt, len, next_start);
   const bool verbose = false;
   if (verbose)
-    (printf)("glob loc %zu, Format %s/%zu, split [%zu %zu]\n", glob.loc, fmt,
+    (printf)("glob loc %zu, Format %s/%zu, split [%zu %zu]\n", loc, fmt,
              len, next_start, next_end);
 
-  append_until_next_loc(port, glob);
+  append_until_next_loc( *this);
 
   if (next_start == len)
     {
       return;
     }
 
-  size_t bytes = bytes_for_arg(fmt, next_start, next_end, v);
+  size_t bytes = bytes_for_arg(fmt, next_start, next_end, value);
 
   if (verbose)
-    (printf)("output size %zu, increasing by %zu\n", glob.output.size(), bytes);
+    (printf)("output size %zu, increasing by %zu\n", output.size(), bytes);
 
-  size_t output_end = glob.output.size() - 1 /*trim off trailing nul*/;
-  for (size_t i = 0; i < bytes; i++)
-    {
-      glob.output.push_back('\0');
-    }
+  size_t output_end = output.size() - 1 /*trim off trailing nul*/;
+
+  space_for_n_bytes(*this, bytes);
 
   {
     if (verbose)
@@ -127,17 +123,37 @@ void piecewise_pass_element_uint64(uint32_t port, uint64_t v, incr &glob)
           "writing fmt %s into loc %zu, giving %zu bytes. Next end at %zu\n",
           &fmt[next_start], output_end, bytes, next_end);
     size_t one_past = next_end + 1;
-    char term = fmt[one_past];
-    fmt[one_past] = '\0';
-    snprintf(glob.output.data() + output_end,
+    inject_nul_in_format nul(fmt, one_past);
+    snprintf(output.data() + output_end,
              bytes + 1,  // overwrites the trailing nul that is already there
-             &fmt[next_start], v);
-    fmt[one_past] = term;
+             &fmt[next_start], value);
   }
 
-  glob.loc = next_end + 1;
-  if (verbose) (printf)("Setting glob.loc to %zu\n", glob.loc);
+  loc = next_end + 1;
+  if (verbose) (printf)("Setting loc to %zu\n", loc);
 }
+
+void incr::set_format(const char *fmt)
+{
+    loc = 0;
+    format = {fmt, fmt + strlen(fmt)};
+    output.push_back('\0');
+}
+
+std::vector<char> incr::finalize()
+{
+  append_until_next_loc( *this);
+  return output;
+}
+
+static void piecewise_pass_element_uint64(uint32_t port,uint64_t value,
+                                          incr &glob)
+{
+  return glob.piecewise_pass_element_T( value);
+}
+
+
+
 
 #include "printf_specifier.data"
 
@@ -183,9 +199,8 @@ void dump(std::vector<char> v)
 std::vector<char> no_format(const char *str)
 {
   incr tmp;
-  uint32_t port = piecewise_print_start(str, tmp);
-  piecewise_print_end(port, tmp);
-  return tmp.output;
+  tmp.set_format(str);
+  return tmp.finalize();
 }
 
 static MODULE(incr)
@@ -216,14 +231,37 @@ static MODULE(incr)
 
     for (size_t i = 0; i < N; i++)
       {
+        uint32_t port = 0;
         incr tmp;
-        uint32_t port = piecewise_print_start(std::get<0>(cases[i]), tmp);
+        tmp.set_format(std::get<0>(cases[i]));
         piecewise_pass_element_uint64(port, std::get<1>(cases[i]), tmp);
-        piecewise_print_end(port, tmp);
-        auto &r = tmp.output;
+        auto r = tmp.finalize();
         CHECK(r.size() == strlen(std::get<2>(cases[i])) + 1);
         CHECK(strcmp(r.data(), std::get<2>(cases[i])) == 0);
       }
+
+    TEST("two int")
+    {
+      std::tuple<const char *, uint64_t, uint64_t, const char *> cases[] = {
+          {"%lu%lu", 1, 2, "12"},       {"%lu %lu", 1, 2, "1 2"},
+          {" %lu %lu", 1, 2, " 1 2"},   {"%lu %lu ", 1, 2, "1 2 "},
+          {" %lu %lu ", 1, 2, " 1 2 "}, {" %lu%%%lu ", 1, 2, " 1%2 "},
+      };
+      constexpr size_t N = sizeof(cases) / sizeof(cases[0]);
+
+      for (size_t i = 0; i < N; i++)
+        {
+        uint32_t port = 0;
+          incr tmp;
+        tmp.set_format(std::get<0>(cases[i]));
+          
+          piecewise_pass_element_uint64(port, std::get<1>(cases[i]), tmp);
+          piecewise_pass_element_uint64(port, std::get<2>(cases[i]), tmp);
+        auto r = tmp.finalize();
+          CHECK(r.size() == strlen(std::get<3>(cases[i])) + 1);
+          CHECK(strcmp(r.data(), std::get<3>(cases[i])) == 0);
+        }
+    }
   }
 }
 
