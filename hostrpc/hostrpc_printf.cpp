@@ -305,6 +305,8 @@ __PRINTF_API_EXTERNAL void piecewise_pass_element_cstr(uint32_t port,
 #include "hsa.hpp"
 #include "server_thread_state.hpp"
 
+#include "incprintf.hpp"
+
 #include <algorithm>
 #include <pthread.h>
 #include <stdio.h>
@@ -319,6 +321,7 @@ namespace
 // for multiple packets
 struct print_wip
 {
+  incr formatter;
   // first expected to be cstr for format
   struct field
   {

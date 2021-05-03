@@ -4,6 +4,10 @@
 #include <cstdint>
 #include <vector>
 
+// an incremental formatter
+// can be passed a *printf format string,
+// followed by N arguments, and will
+// return a vector<char> containing the result
 struct incr
 {
   incr() {}
