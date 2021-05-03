@@ -13,9 +13,11 @@ struct incr
   incr() {}
 
   void set_format(const char* fmt);
-
+  bool have_format() const { return format.size() != 0; }
+  
   std::vector<char> finalize();
 
+  
   template <typename T>
   void piecewise_pass_element_T(T value);
 

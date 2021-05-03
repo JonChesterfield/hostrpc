@@ -181,6 +181,20 @@ struct piecewise_pass_element_scalar_t
   }
 };
 
+struct piecewise_pass_element_write_t
+{
+  uint64_t ID = func_piecewise_pass_element_write_int64    ;
+  enum
+  {
+    width = 56
+  };
+  char payload[width];
+  HOSTRPC_ANNOTATE piecewise_pass_element_write_t()
+  {
+  }
+};
+
+  
 using SZ = hostrpc::size_runtime;
 
 }  // namespace
@@ -239,7 +253,17 @@ __PRINTF_API_EXTERNAL int piecewise_print_end(uint32_t port)
   return 0;  // should be return code from printf
 }
 
+
+__PRINTF_API_EXTERNAL void piecewise_pass_element_write_int32(uint32_t port,
+                                                              int32_t * x)
+{
+  int64_t tmp = *x;
+  piecewise_pass_element_write_int64(port, &tmp);
+  *x = (int32_t)tmp;
+}
+
 // These may want to be their own functions, for now delagate to u64
+
 __PRINTF_API_EXTERNAL void piecewise_pass_element_int32(uint32_t port,
                                                         int32_t v)
 {
@@ -270,6 +294,17 @@ __PRINTF_API_EXTERNAL void piecewise_pass_element_uint64(uint32_t port,
   hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
 }
 
+__PRINTF_API_EXTERNAL void piecewise_pass_element_void(uint32_t port,
+                                                      const void* v)
+{
+  _Static_assert(sizeof(const void*) == 8,"");
+  uint64_t c; __builtin_memcpy(&c,&v,8);
+  piecewise_pass_element_scalar_t inst(func_piecewise_pass_element_uint64, c);
+  fill_by_copy<piecewise_pass_element_scalar_t> f(&inst);
+  hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
+}
+
+
 __PRINTF_API_EXTERNAL void piecewise_pass_element_cstr(uint32_t port,
                                                        const char *str)
 {
@@ -296,6 +331,23 @@ __PRINTF_API_EXTERNAL void piecewise_pass_element_cstr(uint32_t port,
     hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
   }
 }
+
+__PRINTF_API_EXTERNAL void piecewise_pass_element_write_int64(uint32_t port,
+                                                              int64_t * x)
+{
+  piecewise_pass_element_write_t inst;
+  fill_by_copy<piecewise_pass_element_write_t> f(&inst);
+  hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
+
+  // need to recv to get the result, return 0 for now
+  
+  *x = 0;
+  
+}
+
+
+
+
 
 #endif
 
@@ -499,6 +551,7 @@ struct operate
 
         case func_piecewise_print_start:
           {
+            thread_print.formatter = incr{};
             thread_print.clear();
             thread_print.acc = print_wip::field::cstr();
             thread_print.acc.append_cstr<7>("[%.2u] ");
@@ -507,6 +560,8 @@ struct operate
 
         case func_piecewise_print_end:
           {
+            std::vector<char> r =             thread_print.formatter.finalize();
+            printf("%s", r.data());
             doprint(c, thread_print);
             break;
           }
@@ -531,6 +586,16 @@ struct operate
                 if (fs_contains_nul(p->payload,
                                     piecewise_pass_element_cstr_t::width))
                   {
+                    thread_print.acc.cstr_.push_back('\0'); // assumed by formatter
+
+                    const char * s = thread_print.acc.cstr_.data();
+                    if (thread_print.formatter.have_format()) {
+                      thread_print.formatter.   piecewise_pass_element_T(s);
+                    } else {
+                      thread_print.formatter.set_format(s);
+                      thread_print.formatter.   piecewise_pass_element_T(c);
+                    }
+                    
                     // end of string
                     thread_print.append_acc();
                   }
@@ -553,10 +618,12 @@ struct operate
               {
                 case func_piecewise_pass_element_uint64:
                   {
+                    
                     if (thread_print.acc.tag == func_print_nop)
                       {
                         thread_print.acc = {p->payload};
                         thread_print.append_acc();
+                        thread_print.formatter.piecewise_pass_element_T<uint64_t>(p->payload);
                       }
                     else
                       {

@@ -77,10 +77,26 @@ struct inject_nul_in_format
 };
 
 template <typename T>
-size_t bytes_for_arg(char *fmt, size_t next_start, size_t next_end, T v)
+size_t bytes_for_arg(bool verbose, char *fmt, size_t next_start, size_t next_end, T v)
 {
+  if (verbose) {
+    (printf)("bytes_for_arg [%zu %zu] format:\n%s\n", next_start, next_end, fmt);
+    if (next_start > 0) {
+      (printf)("%*c", (int)(next_start -1), ' ');
+    }
+    (printf)("^");
+    (printf)("\n");
+  
+  }
+  
+  
+
   size_t one_past = next_end + 1;
   inject_nul_in_format nul(fmt, one_past);
+
+  if (verbose) {
+    (printf)("Invoking sprintf on format %s, value %lu\n", &fmt[next_start], (uint64_t)v);
+  }
   return snprintf(NULL, 0, &fmt[next_start], v);
 }
 
@@ -108,7 +124,7 @@ void incr::piecewise_pass_element_T(T value)
       return;
     }
 
-  size_t bytes = bytes_for_arg(fmt, next_start, next_end, value);
+  size_t bytes = bytes_for_arg(verbose, fmt, next_start, next_end, value);
 
   if (verbose)
     (printf)("output size %zu, increasing by %zu\n", output.size(), bytes);
@@ -146,13 +162,28 @@ std::vector<char> incr::finalize()
   return output;
 }
 
-static void piecewise_pass_element_uint64(uint32_t port,uint64_t value,
+static void piecewise_pass_element_uint64(uint64_t value,
                                           incr &glob)
 {
   return glob.piecewise_pass_element_T( value);
 }
 
+// TODO: Audit list
+template void incr::piecewise_pass_element_T(const char *);
+template void incr::piecewise_pass_element_T(const void *);
+template void incr::piecewise_pass_element_T(char);
+template void incr::piecewise_pass_element_T(signed char);
+template void incr::piecewise_pass_element_T(unsigned char);
 
+template void incr::piecewise_pass_element_T(short);
+template void incr::piecewise_pass_element_T(int);
+template void incr::piecewise_pass_element_T(long);
+template void incr::piecewise_pass_element_T(long long);
+
+template void incr::piecewise_pass_element_T(unsigned short);
+template void incr::piecewise_pass_element_T(unsigned int);
+template void incr::piecewise_pass_element_T(unsigned long);
+template void incr::piecewise_pass_element_T(unsigned long long);
 
 
 #include "printf_specifier.data"
@@ -231,10 +262,9 @@ static MODULE(incr)
 
     for (size_t i = 0; i < N; i++)
       {
-        uint32_t port = 0;
         incr tmp;
         tmp.set_format(std::get<0>(cases[i]));
-        piecewise_pass_element_uint64(port, std::get<1>(cases[i]), tmp);
+        piecewise_pass_element_uint64( std::get<1>(cases[i]), tmp);
         auto r = tmp.finalize();
         CHECK(r.size() == strlen(std::get<2>(cases[i])) + 1);
         CHECK(strcmp(r.data(), std::get<2>(cases[i])) == 0);
@@ -251,12 +281,11 @@ static MODULE(incr)
 
       for (size_t i = 0; i < N; i++)
         {
-        uint32_t port = 0;
           incr tmp;
         tmp.set_format(std::get<0>(cases[i]));
           
-          piecewise_pass_element_uint64(port, std::get<1>(cases[i]), tmp);
-          piecewise_pass_element_uint64(port, std::get<2>(cases[i]), tmp);
+          piecewise_pass_element_uint64( std::get<1>(cases[i]), tmp);
+          piecewise_pass_element_uint64( std::get<2>(cases[i]), tmp);
         auto r = tmp.finalize();
           CHECK(r.size() == strlen(std::get<3>(cases[i])) + 1);
           CHECK(strcmp(r.data(), std::get<3>(cases[i])) == 0);
@@ -265,10 +294,17 @@ static MODULE(incr)
   }
 }
 
-MAIN_MODULE()
+MODULE(list)
 {
   DEPENDS(writeint);
   DEPENDS(specifier);
   DEPENDS(next_spec_loc);
   DEPENDS(incr);
 }
+
+#if 0
+MAIN_MODULE()
+{
+  DEPENDS(list);
+}
+#endif

@@ -128,6 +128,7 @@ fi
 
 $CXX_GCN hostrpc_printf.cpp -O3 -c -o obj/hostrpc_printf.gcn.bc
 $CXX_X64 -I$HSAINC hostrpc_printf.cpp -O3 -c -o obj/hostrpc_printf.x64.bc
+$CXX_X64 -I$HSAINC incprintf.cpp -O3 -c -o obj/incprintf.x64.bc
 
 # host support library
 $CXX_X64 allocator_host_libc.cpp -c -o obj/allocator_host_libc.x64.bc
@@ -140,7 +141,7 @@ if (($have_amdgcn)); then
 $CXX_X64 ../impl/msgpack.cpp -c -o obj/msgpack.x64.bc
 $CXX_X64 find_metadata.cpp -c -o obj/find_metadata.x64.bc
 $CXX_X64 -I$HSAINC allocator_hsa.cpp -c -o obj/allocator_hsa.x64.bc
-$LINK  obj/host_support.x64.bc obj/msgpack.x64.bc obj/find_metadata.x64.bc obj/allocator_hsa.x64.bc obj/hostrpc_printf.x64.bc -o obj/hsa_support.x64.bc
+$LINK  obj/host_support.x64.bc obj/msgpack.x64.bc obj/find_metadata.x64.bc obj/allocator_hsa.x64.bc obj/hostrpc_printf.x64.bc obj/incprintf.x64.bc -o obj/hsa_support.x64.bc
 
 $CXX_X64 dump_kernels.cpp -I../impl -c -o obj/dump_kernels.x64.bc
 $CXX_X64_LD obj/msgpack.x64.bc obj/dump_kernels.x64.bc -lelf -o dump_kernels

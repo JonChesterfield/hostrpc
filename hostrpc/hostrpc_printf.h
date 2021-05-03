@@ -148,6 +148,7 @@ __PRINTF_API_EXTERNAL void piecewise_pass_element_void(uint32_t port,
 // implement %n specifier
 __PRINTF_API_EXTERNAL void piecewise_pass_element_write_int32(uint32_t port,
                                                               int32_t *x);
+
 __PRINTF_API_EXTERNAL void piecewise_pass_element_write_int64(uint32_t port,
                                                               int64_t *x);
 
@@ -272,12 +273,12 @@ __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
           // Bug https://bugs.llvm.org/show_bug.cgi?id=49978
           // Preference would be to instantiate on char* and
           // const char*, where the latter ignores %n
-          // For present, passing a const char* too write to via
+          // For present, passing a const char* to write to via
           // printf is UB anyway, so assume the argument is actually
-          // a mutable char that has been cast
-          int32_t tmp;
-          piecewise_pass_element_write_int32(port, &tmp);
-          *(char *)x = (char)tmp;
+          // a mutable char * to an int64_t that has been cast
+          int64_t tmp;
+          piecewise_pass_element_write_int64(port, &tmp);
+          *(int64_t *)x = tmp;
           break;
         }
       case spec_none:
@@ -291,8 +292,8 @@ __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
 {
   (void)spec;
   // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
-  int32_t tmp;
-  piecewise_pass_element_write_int32(port, &tmp);
+  int64_t tmp = 0;
+  piecewise_print_element(port, spec, (const char*)&tmp);
   *x = (signed short)tmp;
 }
 
@@ -302,8 +303,9 @@ __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
 {
   (void)spec;
   // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
-  _Static_assert(sizeof(int) == sizeof(int32_t), "");
-  piecewise_pass_element_write_int32(port, x);
+  int64_t tmp = 0;
+  piecewise_print_element(port, spec,(const char*)&tmp);
+  *x = (int)tmp;
 }
 
 __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
@@ -312,15 +314,9 @@ __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
 {
   (void)spec;
   // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
-
-  if (sizeof(long) == sizeof(int32_t))
-    {
-      piecewise_pass_element_write_int32(port, (int32_t *)x);
-    }
-  if (sizeof(long) == sizeof(int64_t))
-    {
-      piecewise_pass_element_write_int64(port, (int64_t *)x);
-    }
+  int64_t tmp = 0;
+  piecewise_print_element(port,spec, (const char*)&tmp);
+  *x = (long)tmp;
 }
 
 __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
@@ -329,15 +325,9 @@ __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
 {
   (void)spec;
   // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
-
-  if (sizeof(size_t) == sizeof(int32_t))
-    {
-      piecewise_pass_element_write_int32(port, (int32_t *)x);
-    }
-  if (sizeof(size_t) == sizeof(int64_t))
-    {
-      piecewise_pass_element_write_int64(port, (int64_t *)x);
-    }
+  int64_t tmp = 0;
+  piecewise_print_element(port, spec,(const char*)&tmp);
+  *x = (size_t)tmp;
 }
 
 __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
@@ -346,8 +336,9 @@ __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
 {
   (void)spec;
   // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
-  _Static_assert(sizeof(long long) == sizeof(int64_t), "");
-  piecewise_pass_element_write_int64(port, (int64_t *)x);
+  int64_t tmp = 0;
+  piecewise_print_element(port,spec, (const char*)&tmp);
+  *x = (long long)tmp;
 }
 
 #define __PRINTF_DISPATCH_INDIRECT(TYPE, VIA)           \
@@ -420,6 +411,8 @@ __PRINTF_API_INTERNAL bool __printf_length_modifier_p(char c)
 {
   // test if 'c' is one of hljztL, as if so, need to keep scanning to
   // find the s/n/p
+  // unfortunately there are other things it can be, beyond length modifier
+  // ., possibly *, numbers
   unsigned char uc;
   __builtin_memcpy(&uc, &c, 1);
 
@@ -427,7 +420,7 @@ __PRINTF_API_INTERNAL bool __printf_length_modifier_p(char c)
   // Six characters to check, so checks 'h' repeatedly to avoid a zero.
   uint32_t broadcast = UINT32_C(0x01010101) * uc;
   uint32_t haystackA = ('h' << 0) | ('l' << 8) | ('j' << 16) | ('z' << 24);
-  uint32_t haystackB = ('t' << 0) | ('L' << 8) | ('h' << 16) | ('h' << 24);
+  uint32_t haystackB = ('t' << 0) | ('L' << 8) | ('.' << 16) | ('h' << 24);
 
   // ~ (A & B)
   //  ~A | ~B
@@ -441,6 +434,22 @@ __PRINTF_API_INTERNAL bool __printf_length_modifier_p(char c)
   return __printf_haszero(broadcast ^ haystackA) |
          __printf_haszero(broadcast ^ haystackB);
 }
+
+__PRINTF_API_INTERNAL bool __printf_conversion_specifier_p(char c)
+{
+  // excluding % which is handled elsewhere
+
+  char specs[] = {'c','s','d','i','o','x','X','u','f','F','e','E','a','A','g','G','n','p'};
+  size_t N = sizeof(specs);
+
+  bool hit = false;
+  for (size_t i = 0; i < N; i++)
+    {
+      hit = hit | (c == specs[i]);
+    }
+  return hit;
+}
+
 
 __PRINTF_API_INTERNAL
 size_t __printf_next_start(const char *format, size_t len, size_t input_offset)
@@ -475,11 +484,19 @@ size_t __printf_next_end(const char *format, size_t len, size_t input_offset)
   o++; /* step over the % */
   for (; o < len; o++)
     {
-      { /* todo: this loop should be < 3 iters */
+      {
+        #if 1
+        if (__printf_conversion_specifier_p(format[o]))
+          {
+            return o;
+          }
+        #else
+        /* todo: this loop should be < 3 iters */
         if (!__printf_length_modifier_p(format[o]))
           {
             return o;
           }
+        #endif
       }
     }
   return len;
