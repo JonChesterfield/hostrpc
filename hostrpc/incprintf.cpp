@@ -57,7 +57,6 @@ void append_until_next_loc(incr &glob)
 
 }  // namespace
 
-
 namespace
 {
 struct inject_nul_in_format
@@ -77,33 +76,33 @@ struct inject_nul_in_format
 };
 
 template <typename T>
-size_t bytes_for_arg(bool verbose, char *fmt, size_t next_start, size_t next_end, T v)
+size_t bytes_for_arg(bool verbose, char *fmt, size_t next_start,
+                     size_t next_end, T v)
 {
-  if (verbose) {
-    (printf)("bytes_for_arg [%zu %zu] format:\n%s\n", next_start, next_end, fmt);
-    if (next_start > 0) {
-      (printf)("%*c", (int)(next_start -1), ' ');
+  if (verbose)
+    {
+      (printf)("bytes_for_arg [%zu %zu] format:\n%s\n", next_start, next_end,
+               fmt);
+      if (next_start > 0)
+        {
+          (printf)("%*c", (int)(next_start - 1), ' ');
+        }
+      (printf)("^");
+      (printf)("\n");
     }
-    (printf)("^");
-    (printf)("\n");
-  
-  }
-  
-  
 
   size_t one_past = next_end + 1;
   inject_nul_in_format nul(fmt, one_past);
 
-  if (verbose) {
-    (printf)("Invoking sprintf on format %s, value %lu\n", &fmt[next_start], (uint64_t)v);
-  }
+  if (verbose)
+    {
+      (printf)("Invoking sprintf on format %s, value %lu\n", &fmt[next_start],
+               (uint64_t)v);
+    }
   return snprintf(NULL, 0, &fmt[next_start], v);
 }
 
 }  // namespace
-
-
-
 
 template <typename T>
 void incr::piecewise_pass_element_T(T value)
@@ -114,10 +113,10 @@ void incr::piecewise_pass_element_T(T value)
   size_t next_end = __printf_next_end(fmt, len, next_start);
   const bool verbose = false;
   if (verbose)
-    (printf)("glob loc %zu, Format %s/%zu, split [%zu %zu]\n", loc, fmt,
-             len, next_start, next_end);
+    (printf)("glob loc %zu, Format %s/%zu, split [%zu %zu]\n", loc, fmt, len,
+             next_start, next_end);
 
-  append_until_next_loc( *this);
+  append_until_next_loc(*this);
 
   if (next_start == len)
     {
@@ -151,21 +150,20 @@ void incr::piecewise_pass_element_T(T value)
 
 void incr::set_format(const char *fmt)
 {
-    loc = 0;
-    format = {fmt, fmt + strlen(fmt)};
-    output.push_back('\0');
+  loc = 0;
+  format = {fmt, fmt + strlen(fmt)};
+  output.push_back('\0');
 }
 
 std::vector<char> incr::finalize()
 {
-  append_until_next_loc( *this);
+  append_until_next_loc(*this);
   return output;
 }
 
-static void piecewise_pass_element_uint64(uint64_t value,
-                                          incr &glob)
+static void piecewise_pass_element_uint64(uint64_t value, incr &glob)
 {
-  return glob.piecewise_pass_element_T( value);
+  return glob.piecewise_pass_element_T(value);
 }
 
 // TODO: Audit list
@@ -184,7 +182,6 @@ template void incr::piecewise_pass_element_T(unsigned short);
 template void incr::piecewise_pass_element_T(unsigned int);
 template void incr::piecewise_pass_element_T(unsigned long);
 template void incr::piecewise_pass_element_T(unsigned long long);
-
 
 #include "printf_specifier.data"
 
@@ -264,7 +261,7 @@ static MODULE(incr)
       {
         incr tmp;
         tmp.set_format(std::get<0>(cases[i]));
-        piecewise_pass_element_uint64( std::get<1>(cases[i]), tmp);
+        piecewise_pass_element_uint64(std::get<1>(cases[i]), tmp);
         auto r = tmp.finalize();
         CHECK(r.size() == strlen(std::get<2>(cases[i])) + 1);
         CHECK(strcmp(r.data(), std::get<2>(cases[i])) == 0);
@@ -282,11 +279,11 @@ static MODULE(incr)
       for (size_t i = 0; i < N; i++)
         {
           incr tmp;
-        tmp.set_format(std::get<0>(cases[i]));
-          
-          piecewise_pass_element_uint64( std::get<1>(cases[i]), tmp);
-          piecewise_pass_element_uint64( std::get<2>(cases[i]), tmp);
-        auto r = tmp.finalize();
+          tmp.set_format(std::get<0>(cases[i]));
+
+          piecewise_pass_element_uint64(std::get<1>(cases[i]), tmp);
+          piecewise_pass_element_uint64(std::get<2>(cases[i]), tmp);
+          auto r = tmp.finalize();
           CHECK(r.size() == strlen(std::get<3>(cases[i])) + 1);
           CHECK(strcmp(r.data(), std::get<3>(cases[i])) == 0);
         }

@@ -14,16 +14,23 @@ struct incr
 
   void set_format(const char* fmt);
   bool have_format() const { return format.size() != 0; }
-  
+
   std::vector<char> finalize();
 
-  
   template <typename T>
   void piecewise_pass_element_T(T value);
 
   std::vector<char> format;
   size_t loc = 0;
   std::vector<char> output;
+
+  std::vector<char> accumulator;  // for buffering cstr that arrive in pieces
+
+  template <size_t N>
+  void append_cstr_section(const char* s)
+  {
+    accumulator.insert(accumulator.end(), s, s + N);
+  }
 };
 
 #endif

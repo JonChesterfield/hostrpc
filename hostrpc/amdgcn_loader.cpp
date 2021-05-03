@@ -249,21 +249,21 @@ static int main_with_hsa(int argc, char **argv)
     }
   else
     {
-  if (hc.enable_queue(queue) != 0)
-    {
-      fprintf(stderr, "Failed to enable queue\n");
-      exit(1);
-    }
-  for (unsigned r = 0; r < 2; r++)
-    {
-      if (hc.spawn_worker(queue) != 0)
+      if (hc.enable_queue(queue) != 0)
         {
-          fprintf(stderr, "Failed to spawn worker\n");
+          fprintf(stderr, "Failed to enable queue\n");
           exit(1);
         }
+      for (unsigned r = 0; r < 2; r++)
+        {
+          if (hc.spawn_worker(queue) != 0)
+            {
+              fprintf(stderr, "Failed to spawn worker\n");
+              exit(1);
+            }
+        }
     }
-    }
-  
+
   // Claim a packet
   uint64_t packet_id = hsa::acquire_available_packet_id(queue);
 
@@ -298,7 +298,7 @@ static int main_with_hsa(int argc, char **argv)
     }
   else
     {
-      printf("Error: get_kernel_info failed for kernel %s\n",kernel_entry);
+      printf("Error: get_kernel_info failed for kernel %s\n", kernel_entry);
       exit(1);
     }
 

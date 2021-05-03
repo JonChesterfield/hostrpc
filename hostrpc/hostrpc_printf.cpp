@@ -183,18 +183,15 @@ struct piecewise_pass_element_scalar_t
 
 struct piecewise_pass_element_write_t
 {
-  uint64_t ID = func_piecewise_pass_element_write_int64    ;
+  uint64_t ID = func_piecewise_pass_element_write_int64;
   enum
   {
     width = 56
   };
   char payload[width];
-  HOSTRPC_ANNOTATE piecewise_pass_element_write_t()
-  {
-  }
+  HOSTRPC_ANNOTATE piecewise_pass_element_write_t() {}
 };
 
-  
 using SZ = hostrpc::size_runtime;
 
 }  // namespace
@@ -253,9 +250,8 @@ __PRINTF_API_EXTERNAL int piecewise_print_end(uint32_t port)
   return 0;  // should be return code from printf
 }
 
-
 __PRINTF_API_EXTERNAL void piecewise_pass_element_write_int32(uint32_t port,
-                                                              int32_t * x)
+                                                              int32_t *x)
 {
   int64_t tmp = *x;
   piecewise_pass_element_write_int64(port, &tmp);
@@ -295,15 +291,15 @@ __PRINTF_API_EXTERNAL void piecewise_pass_element_uint64(uint32_t port,
 }
 
 __PRINTF_API_EXTERNAL void piecewise_pass_element_void(uint32_t port,
-                                                      const void* v)
+                                                       const void *v)
 {
-  _Static_assert(sizeof(const void*) == 8,"");
-  uint64_t c; __builtin_memcpy(&c,&v,8);
+  _Static_assert(sizeof(const void *) == 8, "");
+  uint64_t c;
+  __builtin_memcpy(&c, &v, 8);
   piecewise_pass_element_scalar_t inst(func_piecewise_pass_element_uint64, c);
   fill_by_copy<piecewise_pass_element_scalar_t> f(&inst);
   hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
 }
-
 
 __PRINTF_API_EXTERNAL void piecewise_pass_element_cstr(uint32_t port,
                                                        const char *str)
@@ -333,21 +329,16 @@ __PRINTF_API_EXTERNAL void piecewise_pass_element_cstr(uint32_t port,
 }
 
 __PRINTF_API_EXTERNAL void piecewise_pass_element_write_int64(uint32_t port,
-                                                              int64_t * x)
+                                                              int64_t *x)
 {
   piecewise_pass_element_write_t inst;
   fill_by_copy<piecewise_pass_element_write_t> f(&inst);
   hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
 
   // need to recv to get the result, return 0 for now
-  
+
   *x = 0;
-  
 }
-
-
-
-
 
 #endif
 
@@ -374,24 +365,13 @@ namespace
 struct print_wip
 {
   incr formatter;
+  
   // first expected to be cstr for format
   struct field
   {
     field() = default;
 
-    field(int32_t x) : tag(func_piecewise_pass_element_int32)
-    {
-      int64_t tmp = x;
-      __builtin_memcpy(&u64_, &tmp, 8);
-    }
-    field(int64_t x) : tag(func_piecewise_pass_element_int64)
-    {
-      __builtin_memcpy(&u64_, &x, 8);
-    }
-    field(uint32_t x) : tag(func_piecewise_pass_element_uint32) { u64_ = x; }
-    field(uint64_t x) : tag(func_piecewise_pass_element_uint64) { u64_ = x; }
-
-    field(double x) : tag(func_piecewise_pass_element_double) { dbl_ = x; }
+    uint64_t tag = func_print_nop;
 
     static field cstr()
     {
@@ -399,49 +379,11 @@ struct print_wip
       r.tag = func_piecewise_pass_element_cstr;
       return r;
     }
-
-    template <size_t N>
-    void append_cstr(const char *s)
-    {
-      assert(tag == func_piecewise_pass_element_cstr);
-      cstr_.insert(cstr_.end(), s, s + N);
-    }
-
-    uint64_t tag = func_print_nop;
-    uint64_t u64_;
-    double dbl_;
-    std::vector<char> cstr_;
   };
 
-  uint64_t operator()(size_t i)
-  {
-    switch (args_[i].tag)
-      {
-        default:
-        case func_print_nop:
-          return 0;
-        case func_piecewise_pass_element_uint64:
-          return args_[i].u64_;
-        case func_piecewise_pass_element_cstr:
-          return reinterpret_cast<uint64_t>(args_[i].cstr_.data());
-      }
-  }
-
-  void append_acc()
-  {
-    assert(acc.tag != func_print_nop);
-    args_.push_back(acc);
-    acc = {};
-  }
-
-  void clear()
-  {
-    acc = {};
-    args_.clear();
-  }
+  void clear() { acc = {}; }
 
   field acc;
-  std::vector<field> args_;
 };
 
 using print_buffer_t = std::vector<std::array<print_wip, 64> >;
@@ -459,83 +401,6 @@ struct operate
   }
   operate() = default;
 
-  void doprint(unsigned c, print_wip &thread_print)
-  {
-    size_t N = thread_print.args_.size();
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wformat-security"
-
-    switch (N)
-      {
-        case 0:
-          {
-            thread_print.acc.append_cstr<8>("(null)\n");
-            thread_print.append_acc();
-            printf(reinterpret_cast<const char *>(thread_print(0)), c);
-            break;
-          }
-        case 1:
-          {
-            printf(reinterpret_cast<const char *>(thread_print(0)), c);
-            break;
-          }
-        case 2:
-          {
-            printf(reinterpret_cast<const char *>(thread_print(0)), c,
-                   thread_print(1));
-            break;
-          }
-        case 3:
-          {
-            printf(reinterpret_cast<const char *>(thread_print(0)), c,
-                   thread_print(1), thread_print(2));
-            break;
-          }
-        case 4:
-          {
-            printf(reinterpret_cast<const char *>(thread_print(0)), c,
-                   thread_print(1), thread_print(2), thread_print(3));
-            break;
-          }
-        case 5:
-          {
-            printf(reinterpret_cast<const char *>(thread_print(0)), c,
-                   thread_print(1), thread_print(2), thread_print(3),
-                   thread_print(4));
-            break;
-          }
-        case 6:
-          {
-            printf(reinterpret_cast<const char *>(thread_print(0)), c,
-                   thread_print(1), thread_print(2), thread_print(3),
-                   thread_print(4), thread_print(5));
-            break;
-          }
-        case 7:
-          {
-            printf(reinterpret_cast<const char *>(thread_print(0)), c,
-                   thread_print(1), thread_print(2), thread_print(3),
-                   thread_print(4), thread_print(5), thread_print(6));
-            break;
-          }
-        case 8:
-          {
-            printf(reinterpret_cast<const char *>(thread_print(0)), c,
-                   thread_print(1), thread_print(2), thread_print(3),
-                   thread_print(4), thread_print(5), thread_print(6),
-                   thread_print(7));
-            break;
-          }
-        default:
-          {
-            printf("[%.2u] %s took %lu args\n", c,
-                   reinterpret_cast<const char *>(thread_print(0)), N - 1);
-            break;
-          }
-      }
-#pragma clang diagnostic pop
-  }
-
   void perthread(unsigned c, hostrpc::cacheline_t *line,
                  print_wip &thread_print, bool verbose)
   {
@@ -552,17 +417,18 @@ struct operate
         case func_piecewise_print_start:
           {
             thread_print.formatter = incr{};
+            thread_print.formatter.append_cstr_section<7>("[%.2u] ");
             thread_print.clear();
             thread_print.acc = print_wip::field::cstr();
-            thread_print.acc.append_cstr<7>("[%.2u] ");
+            thread_print.acc.tag = func_piecewise_pass_element_cstr;
             break;
           }
 
         case func_piecewise_print_end:
           {
-            std::vector<char> r =             thread_print.formatter.finalize();
+            std::vector<char> r = thread_print.formatter.finalize();
             printf("%s", r.data());
-            doprint(c, thread_print);
+            thread_print.acc.tag = func_print_nop;
             break;
           }
 
@@ -574,30 +440,38 @@ struct operate
 
             if (thread_print.acc.tag == func_print_nop)
               {
+                // starting new cstr
                 thread_print.acc = print_wip::field::cstr();
+                thread_print.formatter.accumulator.clear();
               }
 
             if (thread_print.acc.tag == func_piecewise_pass_element_cstr)
               {
-                thread_print.acc
-                    .append_cstr<piecewise_pass_element_cstr_t::width>(
+                thread_print.formatter
+                    .append_cstr_section<piecewise_pass_element_cstr_t::width>(
                         p->payload);
 
                 if (fs_contains_nul(p->payload,
                                     piecewise_pass_element_cstr_t::width))
                   {
-                    thread_print.acc.cstr_.push_back('\0'); // assumed by formatter
+                    thread_print.formatter.accumulator.push_back(
+                        '\0');  // assumed by formatter
 
-                    const char * s = thread_print.acc.cstr_.data();
-                    if (thread_print.formatter.have_format()) {
-                      thread_print.formatter.   piecewise_pass_element_T(s);
-                    } else {
-                      thread_print.formatter.set_format(s);
-                      thread_print.formatter.   piecewise_pass_element_T(c);
-                    }
-                    
+                    const char *s = thread_print.formatter.accumulator.data();
+                    if (thread_print.formatter.have_format())
+                      {
+                        thread_print.formatter.piecewise_pass_element_T(s);
+                      }
+                    else
+                      {
+                        thread_print.formatter.set_format(s);
+                        thread_print.formatter.piecewise_pass_element_T(c);
+                      }
+
                     // end of string
-                    thread_print.append_acc();
+
+                    assert(thread_print.acc.tag != func_print_nop);
+                    thread_print.acc = {};
                   }
               }
             else
@@ -618,16 +492,19 @@ struct operate
               {
                 case func_piecewise_pass_element_uint64:
                   {
-                    
                     if (thread_print.acc.tag == func_print_nop)
                       {
-                        thread_print.acc = {p->payload};
-                        thread_print.append_acc();
-                        thread_print.formatter.piecewise_pass_element_T<uint64_t>(p->payload);
+                        thread_print.formatter
+                            .piecewise_pass_element_T<uint64_t>(p->payload);
+
+                        thread_print.acc.tag =
+                            func_piecewise_pass_element_uint64;
+                        thread_print.acc = {};
                       }
                     else
                       {
-                        printf("invalid pass u64\n");
+                        printf("invalid pass u64\n");  // missing trailing null
+                                                       // on the cstr?
                       }
                     break;
                   }
