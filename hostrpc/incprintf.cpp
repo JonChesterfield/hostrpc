@@ -266,28 +266,56 @@ static MODULE(incr)
         CHECK(r.size() == strlen(std::get<2>(cases[i])) + 1);
         CHECK(strcmp(r.data(), std::get<2>(cases[i])) == 0);
       }
+  }
 
-    TEST("two int")
-    {
-      std::tuple<const char *, uint64_t, uint64_t, const char *> cases[] = {
-          {"%lu%lu", 1, 2, "12"},       {"%lu %lu", 1, 2, "1 2"},
-          {" %lu %lu", 1, 2, " 1 2"},   {"%lu %lu ", 1, 2, "1 2 "},
-          {" %lu %lu ", 1, 2, " 1 2 "}, {" %lu%%%lu ", 1, 2, " 1%2 "},
-      };
-      constexpr size_t N = sizeof(cases) / sizeof(cases[0]);
+  TEST("two int")
+  {
+    std::tuple<const char *, uint64_t, uint64_t, const char *> cases[] = {
+        {"%lu%lu", 1, 2, "12"},       {"%lu %lu", 1, 2, "1 2"},
+        {" %lu %lu", 1, 2, " 1 2"},   {"%lu %lu ", 1, 2, "1 2 "},
+        {" %lu %lu ", 1, 2, " 1 2 "}, {" %lu%%%lu ", 1, 2, " 1%2 "},
+    };
+    constexpr size_t N = sizeof(cases) / sizeof(cases[0]);
 
-      for (size_t i = 0; i < N; i++)
-        {
-          incr tmp;
-          tmp.set_format(std::get<0>(cases[i]));
+    for (size_t i = 0; i < N; i++)
+      {
+        incr tmp;
+        tmp.set_format(std::get<0>(cases[i]));
 
-          piecewise_pass_element_uint64(std::get<1>(cases[i]), tmp);
-          piecewise_pass_element_uint64(std::get<2>(cases[i]), tmp);
-          auto r = tmp.finalize();
-          CHECK(r.size() == strlen(std::get<3>(cases[i])) + 1);
-          CHECK(strcmp(r.data(), std::get<3>(cases[i])) == 0);
-        }
-    }
+        piecewise_pass_element_uint64(std::get<1>(cases[i]), tmp);
+        piecewise_pass_element_uint64(std::get<2>(cases[i]), tmp);
+        auto r = tmp.finalize();
+        CHECK(r.size() == strlen(std::get<3>(cases[i])) + 1);
+        CHECK(strcmp(r.data(), std::get<3>(cases[i])) == 0);
+      }
+  }
+
+  TEST("float")
+  {
+    std::tuple<const char *, float, const char *> cases[] = {
+        {"%f", 1.0f, "1.000000"},
+        {"%.2f", 2.0f, "2.00"},
+        {"%.6f", 3.0f, "3.000000"},
+    };
+    constexpr size_t N = sizeof(cases) / sizeof(cases[0]);
+
+    for (size_t i = 0; i < N; i++)
+      {
+        incr tmp;
+        tmp.set_format(std::get<0>(cases[i]));
+        tmp.piecewise_pass_element_T(std::get<1>(cases[i]));
+        auto r = tmp.finalize();
+        bool size = r.size() == strlen(std::get<2>(cases[i])) + 1;
+        bool contents = strcmp(r.data(), std::get<2>(cases[i])) == 0;
+        CHECK(size);
+        CHECK(contents);
+        if (!size || !contents)
+          {
+            (printf)("Failure at i=%zu, %s %f yields ", i,
+                     std::get<0>(cases[i]), std::get<1>(cases[i]));
+            dump(r);
+          }
+      }
   }
 }
 
@@ -299,9 +327,6 @@ MODULE(list)
   DEPENDS(incr);
 }
 
-#if 0
-MAIN_MODULE()
-{
-  DEPENDS(list);
-}
+#ifdef INCPRINTF_MAIN
+MAIN_MODULE() { DEPENDS(list); }
 #endif

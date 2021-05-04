@@ -365,7 +365,7 @@ namespace
 struct print_wip
 {
   incr formatter;
-  
+
   // first expected to be cstr for format
   struct field
   {

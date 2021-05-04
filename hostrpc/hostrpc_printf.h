@@ -420,7 +420,7 @@ __PRINTF_API_INTERNAL bool __printf_length_modifier_p(char c)
   // Six characters to check, so checks 'h' repeatedly to avoid a zero.
   uint32_t broadcast = UINT32_C(0x01010101) * uc;
   uint32_t haystackA = ('h' << 0) | ('l' << 8) | ('j' << 16) | ('z' << 24);
-  uint32_t haystackB = ('t' << 0) | ('L' << 8) | ('.' << 16) | ('h' << 24);
+  uint32_t haystackB = ('t' << 0) | ('L' << 8) | ('h' << 16) | ('h' << 24);
 
   // ~ (A & B)
   //  ~A | ~B
