@@ -239,11 +239,18 @@ if (($have_amdgcn)); then
 $CLANG -std=c11 $COMMONFLAGS $GCNFLAGS test_example.c -c -o obj/test_example.gcn.bc
 $LINK obj/test_example.gcn.bc obj/hostrpc_printf.gcn.bc amdgcn_loader_device.gcn.bc -o test_example.gcn.bc
 $CXX_GCN_LD test_example.gcn.bc -o test_example.gcn
+set +e
 ./test_example.gcn
+set -e
+fi
+
+$CLANG -std=c11 -I$HSAINC $COMMONFLAGS $X64FLAGS printf_test.c -c -o obj/printf_test.x64.bc
+if (($have_amdgcn)); then
+    $CLANG -std=c11 $COMMONFLAGS $GCNFLAGS printf_test.c -c -o obj/printf_test.gcn.bc
+    $LINK obj/printf_test.gcn.bc obj/hostrpc_printf.gcn.bc amdgcn_loader_device.gcn.bc -o printf_test.gcn.bc
 fi
 
 $CXX_X64 prototype/states.cpp -c -o prototype/states.x64.bc
-
 
 $CXX_GCN run_on_hsa_example.cpp -c -o obj/run_on_hsa_example.cxx.gcn.bc
 $CXXCL_GCN run_on_hsa_example.cpp -c -o obj/run_on_hsa_example.ocl.gcn.bc

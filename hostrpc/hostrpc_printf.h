@@ -109,9 +109,7 @@ extern "C"
     size_t __offset = 0;                                  \
     (void)__offset;                                       \
     const char *__fmt = FMT;                              \
-    const size_t __strlen = __builtin_constant_p(__fmt)   \
-                                ? __builtin_strlen(__fmt) \
-                                : __printf_strlen(__fmt); \
+    const size_t __strlen = __printf_strlen(__fmt);       \
     (void)__strlen;                                       \
     uint32_t __port = piecewise_print_start(__fmt);       \
     size_t __spec_loc = 0;                                \
@@ -368,13 +366,17 @@ __PRINTF_DISPATCH_INDIRECT(const unsigned char *, const char *)
 // todo: check if memcpy on unknown length has the same problem
 __PRINTF_API_INTERNAL size_t __printf_strlen(const char *str)
 {
-  for (size_t i = 0;; i++)
-    {
-      if (str[i] == '\0')
-        {
-          return i;
-        }
-    }
+  if (__builtin_constant_p(str)) {
+    return __builtin_strlen(str);
+  } else {
+    for (size_t i = 0;; i++)
+      {
+        if (str[i] == '\0')
+          {
+            return i;
+          }
+      }
+  }
 }
 
 __PRINTF_API_INTERNAL

@@ -42,7 +42,7 @@ static enum __printf_spec_t next_specifier(const char *format, size_t len,
 static enum __printf_spec_t next_spec(const char *format)
 {
   size_t offset = 0;
-  return next_specifier(format, __builtin_strlen(format), &offset);
+  return next_specifier(format, __printf_strlen(format), &offset);
 }
 
 MODULE(specifier)
@@ -98,23 +98,23 @@ MODULE(specifier)
 
     // single %
     offset = 0;
-    CHECK(next_specifier("%", __builtin_strlen("%"), &offset) == spec_none);
+    CHECK(next_specifier("%", __printf_strlen("%"), &offset) == spec_none);
     CHECK(offset == 1);
-    CHECK(next_specifier("%", __builtin_strlen("%"), &offset) == spec_none);
+    CHECK(next_specifier("%", __printf_strlen("%"), &offset) == spec_none);
     CHECK(offset == 1);
 
     // literal
     offset = 0;
-    CHECK(next_specifier("%%", __builtin_strlen("%%"), &offset) == spec_none);
+    CHECK(next_specifier("%%", __printf_strlen("%%"), &offset) == spec_none);
     CHECK(offset == 2);
-    CHECK(next_specifier("%%", __builtin_strlen("%%"), &offset) == spec_none);
+    CHECK(next_specifier("%%", __printf_strlen("%%"), &offset) == spec_none);
     CHECK(offset == 2);
 
     // string
     offset = 0;
-    CHECK(next_specifier("%s", __builtin_strlen("%s"), &offset) == spec_string);
+    CHECK(next_specifier("%s", __printf_strlen("%s"), &offset) == spec_string);
     CHECK(offset == 1);  // return offset of s
-    CHECK(next_specifier("%s", __builtin_strlen("%s"), &offset) == spec_none);
+    CHECK(next_specifier("%s", __printf_strlen("%s"), &offset) == spec_none);
     CHECK(offset == 2);
   }
 }

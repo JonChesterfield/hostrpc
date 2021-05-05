@@ -1,13 +1,16 @@
 #include "hostrpc_printf.h"
 
-#define EVILUNIT_USE_STDIO 0
 
 #ifdef PRECOMPILE
-#define TMP #include "../../EvilUnit/EvilUnit.h"
+#define TMP #define EVILUNIT_USE_STDIO 0
+TMP
+#undef TMP
+#define TMP #include "EvilUnit.h"
 TMP
 #undef TMP
 #else
-#include "../../EvilUnit/EvilUnit.h"
+#define EVILUNIT_USE_STDIO 0
+#include "EvilUnit.h"
 #endif
 
 // Functions to be implemented via hostrpc, or possibly as test stubs. Presently
@@ -32,7 +35,7 @@ spec_str(enum __printf_spec_t s)
     }
 }
 
-
+#if 0
 void codegenA(uint32_t __port)
 {
   const char *fmt = "flt %g %d";
@@ -71,6 +74,7 @@ void codegen_evilunit_fail(uint32_t failures, uint32_t checks,
 #undef EVILUNIT_ANSI_COLOUR_RED
 #undef EVILUNIT_ANSI_COLOUR_GREEN
 #undef EVILUNIT_ANSI_COLOUR_RESET
+#endif
 
 #include "printf_specifier.data"
 
@@ -146,9 +150,11 @@ EVILUNIT_MAIN_MODULE()
 
   TEST("long double")
   {
-    // Postponing until checking what long double turns into on
-    // amdgcn. May need to accept passing a 16 byte value.
-    _Static_assert(sizeof(long double) == 2 * sizeof(double), "");
+    // x64 thinks long double is 16 bytes
+    // gcn thinks long double i 8 bytes
+    // so, that seems broken
+    //    _Static_assert(sizeof(long double) == 1 * sizeof(double), "");
+    // _Static_assert(sizeof(long double) == 2 * sizeof(double), "");
     // printf("long double %Lf", (long double)4.1f);
   }
 
