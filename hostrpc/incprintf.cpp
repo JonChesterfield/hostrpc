@@ -183,6 +183,8 @@ template void incr::piecewise_pass_element_T(unsigned int);
 template void incr::piecewise_pass_element_T(unsigned long);
 template void incr::piecewise_pass_element_T(unsigned long long);
 
+template void incr::piecewise_pass_element_T(double);
+
 #include "printf_specifier.data"
 
 static MODULE(writeint)

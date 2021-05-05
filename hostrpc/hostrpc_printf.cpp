@@ -49,14 +49,14 @@ enum func_type : uint64_t
 
   func_piecewise_pass_element_scalar = 8,
 
-  func_piecewise_pass_element_int32,
-  func_piecewise_pass_element_uint32,
-  func_piecewise_pass_element_int64,
-  func_piecewise_pass_element_uint64,
-  func_piecewise_pass_element_double,
-  func_piecewise_pass_element_void,
-  func_piecewise_pass_element_write_int32,
-  func_piecewise_pass_element_write_int64,
+  func_piecewise_pass_element_int32 = 9,
+  func_piecewise_pass_element_uint32 = 10,
+  func_piecewise_pass_element_int64 = 11,
+  func_piecewise_pass_element_uint64 = 12,
+  func_piecewise_pass_element_double = 13,
+  func_piecewise_pass_element_void = 14,
+  func_piecewise_pass_element_write_int32 = 15,
+  func_piecewise_pass_element_write_int64 = 16,
 
 };
 
@@ -290,6 +290,14 @@ __PRINTF_API_EXTERNAL void piecewise_pass_element_uint64(uint32_t port,
   hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
 }
 
+__PRINTF_API_EXTERNAL void piecewise_pass_element_double(uint32_t port,
+                                                         double v)
+{
+  piecewise_pass_element_scalar_t inst(func_piecewise_pass_element_double, v);
+  fill_by_copy<piecewise_pass_element_scalar_t> f(&inst);
+  hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
+}
+
 __PRINTF_API_EXTERNAL void piecewise_pass_element_void(uint32_t port,
                                                        const void *v)
 {
@@ -406,7 +414,7 @@ struct operate
   {
     (void)verbose;
     uint64_t ID = line->element[0];
-
+    const bool prefix_thread_id = false;
     switch (ID)
       {
         case func_print_nop:
@@ -417,7 +425,8 @@ struct operate
         case func_piecewise_print_start:
           {
             thread_print.formatter = incr{};
-            thread_print.formatter.append_cstr_section<7>("[%.2u] ");
+            if (prefix_thread_id)
+              thread_print.formatter.append_cstr_section<7>("[%.2u] ");
             thread_print.clear();
             thread_print.acc = print_wip::field::cstr();
             thread_print.acc.tag = func_piecewise_pass_element_cstr;
@@ -465,7 +474,8 @@ struct operate
                     else
                       {
                         thread_print.formatter.set_format(s);
-                        thread_print.formatter.piecewise_pass_element_T(c);
+                        if (prefix_thread_id)
+                          thread_print.formatter.piecewise_pass_element_T(c);
                       }
 
                     // end of string
@@ -508,6 +518,23 @@ struct operate
                       }
                     break;
                   }
+                case func_piecewise_pass_element_double:
+                  {
+                    if (thread_print.acc.tag == func_print_nop)
+                      {
+                        thread_print.formatter.piecewise_pass_element_T<double>(
+                            p->payload);
+
+                        thread_print.acc.tag =
+                            func_piecewise_pass_element_double;
+                        thread_print.acc = {};
+                      }
+                    else
+                      {
+                        printf("invalid pass double\n");
+                      }
+                    break;
+                  }
                 default:
                   {
                     printf("unimplemented scalar element: %lu\n", p->Type);
@@ -518,6 +545,11 @@ struct operate
             break;
           }
 
+        case func_piecewise_pass_element_write_int64:
+          {
+            printf("Unhandled op: write_int64:\n");
+            break;
+          }
         default:
           {
             printf("Unhandled op: %lu\n", ID);

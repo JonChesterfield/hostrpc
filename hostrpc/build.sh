@@ -248,6 +248,7 @@ $CLANG -std=c11 -I$HSAINC $COMMONFLAGS $X64FLAGS printf_test.c -c -o obj/printf_
 if (($have_amdgcn)); then
     $CLANG -std=c11 $COMMONFLAGS $GCNFLAGS printf_test.c -c -o obj/printf_test.gcn.bc
     $LINK obj/printf_test.gcn.bc obj/hostrpc_printf.gcn.bc amdgcn_loader_device.gcn.bc -o printf_test.gcn.bc
+    $CXX_GCN_LD printf_test.gcn.bc -o printf_test.gcn
 fi
 
 $CXX_X64 prototype/states.cpp -c -o prototype/states.x64.bc

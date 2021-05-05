@@ -1,5 +1,6 @@
 #include "hostrpc_printf.h"
 
+#include "detail/platform_detect.hpp"
 
 #ifdef PRECOMPILE
 #define TMP #define EVILUNIT_USE_STDIO 0
@@ -76,6 +77,33 @@ void codegen_evilunit_fail(uint32_t failures, uint32_t checks,
 #undef EVILUNIT_ANSI_COLOUR_RESET
 #endif
 
+
+static inline bool is_master_lane(void);
+#if HOSTRPC_HOST
+static inline bool is_master_lane(void) {return true; }
+#endif
+#if HOSTRPC_AMDGCN
+static inline uint32_t get_lane_id(void)
+{
+  return __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
+}
+static  inline bool is_master_lane(void)
+{
+  // TODO: 32 wide wavefront, consider not using raw intrinsics here
+  uint64_t activemask = __builtin_amdgcn_read_exec();
+
+  // TODO: check codegen for trunc lowest_active vs expanding lane_id
+  // TODO: ffs is lifted from openmp runtime, looks like it should be ctz
+  uint32_t lowest_active = __builtin_ffsl(activemask) - 1;
+  uint32_t lane_id = get_lane_id();
+
+  // TODO: readfirstlane(lane_id) == lowest_active?
+  return lane_id == lowest_active;
+}
+#endif
+
+
+
 #include "printf_specifier.data"
 
 EVILUNIT_MAIN_MODULE()
@@ -84,68 +112,71 @@ EVILUNIT_MAIN_MODULE()
 
   TEST("ex")
   {
+    if (is_master_lane()) {
 #define LIFE 43
     // printf(); // error: to few arguments too function call, single argument
     // 'fmt' not specified
-    printf("str");
-    printf("uint %u", 42);
-    printf("int %d", LIFE);
-    printf("flt %g %d", 3.14, 81);
-    printf("str %s", "strings");
+    printf("str\n");
+    printf("uint %u\n", 42);
+    printf("int %d\n", LIFE);
+    printf("flt %g %d\n", 3.14, 81);
+    printf("str %s", "strings\n");
 
     void *p = (void *)0;
-    printf("void1 %p", p);
+    printf("void1 %p\n", p);
 
-    printf("void2 %p", (void *)4);
+    printf("void2 %p\n", (void *)4);
 
     char mutable_buffer[8] = "mutable";
 
-    printf("fmt ptr %p take ptr", p);
-    printf("fmt ptr %p take str", "careful");
-    printf("fmt ptr %p take mut", mutable_buffer);
-    printf("fmt str %s take ptr", (void *)"suspect");
+    printf("fmt ptr %p take ptr\n", p);
+    printf("fmt ptr %p take str\n", "careful");
+    printf("fmt ptr %p take mut\n", mutable_buffer);
+    printf("fmt str %s take ptr\n", (void *)"suspect");
 
-    printf("fmt str %s take str", "good");
-    printf("fmt str %s take cstr", (const char *)"const");
-    printf("fmt str %s take mut", mutable_buffer);
+    printf("fmt str %s take str\n", "good");
+    printf("fmt str %s take cstr\n", (const char *)"const");
+    printf("fmt str %s take mut\n", mutable_buffer);
 
-    printf("fmt str %n mutable", mutable_buffer);
+    printf("fmt str %n mutable\n", mutable_buffer);
 
-    printf("bool %u", false);
-    printf("raw char %c", (char)11);
-    printf("signed char %c", (signed char)12);
-    printf("unsigned char %c", (unsigned char)13);
+    printf("bool %u\n", false);
 
-    printf("signed char int %hhd", (signed char)14);
-    printf("signed char int %hhi", (signed char)15);
-    printf("signed short int %hd", (signed short int)16);
-    printf("signed short int %hi", (signed short int)17);
-    printf("signed int %d", (signed int)18);
-    printf("signed int %i", (signed int)19);
-    printf("signed long %ld", (signed long)20);
-    printf("signed long %li", (signed long)21);
-    printf("signed long long %lld", (signed long long)22);
-    printf("signed long long %lli", (signed long long)23);
+    printf("raw char %c\n", (char)'a');
+    printf("signed char %c\n", (signed char)'b');
+    printf("unsigned char %c\n", (unsigned char)'c');
 
-    printf("unsigned char int %hhu", (unsigned char)24);
-    printf("unsigned short int %hu", (unsigned short int)25);
-    printf("unsigned int %u", (unsigned int)26);
-    printf("unsigned long %lu", (unsigned long)27);
-    printf("unsigned long long %llu", (unsigned long long)28);
+    printf("signed char int %hhd\n", (signed char)14);
+    printf("signed char int %hhi\n", (signed char)15);
+    printf("signed short int %hd\n", (signed short int)16);
+    printf("signed short int %hi\n", (signed short int)17);
+    printf("signed int %d\n", (signed int)18);
+    printf("signed int %i\n", (signed int)19);
+    printf("signed long %ld\n", (signed long)20);
+    printf("signed long %li\n", (signed long)21);
+    printf("signed long long %lld\n", (signed long long)22);
+    printf("signed long long %lli\n", (signed long long)23);
 
-    printf("intmax %jd", (intmax_t)29);
-    printf("intmax %ji", (intmax_t)30);
-    printf("size_t %zd", (size_t)31);
-    printf("size_t %zi", (size_t)32);
-    printf("ptrdiff %td", (ptrdiff_t)33);
-    printf("ptrdiff %ti", (ptrdiff_t)34);
+    printf("unsigned char int %hhu\n", (unsigned char)24);
+    printf("unsigned short int %hu\n", (unsigned short int)25);
+    printf("unsigned int %u\n", (unsigned int)26);
+    printf("unsigned long %lu\n", (unsigned long)27);
+    printf("unsigned long long %llu\n", (unsigned long long)28);
 
-    printf("uintmax %jd", (uintmax_t)35);
-    printf("size_t %zd", (size_t)36);
-    printf("ptrdiff %td", (ptrdiff_t)37);
+    printf("intmax %jd\n", (intmax_t)29);
+    printf("intmax %ji\n", (intmax_t)30);
+    printf("size_t %zd\n", (size_t)31);
+    printf("size_t %zi\n", (size_t)32);
+    printf("ptrdiff %td\n", (ptrdiff_t)33);
+    printf("ptrdiff %ti\n", (ptrdiff_t)34);
 
-    printf("float %f", (float)3.1f);
-    printf("double %lf", (double)4.1f);
+    printf("uintmax %jd\n", (uintmax_t)35);
+    printf("size_t %zd\n", (size_t)36);
+    printf("ptrdiff %td\n", (ptrdiff_t)37);
+
+    printf("float %f\n", (float)3.1f);
+    printf("double %lf\n", (double)4.1f);
+    }
   }
 
   TEST("long double")
@@ -155,50 +186,50 @@ EVILUNIT_MAIN_MODULE()
     // so, that seems broken
     //    _Static_assert(sizeof(long double) == 1 * sizeof(double), "");
     // _Static_assert(sizeof(long double) == 2 * sizeof(double), "");
-    // printf("long double %Lf", (long double)4.1f);
+    // printf("long double %Lf\n", (long double)4.1f);
   }
 
   TEST("output")
   {
     {
       signed char x = 0;
-      printf("%n sc", &x);
+      printf("%n sc\n", &x);
       CHECK(x == 0);
     }
     {
       short x = 0;
-      printf("%n sh", &x);
+      printf("%n sh\n", &x);
       CHECK(x == 0);
     }
     {
       int x = 0;
-      printf("%n it", &x);
+      printf("%n it\n", &x);
       CHECK(x == 0);
     }
     {
       long x = 0;
-      printf("%n lg", &x);
+      printf("%n lg\n", &x);
       CHECK(x == 0);
     }
     {
       long long x = 0;
-      printf("%n ll ", &x);
+      printf("%n ll \n", &x);
       CHECK(x == 0);
     }
     {
       intmax_t x = 0;
-      printf("%n im", &x);
+      printf("%n im\n", &x);
       CHECK(x == 0);
     }
     {
       size_t x = 0;
-      printf("%n st", &x);
+      printf("%n st\n", &x);
       CHECK(x == 0);
     }
     {
       ptrdiff_t x = 0;
-      printf("%n pd", &x);
+      printf("%n pd\n", &x);
       CHECK(x == 0);
     }
-  }
+    }
 }
