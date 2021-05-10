@@ -13,8 +13,9 @@
 
 namespace
 {
-void append_bytes(const char *from, size_t N, incr &glob)
+int append_bytes(const char *from, size_t N, incr &glob)
 {
+  int written = 0;
   assert(*glob.output.rbegin() == '\0');
   glob.output.pop_back();
   for (size_t i = 0; i < N; i++)
@@ -24,14 +25,17 @@ void append_bytes(const char *from, size_t N, incr &glob)
           if (from[i] == '%' && from[i + 1] == '%')
             {
               glob.output.push_back('%');
+              written++;
               i++;
               continue;
             }
         }
 
       glob.output.push_back(from[i]);
+      written++;
     }
   glob.output.push_back('\0');
+  return written;
 }
 
 void space_for_n_bytes(incr &glob, size_t bytes)
@@ -42,7 +46,7 @@ void space_for_n_bytes(incr &glob, size_t bytes)
     }
 }
 
-void append_until_next_loc(incr &glob)
+int append_until_next_loc(incr &glob)
 {
   char *fmt = glob.format.data();
   size_t len = glob.format.size();
@@ -50,9 +54,12 @@ void append_until_next_loc(incr &glob)
 
   if (next_start > glob.loc)
     {
-      append_bytes(&fmt[glob.loc], next_start - glob.loc, glob);
+      int written = append_bytes(&fmt[glob.loc], next_start - glob.loc, glob);
       glob.loc = next_start;
-    }
+      return written;
+    } else {
+    return 0;
+  }
 }
 
 }  // namespace
@@ -76,7 +83,7 @@ struct inject_nul_in_format
 };
 
 template <typename T>
-size_t bytes_for_arg(bool verbose, char *fmt, size_t next_start,
+int bytes_for_arg(bool verbose, char *fmt, size_t next_start,
                      size_t next_end, T v)
 {
   if (verbose)
@@ -96,17 +103,22 @@ size_t bytes_for_arg(bool verbose, char *fmt, size_t next_start,
 
   if (verbose)
     {
-      (printf)("Invoking sprintf on format %s, value %lu\n", &fmt[next_start],
+      (printf)("Invoking sprintf(NULL) on format %s, value %lu\n", &fmt[next_start],
                (uint64_t)v);
     }
-  return snprintf(NULL, 0, &fmt[next_start], v);
+  int r = snprintf(NULL, 0, &fmt[next_start], v);
+  if (verbose)
+    {
+      (printf)("  -> claims to require %d bytes\n", r);
+    }
+  return r;  
 }
 
 }  // namespace
 
 template <typename T>
-void incr::piecewise_pass_element_T(T value)
-{
+int incr::piecewise_pass_element_T(T value)
+{  
   char *fmt = format.data();
   size_t len = format.size();
   size_t next_start = __printf_next_start(fmt, len, loc);
@@ -116,15 +128,23 @@ void incr::piecewise_pass_element_T(T value)
     (printf)("glob loc %zu, Format %s/%zu, split [%zu %zu]\n", loc, fmt, len,
              next_start, next_end);
 
-  append_until_next_loc(*this);
+  int rc = append_until_next_loc(*this);
 
   if (next_start == len)
     {
-      return;
+      // no format might be an error, leave it for now
+      return rc;
     }
 
-  size_t bytes = bytes_for_arg(verbose, fmt, next_start, next_end, value);
-
+  int sbytes = bytes_for_arg(verbose, fmt, next_start, next_end, value);
+  if (sbytes < 0) {
+    if (verbose) {
+      (printf)("error! giving up\n");
+    }
+    return sbytes;
+  }
+  size_t bytes = (size_t)sbytes;
+  
   if (verbose)
     (printf)("output size %zu, increasing by %zu\n", output.size(), bytes);
 
@@ -138,14 +158,21 @@ void incr::piecewise_pass_element_T(T value)
           "writing fmt %s into loc %zu, giving %zu bytes. Next end at %zu\n",
           &fmt[next_start], output_end, bytes, next_end);
     size_t one_past = next_end + 1;
-    inject_nul_in_format nul(fmt, one_past);
-    snprintf(output.data() + output_end,
+    inject_nul_in_format nul(fmt, one_past);    
+    int sn_rc = snprintf(output.data() + output_end,
              bytes + 1,  // overwrites the trailing nul that is already there
              &fmt[next_start], value);
+    if (verbose && (sn_rc != sbytes)) {
+      (printf)("Consistency failure, %d != %d\n", sn_rc, sbytes);
+    }
+    // expect (sn_rc == sbytes), thus positive
+    if (sn_rc < 0) { /*todo: test it */ return sn_rc; }
+    rc += sn_rc;
   }
 
   loc = next_end + 1;
-  if (verbose) (printf)("Setting loc to %zu\n", loc);
+  if (verbose) (printf)("Setting loc to %zu, return %d bytes\n", loc,rc);
+  return rc;
 }
 
 void incr::set_format(const char *fmt)
@@ -161,29 +188,32 @@ std::vector<char> incr::finalize()
   return output;
 }
 
-static void piecewise_pass_element_uint64(uint64_t value, incr &glob)
+static int piecewise_pass_element_uint64(uint64_t value, incr &glob)
 {
   return glob.piecewise_pass_element_T(value);
 }
 
 // TODO: Audit list
-template void incr::piecewise_pass_element_T(const char *);
-template void incr::piecewise_pass_element_T(const void *);
-template void incr::piecewise_pass_element_T(char);
-template void incr::piecewise_pass_element_T(signed char);
-template void incr::piecewise_pass_element_T(unsigned char);
+template int incr::piecewise_pass_element_T(const char *);
+template int incr::piecewise_pass_element_T(const void *);
+template int incr::piecewise_pass_element_T(char);
+template int incr::piecewise_pass_element_T(signed char);
+template int incr::piecewise_pass_element_T(unsigned char);
 
-template void incr::piecewise_pass_element_T(short);
-template void incr::piecewise_pass_element_T(int);
-template void incr::piecewise_pass_element_T(long);
-template void incr::piecewise_pass_element_T(long long);
+template int incr::piecewise_pass_element_T(short);
+template int incr::piecewise_pass_element_T(int);
+template int incr::piecewise_pass_element_T(long);
+template int incr::piecewise_pass_element_T(long long);
 
-template void incr::piecewise_pass_element_T(unsigned short);
-template void incr::piecewise_pass_element_T(unsigned int);
-template void incr::piecewise_pass_element_T(unsigned long);
-template void incr::piecewise_pass_element_T(unsigned long long);
+template int incr::piecewise_pass_element_T(unsigned short);
+template int incr::piecewise_pass_element_T(unsigned int);
+template int incr::piecewise_pass_element_T(unsigned long);
+template int incr::piecewise_pass_element_T(unsigned long long);
 
-template void incr::piecewise_pass_element_T(double);
+template int incr::piecewise_pass_element_T(double);
+
+// may want a different function name here for writing
+template int incr::piecewise_pass_element_T(int64_t*);
 
 #include "printf_specifier.data"
 

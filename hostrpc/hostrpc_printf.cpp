@@ -184,11 +184,12 @@ struct piecewise_pass_element_scalar_t
 struct piecewise_pass_element_write_t
 {
   uint64_t ID = func_piecewise_pass_element_write_int64;
+  int64_t payload = 0;
   enum
   {
-    width = 56
+    width = 48
   };
-  char payload[width];
+  char unused[width];
   HOSTRPC_ANNOTATE piecewise_pass_element_write_t() {}
 };
 
@@ -202,10 +203,10 @@ __attribute__((visibility("default")))
 hostrpc::x64_gcn_type<SZ>::client_type hostrpc_x64_gcn_debug_client[1];
 
 template <typename T>
-struct fill_by_copy
+struct send_by_copy
 {
   static_assert(sizeof(T) == 64, "");
-  HOSTRPC_ANNOTATE fill_by_copy(T *i) : i(i) {}
+  HOSTRPC_ANNOTATE send_by_copy(T *i) : i(i) {}
   T *i;
 
   HOSTRPC_ANNOTATE void operator()(hostrpc::page_t *page)
@@ -213,6 +214,21 @@ struct fill_by_copy
     unsigned id = platform::get_lane_id();
     hostrpc::cacheline_t *dline = &page->cacheline[id];
     __builtin_memcpy(dline, i, 64);
+  }
+};
+
+template <typename T>
+struct recv_by_copy
+{
+  static_assert(sizeof(T) == 64, "");
+  HOSTRPC_ANNOTATE recv_by_copy(T *i) : i(i) {}
+  T *i;
+
+  HOSTRPC_ANNOTATE void operator()(hostrpc::page_t *page)
+  {
+    unsigned id = platform::get_lane_id();
+    hostrpc::cacheline_t *dline = &page->cacheline[id];
+    __builtin_memcpy(i, dline, 64);
   }
 };
 
@@ -227,7 +243,7 @@ __PRINTF_API_EXTERNAL uint32_t piecewise_print_start(const char *fmt)
 
   {
     piecewise_print_start_t inst;
-    fill_by_copy<piecewise_print_start_t> f(&inst);
+    send_by_copy<piecewise_print_start_t> f(&inst);
     hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
   }
 
@@ -240,7 +256,7 @@ __PRINTF_API_EXTERNAL int piecewise_print_end(uint32_t port)
 {
   {
     piecewise_print_end_t inst;
-    fill_by_copy<piecewise_print_end_t> f(&inst);
+    send_by_copy<piecewise_print_end_t> f(&inst);
     hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
   }
 
@@ -286,7 +302,7 @@ __PRINTF_API_EXTERNAL void piecewise_pass_element_uint64(uint32_t port,
                                                          uint64_t v)
 {
   piecewise_pass_element_scalar_t inst(func_piecewise_pass_element_uint64, v);
-  fill_by_copy<piecewise_pass_element_scalar_t> f(&inst);
+  send_by_copy<piecewise_pass_element_scalar_t> f(&inst);
   hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
 }
 
@@ -294,7 +310,7 @@ __PRINTF_API_EXTERNAL void piecewise_pass_element_double(uint32_t port,
                                                          double v)
 {
   piecewise_pass_element_scalar_t inst(func_piecewise_pass_element_double, v);
-  fill_by_copy<piecewise_pass_element_scalar_t> f(&inst);
+  send_by_copy<piecewise_pass_element_scalar_t> f(&inst);
   hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
 }
 
@@ -305,7 +321,7 @@ __PRINTF_API_EXTERNAL void piecewise_pass_element_void(uint32_t port,
   uint64_t c;
   __builtin_memcpy(&c, &v, 8);
   piecewise_pass_element_scalar_t inst(func_piecewise_pass_element_uint64, c);
-  fill_by_copy<piecewise_pass_element_scalar_t> f(&inst);
+  send_by_copy<piecewise_pass_element_scalar_t> f(&inst);
   hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
 }
 
@@ -323,7 +339,7 @@ __PRINTF_API_EXTERNAL void piecewise_pass_element_cstr(uint32_t port,
   for (uint64_t c = 0; c < chunks; c++)
     {
       piecewise_pass_element_cstr_t inst(&str[c * w], w);
-      fill_by_copy<piecewise_pass_element_cstr_t> f(&inst);
+      send_by_copy<piecewise_pass_element_cstr_t> f(&inst);
       hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
     }
 
@@ -331,7 +347,7 @@ __PRINTF_API_EXTERNAL void piecewise_pass_element_cstr(uint32_t port,
   // terminated.
   {
     piecewise_pass_element_cstr_t inst(&str[chunks * w], remainder);
-    fill_by_copy<piecewise_pass_element_cstr_t> f(&inst);
+    send_by_copy<piecewise_pass_element_cstr_t> f(&inst);
     hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
   }
 }
@@ -340,12 +356,14 @@ __PRINTF_API_EXTERNAL void piecewise_pass_element_write_int64(uint32_t port,
                                                               int64_t *x)
 {
   piecewise_pass_element_write_t inst;
-  fill_by_copy<piecewise_pass_element_write_t> f(&inst);
+  inst.payload = 42;
+  send_by_copy<piecewise_pass_element_write_t> f(&inst);
   hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
 
-  // need to recv to get the result, return 0 for now
-
-  *x = 0;
+  // need to recv to get the result
+  recv_by_copy<piecewise_pass_element_write_t> r(&inst);
+  hostrpc_x64_gcn_debug_client[0].rpc_port_recv(port, r);
+  *x = inst.payload;
 }
 
 #endif
@@ -373,7 +391,21 @@ namespace
 struct print_wip
 {
   incr formatter;
+  int bytes_written = 0;  // negative on error
 
+  void update_bytes_written(int x)
+  {
+    if (bytes_written < 0)
+      {
+        return;
+      }
+    if (x < 0)
+      {
+        bytes_written = x;
+        return;
+      }
+    bytes_written += x;
+  }
   // first expected to be cstr for format
   struct field
   {
@@ -469,13 +501,18 @@ struct operate
                     const char *s = thread_print.formatter.accumulator.data();
                     if (thread_print.formatter.have_format())
                       {
-                        thread_print.formatter.piecewise_pass_element_T(s);
+                        thread_print.update_bytes_written(
+                            thread_print.formatter
+                                .piecewise_pass_element_T<const char *>(s));
                       }
                     else
                       {
                         thread_print.formatter.set_format(s);
                         if (prefix_thread_id)
-                          thread_print.formatter.piecewise_pass_element_T(c);
+                          {
+                            thread_print.formatter
+                                .piecewise_pass_element_T<unsigned>(c);
+                          }
                       }
 
                     // end of string
@@ -504,8 +541,10 @@ struct operate
                   {
                     if (thread_print.acc.tag == func_print_nop)
                       {
-                        thread_print.formatter
-                            .piecewise_pass_element_T<uint64_t>(p->payload);
+                        thread_print.update_bytes_written(
+                            thread_print.formatter
+                                .piecewise_pass_element_T<uint64_t>(
+                                    p->payload));
 
                         thread_print.acc.tag =
                             func_piecewise_pass_element_uint64;
@@ -522,8 +561,9 @@ struct operate
                   {
                     if (thread_print.acc.tag == func_print_nop)
                       {
-                        thread_print.formatter.piecewise_pass_element_T<double>(
-                            p->payload);
+                        thread_print.update_bytes_written(
+                            thread_print.formatter
+                                .piecewise_pass_element_T<double>(p->payload));
 
                         thread_print.acc.tag =
                             func_piecewise_pass_element_double;
@@ -547,7 +587,27 @@ struct operate
 
         case func_piecewise_pass_element_write_int64:
           {
-            printf("Unhandled op: write_int64:\n");
+            piecewise_pass_element_write_t *p =
+                reinterpret_cast<piecewise_pass_element_write_t *>(
+                    &line->element[0]);
+
+            if (thread_print.acc.tag == func_print_nop)
+              {
+                if (0) printf("Got passed a write_int64, initial value %lu (acc %d)\n",
+                       p->payload,thread_print.bytes_written);
+                thread_print.update_bytes_written(
+                    thread_print.formatter.piecewise_pass_element_T<int64_t *>(
+                        &p->payload));
+                p->payload = thread_print.bytes_written;
+                if (0)                 printf("Got passed a write_int64, later value %lu (acc %d)\n",
+                       p->payload, thread_print.bytes_written);
+                thread_print.acc.tag = func_piecewise_pass_element_write_int64;
+                thread_print.acc = {};
+              }
+            else
+              {
+                printf("invalid pass write i64\n");
+              }
             break;
           }
         default:
