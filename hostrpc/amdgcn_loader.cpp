@@ -461,7 +461,7 @@ static int main_with_hsa(int argc, char **argv)
   hsa::initialize_packet_defaults(packet);
 
   packet->workgroup_size_x = read_symbol(&file, "main_workgroup_size_x",  packet->workgroup_size_x);
-  packet->grid_size_x = read_symbol(&file, "main_grid_size_x",  packet->grid_size_x);
+  packet->grid_size_x = read_symbol(&file, "main_grid_size_x",  packet->workgroup_size_x);
   
   uint64_t kernel_address = find_entry_address(ex);
   packet->kernel_object = kernel_address;
@@ -491,6 +491,9 @@ static int main_with_hsa(int argc, char **argv)
       printf("Error: get_kernel_info failed for kernel %s\n", kernel_entry);
       exit(1);
     }
+
+  // work around bug noted in D94648
+  packet->group_segment_size += 64;
 
   hsa::packet_store_release((uint32_t *)packet,
                             hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
