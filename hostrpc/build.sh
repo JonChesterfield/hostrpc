@@ -9,7 +9,7 @@ DERIVE=${1:-4}
 
 # Aomp
 RDIR=$HOME/rocm/aomp
-
+#RDIR=$HOME/llvm-install
 CLANGXXINCLUDE=$RDIR/lib/clang/13.0.0/include
 
 # Needs to resolve to gfx906, gfx1010 or similar
@@ -249,6 +249,15 @@ if (($have_amdgcn)); then
     $CLANG -std=c11 $COMMONFLAGS $GCNFLAGS printf_test.c -c -o obj/printf_test.gcn.bc
     $LINK obj/printf_test.gcn.bc obj/hostrpc_printf.gcn.bc amdgcn_loader_device.gcn.bc -o printf_test.gcn.bc
     $CXX_GCN_LD printf_test.gcn.bc -o printf_test.gcn
+fi
+
+if (($have_amdgcn)); then
+    $CXX_GCN devicertl_pteam_mem_barrier.cpp -c -o obj/devicertl_pteam_mem_barrier.gcn.bc
+    # todo: refer to lib from RDIR, once that lib has the function non-static
+    $LINK obj/devicertl_pteam_mem_barrier.gcn.bc obj/hostrpc_printf.gcn.bc amdgcn_loader_device.gcn.bc -o devicertl_pteam_mem_barrier.gcn.bc # /home/amd/llvm-install/lib/libomptarget-amdgcn-gfx906.bc
+    $CXX_GCN_LD devicertl_pteam_mem_barrier.gcn.bc -o devicertl_pteam_mem_barrier.gcn
+    ./devicertl_pteam_mem_barrier.gcn
+    exit 
 fi
 
 $CXX_X64 prototype/states.cpp -c -o prototype/states.x64.bc
