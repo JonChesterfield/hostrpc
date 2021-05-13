@@ -6,6 +6,9 @@
 
 #include <unistd.h>
 
+#include <elf.h>
+#include <libelf.h>
+
 #include "hostcall.hpp"
 #include "hostcall_hsa.hpp"
 #include "raiifile.hpp"
@@ -13,6 +16,152 @@
 #include "hostrpc_printf.h"
 #include "launch.hpp"
 #undef printf
+
+// written for rtl.cpp
+namespace
+{
+Elf64_Shdr *find_only_SHT_HASH(Elf *elf)
+{
+  size_t N;
+  int rc = elf_getshdrnum(elf, &N);
+  if (rc != 0)
+    {
+      return nullptr;
+    }
+
+  Elf64_Shdr *result = nullptr;
+  for (size_t i = 0; i < N; i++)
+    {
+      Elf_Scn *scn = elf_getscn(elf, i);
+      if (scn)
+        {
+          Elf64_Shdr *shdr = elf64_getshdr(scn);
+          if (shdr)
+            {
+              if (shdr->sh_type == SHT_HASH)
+                {
+                  if (result == nullptr)
+                    {
+                      result = shdr;
+                    }
+                  else
+                    {
+                      // multiple SHT_HASH sections not handled
+                      return nullptr;
+                    }
+                }
+            }
+        }
+    }
+  return result;
+}
+
+const Elf64_Sym *elf_lookup(Elf *elf, char *base, Elf64_Shdr *section_hash,
+                            const char *symname)
+{
+  assert(section_hash);
+  size_t section_symtab_index = section_hash->sh_link;
+  Elf64_Shdr *section_symtab =
+      elf64_getshdr(elf_getscn(elf, section_symtab_index));
+  size_t section_strtab_index = section_symtab->sh_link;
+
+  const Elf64_Sym *symtab =
+      reinterpret_cast<const Elf64_Sym *>(base + section_symtab->sh_offset);
+
+  const uint32_t *hashtab =
+      reinterpret_cast<const uint32_t *>(base + section_hash->sh_offset);
+
+  // Layout:
+  // nbucket
+  // nchain
+  // bucket[nbucket]
+  // chain[nchain]
+  uint32_t nbucket = hashtab[0];
+  const uint32_t *bucket = &hashtab[2];
+  const uint32_t *chain = &hashtab[nbucket + 2];
+
+  const size_t max = strlen(symname) + 1;
+  const uint32_t hash = elf_hash(symname);
+  for (uint32_t i = bucket[hash % nbucket]; i != 0; i = chain[i])
+    {
+      char *n = elf_strptr(elf, section_strtab_index, symtab[i].st_name);
+      if (strncmp(symname, n, max) == 0)
+        {
+          return &symtab[i];
+        }
+    }
+
+  return nullptr;
+}
+
+struct symbol_info
+{
+  void *addr = nullptr;
+  uint32_t size = UINT32_MAX;
+  uint32_t sh_type = SHT_NULL;
+};
+
+int get_symbol_info_without_loading(Elf *elf, char *base, const char *symname,
+                                    symbol_info *res)
+{
+  if (elf_kind(elf) != ELF_K_ELF)
+    {
+      return 1;
+    }
+
+  Elf64_Shdr *section_hash = find_only_SHT_HASH(elf);
+  if (!section_hash)
+    {
+      return 1;
+    }
+
+  const Elf64_Sym *sym = elf_lookup(elf, base, section_hash, symname);
+  if (!sym)
+    {
+      return 1;
+    }
+
+  if (sym->st_size > UINT32_MAX)
+    {
+      return 1;
+    }
+
+  if (sym->st_shndx == SHN_UNDEF)
+    {
+      return 1;
+    }
+
+  Elf_Scn *section = elf_getscn(elf, sym->st_shndx);
+  if (!section)
+    {
+      return 1;
+    }
+
+  Elf64_Shdr *header = elf64_getshdr(section);
+  if (!header)
+    {
+      return 1;
+    }
+
+  res->addr = sym->st_value + base;
+  res->size = static_cast<uint32_t>(sym->st_size);
+  res->sh_type = header->sh_type;
+  return 0;
+}
+
+int get_symbol_info_without_loading(char *base, size_t img_size,
+                                    const char *symname, symbol_info *res)
+{
+  Elf *elf = elf_memory(base, img_size);
+  if (elf)
+    {
+      int rc = get_symbol_info_without_loading(elf, base, symname, res);
+      elf_end(elf);
+      return rc;
+    }
+  return 1;
+}
+}  // namespace
 
 namespace
 {
@@ -55,6 +204,44 @@ uint64_t find_entry_address(hsa::executable &ex)
 }
 
 }  // namespace
+
+uint64_t read_symbol(raiifile *file, const char *name, uint64_t fallback)
+{
+  symbol_info sym;
+  if (0 ==
+      get_symbol_info_without_loading(static_cast<char *>(file->mmapped_bytes),
+                                      file->mmapped_length, name, &sym))
+    {
+      if (0) fprintf(stderr, "Found symbol %s, %p / %u / %u\n", name, sym.addr,
+              sym.size, sym.sh_type);
+      if (sym.size == 8)
+        {
+          uint64_t r;
+          memcpy(&r, sym.addr, sizeof(r));
+          return r;
+        }
+      if (sym.size == 4)
+        {
+          uint32_t r = 0;
+          memcpy(&r, sym.addr, sizeof(r));
+          return r;
+        }
+      if (sym.size == 2)
+        {
+          uint16_t r = 0;
+          memcpy(&r, sym.addr, sizeof(r));
+          return r;
+        }
+      if (sym.size == 1)
+        {
+          uint8_t r = 0;
+          memcpy(&r, sym.addr, sizeof(r));
+          return r;
+        }
+    }
+
+  return fallback;
+}
 
 static int main_with_hsa(int argc, char **argv)
 {
@@ -273,6 +460,9 @@ static int main_with_hsa(int argc, char **argv)
 
   hsa::initialize_packet_defaults(packet);
 
+  packet->workgroup_size_x = read_symbol(&file, "main_workgroup_size_x",  packet->workgroup_size_x);
+  packet->grid_size_x = read_symbol(&file, "main_grid_size_x",  packet->grid_size_x);
+  
   uint64_t kernel_address = find_entry_address(ex);
   packet->kernel_object = kernel_address;
 
