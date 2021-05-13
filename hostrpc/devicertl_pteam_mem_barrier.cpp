@@ -22,10 +22,21 @@ uint32_t __kmpc_impl_ffs(uint64_t x) { return __builtin_ffsl(x); }
 
 void pteam_mem_barrier(uint32_t num_threads,  uint32_t * barrier_state)
 {
+  __atomic_store_n(barrier_state, 42u, __ATOMIC_RELEASE);
+
+  printf("Stored 42, loaded %u\n", __atomic_load_n(barrier_state, __ATOMIC_RELAXED));
+
+  if (0) for (unsigned i= 0; i < 4; i++)   {
+    uint32_t load = __atomic_fetch_add(barrier_state, 1,
+                                       __ATOMIC_ACQ_REL); // commutative
+    printf("load[%u] got %u\n", i, load);
+
+
+  }
   __atomic_thread_fence(__ATOMIC_ACQUIRE);
   
-  uint32_t num_waves = (num_threads + WARPSIZE - 1) / WARPSIZE ; // expected bug here
-
+  uint32_t num_waves = (num_threads + WARPSIZE - 1) / WARPSIZE ; 
+  // num_waves = num_threads / WARPSIZE; // expected bug here
   printf("[%u/%u] in mem_barrier, thrds/waves %u %u\n",
          __builtin_amdgcn_workitem_id_x(),
          __builtin_amdgcn_workgroup_id_x(),
@@ -45,7 +56,7 @@ void pteam_mem_barrier(uint32_t num_threads,  uint32_t * barrier_state)
 
   // Increment the low 16 bits once, using the lowest active thread.
   uint64_t lowestActiveThread = __kmpc_impl_ffs(__kmpc_impl_activemask()) - 1;
-  bool isLowest = true || GetLaneId() == lowestActiveThread;
+  bool isLowest = GetLaneId() == lowestActiveThread;
 
   printf("[%u/%u] lAT %lu, isLowest %u, barrier_state %u\n",
          __builtin_amdgcn_workitem_id_x(),
@@ -106,8 +117,8 @@ __attribute__((address_space(3)))
 uint32_t barrier_state;
 
 
-__attribute__((visibility("default"))) unsigned main_workgroup_size_x = 128;
-__attribute__((visibility("default"))) unsigned main_grid_size_x = 128;
+__attribute__((visibility("default"))) unsigned main_workgroup_size_x = 64;
+__attribute__((visibility("default"))) unsigned main_grid_size_x = 64; // may have to be >= wg
 
 
 
@@ -140,6 +151,7 @@ EVILUNIT_MAIN_MODULE()
 
   TEST("call barrier on wg 0 threads")
     {
+      return;
       if (__builtin_amdgcn_workgroup_id_x() == 0)
         {
       printf("before wg0\n");
