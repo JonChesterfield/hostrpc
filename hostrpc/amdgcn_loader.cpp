@@ -506,9 +506,6 @@ static int main_with_hsa(int argc, char **argv)
       exit(1);
     }
 
-  // work around bug noted in D94648
-  packet->group_segment_size += 64;
-
   hsa::packet_store_release((uint32_t *)packet,
                             hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
                             hsa::kernel_dispatch_setup());
