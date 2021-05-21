@@ -9,15 +9,18 @@ DERIVE=${1:-4}
 
 # Aomp
 RDIR=$HOME/rocm/aomp
+GFX=`$RDIR/bin/mygpu -d gfx906` # lost the entry for gfx750 at some point
+DEVICERTL="$RDIR/lib/libdevice/libomptarget-amdgcn-$GFX.bc"
 
 # trunk
-# RDIR=$HOME/llvm-install
-
-# Needs to resolve to gfx906, gfx1010 or similar
-GFX=`$RDIR/bin/mygpu -d gfx906` # lost the entry for gfx750 at some point
+RDIR=$HOME/llvm-install
+GFX=`$RDIR/bin/amdgpu-arch | uniq`
+DEVICERTL="$RDIR/lib/libomptarget-amdgcn-$GFX.bc"
 
 mkdir -p obj
 mkdir -p lib
+
+echo "Using toolchain at $RDIR, GFX=$GFX"
 
 have_nvptx=0
 if [ -e "/dev/nvidiactl" ]; then
@@ -28,12 +31,6 @@ have_amdgcn=0
 if [ -e "/dev/kfd" ]; then
     have_amdgcn=1
 fi
-
-if ((!$have_amdgcn)); then
-    # Compile for a gfx906 as a credible default
-    GFX=gfx906
-fi
-
 
 if (($have_nvptx)); then
     # Clang looks for this file, but cuda stopped shipping it
@@ -253,10 +250,12 @@ fi
 if (($have_amdgcn)); then
     $CXX_GCN devicertl_pteam_mem_barrier.cpp -c -o obj/devicertl_pteam_mem_barrier.gcn.bc
     # todo: refer to lib from RDIR, once that lib has the function non-static    
-    $LINK obj/devicertl_pteam_mem_barrier.gcn.bc obj/hostrpc_printf.gcn.bc amdgcn_loader_device.gcn.bc -o devicertl_pteam_mem_barrier.gcn.bc "$RDIR/lib/libdevice/libomptarget-amdgcn-$GFX.bc"
+    $LINK obj/devicertl_pteam_mem_barrier.gcn.bc obj/hostrpc_printf.gcn.bc amdgcn_loader_device.gcn.bc -o devicertl_pteam_mem_barrier.gcn.bc $DEVICERTL
     $CXX_GCN_LD devicertl_pteam_mem_barrier.gcn.bc -o devicertl_pteam_mem_barrier.gcn
+    set +e
+    echo "This is failing at present, HSA doesn't think the binary is valid"
     ./devicertl_pteam_mem_barrier.gcn
-    exit 
+    set -e
 fi
 
 $CXX_X64 prototype/states.cpp -c -o prototype/states.x64.bc
@@ -458,7 +457,10 @@ $CXX_X64_LD x64_gcn_stress.x64.bc obj/hsa_support.x64.bc obj/catch.o $LDFLAGS -o
 $CXX_X64_LD tests.x64.bc obj/host_support.x64.bc obj/catch.o $LDFLAGS -o tests.exe
 
 
+# clang trunk is crashing on this at present
+set +e
 $CXX_X64_LD persistent_kernel.x64.bc obj/catch.o obj/hsa_support.x64.bc $LDFLAGS -o persistent_kernel.exe
+set -e
 
 time valgrind --leak-check=full --fair-sched=yes ./prototype/states.exe
 
