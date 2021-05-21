@@ -9,8 +9,9 @@ DERIVE=${1:-4}
 
 # Aomp
 RDIR=$HOME/rocm/aomp
-#RDIR=$HOME/llvm-install
-CLANGXXINCLUDE=$RDIR/lib/clang/13.0.0/include
+
+# trunk
+# RDIR=$HOME/llvm-install
 
 # Needs to resolve to gfx906, gfx1010 or similar
 GFX=`$RDIR/bin/mygpu -d gfx906` # lost the entry for gfx750 at some point
@@ -80,8 +81,6 @@ OPT="$RDIR/bin/opt"
 
 CXX="$CLANGXX -std=c++14 -Wall -Wextra"
 LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR -lelf"
-
-NOINC="-nostdinc -nostdinc++ -isystem $CLANGXXINCLUDE -DHOSTRPC_HAVE_STDIO=0"
 
 AMDGPU="--target=amdgcn-amd-amdhsa -march=$GFX -mcpu=$GFX -mllvm -amdgpu-fixed-function-abi -Xclang -fconvergent-functions -nogpulib"
 
@@ -253,8 +252,8 @@ fi
 
 if (($have_amdgcn)); then
     $CXX_GCN devicertl_pteam_mem_barrier.cpp -c -o obj/devicertl_pteam_mem_barrier.gcn.bc
-    # todo: refer to lib from RDIR, once that lib has the function non-static
-    $LINK obj/devicertl_pteam_mem_barrier.gcn.bc obj/hostrpc_printf.gcn.bc amdgcn_loader_device.gcn.bc -o devicertl_pteam_mem_barrier.gcn.bc # /home/amd/llvm-install/lib/libomptarget-amdgcn-gfx906.bc
+    # todo: refer to lib from RDIR, once that lib has the function non-static    
+    $LINK obj/devicertl_pteam_mem_barrier.gcn.bc obj/hostrpc_printf.gcn.bc amdgcn_loader_device.gcn.bc -o devicertl_pteam_mem_barrier.gcn.bc "$RDIR/lib/libdevice/libomptarget-amdgcn-$GFX.bc"
     $CXX_GCN_LD devicertl_pteam_mem_barrier.gcn.bc -o devicertl_pteam_mem_barrier.gcn
     ./devicertl_pteam_mem_barrier.gcn
     exit 
@@ -395,8 +394,8 @@ $CLANGXX -std=c++14 -Wall -Wextra -O0 -g test_storage.cpp obj/openmp_support.x64
 if (($have_amdgcn)); then
     $LINK obj/openmp_support.x64.bc obj/hsa_support.x64.bc obj/syscall.x64.bc -o obj/demo_bitcode_gcn.omp.bc
 
-# openmp is taking an excessive amount of time to compile, drop it for nowOO
-#     $CLANGXX -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  -DDEMO_AMDGCN=1 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang obj/demo_bitcode_gcn.omp.bc -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR # && ./demo_openmp_gcn
+# openmp is taking an excessive amount of time to compile, drop it for now
+    $CLANGXX -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  -DDEMO_AMDGCN=1 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang obj/demo_bitcode_gcn.omp.bc -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR && ./demo_openmp_gcn
 fi
 
 if (($have_nvptx)); then
