@@ -243,6 +243,20 @@ uint64_t read_symbol(raiifile *file, const char *name, uint64_t fallback)
   return fallback;
 }
 
+static void callbackQueue(hsa_status_t status, hsa_queue_t *source, void *data)
+{
+  if (status != HSA_STATUS_SUCCESS)
+    {
+      // may only be called with status other than success
+      const char *msg = "UNKNOWN ERROR";
+      hsa_status_string(status, &msg);
+      fprintf(stderr, "Queue at %p inactivated due to async error:\n\t%s\n",
+              source, msg);
+
+      abort();
+    }
+}
+
 static int main_with_hsa(int argc, char **argv)
 {
   const bool verbose = false;
@@ -405,7 +419,7 @@ static int main_with_hsa(int argc, char **argv)
         kernel_agent /* make the queue on this agent */,
         131072 /* todo: size it, this hardcodes max size for vega20 */,
         HSA_QUEUE_TYPE_MULTI /* baseline */,
-        NULL /* called on every async event? */,
+        callbackQueue /* called on every async event? */,
         NULL /* data passed to previous */,
         // If sizes exceed these values, things are supposed to work slowly
         UINT32_MAX /* private_segment_size, 32_MAX is unknown */,
