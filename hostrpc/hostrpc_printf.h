@@ -63,6 +63,8 @@ extern "C"
   __PRINTF_WRAP7(FMT, U, X0, X1, X2, X3, X4, X5) __PRINTF_WRAP(FMT, 6, X6)
 #define __PRINTF_WRAP9(FMT, U, X0, X1, X2, X3, X4, X5, X6, X7) \
   __PRINTF_WRAP8(FMT, U, X0, X1, X2, X3, X4, X5, X6) __PRINTF_WRAP(FMT, 7, X7)
+#define __PRINTF_WRAP10(FMT, U, X0, X1, X2, X3, X4, X5, X6, X7, X8)        \
+  __PRINTF_WRAP9(FMT, U, X0, X1, X2, X3, X4, X5, X6, X7) __PRINTF_WRAP(FMT, 8, X8)
 
 #if 0
 /*
@@ -195,7 +197,7 @@ __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
     {
       piecewise_pass_element_int32(port, (int32_t)x);
     }
-  if (sizeof(long) == sizeof(int64_t))
+  else if (sizeof(long) == sizeof(int64_t))
     {
       piecewise_pass_element_int64(port, (int64_t)x);
     }
@@ -214,7 +216,7 @@ __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
     {
       piecewise_pass_element_uint32(port, (uint32_t)x);
     }
-  if (sizeof(unsigned long) == sizeof(uint64_t))
+  else if (sizeof(unsigned long) == sizeof(uint64_t))
     {
       piecewise_pass_element_uint64(port, (uint64_t)x);
     }
@@ -253,13 +255,13 @@ __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
 // signed char* can also used with %n
 __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
                                                    enum __printf_spec_t spec,
-                                                   const char *x)
+                                                   const void *x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   switch (spec)
     {
       case spec_string:
-        return piecewise_pass_element_cstr(port, x);
+        return piecewise_pass_element_cstr(port, (const char *)x);
       case spec_normal:
         return piecewise_pass_element_void(port, (const void *)x);
       case spec_output:
@@ -276,7 +278,7 @@ __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
           // a mutable char * to an int64_t that has been cast
           int64_t tmp;
           piecewise_pass_element_write_int64(port, &tmp);
-          *(int64_t *)x = tmp;
+          *(int64_t *)x = tmp; // todo: can't assume this, doesn't work for %n & some-char
           break;
         }
       case spec_none:
@@ -284,6 +286,8 @@ __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
     }
 }
 
+// todo: can these be patched directly to write int64
+#if 1
 __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
                                                    enum __printf_spec_t spec,
                                                    signed short *x)
@@ -338,6 +342,7 @@ __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
   piecewise_print_element(port,spec, (const char*)&tmp);
   *x = (long long)tmp;
 }
+#endif
 
 #define __PRINTF_DISPATCH_INDIRECT(TYPE, VIA)           \
   __PRINTF_API_INTERNAL void piecewise_print_element(   \
@@ -356,10 +361,12 @@ __PRINTF_DISPATCH_INDIRECT(float, double)
 
 // Pointers take behaviour from the format string (%s/%p/%n), so redirect
 // signed/unsigned/void via the const char* which contains the switch
-__PRINTF_DISPATCH_INDIRECT(const void *, const char *)
-__PRINTF_DISPATCH_INDIRECT(const signed char *, const char *)
-__PRINTF_DISPATCH_INDIRECT(const unsigned char *, const char *)
+__PRINTF_DISPATCH_INDIRECT(const char *, const void *)
+__PRINTF_DISPATCH_INDIRECT(const signed char *, const void *)
+__PRINTF_DISPATCH_INDIRECT(const unsigned char *, const void *)
 
+
+  
 #undef __PRINTF_DISPATCH_INDIRECT
 
 // because __builtin_strlen resolves to strlen, which amdgcn does not lower

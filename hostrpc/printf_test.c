@@ -189,34 +189,39 @@ EVILUNIT_MAIN_MODULE()
 
   TEST("output")
   {
-    // if (is_master_lane())
     {
       {
-        signed char x = 0;
-        printf("%n sc\n", &x);
-        // both these checks fail
-        CHECK((int)x == 0); // getting paranoid
-        CHECK(x == 0);       
-        printf("sc should be 0, got %d\n", (int)(x-1));
+        signed char x[8] = {0};
+        printf("%n sc0\n", &x[0]);
+        CHECK(x == 0);
+        // this printed "got " with %c, none of the 0 or hyphens
+        if (0)
+          printf("gotC %c-%c-%c-%c-%c-%c-%c-%c\n", x[0], x[1], x[2], x[3], x[4],
+                 x[5], x[6], x[7]);
+        if (0)
+          printf("gotD %d-%d-%d-%d-%d-%d-%d-%d\n", (int)x[0], (int)x[1],
+                 (int)x[2], (int)x[3], (int)x[4], (int)x[5], (int)x[6],
+                 (int)x[7]);
       }
 
       {
-        signed char x = 0;
-        printf(" %n sc\n", &x);
+        signed char x[8] = {0};
+        printf(" %n sc1\n", &x);
         CHECK(x == 1);
+        printf("got %d-%d-%d-%d-%d-%d-%d-%d\n", (int)x[0], (int)x[1], (int)x[2],
+               (int)x[3], (int)x[4], (int)x[5], (int)x[6], (int)x[7]);
       }
-      
+
       {
         short x = 0;
         printf("%n sh0\n", &x);
         CHECK(x == 0);
       }
-      
+
       {
         short x = 0;
-        printf(" %n sh\n", &x);
+        printf(" %n sh1\n", &x);
         CHECK(x == 1);
-        // printf("x should be 1, got %d\n", (int)x);
       }
       {
         int x = 0;
