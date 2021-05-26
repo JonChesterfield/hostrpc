@@ -346,7 +346,7 @@ TEST_CASE("x64_gcn_stress")
     // call
 
     auto page_to_index = [&](hostrpc::page_t *page) -> int64_t {
-      hostrpc::page_t *base = p.client.remote_buffer;
+      hostrpc::page_t *base = p.client.shared_buffer;
 
       intptr_t d = page - base;
       // fprintf(stderr,"base %lx, page %lx, diff %ld\n", (uint64_t)base,

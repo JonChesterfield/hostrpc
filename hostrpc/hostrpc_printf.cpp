@@ -437,7 +437,7 @@ struct operate
   operate(print_buffer_t *print_buffer, ServerType *ThisServer)
       : print_buffer(print_buffer), ThisServer(ThisServer)
   {
-    start_local_buffer = ThisServer->local_buffer;
+    start_local_buffer = ThisServer->shared_buffer;
   }
   operate() = default;
 
@@ -788,7 +788,7 @@ int hostrpc_print_enable_on_hsa_agent(hsa_executable_t ex,
 
   for (uint64_t i = 0; i < p->server.size(); i++)
     {
-      hostrpc::page_t *page = &p->server.local_buffer[i];
+      hostrpc::page_t *page = &p->server.shared_buffer[i];
       clear()(page);
     }
 

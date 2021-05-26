@@ -26,11 +26,9 @@ client_instance_from_components(SZ sz, client_type::inbox_t inbox,
                                 client_type::outbox_t outbox,
                                 client_type::lock_t active,
                                 client_type::staging_t staging,
-                                hostrpc::page_t* remote_buffer,
-                                hostrpc::page_t* local_buffer)
+                                hostrpc::page_t* shared_buffer)
 {
-  client_type c = {sz,      active,        inbox,       outbox,
-                   staging, remote_buffer, local_buffer};
+  client_type c = {sz, active, inbox, outbox, staging, shared_buffer};
   client_instance_direct(c);
 }
 

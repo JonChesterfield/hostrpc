@@ -97,8 +97,8 @@ host_client(AllocBuffer alloc_buffer, AllocInboxOutbox alloc_inbox_outbox,
     auto local_staging = careful_cast_to_bitmap<typename LocalType::staging_t>(
         res.local_staging.local_ptr(), N);
 
-    *local = (LocalType){sz,           local_active, recv, send, local_staging,
-                         local_buffer, local_buffer};
+    *local =
+        (LocalType){sz, local_active, recv, send, local_staging, local_buffer};
   }
 
   {
@@ -117,9 +117,8 @@ host_client(AllocBuffer alloc_buffer, AllocInboxOutbox alloc_inbox_outbox,
         careful_cast_to_bitmap<typename RemoteType::staging_t>(
             res.remote_staging.remote_ptr(), N);
 
-    *remote = (RemoteType){sz,           remote_active,  recv,
-                           send,         remote_staging, remote_buffer,
-                           remote_buffer};
+    *remote = (RemoteType){sz,   remote_active,  recv,
+                           send, remote_staging, remote_buffer};
   }
 #else
   // not yet implemented, need to do something with address space overloading

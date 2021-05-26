@@ -53,8 +53,7 @@ TEST_CASE("set up single word system")
 
   using namespace hostrpc;
   constexpr size_t N = 64;
-  page_t client_buffer[N];
-  page_t server_buffer[N];
+  page_t shared_buffer[N];
 
   HOSTRPC_ATOMIC(uint64_t) val(UINT64_MAX);
 
@@ -107,13 +106,8 @@ TEST_CASE("set up single word system")
 
   {
     safe_thread cl_thrd([&]() {
-      client_type cl = {SZ{},
-                        client_active,
-                        recv,
-                        send,
-                        client_staging,
-                        &server_buffer[0],
-                        &client_buffer[0]};
+      client_type cl = {SZ{}, client_active,  recv,
+                        send, client_staging, &shared_buffer[0]};
 
       fill f(&val);
       use u;
@@ -134,13 +128,8 @@ TEST_CASE("set up single word system")
     });
 
     safe_thread sv_thrd([&]() {
-      server_type sv = {SZ{},
-                        server_active,
-                        send,
-                        recv,
-                        server_staging,
-                        &client_buffer[0],
-                        &server_buffer[0]};
+      server_type sv = {SZ{}, server_active,  send,
+                        recv, server_staging, &shared_buffer[0]};
 
       uint32_t loc_arg = 0;
       for (;;)

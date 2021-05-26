@@ -47,8 +47,7 @@ struct server_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE uint32_t size() const { return SZ::N(); }
   HOSTRPC_ANNOTATE uint32_t words() const { return size() / wordBits(); }
 
-  page_t* remote_buffer;
-  page_t* local_buffer;
+  page_t* shared_buffer;
   lock_t active;
 
   inbox_t inbox;
@@ -58,8 +57,7 @@ struct server_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE server_impl()
       : SZ{0},
         Counter{},
-        remote_buffer(nullptr),
-        local_buffer(nullptr),
+        shared_buffer(nullptr),
         active{},
         inbox{},
         outbox{},
@@ -69,11 +67,10 @@ struct server_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE ~server_impl() {}
   HOSTRPC_ANNOTATE server_impl(SZ sz, lock_t active, inbox_t inbox,
                                outbox_t outbox, staging_t staging,
-                               page_t* remote_buffer, page_t* local_buffer)
+                               page_t* shared_buffer)
       : SZ{sz},
         Counter{},
-        remote_buffer(remote_buffer),
-        local_buffer(local_buffer),
+        shared_buffer(shared_buffer),
         active(active),
         inbox(inbox),
         outbox(outbox),
@@ -84,8 +81,7 @@ struct server_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE void dump()
   {
 #if HOSTRPC_HAVE_STDIO
-    fprintf(stderr, "remote_buffer %p\n", remote_buffer);
-    fprintf(stderr, "local_buffer  %p\n", local_buffer);
+    fprintf(stderr, "shared_buffer %p\n", shared_buffer);
     fprintf(stderr, "inbox         %p\n", inbox.a);
     fprintf(stderr, "outbox        %p\n", outbox.a);
     fprintf(stderr, "active        %p\n", active.a);
@@ -258,7 +254,7 @@ struct server_impl : public SZT, public Counter
 #endif
 
     // make the calls
-    op(&local_buffer[slot]);
+    op(&shared_buffer[slot]);
   }
 
   template <typename Operate>
@@ -299,7 +295,7 @@ struct server_impl : public SZT, public Counter
     const uint32_t size = this->size();
     if (have_precondition)
       {
-        cl(&local_buffer[slot]);
+        cl(&shared_buffer[slot]);
       }
 
     platform::fence_release();

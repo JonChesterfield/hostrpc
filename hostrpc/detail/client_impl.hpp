@@ -59,8 +59,7 @@ struct client_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE slot_type size() const { return SZ::N(); }
   HOSTRPC_ANNOTATE slot_type words() const { return size() / wordBits(); }
 
-  page_t* remote_buffer;
-  page_t* local_buffer;
+  page_t* shared_buffer;
   lock_t active;
 
   inbox_t inbox;
@@ -70,8 +69,7 @@ struct client_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE client_impl()
       : SZ{0},
         Counter{},
-        remote_buffer(nullptr),
-        local_buffer(nullptr),
+        shared_buffer(nullptr),
         active{},
         inbox{},
         outbox{},
@@ -81,18 +79,17 @@ struct client_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE ~client_impl() {}
   HOSTRPC_ANNOTATE client_impl(SZ sz, lock_t active, inbox_t inbox,
                                outbox_t outbox, staging_t staging,
-                               page_t* remote_buffer, page_t* local_buffer)
+                               page_t* shared_buffer)
 
       : SZ{sz},
         Counter{},
-        remote_buffer(remote_buffer),
-        local_buffer(local_buffer),
+        shared_buffer(shared_buffer),
         active(active),
         inbox(inbox),
         outbox(outbox),
         staging(staging)
   {
-    constexpr size_t client_size = 48;
+    constexpr size_t client_size = 40;
 
     // SZ is expected to be zero bytes or a uint64_t
     struct SZ_local : public SZ
@@ -119,8 +116,7 @@ struct client_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE void dump()
   {
 #if HOSTRPC_HAVE_STDIO
-    fprintf(stderr, "remote_buffer %p\n", remote_buffer);
-    fprintf(stderr, "local_buffer  %p\n", local_buffer);
+    fprintf(stderr, "shared_buffer %p\n", shared_buffer);
     fprintf(stderr, "inbox         %p\n", inbox.a);
     fprintf(stderr, "outbox        %p\n", outbox.a);
     fprintf(stderr, "active        %p\n", active.a);
@@ -484,7 +480,7 @@ struct client_impl : public SZT, public Counter
 
     // wave_populate
     // Fill may have no precondition, in which case this doesn't need to run
-    fill(&local_buffer[slot]);
+    fill(&shared_buffer[slot]);
 
     // wave_publish work
     {
@@ -543,7 +539,7 @@ struct client_impl : public SZT, public Counter
     platform::fence_acquire();
 
     // call the continuation
-    use(&local_buffer[slot]);
+    use(&shared_buffer[slot]);
 
     // mark the work as no longer in use
     // todo: is it better to leave this for the GC?

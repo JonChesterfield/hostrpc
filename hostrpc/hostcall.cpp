@@ -196,7 +196,7 @@ class hostcall_impl
     uint64_t hostrpc_nop = UINT64_MAX;
     for (uint64_t i = 0; i < res->server.size(); i++)
       {
-        hostrpc::page_t *page = &res->server.local_buffer[i];
+        hostrpc::page_t *page = &res->server.shared_buffer[i];
         for (uint64_t c = 0; c < 64; c++)
           {
             hostrpc::cacheline_t *line = &page->cacheline[c];

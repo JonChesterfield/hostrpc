@@ -24,12 +24,11 @@ using server_type_direct = hostrpc::server_impl<uint64_t, SZ>;
 extern "C" HOSTRPC_ANNOTATE void server_instance_direct(
     server_type_direct::inbox_t inbox, server_type_direct::outbox_t outbox,
     server_type_direct::lock_t active, server_type_direct::staging_t staging,
-    hostrpc::page_t *remote_buffer, hostrpc::page_t *local_buffer,
-    hostrpc::operate_direct op, hostrpc::clear_direct cl)
+    hostrpc::page_t *shared_buffer, hostrpc::operate_direct op,
+    hostrpc::clear_direct cl)
 {
   SZ sz;
-  server_type_direct s = {sz,      active,        inbox,       outbox,
-                          staging, remote_buffer, local_buffer};
+  server_type_direct s = {sz, active, inbox, outbox, staging, shared_buffer};
 
   for (;;)
     {
