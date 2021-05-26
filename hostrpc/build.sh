@@ -180,6 +180,7 @@ $OPT -strip-debug threads_bootstrap.gcn.bc -S -o threads_bootstrap.gcn.ll
 $CXX_X64_LD threads_bootstrap.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o threads_bootstrap.x64.exe
 
 
+
 $CXX_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.code.bc
 $CXXCL_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.kern.bc
 $LINK obj/x64_gcn_debug.gcn.code.bc obj/x64_gcn_debug.gcn.kern.bc obj/hostrpc_printf.gcn.bc -o obj/x64_gcn_debug.gcn.bc
@@ -228,6 +229,16 @@ if (($have_nvptx)); then
 
  $CLANGXX nvptx_loader.cpp obj/cuda_support.x64.bc --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -lcudart -pthread -o ../nvptx_loader.exe
 fi
+
+
+$CXX_GCN pool_interface.cpp -O3 -c -o obj/pool_interface.gcn.bc
+$CXX_X64 pool_interface.cpp -O3 -c -o obj/pool_interface.x64.bc
+
+$CXX_X64_LD -pthread obj/pool_interface.x64.bc -o obj/pool_interface.x64.exe
+
+$LINK obj/hostrpc_printf.gcn.bc amdgcn_loader_device.gcn.bc obj/pool_interface.gcn.bc -o obj/pool_interface.merged.gcn.bc
+$CXX_GCN_LD obj/pool_interface.merged.gcn.bc -o obj/pool_interface.gcn.exe
+
 
 if (($have_amdgcn)); then
 $CLANG -std=c11 $COMMONFLAGS $GCNFLAGS test_example.c -c -o obj/test_example.gcn.bc

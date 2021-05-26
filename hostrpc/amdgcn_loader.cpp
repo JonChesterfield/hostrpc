@@ -244,7 +244,7 @@ uint64_t read_symbol(raiifile *file, const char *name, uint64_t fallback)
   return fallback;
 }
 
-static void callbackQueue(hsa_status_t status, hsa_queue_t *source, void *data)
+static void callbackQueue(hsa_status_t status, hsa_queue_t *source, void *)
 {
   if (status != HSA_STATUS_SUCCESS)
     {
