@@ -193,7 +193,7 @@ EVILUNIT_MAIN_MODULE()
       {
         signed char x[8] = {0};
         printf("%n sc0\n", &x[0]);
-        CHECK(x == 0);
+        CHECK(x[0] == 0);
         // this printed "got " with %c, none of the 0 or hyphens
         if (0)
           printf("gotC %c-%c-%c-%c-%c-%c-%c-%c\n", x[0], x[1], x[2], x[3], x[4],
@@ -207,7 +207,7 @@ EVILUNIT_MAIN_MODULE()
       {
         signed char x[8] = {0};
         printf(" %n sc1\n", &x);
-        CHECK(x == 1);
+        CHECK(x[0] == 1);
         printf("got %d-%d-%d-%d-%d-%d-%d-%d\n", (int)x[0], (int)x[1], (int)x[2],
                (int)x[3], (int)x[4], (int)x[5], (int)x[6], (int)x[7]);
       }

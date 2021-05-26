@@ -8,7 +8,7 @@
 #include <stdint.h>
 
 // gpu client api
-#if defined(__AMDGCN__) || defined(__CUDACC__)
+#if HOSTRPC_GPU
 void hostcall_client(uint64_t data[8]);
 void hostcall_client_async(uint64_t data[8]);
 #endif
@@ -16,11 +16,11 @@ void hostcall_client_async(uint64_t data[8]);
 // Implementation api. This construct is a singleton.
 namespace hostcall_ops
 {
-#if (HOSTRPC_HOST)
+#if HOSTRPC_HOST
 void operate(hostrpc::page_t *page);
 void clear(hostrpc::page_t *page);
 #endif
-#if (HOSTRPC_AMDGCN || HOSTRPC_NVPTX)
+#if HOSTRPC_GPU
 void pass_arguments(hostrpc::page_t *page, uint64_t data[8]);
 void use_result(hostrpc::page_t *page, uint64_t data[8]);
 #endif

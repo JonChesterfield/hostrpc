@@ -16,9 +16,6 @@
 #if defined(__CUDA__)
 #warning "Defined __CUDA__"
 #endif
-#if defined(__CUDACC__)
-#warning "Defined __CUDACC__"
-#endif
 #if defined(__CUDA_ARCH__)
 #warning "Defined __CUDA_ARCH__"
 #endif

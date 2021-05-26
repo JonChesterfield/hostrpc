@@ -81,10 +81,8 @@ LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR -lelf"
 
 AMDGPU="--target=amdgcn-amd-amdhsa -march=$GFX -mcpu=$GFX -mllvm -amdgpu-fixed-function-abi -Xclang -fconvergent-functions -nogpulib"
 
-# Not sure why CUDACC isn't being set by clang here, probably a bad sign
 PTX_VER="-Xclang -target-feature -Xclang +ptx63"
-
-NVGPU="--target=nvptx64-nvidia-cuda -march=sm_50 $PTX_VER -D__CUDACC__"
+NVGPU="--target=nvptx64-nvidia-cuda -march=sm_50 $PTX_VER "
 
 COMMONFLAGS="-Wall -Wextra -emit-llvm " # -DNDEBUG -Wno-type-limits "
 # cuda/openmp pass the host O flag through to ptxas, which crashes on debug info if > 0
