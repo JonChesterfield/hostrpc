@@ -593,14 +593,17 @@ struct operate
 
             if (thread_print.acc.tag == func_print_nop)
               {
-                if (0) printf("Got passed a write_int64, initial value %lu (acc %d)\n",
-                       p->payload,thread_print.bytes_written);
+                if (0)
+                  printf(
+                      "Got passed a write_int64, initial value %lu (acc %d)\n",
+                      p->payload, thread_print.bytes_written);
                 thread_print.update_bytes_written(
                     thread_print.formatter.piecewise_pass_element_T<int64_t *>(
                         &p->payload));
                 p->payload = thread_print.bytes_written;
-                if (0)                 printf("Got passed a write_int64, later value %lu (acc %d)\n",
-                       p->payload, thread_print.bytes_written);
+                if (0)
+                  printf("Got passed a write_int64, later value %lu (acc %d)\n",
+                         p->payload, thread_print.bytes_written);
                 thread_print.acc.tag = func_piecewise_pass_element_write_int64;
                 thread_print.acc = {};
               }

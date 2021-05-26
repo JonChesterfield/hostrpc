@@ -212,8 +212,9 @@ uint64_t read_symbol(raiifile *file, const char *name, uint64_t fallback)
       get_symbol_info_without_loading(static_cast<char *>(file->mmapped_bytes),
                                       file->mmapped_length, name, &sym))
     {
-      if (0) fprintf(stderr, "Found symbol %s, %p / %u / %u\n", name, sym.addr,
-              sym.size, sym.sh_type);
+      if (0)
+        fprintf(stderr, "Found symbol %s, %p / %u / %u\n", name, sym.addr,
+                sym.size, sym.sh_type);
       if (sym.size == 8)
         {
           uint64_t r;
@@ -474,9 +475,11 @@ static int main_with_hsa(int argc, char **argv)
 
   hsa::initialize_packet_defaults(packet);
 
-  packet->workgroup_size_x = read_symbol(&file, "main_workgroup_size_x",  packet->workgroup_size_x);
-  packet->grid_size_x = read_symbol(&file, "main_grid_size_x",  packet->workgroup_size_x);
-  
+  packet->workgroup_size_x =
+      read_symbol(&file, "main_workgroup_size_x", packet->workgroup_size_x);
+  packet->grid_size_x =
+      read_symbol(&file, "main_grid_size_x", packet->workgroup_size_x);
+
   uint64_t kernel_address = find_entry_address(ex);
   packet->kernel_object = kernel_address;
 

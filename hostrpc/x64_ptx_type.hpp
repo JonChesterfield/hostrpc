@@ -12,11 +12,12 @@
 
 namespace hostrpc
 {
-using x64_ptx_type_base = client_server_pair_t<
-    hostrpc::size_runtime, copy_functor_given_alias, uint32_t,
-    hostrpc::allocator::cuda_shared<alignof(page_t)>,
-    hostrpc::allocator::cuda_shared<64>, hostrpc::allocator::host_libc<64>,
-    hostrpc::allocator::cuda_gpu<64>>;
+using x64_ptx_type_base =
+    client_server_pair_t<hostrpc::size_runtime, uint32_t,
+                         hostrpc::allocator::cuda_shared<alignof(page_t)>,
+                         hostrpc::allocator::cuda_shared<64>,
+                         hostrpc::allocator::host_libc<64>,
+                         hostrpc::allocator::cuda_gpu<64>>;
 
 struct x64_ptx_type : public x64_ptx_type_base
 {

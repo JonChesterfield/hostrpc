@@ -13,11 +13,12 @@
 
 namespace hostrpc
 {
-using x64_x64_type_base = client_server_pair_t<
-    hostrpc::size_runtime, copy_functor_given_alias, uint64_t,
-    hostrpc::allocator::host_libc<alignof(page_t)>,
-    hostrpc::allocator::host_libc<64>, hostrpc::allocator::host_libc<64>,
-    hostrpc::allocator::host_libc<64> >;
+using x64_x64_type_base =
+    client_server_pair_t<hostrpc::size_runtime, uint64_t,
+                         hostrpc::allocator::host_libc<alignof(page_t)>,
+                         hostrpc::allocator::host_libc<64>,
+                         hostrpc::allocator::host_libc<64>,
+                         hostrpc::allocator::host_libc<64> >;
 
 struct x64_x64_type : public x64_x64_type_base
 {

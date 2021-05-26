@@ -42,8 +42,7 @@ enum class client_state : uint8_t
 // criteria for the slot to be awaiting gc?
 
 // enabling counters breaks codegen for amdgcn,
-template <typename WordT, typename SZT, typename Copy,
-          typename Counter = counters::client>
+template <typename WordT, typename SZT, typename Counter = counters::client>
 struct client_impl : public SZT, public Counter
 {
   using Word = WordT;
@@ -485,9 +484,7 @@ struct client_impl : public SZT, public Counter
 
     // wave_populate
     // Fill may have no precondition, in which case this doesn't need to run
-    Copy::pull_to_client_from_server(&local_buffer[slot], &remote_buffer[slot]);
     fill(&local_buffer[slot]);
-    Copy::push_from_client_to_server(&remote_buffer[slot], &local_buffer[slot]);
 
     // wave_publish work
     {
@@ -545,14 +542,8 @@ struct client_impl : public SZT, public Counter
   {
     platform::fence_acquire();
 
-    Copy::pull_to_client_from_server(&local_buffer[slot], &remote_buffer[slot]);
     // call the continuation
     use(&local_buffer[slot]);
-
-    // Copying the state back to the server is a nop for aliased case,
-    // and is only necessary if the server has a non-nop garbage clear
-    // callback
-    Copy::push_from_client_to_server(&remote_buffer[slot], &local_buffer[slot]);
 
     // mark the work as no longer in use
     // todo: is it better to leave this for the GC?

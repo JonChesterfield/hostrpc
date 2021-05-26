@@ -57,9 +57,11 @@ int append_until_next_loc(incr &glob)
       int written = append_bytes(&fmt[glob.loc], next_start - glob.loc, glob);
       glob.loc = next_start;
       return written;
-    } else {
-    return 0;
-  }
+    }
+  else
+    {
+      return 0;
+    }
 }
 
 }  // namespace
@@ -83,8 +85,8 @@ struct inject_nul_in_format
 };
 
 template <typename T>
-int bytes_for_arg(bool verbose, char *fmt, size_t next_start,
-                     size_t next_end, T v)
+int bytes_for_arg(bool verbose, char *fmt, size_t next_start, size_t next_end,
+                  T v)
 {
   if (verbose)
     {
@@ -103,22 +105,22 @@ int bytes_for_arg(bool verbose, char *fmt, size_t next_start,
 
   if (verbose)
     {
-      (printf)("Invoking sprintf(NULL) on format %s, value %lu\n", &fmt[next_start],
-               (uint64_t)v);
+      (printf)("Invoking sprintf(NULL) on format %s, value %lu\n",
+               &fmt[next_start], (uint64_t)v);
     }
   int r = snprintf(NULL, 0, &fmt[next_start], v);
   if (verbose)
     {
       (printf)("  -> claims to require %d bytes\n", r);
     }
-  return r;  
+  return r;
 }
 
 }  // namespace
 
 template <typename T>
 int incr::piecewise_pass_element_T(T value)
-{  
+{
   char *fmt = format.data();
   size_t len = format.size();
   size_t next_start = __printf_next_start(fmt, len, loc);
@@ -137,14 +139,16 @@ int incr::piecewise_pass_element_T(T value)
     }
 
   int sbytes = bytes_for_arg(verbose, fmt, next_start, next_end, value);
-  if (sbytes < 0) {
-    if (verbose) {
-      (printf)("error! giving up\n");
+  if (sbytes < 0)
+    {
+      if (verbose)
+        {
+          (printf)("error! giving up\n");
+        }
+      return sbytes;
     }
-    return sbytes;
-  }
   size_t bytes = (size_t)sbytes;
-  
+
   if (verbose)
     (printf)("output size %zu, increasing by %zu\n", output.size(), bytes);
 
@@ -158,20 +162,25 @@ int incr::piecewise_pass_element_T(T value)
           "writing fmt %s into loc %zu, giving %zu bytes. Next end at %zu\n",
           &fmt[next_start], output_end, bytes, next_end);
     size_t one_past = next_end + 1;
-    inject_nul_in_format nul(fmt, one_past);    
-    int sn_rc = snprintf(output.data() + output_end,
-             bytes + 1,  // overwrites the trailing nul that is already there
-             &fmt[next_start], value);
-    if (verbose && (sn_rc != sbytes)) {
-      (printf)("Consistency failure, %d != %d\n", sn_rc, sbytes);
-    }
+    inject_nul_in_format nul(fmt, one_past);
+    int sn_rc = snprintf(
+        output.data() + output_end,
+        bytes + 1,  // overwrites the trailing nul that is already there
+        &fmt[next_start], value);
+    if (verbose && (sn_rc != sbytes))
+      {
+        (printf)("Consistency failure, %d != %d\n", sn_rc, sbytes);
+      }
     // expect (sn_rc == sbytes), thus positive
-    if (sn_rc < 0) { /*todo: test it */ return sn_rc; }
+    if (sn_rc < 0)
+      { /*todo: test it */
+        return sn_rc;
+      }
     rc += sn_rc;
   }
 
   loc = next_end + 1;
-  if (verbose) (printf)("Setting loc to %zu, return %d bytes\n", loc,rc);
+  if (verbose) (printf)("Setting loc to %zu, return %d bytes\n", loc, rc);
   return rc;
 }
 
@@ -213,7 +222,7 @@ template int incr::piecewise_pass_element_T(unsigned long long);
 template int incr::piecewise_pass_element_T(double);
 
 // may want a different function name here for writing
-template int incr::piecewise_pass_element_T(int64_t*);
+template int incr::piecewise_pass_element_T(int64_t *);
 
 #include "printf_specifier.data"
 

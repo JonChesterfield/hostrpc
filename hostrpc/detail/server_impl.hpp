@@ -29,8 +29,7 @@ enum class server_state : uint8_t
   result_with_thread = 0b111,
 };
 
-template <typename WordT, typename SZT, typename Copy,
-          typename Counter = counters::server>
+template <typename WordT, typename SZT, typename Counter = counters::server>
 struct server_impl : public SZT, public Counter
 {
   using Word = WordT;
@@ -259,9 +258,7 @@ struct server_impl : public SZT, public Counter
 #endif
 
     // make the calls
-    Copy::pull_to_server_from_client(&local_buffer[slot], &remote_buffer[slot]);
     op(&local_buffer[slot]);
-    Copy::push_from_server_to_client(&remote_buffer[slot], &local_buffer[slot]);
   }
 
   template <typename Operate>
@@ -302,12 +299,7 @@ struct server_impl : public SZT, public Counter
     const uint32_t size = this->size();
     if (have_precondition)
       {
-        // Move data and clear. TODO: Elide the copy for nop clear
-        Copy::pull_to_server_from_client(&local_buffer[slot],
-                                         &remote_buffer[slot]);
         cl(&local_buffer[slot]);
-        Copy::push_from_server_to_client(&remote_buffer[slot],
-                                         &local_buffer[slot]);
       }
 
     platform::fence_release();

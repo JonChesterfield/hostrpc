@@ -666,7 +666,7 @@ HOSTRPC_ANNOTATE bool atomic_compare_exchange_weak(HOSTRPC_ATOMIC(T) * addr,
 HOSTRPC_ANNOTATE inline uint32_t client_start_slot() { return 0; }
 }  // namespace nvptx
 }  // namespace platform
-#endif // HOSTRPC_NVPTX
+#endif  // HOSTRPC_NVPTX
 
 // Dispatch in a fashion compatible with c++, cuda, hip, opencl, openmp
 

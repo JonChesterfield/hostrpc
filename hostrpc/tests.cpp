@@ -89,12 +89,10 @@ TEST_CASE("set up single word system")
 
   x64_alloc_deleter store;
 
-  hostrpc::copy_functor_memcpy_pull cp;
-
   using Word = uint64_t;
-  using client_type = client_impl<Word, SZ, decltype(cp)>;
+  using client_type = client_impl<Word, SZ>;
 
-  using server_type = server_impl<Word, SZ, decltype(cp)>;
+  using server_type = server_impl<Word, SZ>;
 
   auto send = x64_alloc<client_type::outbox_t>(N, &store);
   auto recv = x64_alloc<client_type::inbox_t>(N, &store);

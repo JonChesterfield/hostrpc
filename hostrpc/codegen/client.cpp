@@ -5,12 +5,7 @@
 
 using SZ = hostrpc::size_compiletime<128>;
 
-struct copy_functor_nop
-    : public hostrpc::copy_functor_interface<copy_functor_nop>
-{
-};
-
-using client_type = hostrpc::client_impl<uint64_t, SZ, copy_functor_nop>;
+using client_type = hostrpc::client_impl<uint64_t, SZ>;
 
 extern "C" __attribute__((noinline)) HOSTRPC_ANNOTATE void
 client_instance_direct(client_type& c)
