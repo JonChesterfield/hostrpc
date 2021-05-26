@@ -342,7 +342,6 @@ fi
 
 $CXX_X64 -I$HSAINC tests.cpp -c -o tests.x64.bc
 $CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc
-$CXX_X64 -I$HSAINC x64_x64_transaction.cpp -c -o x64_x64_transaction.x64.bc
 
 $CXX_GCN -DDERIVE_VAL=$DERIVE x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.code.bc
 $CXXCL_GCN -DDERIVE_VAL=$DERIVE x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.kern.bc
@@ -448,7 +447,6 @@ fi
 $CXX_X64_LD prototype/states.x64.bc obj/catch.o $LDFLAGS -o prototype/states.exe
 
 $CXX_X64_LD x64_x64_stress.x64.bc obj/host_support.x64.bc obj/catch.o $LDFLAGS -o x64_x64_stress.exe
-$CXX_X64_LD x64_x64_transaction.x64.bc obj/host_support.x64.bc obj/catch.o $LDFLAGS -o x64_x64_transaction.exe
 
 $CXX_X64_LD x64_gcn_stress.x64.bc obj/hsa_support.x64.bc obj/catch.o $LDFLAGS -o x64_gcn_stress.exe
 
@@ -479,7 +477,6 @@ fi
 
 time ./tests.exe
 time ./x64_x64_stress.exe
-time ./x64_x64_transaction.exe
 
 if (($have_amdgcn)); then
 echo "Call hostcall/loader executable"

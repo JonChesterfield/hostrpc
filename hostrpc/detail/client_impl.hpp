@@ -356,24 +356,6 @@ struct client_impl : public SZT, public Counter
     return true;
   }
 
-  template <typename Op>
-  HOSTRPC_ANNOTATE uint32_t rpc_port_transaction_start(Op op)
-  {
-    uint32_t port = rpc_open_port();
-    if (port != UINT32_MAX)
-      {
-        rpc_port_send(port, op);
-      }
-    return port;
-  }
-
-  template <typename Op>
-  HOSTRPC_ANNOTATE void rpc_port_transaction_finish(uint32_t port, Op op)
-  {
-    rpc_port_recv(port, op);
-    rpc_close_port(port);
-  }
-
   // rpc_invoke returns true if it successfully launched the task
   // returns false if no slot was available
 
@@ -389,30 +371,6 @@ struct client_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE bool rpc_invoke(Fill fill, Use use) noexcept
   {
     return rpc_port_invoke(fill, use);
-  }
-
-  // Return true & populate token on success, false on failure to find slot
-  template <typename Fill>
-  HOSTRPC_ANNOTATE bool rpc_transaction_start(Fill fill,
-                                              slot_type* token) noexcept
-  {
-    uint32_t r = rpc_port_transaction_start(fill);
-    if (r == UINT32_MAX)
-      {
-        return false;
-      }
-    else
-      {
-        *token = r;
-        return true;
-      }
-  }
-
-  template <typename Use>
-  HOSTRPC_ANNOTATE void rpc_transaction_finish(Use use,
-                                               slot_type token) noexcept
-  {
-    rpc_port_transaction_finish(token, use);
   }
 
  private:
