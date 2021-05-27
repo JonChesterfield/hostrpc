@@ -754,7 +754,6 @@ inline int launch_kernel(hsa::executable& ex, hsa_queue_t* queue,
       (packet_id & (queue->size - 1));
 
   hsa::initialize_packet_defaults(packet);
-
   uint64_t symbol_address = ex.get_symbol_address_by_name(kernel_entry);
   auto m = ex.get_kernel_info();
   auto it = m.find(std::string(kernel_entry));

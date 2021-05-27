@@ -54,20 +54,21 @@ struct threads_base
   }
 
  private:
-
   // This is not safe to run from outside of the pool
-  
+
   void loop()
   {
   start:;
     uint32_t uuid = Implementation().get_current_uuid();
-    if (uuid >= requested())
+    uint32_t req = requested();
+
+    if (uuid >= req)
       {
         deallocate();
         return;
       }
 
-    if (alive() < requested())
+    if (alive() < req)
       {
         // spawn extra. could spawn multiple extra.
         spawn();
@@ -75,8 +76,7 @@ struct threads_base
 
     Implementation().run();
 
-    bool r = Implementation().respawn_self();
-    if (r)
+    if (Implementation().respawn_self())
       {
         return;
       }
@@ -149,10 +149,7 @@ struct via_pthreads : public threads_base<Max, via_pthreads<Derived, Max>>
 
   void run() { static_cast<Derived*>(this)->run(); }
 
-  void bootstrap_target()
-  {
-    static_cast<Derived*>(this)->loop();
-  }
+  void bootstrap_target() { static_cast<Derived*>(this)->loop(); }
 
   void bootstrap(const unsigned char*)
   {
@@ -160,6 +157,11 @@ struct via_pthreads : public threads_base<Max, via_pthreads<Derived, Max>>
     __builtin_unreachable();
   }
 
+  void teardown()
+  {
+    // TODO
+    __builtin_unreachable();
+  }
 
  private:
   static thread_local uint32_t current_uuid;
@@ -229,7 +231,6 @@ static inline bool is_master_lane(void)
   return lane_id == lowest_active;
 }
 
-  
 #include "enqueue_dispatch.hpp"
 
 template <typename Derived, uint32_t Max>
@@ -268,11 +269,8 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
 
   void run() { static_cast<Derived*>(this)->run(); }
 
-  void bootstrap_target()
-  {
-    static_cast<Derived*>(this)->loop(); 
-  }
-  
+  void bootstrap_target() { static_cast<Derived*>(this)->loop(); }
+
   void bootstrap(const unsigned char* kernel)
   {
     uint32_t req = load_from_reserved_addr();
@@ -286,38 +284,52 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
         return;
       }
 
-#if 0
-    if (is_master_lane())
-      {
-        printf("Can print %p\n",(const void*)kernel);
-        for (unsigned i = 0; i < 64; i++)
-          {
-            printf(" %u", (unsigned) kernel[i]);
-          }
-        printf(" end\n");
-      }
-#endif
-    
     // If none are running, need to start the process
 
-    auto func = [=](unsigned char* packet) {
-      uint64_t addr = 0;  // Will be uuid 0.
-      __builtin_memcpy(packet + 40, &addr, 8); // overwrite kernarg address
-      __builtin_memcpy(packet + 48, &addr, 8); // overwrite with uuid 0
-    };
-
-       if (is_master_lane())
-         {
-           printf("try to enqueue\n");
-           dump_kernel(kernel);
-         }
-    
-    // this seems to be faulting
-    enqueue_dispatch(func, kernel);
-
-    // Once it's been copied into the array, can return
+    base::allocate(); // increases live count to 1 for the new thread
+    enqueue_dispatch(kernel);
+    // return to dispose of this bootstrap kernel
   }
 
+  void teardown()
+  {
+  start:;
+    base::set_requested(0);
+    uint32_t a = base::alive();
+
+    if (a != 0)
+      {
+        if (respawn_self())
+          {
+            return;
+          }
+        else
+          {
+            goto start;
+          }
+      }
+      
+    // All (pool managed) threads have exited. Teardown self.
+    __attribute__((address_space(4))) void* p =
+      __builtin_amdgcn_dispatch_ptr();
+
+    // Read signal field. If we have one, return to fire it        
+    uint64_t tmp;
+    __builtin_memcpy(&tmp, (const unsigned char*)p + (448 / 8), 8);  // read signal slot
+    if (tmp != 0)
+      {
+        return;
+      }
+
+    // If we don't have a signal, retrieve it from userdata and relaunch         
+    auto func = [=](unsigned char* packet) {
+                  uint64_t tmp;
+                  // read signal from reserved2 and write it to signal slot
+                  __builtin_memcpy(&tmp, packet + (384 / 8), 8);
+                  __builtin_memcpy(packet + (448 / 8), &tmp, 8);
+                };
+    enqueue_dispatch(func, (const unsigned char*)p);
+  }
 
  private:
   __attribute__((always_inline)) static char* get_reserved_addr()
@@ -367,12 +379,8 @@ struct api : private Via<Derived, Max>
     return static_cast<Base*>(instance())->requested();
   }
 
-  static uint32_t alive()
-  {
-    return static_cast<Base*>(instance())->alive();
-  }
+  static uint32_t alive() { return static_cast<Base*>(instance())->alive(); }
 
-  
   static void spawn() { return static_cast<Base*>(instance())->spawn(); }
 
   static void run() { static_cast<Base*>(instance())->run(); }
@@ -386,7 +394,8 @@ struct api : private Via<Derived, Max>
   {
     return static_cast<Base*>(instance())->bootstrap_target();
   }
-  
+
+  static void teardown() { return static_cast<Base*>(instance())->teardown(); }
 };
 
 #if HOSTRPC_HOST

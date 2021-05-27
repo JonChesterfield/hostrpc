@@ -497,6 +497,7 @@ static int main_with_hsa(int argc, char **argv)
 
   auto m = ex.get_kernel_info();
 
+  // todo: use hsa::launch?
   auto it = m.find(std::string(kernel_entry));
   if (it != m.end())
     {
