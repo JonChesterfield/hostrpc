@@ -8,7 +8,7 @@ namespace hostrpc
 {
 template <typename SZ, int device_num>
 using x64_device_type_base =
-    client_server_pair_t<SZ, copy_functor_given_alias, uint64_t,
+    client_server_pair_t<SZ, uint64_t,
                          allocator::openmp_shared<alignof(page_t)>,
                          allocator::openmp_shared<64>, allocator::host_libc<64>,
                          allocator::openmp_device<64, device_num>>;

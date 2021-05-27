@@ -1,3 +1,6 @@
+#ifndef POOL_INTERFACE_HPP_INCLUDED
+#define POOL_INTERFACE_HPP_INCLUDED
+
 #include "detail/platform_detect.hpp"
 
 #include "detail/platform.hpp"
@@ -12,6 +15,8 @@
 #include "hostrpc_printf.h"
 #endif
 
+namespace pool_interface
+{
 template <typename Derived, template <typename, uint32_t> class Via,
           uint32_t Max>
 struct api;
@@ -139,6 +144,12 @@ struct via_pthreads : public threads_base<Max, via_pthreads<Derived, Max>>
 
   void run() { static_cast<Derived*>(this)->run(); }
 
+  void bootstrap(const unsigned char*)
+  {
+    // TODO
+    __builtin_unreachable();
+  }
+
  private:
   static thread_local uint32_t current_uuid;
 
@@ -189,13 +200,33 @@ using pthread_pool = api<Derived, via_pthreads, Max>;
 
 #if HOSTRPC_AMDGCN
 
+static inline uint32_t get_lane_id(void)
+{
+  return __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
+}
+static inline bool is_master_lane(void)
+{
+  // TODO: 32 wide wavefront, consider not using raw intrinsics here
+  uint64_t activemask = __builtin_amdgcn_read_exec();
+
+  // TODO: check codegen for trunc lowest_active vs expanding lane_id
+  // TODO: ffs is lifted from openmp runtime, looks like it should be ctz
+  uint32_t lowest_active = __builtin_ffsl(activemask) - 1;
+  uint32_t lane_id = get_lane_id();
+
+  // TODO: readfirstlane(lane_id) == lowest_active?
+  return lane_id == lowest_active;
+}
+
+  
 #include "enqueue_dispatch.hpp"
 
 template <typename Derived, uint32_t Max>
 struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
 {
  public:
-  friend threads_base<Max, via_hsa<Derived, Max>>;
+  using base = threads_base<Max, via_hsa<Derived, Max>>;
+  friend base;
 
   uint32_t get_current_uuid()
   {
@@ -226,11 +257,53 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
 
   void run() { static_cast<Derived*>(this)->run(); }
 
+  void bootstrap(const unsigned char* kernel)
+  {
+    uint32_t req = load_from_reserved_addr();
+    base::set_requested(req);
+    if (req == 0)
+      {
+        return;
+      }
+    if (base::alive() != 0)
+      {
+        return;
+      }
+
+    if (is_master_lane())
+      {
+        printf("Can print %p\n",(const void*)kernel);
+        for (unsigned i = 0; i < 64; i++)
+          {
+            printf(" %u", kernel[i]);
+          }
+        printf(" end\n");
+      }
+    
+    // If none are running, need to start the process
+
+    auto func = [=](unsigned char* packet) {
+      uint64_t addr = 0;  // Will be uuid 0.
+      __builtin_memcpy(packet + 40, &addr, 8);
+    };
+
+    // this seems to be faulting, may want printf via ctor
+    return; enqueue_dispatch(func, kernel);
+
+    // Once it's been copied into the array, can return
+  }
+
  private:
   __attribute__((always_inline)) static char* get_reserved_addr()
   {
     __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();
     return (char*)p + 48;
+  }
+  static uint32_t load_from_reserved_addr()
+  {
+    uint64_t tmp;
+    __builtin_memcpy(&tmp, get_reserved_addr(), 8);
+    return (uint32_t)tmp;
   }
 };
 
@@ -271,6 +344,11 @@ struct api : private Via<Derived, Max>
   static void spawn() { return static_cast<Base*>(instance())->spawn(); }
 
   static void run() { static_cast<Base*>(instance())->run(); }
+
+  static void bootstrap(const unsigned char* k)
+  {
+    return static_cast<Base*>(instance())->bootstrap(k);
+  }
 };
 
 #if HOSTRPC_HOST
@@ -282,38 +360,5 @@ template <typename Derived, uint32_t Max>
 using default_pool = hsa_pool<Derived, Max>;
 #endif
 
-struct example : public default_pool<example, 16>
-{
-  void run()
-  {
-    printf("run from %u\n", get_current_uuid());
-    platform::sleep();
-  }
-};
-
-extern "C"
-int main()
-{
-  example::set_requested(1);
-
-  printf("Hit line %u\n", __LINE__);
-  printf("Hit line %u\n", __LINE__);
-
-  example::set_requested(3);
-  printf("Hit line %u\n", __LINE__);
-
-  example::spawn();
-  printf("Hit line %u\n", __LINE__);
-
-  //  example::loop();
-  printf("Hit line %u\n", __LINE__);
-
-  platform::sleep();
-
-  example::set_requested(1);
-  platform::sleep();
-  example::set_requested(0);
-  platform::sleep();
-
-  return 0;
-}
+}  // namespace pool_interface
+#endif

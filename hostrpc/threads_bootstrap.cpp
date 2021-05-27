@@ -1,5 +1,16 @@
 #include "detail/platform_detect.hpp"
+
+#if !defined(__OPENCL_C_VERSION__)
+#include "pool_interface.hpp"
+#endif
+
 #if HOSTRPC_AMDGCN
+
+struct t
+{
+  unsigned char data[64];
+};
+
 #if defined(__OPENCL_C_VERSION__)
 void hsa_toplevel(void);
 void hsa_set_requested(void);
@@ -7,20 +18,60 @@ void hsa_bootstrap_routine(void);
 
 kernel void __device_threads_set_requested(void) { hsa_set_requested(); }
 kernel void __device_threads_toplevel(void) { hsa_toplevel(); }
-struct t
-{
-  unsigned char data[64];
-};
+
+void pool_set_requested(void);
+kernel void __device_pool_set_requested(void) { pool_set_requested(); }
+
+void pool_bootstrap(void);
+kernel void __device_pool_bootstrap(void) { pool_bootstrap(); }
+
 kernel void __device_threads_bootstrap(struct t a)
 {
   (void)a;
   hsa_bootstrap_routine();
 }
 
+#else
+
+struct example : public pool_interface::default_pool<example, 16>
+{
+  void run() { printf("run from %u\n", get_current_uuid()); }
+};
+
+__attribute__((always_inline)) static char* get_reserved_addr()
+{
+  __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();
+  return (char*)p + 48;
+}
+
+static uint32_t load_from_reserved_addr()
+{
+  uint64_t tmp;
+  __builtin_memcpy(&tmp, get_reserved_addr(), 8);
+  return (uint32_t)tmp;
+}
+
+extern "C"
+{
+  void pool_set_requested(void)
+  {
+    example::set_requested(load_from_reserved_addr());
+  }
+
+  void pool_bootstrap(struct t data)
+  {
+    printf("&data %p\n", (const void*)&data);
+    __attribute__((address_space(4))) void* ks =
+      __builtin_amdgcn_kernarg_segment_ptr();
+
+    printf("kernarg %p\n", (void*)ks);
+    example::instance()->bootstrap(&data.data[0]);
+  }
+}
 #endif
 #endif
 
-#ifdef HOSTRPC_HOST
+#if HOSTRPC_HOST
 #if !defined(__OPENCL_C_VERSION__)
 #include "hsa.hpp"
 #include "incbin.h"
@@ -75,18 +126,25 @@ void run_threads_bootstrap(hsa::executable &ex, hsa_agent_t kernel_agent)
   hsa_kernel_dispatch_packet_t *kernarg =
       (hsa_kernel_dispatch_packet_t *)kernarg_alloc.get();
   fprintf(stderr, "kernarg addr %p\n", kernarg);
-  if (init_packet(ex, "__device_threads_toplevel.kd", kernarg) != 0)
+  if (init_packet(ex, "__device_pool_bootstrap.kd", kernarg) != 0)
     {
       fprintf(stderr, "init packet fail\n");
       exit(1);
     }
 
+  fprintf(stderr, "kernel packet %p:\n",(const void*)kernarg);
+  for (unsigned i = 0; i < 64; i++)
+    {
+      fprintf(stderr, " %u", ((char*)kernarg) [i]);
+    }
+    fprintf(stderr, " end\n");
+
   // Sanity check we can launch the toplevel, it'll immediately return at
   // present
   if (0)
     {
-      int rc = hsa::launch_kernel(ex, queue, "__device_threads_toplevel.kd", 0,
-                                  0, {0});
+      int rc =
+          hsa::launch_kernel(ex, queue, "__device_pool_toplevel.kd", 0, 0, {0});
       printf("test run: %u\n", rc);
 
       // Also check the values written into kernarg will work as such if run
@@ -123,17 +181,26 @@ void run_threads_bootstrap(hsa::executable &ex, hsa_agent_t kernel_agent)
   // bootstrap invocation needs it's own packet setup, but also needs a
   // 64 bit packet setup for the one it launches
 
-  const char *kernel_entry = "__device_threads_bootstrap.kd";
+  const char *kernel_entry = "__device_pool_bootstrap.kd";
   uint64_t init_count = 1;
+  fprintf(stderr, "Launch! %p\n", (void*)kernarg);
   int rc = hsa::launch_kernel(ex, queue, kernel_entry, init_count,
                               (uint64_t)kernarg, {0});
   if (rc == 0)
     {
       fprintf(stderr, "Launched kernel\n");
     }
+  else
+    {
+      fprintf(stderr, "Failed to launch, %d\n", rc);
+    }
 
   usleep(1000000);
 }
+
+#undef printf
+#include "hostrpc_printf.h"
+
 
 int main_with_hsa()
 {
@@ -142,6 +209,13 @@ int main_with_hsa()
   auto ex = hsa::executable(kernel_agent, threads_bootstrap_so_data,
                             threads_bootstrap_so_size);
 
+  if (hostrpc_print_enable_on_hsa_agent(ex, kernel_agent) != 0)
+    {
+      fprintf(stderr, "Failed to create host printf thread\n");
+      exit(1);
+    }
+
+  
   run_threads_bootstrap(ex, kernel_agent);
 
   return 0;

@@ -82,7 +82,7 @@ LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR -lelf"
 AMDGPU="--target=amdgcn-amd-amdhsa -march=$GFX -mcpu=$GFX -mllvm -amdgpu-fixed-function-abi -Xclang -fconvergent-functions -nogpulib"
 
 PTX_VER="-Xclang -target-feature -Xclang +ptx63"
-NVGPU="--target=nvptx64-nvidia-cuda -march=sm_50 $PTX_VER "
+NVGPU="--target=nvptx64-nvidia-cuda -march=sm_50 $PTX_VER -Xclang -fconvergent-functions"
 
 COMMONFLAGS="-Wall -Wextra -emit-llvm " # -DNDEBUG -Wno-type-limits "
 # cuda/openmp pass the host O flag through to ptxas, which crashes on debug info if > 0
@@ -153,32 +153,25 @@ $CXX_X64 openmp_plugins.cpp -c -o obj/openmp_plugins.x64.bc
 $LINK obj/allocator_openmp.x64.bc obj/openmp_plugins.x64.bc -o obj/openmp_support.x64.bc
 
 
-
-
-
 $CXX_GCN threads.cpp -O3 -c -o threads.gcn.bc
-$CXXCL_GCN threads_bootstrap.cpp -O3 -c -o threads_bootstrap.gcn.bc
+$CXXCL_GCN threads_bootstrap.cpp -O3 -c -o threads_bootstrap.ocl.gcn.bc
+$CXX_GCN threads_bootstrap.cpp -O3 -c -o threads_bootstrap.cpp.gcn.bc
 
-
-$LINK threads.gcn.bc threads_bootstrap.gcn.bc | $OPT -O2 -o obj/merged_threads_bootstrap.gcn.bc
+$LINK threads.gcn.bc threads_bootstrap.ocl.gcn.bc threads_bootstrap.cpp.gcn.bc obj/hostrpc_printf.gcn.bc | $OPT -O2 -o obj/merged_threads_bootstrap.gcn.bc 
 $DIS obj/merged_threads_bootstrap.gcn.bc
 
 $CXX_GCN_LD obj/merged_threads_bootstrap.gcn.bc -o threads_bootstrap.gcn.so
-
 
 $CXX_X64 threads.cpp -O3 -c -o threads.x64.bc
 $CXX_X64 threads_bootstrap.cpp -I$HSAINC -O3 -c -o threads_bootstrap.x64.bc
 $CXX_X64_LD threads.x64.bc obj/hsa_support.x64.bc obj/catch.o $LDFLAGS -o threads.x64.exe
 
 
-$OPT -strip-debug threads.x64.bc -S -o threads.x64.ll
-$OPT -strip-debug threads.gcn.bc -S -o threads.gcn.ll
-$OPT -strip-debug threads_bootstrap.x64.bc -S -o threads_bootstrap.x64.ll
-$OPT -strip-debug threads_bootstrap.gcn.bc -S -o threads_bootstrap.gcn.ll
-
-
 $CXX_X64_LD threads_bootstrap.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o threads_bootstrap.x64.exe
 
+./threads_bootstrap.x64.exe
+
+exit
 
 
 $CXX_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.code.bc
