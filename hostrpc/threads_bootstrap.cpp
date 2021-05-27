@@ -28,7 +28,6 @@ kernel void __device_threads_bootstrap(struct t a)
 void pool_set_requested(void);
 kernel void __device_pool_set_requested(void) { pool_set_requested(); }
 
-
 void pool_bootstrap_target(void);
 kernel void __device_pool_bootstrap_target(void) { pool_bootstrap_target(); }
 
@@ -58,10 +57,14 @@ static inline bool is_master_lane(void)
   return lane_id == lowest_active;
 }
 
-
 struct example : public pool_interface::default_pool<example, 16>
 {
-  void run() { if (is_master_lane()) printf("run from %u (of %u/%u)\n", get_current_uuid(), alive(), requested()); }
+  void run()
+  {
+    if (is_master_lane())
+      printf("run from %u (of %u/%u)\n", get_current_uuid(), alive(),
+             requested());
+  }
 };
 
 __attribute__((always_inline)) static char* get_reserved_addr()
@@ -84,12 +87,9 @@ extern "C"
     example::set_requested(load_from_reserved_addr());
   }
 
-  void pool_bootstrap_target(void)
-  {
-    example::bootstrap_target();
-  }
-  
-  void * kernarg_segment_pointer()
+  void pool_bootstrap_target(void) { example::bootstrap_target(); }
+
+  void* kernarg_segment_pointer()
   {
     // Quoting llc lowering of builtin_amdgcn_kernarg_segment_ptr,
     // if (!AMDGPU::isKernel(MF.getFunction().getCallingConv())) {
@@ -99,19 +99,19 @@ extern "C"
     // which would be why it is returning null.
 
     __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();
-    void * res;
-    __builtin_memcpy(&res, (char*)p + (320/8), 8);
+    void* res;
+    __builtin_memcpy(&res, (char*)p + (320 / 8), 8);
     return res;
   }
-  
+
   void pool_bootstrap(struct t data /* data appears to be 64 bytes of zeros */)
   {
     // printf("&data %p\n", (const void*)&data);
     __attribute__((address_space(4))) void* ks =
-      __builtin_amdgcn_kernarg_segment_ptr();
+        __builtin_amdgcn_kernarg_segment_ptr();
 
-    void * kernarg_2 = kernarg_segment_pointer();
-    
+    void* kernarg_2 = kernarg_segment_pointer();
+
 #if 0
     uint64_t w; __builtin_memcpy(&w, &ks, 8);
     printf("kernarg %p / %p, &data %p\n", (void*)ks, kernarg_2, &data);
@@ -129,18 +129,17 @@ extern "C"
       }
 #endif
 
-    if (1) {
-    example::instance()->bootstrap((const unsigned char *)&data);
-    }    else  {
-    example::instance()->bootstrap((const unsigned char *)kernarg_2);
-    }    
+    if (1)
+      {
+        example::instance()->bootstrap((const unsigned char*)&data);
+      }
+    else
+      {
+        example::instance()->bootstrap((const unsigned char*)kernarg_2);
+      }
   }
 
-  void pool_teardown(void)
-  {
-    example::teardown();
-  }
-  
+  void pool_teardown(void) { example::teardown(); }
 }
 #endif
 #endif
@@ -184,35 +183,37 @@ int teardown_pool(hsa::executable &ex, hsa_queue_t *queue)
 {
   const char *name = "__device_pool_teardown.kd";
 
-  // TODO: Make the signal earlier (and do other stuff) earlier, so this doesn't fail
+  // TODO: Make the signal earlier (and do other stuff) earlier, so this doesn't
+  // fail
   hsa_signal_t signal;
   {
-  auto rc = hsa_signal_create(1, 0, NULL, &signal);
-  if (rc != HSA_STATUS_SUCCESS) {
-    fprintf(stderr,"teardown: failed to create signal\n");
-    return 1;
-  }
+    auto rc = hsa_signal_create(1, 0, NULL, &signal);
+    if (rc != HSA_STATUS_SUCCESS)
+      {
+        fprintf(stderr, "teardown: failed to create signal\n");
+        return 1;
+      }
   }
 
   // signal is in inline_argument, not in completion signal
   int rc = launch_kernel(ex, queue, name, signal.handle, 0, {0});
 
-  if (rc != 0) {
-    fprintf(stderr,"teardown: failed to launch kernel\n");
-    hsa_signal_destroy(signal);
-    return 1;
-  }
-  
+  if (rc != 0)
+    {
+      fprintf(stderr, "teardown: failed to launch kernel\n");
+      hsa_signal_destroy(signal);
+      return 1;
+    }
+
   do
     {
       // printf("waiting for teardown\n");
-
-    } while (hsa_signal_wait_acquire(signal, 
-                                 HSA_SIGNAL_CONDITION_EQ, 0, 50000 /*000000*/,
-                                 HSA_WAIT_STATE_ACTIVE) != 0);
+    }
+  while (hsa_signal_wait_acquire(signal, HSA_SIGNAL_CONDITION_EQ, 0,
+                                 50000 /*000000*/, HSA_WAIT_STATE_ACTIVE) != 0);
 
   hsa_signal_destroy(signal);
-  
+
   return 0;
 }
 
@@ -249,16 +250,17 @@ void run_threads_bootstrap(hsa::executable &ex, hsa_agent_t kernel_agent)
   // knows what values to set
 
   {
-    uint32_t header = hsa::packet_header(hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
-                                         hsa::kernel_dispatch_setup());
-    __builtin_memcpy((char*)kernarg, &header, 4);
+    uint32_t header =
+        hsa::packet_header(hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
+                           hsa::kernel_dispatch_setup());
+    __builtin_memcpy((char *)kernarg, &header, 4);
   }
 
 #if 0
   fprintf(stderr, "bootstrap target packet with header %lu:\n",(uint64_t)kernarg);
   dump_kernel((const unsigned char*)kernarg);
 #endif
-  
+
   // Sanity check we can launch the toplevel, it'll immediately return at
   // present
   if (0)
@@ -323,16 +325,14 @@ void run_threads_bootstrap(hsa::executable &ex, hsa_agent_t kernel_agent)
     {
       fprintf(stderr, "teardown failed to start\n");
     }
-  
+
   // Need a means of finding out whether alive has reached zero
   usleep(1000000);
   fprintf(stderr, "Wind down\n");
-
 }
 
 #undef printf
 #include "hostrpc_printf.h"
-
 
 int main_with_hsa()
 {
@@ -347,7 +347,6 @@ int main_with_hsa()
       exit(1);
     }
 
-  
   run_threads_bootstrap(ex, kernel_agent);
 
   return 0;

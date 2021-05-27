@@ -286,7 +286,7 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
 
     // If none are running, need to start the process
 
-    base::allocate(); // increases live count to 1 for the new thread
+    base::allocate();  // increases live count to 1 for the new thread
     enqueue_dispatch(kernel);
     // return to dispose of this bootstrap kernel
   }
@@ -308,26 +308,26 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
             goto start;
           }
       }
-      
-    // All (pool managed) threads have exited. Teardown self.
-    __attribute__((address_space(4))) void* p =
-      __builtin_amdgcn_dispatch_ptr();
 
-    // Read signal field. If we have one, return to fire it        
+    // All (pool managed) threads have exited. Teardown self.
+    __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();
+
+    // Read signal field. If we have one, return to fire it
     uint64_t tmp;
-    __builtin_memcpy(&tmp, (const unsigned char*)p + (448 / 8), 8);  // read signal slot
+    __builtin_memcpy(&tmp, (const unsigned char*)p + (448 / 8),
+                     8);  // read signal slot
     if (tmp != 0)
       {
         return;
       }
 
-    // If we don't have a signal, retrieve it from userdata and relaunch         
+    // If we don't have a signal, retrieve it from userdata and relaunch
     auto func = [=](unsigned char* packet) {
-                  uint64_t tmp;
-                  // read signal from reserved2 and write it to signal slot
-                  __builtin_memcpy(&tmp, packet + (384 / 8), 8);
-                  __builtin_memcpy(packet + (448 / 8), &tmp, 8);
-                };
+      uint64_t tmp;
+      // read signal from reserved2 and write it to signal slot
+      __builtin_memcpy(&tmp, packet + (384 / 8), 8);
+      __builtin_memcpy(packet + (448 / 8), &tmp, 8);
+    };
     enqueue_dispatch(func, (const unsigned char*)p);
   }
 

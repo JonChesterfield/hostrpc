@@ -741,7 +741,6 @@ inline uint16_t kernel_dispatch_setup()
 
 #include "dump_kernel.i"
 
-
 // kernarg, signal may be zero
 inline int launch_kernel(hsa::executable& ex, hsa_queue_t* queue,
                          const char* kernel_entry, uint64_t inline_argument,
@@ -773,16 +772,16 @@ inline int launch_kernel(hsa::executable& ex, hsa_queue_t* queue,
   // gfx9 passes the value through accurately, without error
   // will therefore use it as an implementation-defined arg slot
   memcpy(&packet->reserved2, &inline_argument, 8);
- 
+
   packet_store_release((uint32_t*)packet,
                        hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
                        kernel_dispatch_setup());
 
-  #if 0
+#if 0
   printf("Launch kernel:\n");
   dump_kernel((unsigned char*)packet);
-  #endif
-  
+#endif
+
   hsa_signal_store_release(queue->doorbell_signal, packet_id);
 
   return 0;
