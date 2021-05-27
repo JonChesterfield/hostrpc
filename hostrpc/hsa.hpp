@@ -715,10 +715,15 @@ inline hsa_queue_t* create_queue(hsa_agent_t kernel_agent)
   return queue;
 }
 
+inline uint32_t packet_header(uint16_t header, uint16_t rest)
+{
+  return (uint32_t)header | ((uint32_t)rest << 16u);
+}
+
 inline void packet_store_release(uint32_t* packet, uint16_t header,
                                  uint16_t rest)
 {
-  __atomic_store_n(packet, header | (rest << 16), __ATOMIC_RELEASE);
+  __atomic_store_n(packet, packet_header(header, rest), __ATOMIC_RELEASE);
 }
 
 inline uint16_t header(hsa_packet_type_t type)
@@ -733,6 +738,9 @@ inline uint16_t kernel_dispatch_setup()
 {
   return 1 << HSA_KERNEL_DISPATCH_PACKET_SETUP_DIMENSIONS;
 }
+
+#include "dump_kernel.i"
+
 
 // kernarg, signal may be zero
 inline int launch_kernel(hsa::executable& ex, hsa_queue_t* queue,
@@ -766,11 +774,16 @@ inline int launch_kernel(hsa::executable& ex, hsa_queue_t* queue,
   // gfx9 passes the value through accurately, without error
   // will therefore use it as an implementation-defined arg slot
   memcpy(&packet->reserved2, &inline_argument, 8);
-
+ 
   packet_store_release((uint32_t*)packet,
                        hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
                        kernel_dispatch_setup());
 
+  #if 0
+  printf("Launch kernel:\n");
+  dump_kernel((unsigned char*)packet);
+  #endif
+  
   hsa_signal_store_release(queue->doorbell_signal, packet_id);
 
   return 0;

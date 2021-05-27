@@ -19,23 +19,47 @@ void hsa_bootstrap_routine(void);
 kernel void __device_threads_set_requested(void) { hsa_set_requested(); }
 kernel void __device_threads_toplevel(void) { hsa_toplevel(); }
 
-void pool_set_requested(void);
-kernel void __device_pool_set_requested(void) { pool_set_requested(); }
-
-void pool_bootstrap(void);
-kernel void __device_pool_bootstrap(void) { pool_bootstrap(); }
-
 kernel void __device_threads_bootstrap(struct t a)
 {
   (void)a;
   hsa_bootstrap_routine();
 }
 
+void pool_set_requested(void);
+kernel void __device_pool_set_requested(void) { pool_set_requested(); }
+
+
+void pool_bootstrap_target(void);
+kernel void __device_pool_bootstrap_target(void) { pool_bootstrap_target(); }
+
+void pool_bootstrap(struct t data);
+kernel void __device_pool_bootstrap(struct t data) { pool_bootstrap(data); }
+
+
 #else
+
+static inline uint32_t get_lane_id(void)
+{
+  return __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
+}
+static inline bool is_master_lane(void)
+{
+  // TODO: 32 wide wavefront, consider not using raw intrinsics here
+  uint64_t activemask = __builtin_amdgcn_read_exec();
+
+  // TODO: check codegen for trunc lowest_active vs expanding lane_id
+  // TODO: ffs is lifted from openmp runtime, looks like it should be ctz
+  uint32_t lowest_active = __builtin_ffsl(activemask) - 1;
+  uint32_t lane_id = get_lane_id();
+
+  // TODO: readfirstlane(lane_id) == lowest_active?
+  return lane_id == lowest_active;
+}
+
 
 struct example : public pool_interface::default_pool<example, 16>
 {
-  void run() { printf("run from %u\n", get_current_uuid()); }
+  void run() { if (is_master_lane()) printf("run from %u (of %u/%u)\n", get_current_uuid(), alive(), requested()); }
 };
 
 __attribute__((always_inline)) static char* get_reserved_addr()
@@ -58,14 +82,56 @@ extern "C"
     example::set_requested(load_from_reserved_addr());
   }
 
-  void pool_bootstrap(struct t data)
+  void pool_bootstrap_target(void)
   {
-    printf("&data %p\n", (const void*)&data);
+    example::bootstrap_target();
+  }
+  
+  void * kernarg_segment_pointer()
+  {
+    // Quoting llc lowering of builtin_amdgcn_kernarg_segment_ptr,
+    // if (!AMDGPU::isKernel(MF.getFunction().getCallingConv())) {
+    //   This only makes sense to call in a kernel, so just lower to null.
+    //   return DAG.getConstant(0, DL, VT);
+    // }
+    // which would be why it is returning null.
+
+    __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();
+    void * res;
+    __builtin_memcpy(&res, (char*)p + (320/8), 8);
+    return res;
+  }
+  
+  void pool_bootstrap(struct t data /* data appears to be 64 bytes of zeros */)
+  {
+    // printf("&data %p\n", (const void*)&data);
     __attribute__((address_space(4))) void* ks =
       __builtin_amdgcn_kernarg_segment_ptr();
 
-    printf("kernarg %p\n", (void*)ks);
-    example::instance()->bootstrap(&data.data[0]);
+    void * kernarg_2 = kernarg_segment_pointer();
+    
+#if 0
+    uint64_t w; __builtin_memcpy(&w, &ks, 8);
+    printf("kernarg %p / %p, &data %p\n", (void*)ks, kernarg_2, &data);
+    
+    //    printf("dispatch %p\n", __builtin_amdgcn_dispatch_ptr());
+
+    for (unsigned i = 0; i < 8; i++)
+      {
+        uint64_t tmp1;
+        __builtin_memcpy(&tmp1, (char*)&data + 8*i, 8);
+        uint64_t tmp2;
+        __builtin_memcpy(&tmp2, (char*)kernarg_2 + 8*i, 8);
+        
+        printf("Arg[%u] 0x%lx 0x%lx\n", 8*8*i, tmp1, tmp2);
+      }
+#endif
+
+    if (1) {
+    example::instance()->bootstrap((const unsigned char *)&data);
+    }    else  {
+    example::instance()->bootstrap((const unsigned char *)kernarg_2);
+    }    
   }
 }
 #endif
@@ -102,7 +168,7 @@ int init_packet(hsa::executable &ex, const char *kernel_entry,
 int async_kernel_set_requested(hsa::executable &ex, hsa_queue_t *queue,
                                uint32_t inline_argument)
 {
-  const char *name = "__device_threads_set_requested.kd";
+  const char *name = "__device_pool_set_requested.kd";
   return hsa::launch_kernel(ex, queue, name, inline_argument, 0, {0});
 }
 
@@ -125,20 +191,30 @@ void run_threads_bootstrap(hsa::executable &ex, hsa_agent_t kernel_agent)
     }
   hsa_kernel_dispatch_packet_t *kernarg =
       (hsa_kernel_dispatch_packet_t *)kernarg_alloc.get();
-  fprintf(stderr, "kernarg addr %p\n", kernarg);
-  if (init_packet(ex, "__device_pool_bootstrap.kd", kernarg) != 0)
+  if (init_packet(ex, "__device_pool_bootstrap_target.kd", kernarg) != 0)
     {
       fprintf(stderr, "init packet fail\n");
       exit(1);
     }
 
-  fprintf(stderr, "kernel packet %p:\n",(const void*)kernarg);
-  for (unsigned i = 0; i < 64; i++)
-    {
-      fprintf(stderr, " %u", ((char*)kernarg) [i]);
-    }
-    fprintf(stderr, " end\n");
+#if 0
+  fprintf(stderr, "bootstrap target packet %lu:\n",(uint64_t)kernarg);
+  dump_kernel((const unsigned char*)kernarg);
+#endif
+  // Need to write to the first four bytes now, as this is the point that
+  // knows what values to set
 
+  {
+    uint32_t header = hsa::packet_header(hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
+                                         hsa::kernel_dispatch_setup());
+    __builtin_memcpy((char*)kernarg, &header, 4);
+  }
+
+#if 0
+  fprintf(stderr, "bootstrap target packet with header %lu:\n",(uint64_t)kernarg);
+  dump_kernel((const unsigned char*)kernarg);
+#endif
+  
   // Sanity check we can launch the toplevel, it'll immediately return at
   // present
   if (0)
@@ -183,7 +259,7 @@ void run_threads_bootstrap(hsa::executable &ex, hsa_agent_t kernel_agent)
 
   const char *kernel_entry = "__device_pool_bootstrap.kd";
   uint64_t init_count = 1;
-  fprintf(stderr, "Launch! %p\n", (void*)kernarg);
+  fprintf(stderr, "Launch! %lu\n", (uint64_t)kernarg);
   int rc = hsa::launch_kernel(ex, queue, kernel_entry, init_count,
                               (uint64_t)kernarg, {0});
   if (rc == 0)
@@ -196,6 +272,19 @@ void run_threads_bootstrap(hsa::executable &ex, hsa_agent_t kernel_agent)
     }
 
   usleep(1000000);
+
+  fprintf(stderr, "Start to wind down\n");
+
+  rc = async_kernel_set_requested(ex, queue, 0);
+  if (rc == 0)
+    {
+      fprintf(stderr, "Launched set request\n");
+    }
+
+  // Need a means of finding out whether alive has reached zero
+  usleep(1000000);
+  fprintf(stderr, "Wind down\n");
+
 }
 
 #undef printf

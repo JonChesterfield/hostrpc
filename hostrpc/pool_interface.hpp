@@ -15,6 +15,8 @@
 #include "hostrpc_printf.h"
 #endif
 
+#include "dump_kernel.i"
+
 namespace pool_interface
 {
 template <typename Derived, template <typename, uint32_t> class Via,
@@ -52,6 +54,9 @@ struct threads_base
   }
 
  private:
+
+  // This is not safe to run from outside of the pool
+  
   void loop()
   {
   start:;
@@ -144,11 +149,17 @@ struct via_pthreads : public threads_base<Max, via_pthreads<Derived, Max>>
 
   void run() { static_cast<Derived*>(this)->run(); }
 
+  void bootstrap_target()
+  {
+    static_cast<Derived*>(this)->loop();
+  }
+
   void bootstrap(const unsigned char*)
   {
     // TODO
     __builtin_unreachable();
   }
+
 
  private:
   static thread_local uint32_t current_uuid;
@@ -257,6 +268,11 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
 
   void run() { static_cast<Derived*>(this)->run(); }
 
+  void bootstrap_target()
+  {
+    static_cast<Derived*>(this)->loop(); 
+  }
+  
   void bootstrap(const unsigned char* kernel)
   {
     uint32_t req = load_from_reserved_addr();
@@ -270,28 +286,38 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
         return;
       }
 
+#if 0
     if (is_master_lane())
       {
         printf("Can print %p\n",(const void*)kernel);
         for (unsigned i = 0; i < 64; i++)
           {
-            printf(" %u", kernel[i]);
+            printf(" %u", (unsigned) kernel[i]);
           }
         printf(" end\n");
       }
+#endif
     
     // If none are running, need to start the process
 
     auto func = [=](unsigned char* packet) {
       uint64_t addr = 0;  // Will be uuid 0.
-      __builtin_memcpy(packet + 40, &addr, 8);
+      __builtin_memcpy(packet + 40, &addr, 8); // overwrite kernarg address
+      __builtin_memcpy(packet + 48, &addr, 8); // overwrite with uuid 0
     };
 
-    // this seems to be faulting, may want printf via ctor
-    return; enqueue_dispatch(func, kernel);
+       if (is_master_lane())
+         {
+           printf("try to enqueue\n");
+           dump_kernel(kernel);
+         }
+    
+    // this seems to be faulting
+    enqueue_dispatch(func, kernel);
 
     // Once it's been copied into the array, can return
   }
+
 
  private:
   __attribute__((always_inline)) static char* get_reserved_addr()
@@ -341,6 +367,12 @@ struct api : private Via<Derived, Max>
     return static_cast<Base*>(instance())->requested();
   }
 
+  static uint32_t alive()
+  {
+    return static_cast<Base*>(instance())->alive();
+  }
+
+  
   static void spawn() { return static_cast<Base*>(instance())->spawn(); }
 
   static void run() { static_cast<Base*>(instance())->run(); }
@@ -349,6 +381,12 @@ struct api : private Via<Derived, Max>
   {
     return static_cast<Base*>(instance())->bootstrap(k);
   }
+
+  static void bootstrap_target()
+  {
+    return static_cast<Base*>(instance())->bootstrap_target();
+  }
+  
 };
 
 #if HOSTRPC_HOST

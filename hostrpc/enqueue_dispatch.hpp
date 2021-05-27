@@ -96,6 +96,10 @@ inline size_t hardware_doorbell()
 }
 }  // namespace offset
 
+
+#include "dump_kernel.i"
+
+
 template <typename F>
 inline void enqueue_dispatch(F func, const unsigned char *src)
 {
@@ -171,6 +175,21 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
 
       func(packet);
 
+
+#if 0
+      printf("enqueue_dispatch written packet:\n");
+      dump_kernel(packet);
+      {
+        unsigned char * kernel = (unsigned char*)packet;
+        for (unsigned i = 0; i < 64; i++)
+          {
+            printf(" %u", (unsigned) kernel[i]);
+            if (((i+1) % 8) == 0) printf(" -");
+          }
+        printf(" end\n");
+      }
+#endif
+      
       using header_type =
           __attribute__((address_space(1))) HOSTRPC_ATOMIC(uint32_t);
 
