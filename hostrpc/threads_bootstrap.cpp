@@ -89,54 +89,9 @@ extern "C"
 
   void pool_bootstrap_target(void) { example::bootstrap_target(); }
 
-  void* kernarg_segment_pointer()
-  {
-    // Quoting llc lowering of builtin_amdgcn_kernarg_segment_ptr,
-    // if (!AMDGPU::isKernel(MF.getFunction().getCallingConv())) {
-    //   This only makes sense to call in a kernel, so just lower to null.
-    //   return DAG.getConstant(0, DL, VT);
-    // }
-    // which would be why it is returning null.
-
-    __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();
-    void* res;
-    __builtin_memcpy(&res, (char*)p + (320 / 8), 8);
-    return res;
-  }
-
   void pool_bootstrap(struct t data /* data appears to be 64 bytes of zeros */)
   {
-    // printf("&data %p\n", (const void*)&data);
-    __attribute__((address_space(4))) void* ks =
-        __builtin_amdgcn_kernarg_segment_ptr();
-
-    void* kernarg_2 = kernarg_segment_pointer();
-
-#if 0
-    uint64_t w; __builtin_memcpy(&w, &ks, 8);
-    printf("kernarg %p / %p, &data %p\n", (void*)ks, kernarg_2, &data);
-    
-    //    printf("dispatch %p\n", __builtin_amdgcn_dispatch_ptr());
-
-    for (unsigned i = 0; i < 8; i++)
-      {
-        uint64_t tmp1;
-        __builtin_memcpy(&tmp1, (char*)&data + 8*i, 8);
-        uint64_t tmp2;
-        __builtin_memcpy(&tmp2, (char*)kernarg_2 + 8*i, 8);
-        
-        printf("Arg[%u] 0x%lx 0x%lx\n", 8*8*i, tmp1, tmp2);
-      }
-#endif
-
-    if (1)
-      {
-        example::instance()->bootstrap((const unsigned char*)&data);
-      }
-    else
-      {
-        example::instance()->bootstrap((const unsigned char*)kernarg_2);
-      }
+    example::instance()->bootstrap((const unsigned char*)&data);
   }
 
   void pool_teardown(void) { example::teardown(); }
@@ -242,13 +197,8 @@ void run_threads_bootstrap(hsa::executable &ex, hsa_agent_t kernel_agent)
       exit(1);
     }
 
-#if 0
-  fprintf(stderr, "bootstrap target packet %lu:\n",(uint64_t)kernarg);
-  dump_kernel((const unsigned char*)kernarg);
-#endif
   // Need to write to the first four bytes now, as this is the point that
   // knows what values to set
-
   {
     uint32_t header =
         hsa::packet_header(hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
@@ -256,49 +206,7 @@ void run_threads_bootstrap(hsa::executable &ex, hsa_agent_t kernel_agent)
     __builtin_memcpy((char *)kernarg, &header, 4);
   }
 
-#if 0
-  fprintf(stderr, "bootstrap target packet with header %lu:\n",(uint64_t)kernarg);
-  dump_kernel((const unsigned char*)kernarg);
-#endif
-
-  // Sanity check we can launch the toplevel, it'll immediately return at
-  // present
-  if (0)
-    {
-      int rc =
-          hsa::launch_kernel(ex, queue, "__device_pool_toplevel.kd", 0, 0, {0});
-      printf("test run: %u\n", rc);
-
-      // Also check the values written into kernarg will work as such if run
-      // from here
-
-      uint64_t packet_id = hsa::acquire_available_packet_id(queue);
-      hsa_kernel_dispatch_packet_t *packet =
-          (hsa_kernel_dispatch_packet_t *)queue->base_address +
-          (packet_id & (queue->size - 1));
-
-      memcpy(packet, kernarg, 64);
-
-      hsa::packet_store_release((uint32_t *)packet,
-                                hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
-                                hsa::kernel_dispatch_setup());
-      hsa_signal_store_release(queue->doorbell_signal, packet_id);
-
-      usleep(1000000);
-      printf("Launched contents of kernarg\n");
-    }
-
   fprintf(stderr, "Got kernarg block and a queue\n");
-
-  // can asynchronously set the number of threads
-  if (0)
-    {
-      int rc = async_kernel_set_requested(ex, queue, 1);
-      if (rc == 0)
-        {
-          fprintf(stderr, "Launched set request\n");
-        }
-    }
 
   // bootstrap invocation needs it's own packet setup, but also needs a
   // 64 bit packet setup for the one it launches
