@@ -19,6 +19,13 @@
 
 namespace pool_interface
 {
+enum
+{
+  offset_kernarg = 320 / 8,
+  offset_reserved2 = 384 / 8,
+  offset_signal = 448 / 8,
+};
+
 template <typename Derived, template <typename, uint32_t> class Via,
           uint32_t Max>
 struct api;
@@ -259,7 +266,7 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
     __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();
     auto func = [=](unsigned char* packet) {
       uint64_t addr = uuid;
-      __builtin_memcpy(packet + 40, &addr, 8);
+      __builtin_memcpy(packet + offset_kernarg, &addr, 8);
     };
 
     // copies from p, then calls func
@@ -273,32 +280,34 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
 
   void bootstrap(const unsigned char* kernel)
   {
+    // This thread was created by a kernel launch, account for it
+    uint32_t uuid = base::allocate();
+
+    // bootstrap uses inline argument to set requested as a convenience
     uint32_t req = load_from_reserved_addr();
     base::set_requested(req);
-    if (req == 0)
+
+    if ((uuid != 0)     // already a thread running
+        || (req == 0))  // changing count to zero
       {
-        return;
-      }
-    if (base::alive() != 0)
-      {
+        base::deallocate();
         return;
       }
 
-    // If none are running, need to start the process
-
-    base::allocate();  // increases live count to 1 for the new thread
+    // Read kernel bytes to start new thread (which will be uuid==0)
     enqueue_dispatch(kernel);
-    // return to dispose of this bootstrap kernel
   }
 
   void teardown()
   {
   start:;
+    // repeatedly sets zero to win races with threads that spawn more
     base::set_requested(0);
     uint32_t a = base::alive();
 
     if (a != 0)
       {
+        // wait for the managed threads to exit
         if (respawn_self())
           {
             return;
@@ -314,7 +323,7 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
 
     // Read signal field. If we have one, return to fire it
     uint64_t tmp;
-    __builtin_memcpy(&tmp, (const unsigned char*)p + (448 / 8),
+    __builtin_memcpy(&tmp, (const unsigned char*)p + offset_signal,
                      8);  // read signal slot
     if (tmp != 0)
       {
@@ -325,8 +334,8 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
     auto func = [=](unsigned char* packet) {
       uint64_t tmp;
       // read signal from reserved2 and write it to signal slot
-      __builtin_memcpy(&tmp, packet + (384 / 8), 8);
-      __builtin_memcpy(packet + (448 / 8), &tmp, 8);
+      __builtin_memcpy(&tmp, packet + offset_reserved2, 8);
+      __builtin_memcpy(packet + offset_signal, &tmp, 8);
     };
     enqueue_dispatch(func, (const unsigned char*)p);
   }
@@ -335,7 +344,7 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
   __attribute__((always_inline)) static char* get_reserved_addr()
   {
     __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();
-    return (char*)p + 48;
+    return (char*)p + offset_reserved2;
   }
   static uint32_t load_from_reserved_addr()
   {

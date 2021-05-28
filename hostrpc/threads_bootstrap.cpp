@@ -134,6 +134,16 @@ int async_kernel_set_requested(hsa::executable &ex, hsa_queue_t *queue,
   return hsa::launch_kernel(ex, queue, name, inline_argument, 0, {0});
 }
 
+static void wait_for_signal_equal_zero(hsa_signal_t signal,
+                                       uint64_t timeout_hint = UINT64_MAX)
+{
+  do
+    {
+    }
+  while (hsa_signal_wait_acquire(signal, HSA_SIGNAL_CONDITION_EQ, 0,
+                                 timeout_hint, HSA_WAIT_STATE_ACTIVE) != 0);
+}
+
 int teardown_pool(hsa::executable &ex, hsa_queue_t *queue)
 {
   const char *name = "__device_pool_teardown.kd";
@@ -160,29 +170,15 @@ int teardown_pool(hsa::executable &ex, hsa_queue_t *queue)
       return 1;
     }
 
-  do
-    {
-      // printf("waiting for teardown\n");
-    }
-  while (hsa_signal_wait_acquire(signal, HSA_SIGNAL_CONDITION_EQ, 0,
-                                 50000 /*000000*/, HSA_WAIT_STATE_ACTIVE) != 0);
-
+  wait_for_signal_equal_zero(signal, 50000 /*000000*/);
   hsa_signal_destroy(signal);
 
   return 0;
 }
 
-void run_threads_bootstrap(hsa::executable &ex, hsa_agent_t kernel_agent)
+void run_threads_bootstrap(hsa::executable &ex, hsa_queue_t *queue,
+                           hsa_region_t kernarg_region)
 {
-  hsa_queue_t *queue = hsa::create_queue(kernel_agent);
-  if (!queue)
-    {
-      fprintf(stderr, "Failed to create queue\n");
-      exit(1);
-    }
-
-  // going to pass a packet as the argument, to relaunch on the device
-  hsa_region_t kernarg_region = hsa::region_kernarg(kernel_agent);
   auto kernarg_alloc = hsa::allocate(kernarg_region, 64);
   if (!kernarg_alloc)
     {
@@ -214,29 +210,49 @@ void run_threads_bootstrap(hsa::executable &ex, hsa_agent_t kernel_agent)
   const char *kernel_entry = "__device_pool_bootstrap.kd";
   uint64_t init_count = 1;
   fprintf(stderr, "Launch! %lu\n", (uint64_t)kernarg);
+
+  hsa_signal_t signal;
+  {
+    auto rc = hsa_signal_create(1, 0, NULL, &signal);
+    if (rc != HSA_STATUS_SUCCESS)
+      {
+        fprintf(stderr, "failed to create signal\n");
+        exit(1);
+      }
+  }
+
   int rc = hsa::launch_kernel(ex, queue, kernel_entry, init_count,
-                              (uint64_t)kernarg, {0});
-  if (rc == 0)
+                              (uint64_t)kernarg, signal);
+  fprintf(stderr, "Launch kernel result %d\n", rc);
+
+  // Kernarg needs to live until the kernel completes, so wait for the signal
+  wait_for_signal_equal_zero(signal);
+  hsa_signal_destroy(signal);
+}
+
+void run_threads_bootstrap(hsa::executable &ex, hsa_agent_t kernel_agent)
+{
+  hsa_queue_t *queue = hsa::create_queue(kernel_agent);
+  if (!queue)
     {
-      fprintf(stderr, "Launched kernel\n");
-    }
-  else
-    {
-      fprintf(stderr, "Failed to launch, %d\n", rc);
+      fprintf(stderr, "Failed to create queue\n");
+      exit(1);
     }
 
+  // going to pass a packet as the argument, to relaunch on the device
+  hsa_region_t kernarg_region = hsa::region_kernarg(kernel_agent);
+
+  run_threads_bootstrap(ex, queue, kernarg_region);
+
+  // leave them running for a while
   usleep(1000000);
 
   fprintf(stderr, "Start to wind down\n");
-  rc = teardown_pool(ex, queue);
+  int rc = teardown_pool(ex, queue);
   if (rc != 0)
     {
       fprintf(stderr, "teardown failed to start\n");
     }
-
-  // Need a means of finding out whether alive has reached zero
-  usleep(1000000);
-  fprintf(stderr, "Wind down\n");
 }
 
 #undef printf
