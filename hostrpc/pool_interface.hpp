@@ -236,21 +236,6 @@ static uint32_t load_from_reserved_addr()
   return (uint32_t)tmp;
 }
 
-// assumes a function foo has an opencl entry point __device_foo
-#define KERNEL_DESC_TO_HSA_PACKET(KERNEL)                                   \
-  void KERNEL##_from_kd_to_into_hsa(unsigned char* packet)                  \
-  {                                                                         \
-    __attribute__(                                                          \
-        (visibility("default"))) extern hsa_packet::kernel_descriptor       \
-        KERNEL##_from_kd_to_into_hsa_##tmp asm("__device_" #KERNEL ".kd");  \
-    hsa_packet::write_from_kd_into_hsa(                                     \
-        (const unsigned char*)&KERNEL##_from_kd_to_into_hsa_##tmp, packet); \
-  }
-
-KERNEL_DESC_TO_HSA_PACKET(pool_set_requested);
-KERNEL_DESC_TO_HSA_PACKET(pool_bootstrap_target);
-KERNEL_DESC_TO_HSA_PACKET(pool_teardown);
-
 template <typename Derived, uint32_t Max>
 struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
 {

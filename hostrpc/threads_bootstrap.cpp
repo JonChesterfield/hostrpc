@@ -1,31 +1,27 @@
 #include "detail/platform_detect.hpp"
 
-#if !defined(__OPENCL_C_VERSION__)
-#include "detail/platform.hpp"
-#include "pool_interface.hpp"
+#if HOSTRPC_AMDGCN && defined(__OPENCL_C_VERSION__)
+#define WRAP_VOID_IN_OPENCL_KERNEL(NAME) \
+  void NAME(void);                       \
+  kernel void __device_##NAME(void) { NAME(); }
+#else
+#define WRAP_VOID_IN_OPENCL_KERNEL(NAME)
 #endif
+
+WRAP_VOID_IN_OPENCL_KERNEL(example_set_requested);
+WRAP_VOID_IN_OPENCL_KERNEL(example_bootstrap_entry);
+WRAP_VOID_IN_OPENCL_KERNEL(example_bootstrap_target);
+WRAP_VOID_IN_OPENCL_KERNEL(example_teardown);
 
 #if HOSTRPC_AMDGCN
 
-#if defined(__OPENCL_C_VERSION__)
+#if !defined(__OPENCL_C_VERSION__)
 
-void pool_set_requested(void);
-kernel void __device_pool_set_requested(void) { pool_set_requested(); }
-
-void pool_bootstrap_target(void);
-kernel void __device_pool_bootstrap_target(void) { pool_bootstrap_target(); }
-
-void pool_bootstrap(void);
-kernel void __device_pool_bootstrap_entry(void) { pool_bootstrap(); }
-
-void pool_teardown(void);
-kernel void __device_pool_teardown(void) { pool_teardown(); }
-
-#else
+#include "detail/platform.hpp"
+#include "pool_interface.hpp"
 
 struct example : public pool_interface::default_pool<example, 16>
 {
-  // example() {set_name(__func__); }
   void run()
   {
     if (platform::is_master_lane())
@@ -36,23 +32,22 @@ struct example : public pool_interface::default_pool<example, 16>
 
 extern "C"
 {
-  void pool_set_requested(void)
+  void example_set_requested(void)
   {
     example::set_requested(pool_interface::load_from_reserved_addr());
   }
+  void example_bootstrap_target(void) { example::bootstrap_target(); }
+  void example_teardown(void) { example::teardown(); }
 
-  void pool_bootstrap_target(void) { example::bootstrap_target(); }
-
-  void pool_bootstrap(void)
+  void example_bootstrap_entry(void)
   {
     __attribute__((visibility("default"))) extern hsa_packet::kernel_descriptor
-        pool_bootstrap_target_desc asm("__device_pool_bootstrap_target.kd");
+        example_bootstrap_target_desc asm(
+            "__device_example_bootstrap_target.kd");
     example::instance()->bootstrap(
         pool_interface::load_from_reserved_addr(),
-        (const unsigned char*)&pool_bootstrap_target_desc);
+        (const unsigned char *)&example_bootstrap_target_desc);
   }
-
-  void pool_teardown(void) { example::teardown(); }
 }
 #endif
 #endif
@@ -65,30 +60,10 @@ extern "C"
 
 INCBIN(threads_bootstrap_so, "threads_bootstrap.gcn.so");
 
-int init_packet(hsa::executable &ex, const char *kernel_entry,
-                hsa_kernel_dispatch_packet_t *packet)
-{
-  hsa::initialize_packet_defaults(packet);
-
-  uint64_t symbol_address = ex.get_symbol_address_by_name(kernel_entry);
-  auto m = ex.get_kernel_info();
-  auto it = m.find(std::string(kernel_entry));
-  if (it == m.end() || symbol_address == 0)
-    {
-      return 1;
-    }
-
-  packet->kernel_object = symbol_address;
-  packet->private_segment_size = it->second.private_segment_fixed_size;
-  packet->group_segment_size = it->second.group_segment_fixed_size;
-
-  return 0;
-}
-
 int async_kernel_set_requested(hsa::executable &ex, hsa_queue_t *queue,
                                uint32_t inline_argument)
 {
-  const char *name = "__device_pool_set_requested.kd";
+  const char *name = "__device_example_set_requested.kd";
   return hsa::launch_kernel(ex, queue, name, inline_argument, 0, {0});
 }
 
@@ -142,8 +117,8 @@ static void run_threads_bootstrap_kernel(hsa::executable &ex,
   hsa_signal_destroy(signal);
 }
 
-int teardown_pool_kernel(hsa::executable &ex, hsa_queue_t *queue,
-                         const char *name)
+int teardown_example_kernel(hsa::executable &ex, hsa_queue_t *queue,
+                            const char *name)
 {
   // TODO: Make the signal earlier (and do other stuff) earlier, so this doesn't
   // fail
@@ -197,13 +172,14 @@ int main_with_hsa()
       exit(1);
     }
 
-  run_threads_bootstrap_kernel(ex, queue, "__device_pool_bootstrap_entry.kd");
+  run_threads_bootstrap_kernel(ex, queue,
+                               "__device_example_bootstrap_entry.kd");
 
   // leave them running for a while
   usleep(1000000);
 
   fprintf(stderr, "Start to wind down\n");
-  int rc = teardown_pool_kernel(ex, queue, "__device_pool_teardown.kd");
+  int rc = teardown_example_kernel(ex, queue, "__device_example_teardown.kd");
 
   if (rc != 0)
     {
