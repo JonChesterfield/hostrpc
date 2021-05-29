@@ -1,0 +1,29 @@
+Shared memory remote procedure calls
+
+The remote procedure call (RPC) is the simplest possible interface for executing code on some other processor. It's a function call, same as any other. That surface simplicity hides a variety of well known problems, as characterised by Tanenbaum & Renesse. Vinoksi's paper arguing to retire RPC on similar grounds is titled "Convenience over Correctness". The observation behind this paper is that almost none of the problems apply on a shared memory system, such as a recent host + gpu heterogenous machine. This paper sketches an implementation of RPC for GPU systems as a complement to the existing kernel launch paradigm. 
+
+Ambiguity over which role is server and which client
+Unexpected messages. No problem, reliable transfer pipe.
+Single threaded servers. The server probably has to deal with multiple concurrent clients. That ship has sailed.
+Two army problem is another instance of communication errors.
+Multicast. RPC is inherently two party, doesn't really do it.
+Parameter passing, marshalling, globals. Still bad, but have shared pointers.
+Timing, i.e. cant do realtime. Sure.
+Server crash. Ensuring exactly once semantics. Client crash.
+ABI mismatch. Endian.
+Client stalls while waiting. True, but not essential. See sect #.
+Lack of streamlining. Same fix as above.
+Cost modelling. I.e. it's bad to run a function remotely that would be quicker than the overhead.
+
+Background
+- RPC in general, based loosely around Tanenbaum
+- A note on distributed computing. Broadly same ground. Has a final remark that objects on the same machine can be handled without the failure modes.
+
+
+Why
+GPU programming is primarily based on a host processor offloading tasks to a GPU. This is the case for CUDA, HIP, OpenCL, OpenMP, SYCL, DPC++. An exception is the reverse offload work of Chen et al, which runs the main() routine on an Intel MIC chip, using a remote procedure call to exceute control flow heavy tasks on the host processor. (todo: sent email, did they reply?). There are however tasks that a GPU cannot do without cooperation from the host such as host memory allocation and file I/O. Printf and malloc may be special cased in the compiler, e.g. printf works with Cuda but fprintf does not. The author is involved with the LLVM OpenMP implementation on AMDGPU, where the library described here is intended to provide that cooperation.
+
+
+
+
+
