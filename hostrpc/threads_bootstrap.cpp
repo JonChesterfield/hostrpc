@@ -62,6 +62,7 @@ static inline bool is_master_lane(void)
 
 struct example : public pool_interface::default_pool<example, 16>
 {
+  //example() {set_name(__func__); }
   void run()
   {
     if (is_master_lane())
@@ -167,6 +168,9 @@ static void run_threads_bootstrap_kernel(hsa::executable &ex,
       exit(1);
     }
 
+  fprintf(stderr, "target kernel:\n");
+  dump_kernel((const unsigned char *)kernarg);
+  
   // Need to write to the first four bytes now, as this is the point that
   // knows what values to set
   {
@@ -238,6 +242,19 @@ int teardown_pool_kernel(hsa::executable &ex, hsa_queue_t *queue,
 #undef printf
 #include "hostrpc_printf.h"
 
+struct tbd
+{
+const char *bootstrap_entry_kernel;
+  const char *bootstrap_target_kernel;
+  const char * teardown_kernel;
+
+  tbd()
+  {
+    fprintf(stderr, "%s %s %s\n", __func__, __FUNCTION__, __PRETTY_FUNCTION__);
+  }
+
+};
+
 int main_with_hsa()
 {
   hsa_agent_t kernel_agent = hsa::find_a_gpu_or_exit();
@@ -260,6 +277,7 @@ int main_with_hsa()
 
   hsa_region_t kernarg_region = hsa::region_kernarg(kernel_agent);
 
+  tbd a;
   run_threads_bootstrap_kernel(ex, queue, kernarg_region,
                                "__device_pool_bootstrap_entry.kd",
                                "__device_pool_bootstrap_target.kd");

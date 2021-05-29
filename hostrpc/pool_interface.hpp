@@ -26,6 +26,24 @@ enum
   offset_signal = 448 / 8,
 };
 
+struct kernel_descriptor_t {
+  uint32_t group_segment_fixed_size;
+  uint32_t private_segment_fixed_size;
+  uint32_t kernarg_size;
+  uint8_t reserved0[4];
+  int64_t kernel_code_entry_byte_offset;
+  uint8_t reserved1[24];
+  uint32_t compute_pgm_rsrc1;
+  uint32_t compute_pgm_rsrc2;
+  uint16_t kernel_code_properties;
+  uint8_t reserved2[6];
+};
+
+#define KERN(X) "__device_" #X ".kd"
+  __attribute__((visibility("default")))
+extern kernel_descriptor_t __device_pool_bootstrap_target asm(
+                                                              KERN(pool_bootstrap_target));
+  
 template <typename Derived, template <typename, uint32_t> class Via,
           uint32_t Max>
 struct api;
@@ -293,8 +311,11 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
         base::deallocate();
         return;
       }
-
-    // Read kernel bytes to start new thread (which will be uuid==0)
+    if (platform::is_master_lane()) {
+      printf("Bootstrap: Can see kd at %lu (%p)\n",(unsigned long)&__device_pool_bootstrap_target, &__device_pool_bootstrap_target);
+     dump_descriptor((const unsigned char *)&__device_pool_bootstrap_target);
+    }
+           // Read kernel bytes to start new thread (which will be uuid==0)
     enqueue_dispatch(kernel);
   }
 
@@ -366,6 +387,7 @@ struct api : private Via<Derived, Max>
   friend Via<Derived, Max>;
   using Base = Via<Derived, Max>;
 
+  void set_name(const char*) {}
   static Derived* instance()
   {
     // will not fare well on gcn if Derived needs a lock around construction
