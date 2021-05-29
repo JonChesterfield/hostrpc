@@ -32,7 +32,10 @@ void pool_bootstrap_target(void);
 kernel void __device_pool_bootstrap_target(void) { pool_bootstrap_target(); }
 
 void pool_bootstrap(struct t data);
-kernel void __device_pool_bootstrap(struct t data) { pool_bootstrap(data); }
+kernel void __device_pool_bootstrap_entry(struct t data)
+{
+  pool_bootstrap(data);
+}
 
 void pool_teardown(void);
 kernel void __device_pool_teardown(void) { pool_teardown(); }
@@ -144,10 +147,66 @@ static void wait_for_signal_equal_zero(hsa_signal_t signal,
                                  timeout_hint, HSA_WAIT_STATE_ACTIVE) != 0);
 }
 
-int teardown_pool(hsa::executable &ex, hsa_queue_t *queue)
+static void run_threads_bootstrap_kernel(hsa::executable &ex,
+                                         hsa_queue_t *queue,
+                                         hsa_region_t kernarg_region,
+                                         const char *bootstrap_entry_kernel,
+                                         const char *bootstrap_target_kernel)
 {
-  const char *name = "__device_pool_teardown.kd";
+  auto kernarg_alloc = hsa::allocate(kernarg_region, 64);
+  if (!kernarg_alloc)
+    {
+      fprintf(stderr, "Failed to allocate kernel arguments\n");
+      exit(1);
+    }
+  hsa_kernel_dispatch_packet_t *kernarg =
+      (hsa_kernel_dispatch_packet_t *)kernarg_alloc.get();
+  if (init_packet(ex, bootstrap_target_kernel, kernarg) != 0)
+    {
+      fprintf(stderr, "init packet fail\n");
+      exit(1);
+    }
 
+  // Need to write to the first four bytes now, as this is the point that
+  // knows what values to set
+  {
+    uint32_t header =
+        hsa::packet_header(hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
+                           hsa::kernel_dispatch_setup());
+    __builtin_memcpy((char *)kernarg, &header, 4);
+  }
+
+  fprintf(stderr, "Got kernarg block and a queue\n");
+
+  // bootstrap invocation needs it's own packet setup, but also needs a
+  // 64 bit packet setup for the one it launches
+
+  const char *kernel_entry = bootstrap_entry_kernel;
+  uint64_t init_count = 1;
+  fprintf(stderr, "Launch! %lu\n", (uint64_t)kernarg);
+
+  hsa_signal_t signal;
+  {
+    auto rc = hsa_signal_create(1, 0, NULL, &signal);
+    if (rc != HSA_STATUS_SUCCESS)
+      {
+        fprintf(stderr, "failed to create signal\n");
+        exit(1);
+      }
+  }
+
+  int rc = hsa::launch_kernel(ex, queue, kernel_entry, init_count,
+                              (uint64_t)kernarg, signal);
+  fprintf(stderr, "Launch kernel result %d\n", rc);
+
+  // Kernarg needs to live until the kernel completes, so wait for the signal
+  wait_for_signal_equal_zero(signal);
+  hsa_signal_destroy(signal);
+}
+
+int teardown_pool_kernel(hsa::executable &ex, hsa_queue_t *queue,
+                         const char *name)
+{
   // TODO: Make the signal earlier (and do other stuff) earlier, so this doesn't
   // fail
   hsa_signal_t signal;
@@ -176,85 +235,6 @@ int teardown_pool(hsa::executable &ex, hsa_queue_t *queue)
   return 0;
 }
 
-void run_threads_bootstrap(hsa::executable &ex, hsa_queue_t *queue,
-                           hsa_region_t kernarg_region)
-{
-  auto kernarg_alloc = hsa::allocate(kernarg_region, 64);
-  if (!kernarg_alloc)
-    {
-      fprintf(stderr, "Failed to allocate kernel arguments\n");
-      exit(1);
-    }
-  hsa_kernel_dispatch_packet_t *kernarg =
-      (hsa_kernel_dispatch_packet_t *)kernarg_alloc.get();
-  if (init_packet(ex, "__device_pool_bootstrap_target.kd", kernarg) != 0)
-    {
-      fprintf(stderr, "init packet fail\n");
-      exit(1);
-    }
-
-  // Need to write to the first four bytes now, as this is the point that
-  // knows what values to set
-  {
-    uint32_t header =
-        hsa::packet_header(hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
-                           hsa::kernel_dispatch_setup());
-    __builtin_memcpy((char *)kernarg, &header, 4);
-  }
-
-  fprintf(stderr, "Got kernarg block and a queue\n");
-
-  // bootstrap invocation needs it's own packet setup, but also needs a
-  // 64 bit packet setup for the one it launches
-
-  const char *kernel_entry = "__device_pool_bootstrap.kd";
-  uint64_t init_count = 1;
-  fprintf(stderr, "Launch! %lu\n", (uint64_t)kernarg);
-
-  hsa_signal_t signal;
-  {
-    auto rc = hsa_signal_create(1, 0, NULL, &signal);
-    if (rc != HSA_STATUS_SUCCESS)
-      {
-        fprintf(stderr, "failed to create signal\n");
-        exit(1);
-      }
-  }
-
-  int rc = hsa::launch_kernel(ex, queue, kernel_entry, init_count,
-                              (uint64_t)kernarg, signal);
-  fprintf(stderr, "Launch kernel result %d\n", rc);
-
-  // Kernarg needs to live until the kernel completes, so wait for the signal
-  wait_for_signal_equal_zero(signal);
-  hsa_signal_destroy(signal);
-}
-
-void run_threads_bootstrap(hsa::executable &ex, hsa_agent_t kernel_agent)
-{
-  hsa_queue_t *queue = hsa::create_queue(kernel_agent);
-  if (!queue)
-    {
-      fprintf(stderr, "Failed to create queue\n");
-      exit(1);
-    }
-
-  // going to pass a packet as the argument, to relaunch on the device
-  hsa_region_t kernarg_region = hsa::region_kernarg(kernel_agent);
-
-  run_threads_bootstrap(ex, queue, kernarg_region);
-
-  // leave them running for a while
-  usleep(1000000);
-
-  fprintf(stderr, "Start to wind down\n");
-  int rc = teardown_pool(ex, queue);
-  if (rc != 0)
-    {
-      fprintf(stderr, "teardown failed to start\n");
-    }
-}
-
 #undef printf
 #include "hostrpc_printf.h"
 
@@ -271,7 +251,29 @@ int main_with_hsa()
       exit(1);
     }
 
-  run_threads_bootstrap(ex, kernel_agent);
+  hsa_queue_t *queue = hsa::create_queue(kernel_agent);
+  if (!queue)
+    {
+      fprintf(stderr, "Failed to create queue\n");
+      exit(1);
+    }
+
+  hsa_region_t kernarg_region = hsa::region_kernarg(kernel_agent);
+
+  run_threads_bootstrap_kernel(ex, queue, kernarg_region,
+                               "__device_pool_bootstrap_entry.kd",
+                               "__device_pool_bootstrap_target.kd");
+
+  // leave them running for a while
+  usleep(1000000);
+
+  fprintf(stderr, "Start to wind down\n");
+  int rc = teardown_pool_kernel(ex, queue, "__device_pool_teardown.kd");
+
+  if (rc != 0)
+    {
+      fprintf(stderr, "teardown failed to start\n");
+    }
 
   return 0;
 }
