@@ -23,6 +23,7 @@
 #include "../impl/data.h"  // TODO: Drop this
 #include "../impl/msgpack.h"
 #include "find_metadata.hpp"
+#include "hsa_packet.hpp"
 
 namespace hsa
 {
@@ -676,23 +677,7 @@ inline uint64_t acquire_available_packet_id(hsa_queue_t* queue)
 
 inline void initialize_packet_defaults(hsa_kernel_dispatch_packet_t* packet)
 {
-  // Reserved fields, private and group memory, and completion signal are all
-  // set to 0.
-  memset(((uint8_t*)packet) + 4, 0, sizeof(hsa_kernel_dispatch_packet_t) - 4);
-  // These values should probably be read from the kernel
-  // Currently they're copied from documentation
-  // Launching a single wavefront makes for easier debugging
-  // This doesn't set gridsize, maybe it should be 1?
-  packet->workgroup_size_x = 64;
-  packet->workgroup_size_y = 1;
-  packet->workgroup_size_z = 1;
-  packet->grid_size_x = 64;
-  packet->grid_size_y = 1;
-  packet->grid_size_z = 1;
-
-  // These definitely get overwritten by the caller
-  packet->kernel_object = 0;  //  KERNEL_OBJECT;
-  packet->kernarg_address = NULL;
+  hsa_packet::initialize_packet_defaults((unsigned char*)packet);
 }
 
 inline hsa_queue_t* create_queue(hsa_agent_t kernel_agent)
@@ -715,18 +700,18 @@ inline hsa_queue_t* create_queue(hsa_agent_t kernel_agent)
   return queue;
 }
 
-inline uint32_t packet_header(uint16_t header, uint16_t rest)
+constexpr inline uint32_t packet_header(uint16_t header, uint16_t rest)
 {
-  return (uint32_t)header | ((uint32_t)rest << 16u);
+  return hsa_packet::packet_header(header, rest);
 }
 
 inline void packet_store_release(uint32_t* packet, uint16_t header,
                                  uint16_t rest)
 {
-  __atomic_store_n(packet, packet_header(header, rest), __ATOMIC_RELEASE);
+  hsa_packet::packet_store_release(packet, header, rest);
 }
 
-inline uint16_t header(hsa_packet_type_t type)
+constexpr inline uint16_t header(hsa_packet_type_t type)
 {
   uint16_t header = type << HSA_PACKET_HEADER_TYPE;
   header |= HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_ACQUIRE_FENCE_SCOPE;
@@ -734,12 +719,10 @@ inline uint16_t header(hsa_packet_type_t type)
   return header;
 }
 
-inline uint16_t kernel_dispatch_setup()
+constexpr inline uint16_t kernel_dispatch_setup()
 {
   return 1 << HSA_KERNEL_DISPATCH_PACKET_SETUP_DIMENSIONS;
 }
-
-#include "dump_kernel.i"
 
 // kernarg, signal may be zero
 inline int launch_kernel(hsa::executable& ex, hsa_queue_t* queue,

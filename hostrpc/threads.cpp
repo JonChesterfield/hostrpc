@@ -111,7 +111,6 @@ __attribute__((always_inline)) int hsa_spawn_with_uuid(uint32_t UUID)
 }
 
 // extern C as called from opencl
-// as __device_threads_bootstrap(__global char*)
 
 __attribute__((always_inline)) static char* get_reserved_addr()
 {
@@ -119,6 +118,7 @@ __attribute__((always_inline)) static char* get_reserved_addr()
   return (char*)p + 48;
 }
 
+// not presently called by anything
 __attribute__((always_inline)) extern "C" void hsa_bootstrap_routine(void)
 {
   __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();

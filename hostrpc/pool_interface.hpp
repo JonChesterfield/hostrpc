@@ -5,20 +5,21 @@
 
 #include "detail/platform.hpp"
 
+#include "hsa_packet.hpp"
+
 #if HOSTRPC_HOST
 #include <pthread.h>
 #include <stdio.h>
 #endif
 
-#if HOSTRPC_AMDGCN
-#undef printf
-#include "hostrpc_printf.h"
-#endif
-
 #include "dump_kernel.i"
+
+#include "enqueue_dispatch.hpp"
 
 namespace pool_interface
 {
+#if HOSTRPC_AMDGCN
+
 enum
 {
   offset_kernarg = 320 / 8,
@@ -26,24 +27,8 @@ enum
   offset_signal = 448 / 8,
 };
 
-struct kernel_descriptor_t {
-  uint32_t group_segment_fixed_size;
-  uint32_t private_segment_fixed_size;
-  uint32_t kernarg_size;
-  uint8_t reserved0[4];
-  int64_t kernel_code_entry_byte_offset;
-  uint8_t reserved1[24];
-  uint32_t compute_pgm_rsrc1;
-  uint32_t compute_pgm_rsrc2;
-  uint16_t kernel_code_properties;
-  uint8_t reserved2[6];
-};
+#endif
 
-#define KERN(X) "__device_" #X ".kd"
-  __attribute__((visibility("default")))
-extern kernel_descriptor_t __device_pool_bootstrap_target asm(
-                                                              KERN(pool_bootstrap_target));
-  
 template <typename Derived, template <typename, uint32_t> class Via,
           uint32_t Max>
 struct api;
@@ -176,7 +161,7 @@ struct via_pthreads : public threads_base<Max, via_pthreads<Derived, Max>>
 
   void bootstrap_target() { static_cast<Derived*>(this)->loop(); }
 
-  void bootstrap(const unsigned char*)
+  void bootstrap(uint32_t, const unsigned char*)
   {
     // TODO
     __builtin_unreachable();
@@ -238,25 +223,33 @@ using pthread_pool = api<Derived, via_pthreads, Max>;
 
 #if HOSTRPC_AMDGCN
 
-static inline uint32_t get_lane_id(void)
+__attribute__((always_inline)) static char* get_reserved_addr()
 {
-  return __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
-}
-static inline bool is_master_lane(void)
-{
-  // TODO: 32 wide wavefront, consider not using raw intrinsics here
-  uint64_t activemask = __builtin_amdgcn_read_exec();
-
-  // TODO: check codegen for trunc lowest_active vs expanding lane_id
-  // TODO: ffs is lifted from openmp runtime, looks like it should be ctz
-  uint32_t lowest_active = __builtin_ffsl(activemask) - 1;
-  uint32_t lane_id = get_lane_id();
-
-  // TODO: readfirstlane(lane_id) == lowest_active?
-  return lane_id == lowest_active;
+  __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();
+  return (char*)p + offset_reserved2;
 }
 
-#include "enqueue_dispatch.hpp"
+static uint32_t load_from_reserved_addr()
+{
+  uint64_t tmp;
+  __builtin_memcpy(&tmp, get_reserved_addr(), 8);
+  return (uint32_t)tmp;
+}
+
+// assumes a function foo has an opencl entry point __device_foo
+#define KERNEL_DESC_TO_HSA_PACKET(KERNEL)                                   \
+  void KERNEL##_from_kd_to_into_hsa(unsigned char* packet)                  \
+  {                                                                         \
+    __attribute__(                                                          \
+        (visibility("default"))) extern hsa_packet::kernel_descriptor       \
+        KERNEL##_from_kd_to_into_hsa_##tmp asm("__device_" #KERNEL ".kd");  \
+    hsa_packet::write_from_kd_into_hsa(                                     \
+        (const unsigned char*)&KERNEL##_from_kd_to_into_hsa_##tmp, packet); \
+  }
+
+KERNEL_DESC_TO_HSA_PACKET(pool_set_requested);
+KERNEL_DESC_TO_HSA_PACKET(pool_bootstrap_target);
+KERNEL_DESC_TO_HSA_PACKET(pool_teardown);
 
 template <typename Derived, uint32_t Max>
 struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
@@ -296,13 +289,13 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
 
   void bootstrap_target() { static_cast<Derived*>(this)->loop(); }
 
-  void bootstrap(const unsigned char* kernel)
+  void bootstrap(uint32_t requested, const unsigned char* descriptor)
   {
     // This thread was created by a kernel launch, account for it
     uint32_t uuid = base::allocate();
 
     // bootstrap uses inline argument to set requested as a convenience
-    uint32_t req = load_from_reserved_addr();
+    uint32_t req = requested;
     base::set_requested(req);
 
     if ((uuid != 0)     // already a thread running
@@ -311,18 +304,27 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
         base::deallocate();
         return;
       }
-    if (platform::is_master_lane()) {
-      printf("Bootstrap: Can see kd at %lu (%p)\n",(unsigned long)&__device_pool_bootstrap_target, &__device_pool_bootstrap_target);
-     dump_descriptor((const unsigned char *)&__device_pool_bootstrap_target);
-    }
-           // Read kernel bytes to start new thread (which will be uuid==0)
-    enqueue_dispatch(kernel);
+
+    // If the target name is known, e.g. because it is derived from the
+    // type name, can avoid passing a kernel in kernarg
+
+    hsa_packet::hsa_kernel_dispatch_packet alternative;
+    uint32_t header = hsa_packet::default_header;
+    __builtin_memcpy(&alternative, &header, 4);
+    hsa_packet::initialize_packet_defaults((unsigned char*)&alternative);
+    hsa_packet::write_from_kd_into_hsa(descriptor,
+                                       (unsigned char*)&alternative);
+
+    // Read kernel bytes to start new thread (which will be uuid==0)
+    enqueue_dispatch((const unsigned char*)&alternative);
   }
 
   void teardown()
   {
   start:;
     // repeatedly sets zero to win races with threads that spawn more
+    // todo: test / prove whether this is aggressive enough, may need to
+    // adjust alive or use additional state to ensure termination
     base::set_requested(0);
     uint32_t a = base::alive();
 
@@ -342,36 +344,29 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
     // All (pool managed) threads have exited. Teardown self.
     __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();
 
-    // Read signal field. If we have one, return to fire it
+    // Read completion signal field. If we have one, return to fire it
     uint64_t tmp;
-    __builtin_memcpy(&tmp, (const unsigned char*)p + offset_signal,
-                     8);  // read signal slot
+    __builtin_memcpy(&tmp, (const unsigned char*)p + offset_signal, 8);
     if (tmp != 0)
       {
         return;
       }
 
-    // If we don't have a signal, retrieve it from userdata and relaunch
+    // If we don't have a signal, and there isn't one in userdata, we're polling
+    uint64_t maybe_signal;
+    __builtin_memcpy(&maybe_signal, (const unsigned char*)p + offset_reserved2,
+                     8);
+    if (maybe_signal == 0)
+      {
+        return;
+      }
+
+    // If there is one, retrieve it from userdata and relaunch
     auto func = [=](unsigned char* packet) {
-      uint64_t tmp;
-      // read signal from reserved2 and write it to signal slot
-      __builtin_memcpy(&tmp, packet + offset_reserved2, 8);
-      __builtin_memcpy(packet + offset_signal, &tmp, 8);
+      // write the non-zero signal to the completion slot
+      __builtin_memcpy(packet + offset_signal, &maybe_signal, 8);
     };
     enqueue_dispatch(func, (const unsigned char*)p);
-  }
-
- private:
-  __attribute__((always_inline)) static char* get_reserved_addr()
-  {
-    __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();
-    return (char*)p + offset_reserved2;
-  }
-  static uint32_t load_from_reserved_addr()
-  {
-    uint64_t tmp;
-    __builtin_memcpy(&tmp, get_reserved_addr(), 8);
-    return (uint32_t)tmp;
   }
 };
 
@@ -387,7 +382,6 @@ struct api : private Via<Derived, Max>
   friend Via<Derived, Max>;
   using Base = Via<Derived, Max>;
 
-  void set_name(const char*) {}
   static Derived* instance()
   {
     // will not fare well on gcn if Derived needs a lock around construction
@@ -416,9 +410,9 @@ struct api : private Via<Derived, Max>
 
   static void run() { static_cast<Base*>(instance())->run(); }
 
-  static void bootstrap(const unsigned char* k)
+  static void bootstrap(uint32_t req, const unsigned char* d)
   {
-    return static_cast<Base*>(instance())->bootstrap(k);
+    return static_cast<Base*>(instance())->bootstrap(req, d);
   }
 
   static void bootstrap_target()
