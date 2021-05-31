@@ -23,6 +23,12 @@ Background
 Why
 GPU programming is primarily based on a host processor offloading tasks to a GPU. This is the case for CUDA, HIP, OpenCL, OpenMP, SYCL, DPC++. An exception is the reverse offload work of Chen et al, which runs the main() routine on an Intel MIC chip, using a remote procedure call to exceute control flow heavy tasks on the host processor. (todo: sent email, did they reply?). There are however tasks that a GPU cannot do without cooperation from the host such as host memory allocation and file I/O. Printf and malloc may be special cased in the compiler, e.g. printf works with Cuda but fprintf does not. The author is involved with the LLVM OpenMP implementation on AMDGPU, where the library described here is intended to provide that cooperation.
 
+The opposite direction also works, where a persistent kernel is launched on the GPU that acts as the server part of the RPC pair. The host processor can then run functions on the GPU through the RPC plumbing, instead of through the kernel launch API. This will probably be slower, as there is no dedicated hardware acceleration for the RPC subsystem, but may be more convienient. Offload between GPUs of different architectures is not yet tested but expected to work if the host memory can be exposed to both drivers successfully.
+
+Running both client and server on the same processor gives a means of sharing work between threads locally. That may be of use on nvptx platforms, where the device side kernel launch forces a process tree that can be escaped using N persistent kernels, or as a means of sharing work across numa nodes. 
+
+Finally this is a proof of concept for code that library compiles and runs as freestanding C++, Cuda, HIP, OpenMP and OpenCL. 
+
 Implementation
 RPC traditionally names the two machines involved the 'server' and the 'client', where the client initiates the call and the server performs it before copying results back. This paper follows that terminology. We assume a register architecture for the server and the client. (todo: must we?) registers are memory, perhaps better written in terms of 'memory'
 
@@ -108,5 +114,31 @@ Writes do not race between client and server as each address is only written by 
 
 Many clients, many servers
 The one-to-one client/server state machine requires exclusive ownership of the memory used to communicate between the two. Scaling to multiple clients or multiple servers is done with multiple one-to-one state machines, each of which runs independently and as described above.
+
+Thread scheduler
+Linux provides a fair scheduler, at least by default. A thread which takes a lock and is suspended will ultimately be rescheduled, allowing the system as a whole to make progress. Cuda does not preemptively schedule threads (warps in cuda terminology); once one starts executing it will run to completion, modulo the program ending prematurely. This also makes locking code safe. OpenCL provides no forward progress guarantees, and HSA makes limited ones. See #gpu fairness. This implementation assumes the scheduler is unfair, specifically that a thread which holds a lock may be descheduled and never return. Global locks are therefore unavailable. Forward progress can be ensured on amdgpu by using at least as many distinct locks as there can be simultaneous wavefronts on a HSA queue.
+
+Implementation limits
+This implementation assumes a limit on the number of concurrent RPC calls can be specified at library initialization time. For example, it may be limited by the maximum number of concurrently executing threads the hardware can support. It then allocates that many instances of the communication state up front, as a contiguous array, to avoid the complexity of reallocating concurrently accessed structures. This may be revised in future.
+
+Mutual exclusion
+
+Given an implementation limit of at most N calls in progress, a bitmap of length N is used as an array of mutual exclusion locks. Atomic compare and swap to set a bit at index I is taking a lock at I, fetch_or to clear the bit releases. The client searches for an available slot in [0, N), which is one with inbox, outbox and lock bits clear. If it succeeds in taking the lock, it continues as in the one-to-one case. Otherwise it continues searching.
+
+This can be significantly optimised if there is a way to map the current thread to a stable integer in [0, N). Either by passing it in from the application or from hardware intrinsics. This is not yet implemented.
+
+The server is similar and uses its own mutex array. Each thread searches for available work, which is an inbox set, outbox clear and lock clear. If it can take the lock, it proceeds as above, otherwise it continues searching. If every server instance started the search from zero, higher slots would starve, so the server state manages a last-used index and searches from there.
+
+Storage cost
+For a concurrent limit of N and a fixed size buffer of size M, cost is N * (2*M + 2mailbox) for ~ 2*N*M bits. Representative numbers for an amdgpu client and x64 host are 2048 threads, 4096 bit buffer, ~ 8MiB of shared memory, plus a 256byte lock array on each. Smaller arrays are likely to be faster when forward progress is otherwise ensured.
+
+
+Optimisations
+
+async, batching,
+
+Extensions
+
+exceeding fixed buffer size
 
 
