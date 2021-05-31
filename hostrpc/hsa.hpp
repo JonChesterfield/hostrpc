@@ -278,6 +278,69 @@ REGION_GEN_INFO(runtime_alloc_granule, size_t,
 REGION_GEN_INFO(runtime_alloc_alignment, size_t,
                 HSA_REGION_INFO_RUNTIME_ALLOC_ALIGNMENT);
 
+inline const char* enum_as_str(hsa_region_segment_t e)
+{
+  switch (e)
+    {
+      default:
+        return "UNKNOWN SEGMENT";
+      case HSA_REGION_SEGMENT_GLOBAL:
+        return "HSA_REGION_SEGMENT_GLOBAL";
+      case HSA_REGION_SEGMENT_READONLY:
+        return "HSA_REGION_SEGMENT_READONLY";
+      case HSA_REGION_SEGMENT_PRIVATE:
+        return "HSA_REGION_SEGMENT_PRIVATE";
+      case HSA_REGION_SEGMENT_GROUP:
+        return "HSA_REGION_SEGMENT_GROUP";
+      case HSA_REGION_SEGMENT_KERNARG:
+        return "HSA_REGION_SEGMENT_KERNARG";
+    }
+}
+
+inline const char* enum_as_str(hsa_region_global_flag_t e)
+{
+  switch ((int)e)
+    {
+      default:
+        return "UNKNOWN MIX";
+      case 0:
+        return "HSA_REGION_GLOBAL_FLAG_NONE";
+      case HSA_REGION_GLOBAL_FLAG_KERNARG:
+        return "HSA_REGION_GLOBAL_FLAG_KERNARG";
+      case HSA_REGION_GLOBAL_FLAG_FINE_GRAINED:
+        return "HSA_REGION_GLOBAL_FLAG_FINE_GRAINED";
+      case HSA_REGION_GLOBAL_FLAG_COARSE_GRAINED:
+        return "HSA_REGION_GLOBAL_FLAG_COARSE_GRAINED";
+
+      case (HSA_REGION_GLOBAL_FLAG_KERNARG |
+            HSA_REGION_GLOBAL_FLAG_FINE_GRAINED):
+        return "HSA_REGION_GLOBAL_FLAG_{KERNARG|FINE_GRAINED}";
+      case (HSA_REGION_GLOBAL_FLAG_KERNARG |
+            HSA_REGION_GLOBAL_FLAG_COARSE_GRAINED):
+        return "HSA_REGION_GLOBAL_FLAG_{KERNARG|COARSE_GRAINED}";
+
+      case (HSA_REGION_GLOBAL_FLAG_FINE_GRAINED |
+            HSA_REGION_GLOBAL_FLAG_COARSE_GRAINED):
+        return "HSA_REGION_GLOBAL_FLAG_{FINE_GRAINED|COARSE_GRAINED}";
+
+      case (HSA_REGION_GLOBAL_FLAG_KERNARG |
+            HSA_REGION_GLOBAL_FLAG_FINE_GRAINED |
+            HSA_REGION_GLOBAL_FLAG_COARSE_GRAINED):
+        return "HSA_REGION_GLOBAL_FLAG_{KERNARG|FINE_GRAINED|COARSE_GRAINED}";
+    }
+}
+
+template <typename C>
+hsa_status_t iterate_memory_pools(hsa_agent_t agent, C cb)
+{
+  requires_invocable_r(hsa_status_t, C, hsa_amd_memory_pool_t);
+  auto L = [](hsa_amd_memory_pool_t pool, void* data) -> hsa_status_t {
+    C* unwrapped = static_cast<C*>(data);
+    return (*unwrapped)(pool);
+  };
+  return hsa_amd_agent_iterate_memory_pools(agent, L, static_cast<void*>(&cb));
+};
+
 // {nullptr} on failure
 
 namespace detail

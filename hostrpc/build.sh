@@ -139,6 +139,9 @@ $LINK  obj/host_support.x64.bc obj/msgpack.x64.bc obj/find_metadata.x64.bc obj/a
 
 $CXX_X64 dump_kernels.cpp -I../impl -c -o obj/dump_kernels.x64.bc
 $CXX_X64_LD obj/msgpack.x64.bc obj/dump_kernels.x64.bc -lelf -o dump_kernels
+
+$CXX_X64 -I$HSAINC query_system.cpp -c -o obj/query_system.x64.bc
+$CXX_X64_LD obj/query_system.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o query_system
 fi
 
 # cuda support library
