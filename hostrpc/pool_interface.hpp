@@ -12,8 +12,6 @@
 #include <stdio.h>
 #endif
 
-#include "dump_kernel.i"
-
 #include "enqueue_dispatch.hpp"
 
 namespace pool_interface

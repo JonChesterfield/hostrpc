@@ -96,8 +96,6 @@ inline size_t hardware_doorbell()
 }
 }  // namespace offset
 
-#include "dump_kernel.i"
-
 template <typename F>
 inline void enqueue_dispatch(F func, const unsigned char *src)
 {
