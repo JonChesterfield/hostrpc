@@ -49,7 +49,7 @@ fi
 # Trunk, hangs
 # RDIR=$HOME/llvm-install
 
-HSAINC="$HOME/aomp/rocr-runtime/src/inc/"
+HSAINC="$RDIR/include/hsa/"
 DEVLIBINC="$HOME/aomp/rocm-device-libs/ockl/inc"
 OCKL_DIR="$HOME/rocm/aomp/amdgcn/bitcode"
 
@@ -60,7 +60,7 @@ else
 OCKL_LIBS=""
 fi
 
-HSALIBDIR="$HOME/rocm/aomp/lib"
+HSALIBDIR="$RDIR/lib"
 HSALIB="$HSALIBDIR/libhsa-runtime64.so" # $RDIR/lib/libomptarget.rtl.hsa.so"
 
 # Shouldn't need these, but copying across from initial for reference 

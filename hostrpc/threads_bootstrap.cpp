@@ -158,6 +158,12 @@ int main_with_hsa()
 
   auto ex = hsa::executable(kernel_agent, threads_bootstrap_so_data,
                             threads_bootstrap_so_size);
+  if (!ex.valid())
+    {
+      fprintf(stderr, "Failed to load executable %s\n",
+              "threads_bootstrap.gcn.so");
+      exit(1);
+    }
 
   if (hostrpc_print_enable_on_hsa_agent(ex, kernel_agent) != 0)
     {
