@@ -833,28 +833,21 @@ constexpr inline uint16_t kernel_dispatch_setup()
 }
 
 // kernarg, signal may be zero
-inline int launch_kernel(hsa::executable& ex, hsa_queue_t* queue,
-                         const char* kernel_entry, uint64_t inline_argument,
-                         uint64_t kernarg_address,
-                         hsa_signal_t completion_signal)
+inline void launch_kernel(uint64_t symbol_address,
+                          uint32_t private_segment_fixed_size,
+                          uint32_t group_segment_fixed_size, hsa_queue_t* queue,
+                          uint64_t inline_argument, uint64_t kernarg_address,
+                          hsa_signal_t completion_signal)
 {
   uint64_t packet_id = hsa::acquire_available_packet_id(queue);
   hsa_kernel_dispatch_packet_t* packet =
       (hsa_kernel_dispatch_packet_t*)queue->base_address +
       (packet_id & (queue->size - 1));
-
   hsa::initialize_packet_defaults(packet);
-  uint64_t symbol_address = ex.get_symbol_address_by_name(kernel_entry);
-  auto m = ex.get_kernel_info();
-  auto it = m.find(std::string(kernel_entry));
-  if (it == m.end() || symbol_address == 0)
-    {
-      return 1;
-    }
 
   packet->kernel_object = symbol_address;
-  packet->private_segment_size = it->second.private_segment_fixed_size;
-  packet->group_segment_size = it->second.group_segment_fixed_size;
+  packet->private_segment_size = private_segment_fixed_size;
+  packet->group_segment_size = group_segment_fixed_size;
 
   memcpy(&packet->kernarg_address, &kernarg_address, 8);
   memcpy(&packet->completion_signal, &completion_signal, 8);
@@ -874,8 +867,29 @@ inline int launch_kernel(hsa::executable& ex, hsa_queue_t* queue,
 #endif
 
   hsa_signal_store_release(queue->doorbell_signal, packet_id);
+}
 
-  return 0;
+// kernarg, signal may be zero
+inline int launch_kernel(hsa::executable& ex, hsa_queue_t* queue,
+                         const char* kernel_entry, uint64_t inline_argument,
+                         uint64_t kernarg_address,
+                         hsa_signal_t completion_signal)
+{
+  uint64_t symbol_address = ex.get_symbol_address_by_name(kernel_entry);
+  auto m = ex.get_kernel_info();
+  auto it = m.find(std::string(kernel_entry));
+  if (it == m.end() || symbol_address == 0)
+    {
+      return 1;
+    }
+  else
+    {
+      launch_kernel(symbol_address,
+                    (uint32_t)it->second.private_segment_fixed_size,
+                    (uint32_t)it->second.group_segment_fixed_size, queue,
+                    inline_argument, kernarg_address, completion_signal);
+      return 0;
+    }
 }
 
 inline int copy_host_to_gpu(hsa_agent_t agent, void* dst, const void* src,

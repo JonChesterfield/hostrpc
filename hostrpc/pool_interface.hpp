@@ -51,8 +51,11 @@ struct threads_base
   void spawn()
   {
     uint32_t uuid = allocate();
-    if (uuid < maximum())
+    if (uuid < /*requested()*/ maximum())  // maximum should be correct too
       {
+        if (platform::is_master_lane())
+          printf("uuid %u: spawning %u\n", Implementation().get_current_uuid(),
+                 uuid);
         if (Implementation().spawn_with_uuid(uuid) == 0)
           {
             return;
@@ -73,11 +76,16 @@ struct threads_base
     if (uuid >= req)
       {
         deallocate();
+        if (platform::is_master_lane())
+          printf("uuid %u >= %u, deallocate (live %u)\n", uuid, req, alive());
         return;
       }
 
-    if (alive() < req)
+    uint32_t a = alive();
+    if (a < req)
       {
+        if (platform::is_master_lane())
+          printf("uuid %u: alive %u < req %u, spawn\n", uuid, a, req);
         // spawn extra. could spawn multiple extra.
         spawn();
       }
@@ -241,12 +249,7 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
   using base = threads_base<Max, via_hsa<Derived, Max>>;
   friend base;
 
-  uint32_t get_current_uuid()
-  {
-    uint64_t res2;
-    __builtin_memcpy(&res2, get_reserved_addr(), 8);
-    return (uint32_t)res2;
-  }
+  uint32_t get_current_uuid() { return load_from_reserved_addr(); }
 
   bool respawn_self()
   {
@@ -260,7 +263,7 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
     __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();
     auto func = [=](unsigned char* packet) {
       uint64_t addr = uuid;
-      __builtin_memcpy(packet + offset_kernarg, &addr, 8);
+      __builtin_memcpy(packet + offset_reserved2, &addr, 8);
     };
 
     // copies from p, then calls func
@@ -276,6 +279,7 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
   {
     // This thread was created by a kernel launch, account for it
     uint32_t uuid = base::allocate();
+    if (platform::is_master_lane()) printf("boostrap got uuid %u\n", uuid);
 
     // bootstrap uses inline argument to set requested as a convenience
     uint32_t req = requested;
@@ -416,4 +420,5 @@ using default_pool = hsa_pool<Derived, Max>;
 #endif
 
 }  // namespace pool_interface
+
 #endif

@@ -1,5 +1,8 @@
 #include "detail/platform_detect.hpp"
 
+// TODO: Move the various macros into a header
+
+// opencl kernel shims to work around __kernel being unavailable in c++
 #if HOSTRPC_AMDGCN && defined(__OPENCL_C_VERSION__)
 #define WRAP_VOID_IN_OPENCL_KERNEL(NAME) \
   void NAME(void);                       \
@@ -8,10 +11,102 @@
 #define WRAP_VOID_IN_OPENCL_KERNEL(NAME)
 #endif
 
-WRAP_VOID_IN_OPENCL_KERNEL(example_set_requested);
-WRAP_VOID_IN_OPENCL_KERNEL(example_bootstrap_entry);
-WRAP_VOID_IN_OPENCL_KERNEL(example_bootstrap_target);
-WRAP_VOID_IN_OPENCL_KERNEL(example_teardown);
+#define GPU_OPENCL_WRAPPERS(SYMBOL)                     \
+  WRAP_VOID_IN_OPENCL_KERNEL(SYMBOL##_set_requested)    \
+  WRAP_VOID_IN_OPENCL_KERNEL(SYMBOL##_bootstrap_entry)  \
+  WRAP_VOID_IN_OPENCL_KERNEL(SYMBOL##_bootstrap_target) \
+  WRAP_VOID_IN_OPENCL_KERNEL(SYMBOL##_teardown)
+
+// extern C functions that call into the type with run() implemented
+#if HOSTRPC_AMDGCN && !defined(__OPENCL_C_VERSION__)
+#define GPU_C_WRAPPERS(SYMBOL)                                           \
+  extern "C"                                                             \
+  {                                                                      \
+    void SYMBOL##_set_requested(void)                                    \
+    {                                                                    \
+      SYMBOL::set_requested(pool_interface::load_from_reserved_addr());  \
+    }                                                                    \
+    void SYMBOL##_bootstrap_target(void) { SYMBOL::bootstrap_target(); } \
+    void SYMBOL##_teardown(void) { SYMBOL::teardown(); }                 \
+                                                                         \
+    void SYMBOL##_bootstrap_entry(void)                                  \
+    {                                                                    \
+      __attribute__(                                                     \
+          (visibility("default"))) extern hsa_packet::kernel_descriptor  \
+          SYMBOL##_bootstrap_target_desc asm("__device_" #SYMBOL         \
+                                             "_bootstrap_target.kd");    \
+      SYMBOL::instance()->bootstrap(                                     \
+          pool_interface::load_from_reserved_addr(),                     \
+          (const unsigned char *)&SYMBOL##_bootstrap_target_desc);       \
+    }                                                                    \
+  }
+#else
+#define GPU_C_WRAPPERS(SYMBOL)
+#endif
+
+// functions that, post _initialize, run the corresponding function on the pool
+#if HOSTRPC_HOST && !defined(__OPENCL_C_VERSION__)
+#define HSA_KERNEL_WRAPPERS(SYMBOL)                                           \
+                                                                              \
+  std::array<gpu_symbols, maximum_number_gpu> SYMBOL##_global;                \
+                                                                              \
+  int SYMBOL##_initialize(hsa::executable &ex, unsigned gpu)                  \
+  {                                                                           \
+    if (gpu < maximum_number_gpu)                                             \
+      {                                                                       \
+        int rc = 0;                                                           \
+        rc += initialize_kernel_info(ex,                                      \
+                                     "__device_" #SYMBOL "_set_requested.kd", \
+                                     &SYMBOL##_global[gpu].set_requested);    \
+        rc += initialize_kernel_info(                                         \
+            ex, "__device_" #SYMBOL "_bootstrap_entry.kd",                    \
+            &SYMBOL##_global[gpu].bootstrap_entry);                           \
+        rc += initialize_kernel_info(ex, "__device_" #SYMBOL "_teardown.kd",  \
+                                     &SYMBOL##_global[gpu].teardown);         \
+                                                                              \
+        if (hsa_signal_create(1, 0, NULL, &SYMBOL##_global[gpu].signal) !=    \
+            HSA_STATUS_SUCCESS)                                               \
+          {                                                                   \
+            return 1;                                                         \
+          }                                                                   \
+                                                                              \
+        if (rc == 0)                                                          \
+          {                                                                   \
+            return 0;                                                         \
+          }                                                                   \
+      }                                                                       \
+    return 1;                                                                 \
+  }                                                                           \
+                                                                              \
+  void SYMBOL##_set_requested(hsa_queue_t *queue, unsigned gpu,               \
+                              uint64_t requested)                             \
+  {                                                                           \
+    assert(gpu < maximum_number_gpu);                                         \
+    gpu_kernel_info &req = SYMBOL##_global[gpu].set_requested;                \
+    hsa::launch_kernel(req.symbol_address, req.private_segment_fixed_size,    \
+                       req.group_segment_fixed_size, queue, requested, 0,     \
+                       {0});                                                  \
+  }                                                                           \
+                                                                              \
+  void SYMBOL##_bootstrap_entry(hsa_queue_t *queue, unsigned gpu,             \
+                                uint64_t requested)                           \
+  {                                                                           \
+    assert(gpu < maximum_number_gpu);                                         \
+    gpu_kernel_info &req = SYMBOL##_global[gpu].bootstrap_entry;              \
+    hsa::launch_kernel(req.symbol_address, req.private_segment_fixed_size,    \
+                       req.group_segment_fixed_size, queue, requested, 0,     \
+                       {0});                                                  \
+  }                                                                           \
+                                                                              \
+  void SYMBOL##_teardown(hsa_queue_t *queue, unsigned gpu)                    \
+  {                                                                           \
+    assert(gpu < maximum_number_gpu);                                         \
+    invoke_teardown(SYMBOL##_global[gpu].teardown,                            \
+                    SYMBOL##_global[gpu].signal, queue, gpu);                 \
+  }
+#else
+#define HSA_KERNEL_WRAPPERS(SYMBOL)
+#endif
 
 #if HOSTRPC_AMDGCN
 
@@ -19,55 +114,81 @@ WRAP_VOID_IN_OPENCL_KERNEL(example_teardown);
 
 #include "detail/platform.hpp"
 #include "pool_interface.hpp"
-
-struct example : public pool_interface::default_pool<example, 16>
+struct example : public pool_interface::default_pool<example, 1024>
 {
   void run()
   {
     if (platform::is_master_lane())
       printf("run from %u (of %u/%u)\n", get_current_uuid(), alive(),
              requested());
+
+    platform::sleep_briefly();
   }
 };
 
-extern "C"
-{
-  void example_set_requested(void)
-  {
-    example::set_requested(pool_interface::load_from_reserved_addr());
-  }
-  void example_bootstrap_target(void) { example::bootstrap_target(); }
-  void example_teardown(void) { example::teardown(); }
-
-  void example_bootstrap_entry(void)
-  {
-    __attribute__((visibility("default"))) extern hsa_packet::kernel_descriptor
-        example_bootstrap_target_desc asm(
-            "__device_example_bootstrap_target.kd");
-    example::instance()->bootstrap(
-        pool_interface::load_from_reserved_addr(),
-        (const unsigned char *)&example_bootstrap_target_desc);
-  }
-}
 #endif
 #endif
 
-#if HOSTRPC_HOST
-#if !defined(__OPENCL_C_VERSION__)
+GPU_OPENCL_WRAPPERS(example);
+GPU_C_WRAPPERS(example);
+// todo: would like kernel wrappers instantiated here too
+
+#if HOSTRPC_HOST && !defined(__OPENCL_C_VERSION__)
 #include "hsa.hpp"
 #include "incbin.h"
 #include "launch.hpp"
 
 INCBIN(threads_bootstrap_so, "threads_bootstrap.gcn.so");
 
-int async_kernel_set_requested(hsa::executable &ex, hsa_queue_t *queue,
-                               uint32_t inline_argument)
+struct gpu_kernel_info
 {
-  const char *name = "__device_example_set_requested.kd";
-  return hsa::launch_kernel(ex, queue, name, inline_argument, 0, {0});
+  uint64_t symbol_address = 0;
+  uint32_t private_segment_fixed_size = 0;
+  uint32_t group_segment_fixed_size = 0;
+};
+
+struct gpu_symbols
+{
+  gpu_kernel_info set_requested;
+  gpu_kernel_info bootstrap_entry;
+  gpu_kernel_info teardown;
+  hsa_signal_t signal = {0};
+
+  ~gpu_symbols() { hsa_signal_destroy(signal); }
+};
+
+enum
+{
+  maximum_number_gpu = 4u,
+};
+
+namespace
+{
+inline int initialize_kernel_info(hsa::executable &ex, std::string name,
+                                  gpu_kernel_info *info)
+{
+  uint64_t symbol_address = ex.get_symbol_address_by_name(name.c_str());
+  auto m = ex.get_kernel_info();
+  auto it = m.find(name);
+  if (it == m.end() || symbol_address == 0)
+    {
+      return 1;
+    }
+  if ((it->second.private_segment_fixed_size > UINT32_MAX) ||
+      (it->second.group_segment_fixed_size > UINT32_MAX))
+    {
+      return 1;
+    }
+
+  info->symbol_address = symbol_address;
+  info->private_segment_fixed_size =
+      (uint32_t)it->second.private_segment_fixed_size;
+  info->group_segment_fixed_size =
+      (uint32_t)it->second.group_segment_fixed_size;
+  return 0;
 }
 
-static void wait_for_signal_equal_zero(hsa_signal_t signal,
+inline void wait_for_signal_equal_zero(hsa_signal_t signal,
                                        uint64_t timeout_hint = UINT64_MAX)
 {
   do
@@ -77,76 +198,32 @@ static void wait_for_signal_equal_zero(hsa_signal_t signal,
                                  timeout_hint, HSA_WAIT_STATE_ACTIVE) != 0);
 }
 
-static void run_threads_bootstrap_kernel(hsa::executable &ex,
-                                         hsa_queue_t *queue,
-                                         const char *bootstrap_entry_kernel)
+inline void invoke_teardown(gpu_kernel_info teardown, hsa_signal_t signal,
+                            hsa_queue_t *queue, unsigned gpu)
 {
-  // Need to write to the first four bytes now, as this is the point that
-  // knows what values to set
+  assert(gpu < maximum_number_gpu);
 
-  // Kernels launched from the GPU, without reference to any host code,
-  // presently all use this default header
-  static_assert(
-      hsa_packet::default_header ==
-          hsa::packet_header(hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
-                             hsa::kernel_dispatch_setup()),
-      "");
-  ;
+  const hsa_signal_value_t init = 1;
+  hsa_signal_store_screlease(signal, init);
 
-  // bootstrap invocation needs its own packet setup. The one it launches is
-  // handled on the gpu side, without passing extra information via kernargs
-
-  const char *kernel_entry = bootstrap_entry_kernel;
-  uint64_t init_count = 1;
-
-  hsa_signal_t signal;
-  {
-    auto rc = hsa_signal_create(1, 0, NULL, &signal);
-    if (rc != HSA_STATUS_SUCCESS)
-      {
-        fprintf(stderr, "failed to create signal\n");
-        exit(1);
-      }
-  }
-
-  int rc = hsa::launch_kernel(ex, queue, kernel_entry, init_count, 0, signal);
-  fprintf(stderr, "Launch kernel result %d\n", rc);
-
-  // May no longer need a signal, since kernarg no longer in use
-  wait_for_signal_equal_zero(signal);
-  hsa_signal_destroy(signal);
-}
-
-int teardown_example_kernel(hsa::executable &ex, hsa_queue_t *queue,
-                            const char *name)
-{
-  // TODO: Make the signal earlier (and do other stuff) earlier, so this doesn't
-  // fail
-  hsa_signal_t signal;
-  {
-    auto rc = hsa_signal_create(1, 0, NULL, &signal);
-    if (rc != HSA_STATUS_SUCCESS)
-      {
-        fprintf(stderr, "teardown: failed to create signal\n");
-        return 1;
-      }
-  }
-
-  // signal is in inline_argument, not in completion signal
-  int rc = launch_kernel(ex, queue, name, signal.handle, 0, {0});
-
-  if (rc != 0)
-    {
-      fprintf(stderr, "teardown: failed to launch kernel\n");
-      hsa_signal_destroy(signal);
-      return 1;
-    }
+  hsa::launch_kernel(
+      teardown.symbol_address, teardown.private_segment_fixed_size,
+      teardown.group_segment_fixed_size, queue, signal.handle, 0, {0});
 
   wait_for_signal_equal_zero(signal, 50000 /*000000*/);
-  hsa_signal_destroy(signal);
-
-  return 0;
 }
+}  // namespace
+
+// Kernels launched from the GPU, without reference to any host code,
+// presently all use this default header
+
+static_assert(
+    hsa_packet::default_header ==
+        hsa::packet_header(hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
+                           hsa::kernel_dispatch_setup()),
+    "");
+
+HSA_KERNEL_WRAPPERS(example)
 
 // need to split enable print off from the macro
 #undef printf
@@ -165,6 +242,8 @@ int main_with_hsa()
       exit(1);
     }
 
+  example_initialize(ex, 0);
+
   if (hostrpc_print_enable_on_hsa_agent(ex, kernel_agent) != 0)
     {
       fprintf(stderr, "Failed to create host printf thread\n");
@@ -178,19 +257,14 @@ int main_with_hsa()
       exit(1);
     }
 
-  run_threads_bootstrap_kernel(ex, queue,
-                               "__device_example_bootstrap_entry.kd");
+  example_bootstrap_entry(queue, 0, 24);
 
   // leave them running for a while
   usleep(1000000);
 
   fprintf(stderr, "Start to wind down\n");
-  int rc = teardown_example_kernel(ex, queue, "__device_example_teardown.kd");
 
-  if (rc != 0)
-    {
-      fprintf(stderr, "teardown failed to start\n");
-    }
+  example_teardown(queue, 0);
 
   return 0;
 }
@@ -202,5 +276,4 @@ int main()
   return main_with_hsa();
 }
 
-#endif
 #endif
