@@ -1,6 +1,7 @@
 #include "base_types.hpp"
 #include "catch.hpp"
 #include "detail/platform_detect.hpp"
+#include "pool_interface.hpp"
 
 #include <cstring>
 #include <thread>
@@ -45,9 +46,12 @@ static void init_page(hostrpc::page_t *page, uint64_t v)
     }
 }
 
+POOL_INTERFACE_BOILERPLATE_HOST(stress_pool, 1024);
+
 TEST_CASE("x64_x64_stress")
 {
   using namespace hostrpc;
+
   hostrpc::x64_x64_type p(100);
 
   auto op_func = [](hostrpc::page_t *page) {

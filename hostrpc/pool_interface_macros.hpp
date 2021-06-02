@@ -33,26 +33,27 @@
 
 // extern C functions that call into the type with run() implemented
 #if HOSTRPC_AMDGCN && !defined(__OPENCL_C_VERSION__)
-#define POOL_INTERFACE_GPU_C_WRAPPERS(SYMBOL)                            \
-  extern "C"                                                             \
-  {                                                                      \
-    void SYMBOL##_set_requested(void)                                    \
-    {                                                                    \
-      SYMBOL::set_requested(pool_interface::load_from_reserved_addr());  \
-    }                                                                    \
-    void SYMBOL##_bootstrap_target(void) { SYMBOL::bootstrap_target(); } \
-    void SYMBOL##_teardown(void) { SYMBOL::teardown(); }                 \
-                                                                         \
-    void SYMBOL##_bootstrap_entry(void)                                  \
-    {                                                                    \
-      __attribute__(                                                     \
-          (visibility("default"))) extern hsa_packet::kernel_descriptor  \
-          SYMBOL##_bootstrap_target_desc asm("__device_" #SYMBOL         \
-                                             "_bootstrap_target.kd");    \
-      SYMBOL::instance()->bootstrap(                                     \
-          pool_interface::load_from_reserved_addr(),                     \
-          (const unsigned char *)&SYMBOL##_bootstrap_target_desc);       \
-    }                                                                    \
+#define POOL_INTERFACE_GPU_C_WRAPPERS(SYMBOL)                                \
+  extern "C"                                                                 \
+  {                                                                          \
+    void SYMBOL##_set_requested(void)                                        \
+    {                                                                        \
+      SYMBOL::set_requested(                                                 \
+          pool_interface::getlo(pool_interface::load_from_reserved_addr())); \
+    }                                                                        \
+    void SYMBOL##_bootstrap_target(void) { SYMBOL::bootstrap_target(); }     \
+    void SYMBOL##_teardown(void) { SYMBOL::teardown(); }                     \
+                                                                             \
+    void SYMBOL##_bootstrap_entry(void)                                      \
+    {                                                                        \
+      __attribute__(                                                         \
+          (visibility("default"))) extern hsa_packet::kernel_descriptor      \
+          SYMBOL##_bootstrap_target_desc asm("__device_" #SYMBOL             \
+                                             "_bootstrap_target.kd");        \
+      SYMBOL::instance()->bootstrap(                                         \
+          pool_interface::getlo(pool_interface::load_from_reserved_addr()),  \
+          (const unsigned char *)&SYMBOL##_bootstrap_target_desc);           \
+    }                                                                        \
   }
 #else
 #define POOL_INTERFACE_GPU_C_WRAPPERS(SYMBOL)
@@ -90,7 +91,7 @@
       }                                                                       \
     return 0;                                                                 \
   }                                                                           \
-  void SYMBOL::set_requested(uint64_t requested)                              \
+  void SYMBOL::set_requested(uint32_t requested)                              \
   {                                                                           \
     gpu_kernel_info &req = set_requested_;                                    \
     hsa::launch_kernel(req.symbol_address, req.private_segment_fixed_size,    \
@@ -98,7 +99,7 @@
                        {0});                                                  \
   }                                                                           \
                                                                               \
-  void SYMBOL::bootstrap_entry(uint64_t requested)                            \
+  void SYMBOL::bootstrap_entry(uint32_t requested)                            \
   {                                                                           \
     gpu_kernel_info &req = bootstrap_entry_;                                  \
     hsa::launch_kernel(req.symbol_address, req.private_segment_fixed_size,    \

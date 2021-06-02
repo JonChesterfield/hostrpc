@@ -183,9 +183,6 @@ $CXX_X64 -I$HSAINC pool_example_host.cpp -O3 -c -o obj/pool_example_host.x64.bc
 $CXX_X64_LD obj/pool_example_host.x64.bc $LDFLAGS -o pool_example_host.x64.exe
 ./pool_example_host.x64.exe
 
-exit
-
-
 $CXX_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.code.bc
 $CXXCL_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.kern.bc
 $LINK obj/x64_gcn_debug.gcn.code.bc obj/x64_gcn_debug.gcn.kern.bc obj/hostrpc_printf.gcn.bc -o obj/x64_gcn_debug.gcn.bc
@@ -236,15 +233,6 @@ if (($have_nvptx)); then
 fi
 
 
-$CXX_GCN pool_interface.cpp -O3 -c -o obj/pool_interface.gcn.bc
-$CXX_X64 pool_interface.cpp -O3 -c -o obj/pool_interface.x64.bc
-
-$CXX_X64_LD -pthread obj/pool_interface.x64.bc -o obj/pool_interface.x64.exe
-
-$LINK obj/hostrpc_printf.gcn.bc amdgcn_loader_device.gcn.bc obj/pool_interface.gcn.bc -o obj/pool_interface.merged.gcn.bc
-$CXX_GCN_LD obj/pool_interface.merged.gcn.bc -o obj/pool_interface.gcn.exe
-
-
 if (($have_amdgcn)); then
 $CLANG -std=c11 $COMMONFLAGS $GCNFLAGS test_example.c -c -o obj/test_example.gcn.bc
 $LINK obj/test_example.gcn.bc obj/hostrpc_printf.gcn.bc amdgcn_loader_device.gcn.bc -o test_example.gcn.bc
@@ -268,24 +256,26 @@ if (($have_amdgcn)); then
     $CXX_GCN_LD devicertl_pteam_mem_barrier.gcn.bc -o devicertl_pteam_mem_barrier.gcn
     set +e
     echo "This is failing at present, HSA doesn't think the binary is valid"
-    ./devicertl_pteam_mem_barrier.gcn
+    # ./devicertl_pteam_mem_barrier.gcn
     set -e
 fi
 
 $CXX_X64 prototype/states.cpp -c -o prototype/states.x64.bc
 
-$CXX_GCN run_on_hsa_example.cpp -c -o obj/run_on_hsa_example.cxx.gcn.bc
-$CXXCL_GCN run_on_hsa_example.cpp -c -o obj/run_on_hsa_example.ocl.gcn.bc
-$LINK obj/run_on_hsa_example.cxx.gcn.bc obj/run_on_hsa_example.ocl.gcn.bc -o obj/run_on_hsa_example.gcn.bc
+if false; then
+    $CXX_GCN run_on_hsa_example.cpp -c -o obj/run_on_hsa_example.cxx.gcn.bc
+    $CXXCL_GCN run_on_hsa_example.cpp -c -o obj/run_on_hsa_example.ocl.gcn.bc
+    $LINK obj/run_on_hsa_example.cxx.gcn.bc obj/run_on_hsa_example.ocl.gcn.bc -o obj/run_on_hsa_example.gcn.bc
 
-$CXX_GCN_LD obj/run_on_hsa_example.gcn.bc -o lib/run_on_hsa_example.gcn.so
+    $CXX_GCN_LD obj/run_on_hsa_example.gcn.bc -o lib/run_on_hsa_example.gcn.so
 
-$CXX_X64 -I$HSAINC run_on_hsa_example.cpp -c -o obj/run_on_hsa_example.cxx.x64.bc
-$CXX_X64 -I$HSAINC run_on_hsa.cpp -c -o obj/run_on_hsa.x64.bc
+    $CXX_X64 -I$HSAINC run_on_hsa_example.cpp -c -o obj/run_on_hsa_example.cxx.x64.bc
+    $CXX_X64 -I$HSAINC run_on_hsa.cpp -c -o obj/run_on_hsa.x64.bc
 
-$CXX $LDFLAGS obj/run_on_hsa_example.cxx.x64.bc obj/run_on_hsa.x64.bc obj/hsa_support.x64.bc -o run_on_hsa.exe
+    $CXX $LDFLAGS obj/run_on_hsa_example.cxx.x64.bc obj/run_on_hsa.x64.bc obj/hsa_support.x64.bc -o run_on_hsa.exe
 
-./run_on_hsa.exe
+    ./run_on_hsa.exe
+fi
 
 if true; then
 # Sanity checks that the client and server compile successfully

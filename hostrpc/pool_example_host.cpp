@@ -3,13 +3,14 @@
 
 POOL_INTERFACE_BOILERPLATE_HOST(example, 32);
 
-void example::run()
+uint32_t example::run(uint32_t state)
 {
   if (platform::is_master_lane())
-    printf("run from %u (of %u/%u)\n", get_current_uuid(), alive(),
+    printf("run %u from %u (of %u/%u)\n", state, get_current_uuid(), alive(),
            requested());
 
   platform::sleep_briefly();
+  return state + 1;
 }
 
 int main()
@@ -19,8 +20,8 @@ int main()
   fprintf(stderr, "spawn\n");
   example::bootstrap_entry(8);
 
-  // leave them running for a while
-  usleep(1000000);
+  // leave them running for a brief while
+  usleep(10000);
 
   fprintf(stderr, "Start to wind down\n");
 

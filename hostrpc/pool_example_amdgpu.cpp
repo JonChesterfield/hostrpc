@@ -7,13 +7,14 @@ POOL_INTERFACE_BOILERPLATE_AMDGPU(example, 32);
 #include "detail/platform.hpp"
 
 #if HOSTRPC_AMDGCN
-void example::run()
+uint32_t example::run(uint32_t state)
 {
   if (platform::is_master_lane())
-    printf("run from %u (of %u/%u)\n", get_current_uuid(), alive(),
+    printf("run %u from %u (of %u/%u)\n", state, get_current_uuid(), alive(),
            requested());
 
   platform::sleep_briefly();
+  return state + 1;
 }
 #endif
 

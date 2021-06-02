@@ -12,7 +12,7 @@
 #define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM) \
   struct SYMBOL : public pool_interface::hsa_pool<SYMBOL, MAXIMUM>          \
   {                                                                         \
-    void run();                                                             \
+    uint32_t run(uint32_t);                                                 \
   };
 #endif
 #if HOSTRPC_HOST
@@ -21,8 +21,8 @@
   {                                                                         \
     static int initialize(hsa::executable& ex, hsa_queue_t* queue);         \
     static int finalize();                                                  \
-    static void bootstrap_entry(uint64_t N);                                \
-    static void set_requested(uint64_t N);                                  \
+    static void bootstrap_entry(uint32_t N);                                \
+    static void set_requested(uint32_t N);                                  \
     static void teardown();                                                 \
                                                                             \
    private:                                                                 \
@@ -52,17 +52,11 @@
   struct SYMBOL : public pool_interface::pthread_pool<SYMBOL, MAXIMUM>    \
   {                                                                       \
     using Base = pool_interface::pthread_pool<SYMBOL, MAXIMUM>;           \
-    void run();                                                           \
+    uint32_t run(uint32_t);                                               \
     static int initialize() { return 0; }                                 \
     static int finalize() { return 0; }                                   \
-    static void bootstrap_entry(uint64_t N)                               \
-    {                                                                     \
-      Base::bootstrap((uint32_t)N, 0);                                    \
-    };                                                                    \
-    static void set_requested(uint64_t N)                                 \
-    {                                                                     \
-      Base::set_requested((uint32_t)N);                                   \
-    }                                                                     \
+    static void bootstrap_entry(uint32_t N) { Base::bootstrap(N, 0); };   \
+    static void set_requested(uint32_t N) { Base::set_requested(N); }     \
     static void teardown() { Base::teardown(); };                         \
   };
 #endif
@@ -96,6 +90,36 @@
 
 namespace pool_interface
 {
+constexpr inline uint64_t pack(uint32_t lo, uint32_t hi)
+{
+  return static_cast<uint64_t>(lo) | (static_cast<uint64_t>(hi) << 32u);
+}
+
+constexpr inline uint32_t getlo(uint64_t x) { return static_cast<uint32_t>(x); }
+
+constexpr inline uint32_t gethi(uint64_t x)
+{
+  return static_cast<uint32_t>(x >> 32u);
+}
+
+static_assert(0 == getlo(pack(0, 0)), "");
+static_assert(0 == gethi(pack(0, 0)), "");
+static_assert(1 == getlo(pack(1, 0)), "");
+static_assert(0 == gethi(pack(1, 0)), "");
+static_assert(0 == getlo(pack(0, 1)), "");
+static_assert(1 == gethi(pack(0, 1)), "");
+static_assert(1 == getlo(pack(1, 1)), "");
+static_assert(1 == gethi(pack(1, 1)), "");
+
+static_assert(0 == getlo(pack(0, 0)), "");
+static_assert(0 == gethi(pack(0, 0)), "");
+static_assert(UINT32_MAX == getlo(pack(UINT32_MAX, 0)), "");
+static_assert(0 == gethi(pack(UINT32_MAX, 0)), "");
+static_assert(0 == getlo(pack(0, UINT32_MAX)), "");
+static_assert(UINT32_MAX == gethi(pack(0, UINT32_MAX)), "");
+static_assert(UINT32_MAX == getlo(pack(UINT32_MAX, UINT32_MAX)), "");
+static_assert(UINT32_MAX == gethi(pack(UINT32_MAX, UINT32_MAX)), "");
+
 #if HOSTRPC_AMDGCN
 
 enum
@@ -117,9 +141,9 @@ struct threads_base
   friend Implementation;
   // Implementation to implement
   // uint32_t get_current_uuid();
-  // bool respawn_self();
+  // bool respawn_self(uint32_t /* current state */);
   // int spawn_with_uuid(uint32_t uuid);
-  // void run();
+  // uint32_t run(uint32_t); // uint32_t threaded through the calls
 
   Implementation& implementation()
   {
@@ -149,6 +173,7 @@ struct threads_base
 
   void loop()
   {
+    uint32_t state = Implementation().get_stored_state();
   start:;
     uint32_t uuid = Implementation().get_current_uuid();
     uint32_t req = requested();
@@ -170,9 +195,8 @@ struct threads_base
         spawn();
       }
 
-    Implementation().run();
-
-    if (Implementation().respawn_self())
+    state = Implementation().run(state);
+    if (Implementation().respawn_self(state))
       {
         return;
       }
@@ -182,7 +206,7 @@ struct threads_base
       }
   }
 
-  void set_req_zero_until_alive_zero()
+  void set_req_zero_until_alive_zero(uint32_t state)
   {
   start:;
     // repeatedly sets zero to win races with threads that spawn more
@@ -192,7 +216,7 @@ struct threads_base
     if (alive() != 0)
       {
         // wait for the managed threads to exit
-        if (Implementation().respawn_self())
+        if (Implementation().respawn_self(state))
           {
             return;
           }
@@ -273,18 +297,19 @@ struct via_pthreads : public threads_base<Max, via_pthreads<Derived, Max>>
   friend base;
 
   uint32_t get_current_uuid() { return current_uuid; }
+  uint32_t get_stored_state() { return 0; }
 
-  bool respawn_self() { return false; }
+  bool respawn_self(uint32_t) { return false; }
 
   int spawn_with_uuid(uint32_t uuid)
   {
-    uint64_t s = uuid;
+    uint64_t s = pack(uuid, 0);
     void* arg;
     __builtin_memcpy(&arg, &s, 8);
     return !!pthread_create_detached(pthread_start_routine, arg);
   }
 
-  void run() { static_cast<Derived*>(this)->run(); }
+  uint32_t run(uint32_t x) { return static_cast<Derived*>(this)->run(x); }
 
   static void bootstrap_target() { Derived::instance()->loop(); }
 
@@ -306,7 +331,7 @@ struct via_pthreads : public threads_base<Max, via_pthreads<Derived, Max>>
       }
   }
 
-  void teardown() { base::set_req_zero_until_alive_zero(); }
+  void teardown() { base::set_req_zero_until_alive_zero(0); }
 
  private:
   static thread_local uint32_t current_uuid;
@@ -315,9 +340,7 @@ struct via_pthreads : public threads_base<Max, via_pthreads<Derived, Max>>
   {
     uint64_t u64;
     __builtin_memcpy(&u64, &p, 8);
-    uint32_t u32 = static_cast<uint32_t>(u64);
-    current_uuid = u32;
-
+    current_uuid = getlo(u64);
     bootstrap_target();
 
     return NULL;
@@ -364,11 +387,11 @@ __attribute__((always_inline)) static char* get_reserved_addr()
   return (char*)p + offset_reserved2;
 }
 
-static uint32_t load_from_reserved_addr()
+static uint64_t load_from_reserved_addr()
 {
   uint64_t tmp;
   __builtin_memcpy(&tmp, get_reserved_addr(), 8);
-  return (uint32_t)tmp;
+  return tmp;
 }
 
 template <typename Derived, uint32_t Max>
@@ -378,29 +401,22 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
   using base = threads_base<Max, via_hsa<Derived, Max>>;
   friend base;
 
-  uint32_t get_current_uuid() { return load_from_reserved_addr(); }
+  uint32_t get_current_uuid() { return getlo(load_from_reserved_addr()); }
+  uint32_t get_stored_state() { return gethi(load_from_reserved_addr()); }
 
-  bool respawn_self()
+  bool respawn_self(uint32_t state)
   {
-    enqueue_self();
+    enqueue_helper(get_current_uuid(), state);
     return true;
   }
 
   int spawn_with_uuid(uint32_t uuid)
   {
-    // relaunches same kernel that called this
-    __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();
-    auto func = [=](unsigned char* packet) {
-      uint64_t addr = uuid;
-      __builtin_memcpy(packet + offset_reserved2, &addr, 8);
-    };
-
-    // copies from p, then calls func
-    enqueue_dispatch(func, (const unsigned char*)p);
-    return 0;  // succeeds
+    enqueue_helper(uuid, 0);
+    return 0;
   }
 
-  void run() { static_cast<Derived*>(this)->run(); }
+  uint32_t run(uint32_t x) { return static_cast<Derived*>(this)->run(x); }
 
   static void bootstrap_target() { Derived::instance()->loop(); }
 
@@ -429,7 +445,7 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
 
   void teardown()
   {
-    base::set_req_zero_until_alive_zero();
+    base::set_req_zero_until_alive_zero(0);
 
     // All (pool managed) threads have exited. Teardown self.
     __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();
@@ -455,6 +471,17 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
     auto func = [=](unsigned char* packet) {
       // write the non-zero signal to the completion slot
       __builtin_memcpy(packet + offset_signal, &maybe_signal, 8);
+    };
+    enqueue_dispatch(func, (const unsigned char*)p);
+  }
+
+ private:
+  void enqueue_helper(uint32_t uuid, uint32_t state)
+  {
+    __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();
+    auto func = [=](unsigned char* packet) {
+      uint64_t tmp = pack(uuid, state);
+      __builtin_memcpy(packet + offset_reserved2, &tmp, 8);
     };
     enqueue_dispatch(func, (const unsigned char*)p);
   }
@@ -498,7 +525,7 @@ struct api : private Via<Derived, Max>
 
   static void spawn() { return static_cast<Base*>(instance())->spawn(); }
 
-  static void run() { static_cast<Base*>(instance())->run(); }
+  static uint32_t run(uint32_t x) { static_cast<Base*>(instance())->run(x); }
 
   static void bootstrap(uint32_t req, const unsigned char* d)
   {
