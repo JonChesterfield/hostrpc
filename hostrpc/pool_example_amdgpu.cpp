@@ -25,7 +25,7 @@ void example::run()
 #include "incbin.h"
 #include "launch.hpp"
 
-INCBIN(threads_bootstrap_so, "threads_bootstrap.gcn.so");
+INCBIN(pool_example_amdgpu_so, "pool_example_amdgpu.gcn.so");
 
 // need to split enable print off from the macro
 #undef printf
@@ -35,12 +35,12 @@ int main_with_hsa()
 {
   hsa_agent_t kernel_agent = hsa::find_a_gpu_or_exit();
 
-  auto ex = hsa::executable(kernel_agent, threads_bootstrap_so_data,
-                            threads_bootstrap_so_size);
+  auto ex = hsa::executable(kernel_agent, pool_example_amdgpu_so_data,
+                            pool_example_amdgpu_so_size);
   if (!ex.valid())
     {
       fprintf(stderr, "Failed to load executable %s\n",
-              "threads_bootstrap.gcn.so");
+              "pool_example_amdgpu.gcn.so");
       exit(1);
     }
 

@@ -157,24 +157,24 @@ $LINK obj/allocator_openmp.x64.bc obj/openmp_plugins.x64.bc -o obj/openmp_suppor
 
 
 $CXX_GCN threads.cpp -O3 -c -o threads.gcn.bc
-# $CXXCL_GCN threads_bootstrap.cpp -O3 -c -o threads_bootstrap.ocl.gcn.bc
+# $CXXCL_GCN pool_example_amdgpu.cpp -O3 -c -o pool_example_amdgpu.ocl.gcn.bc
 
-$CLANGXX $XOPENCL threads_bootstrap.cpp -O3 -emit-llvm -nogpulib -target amdgcn-amd-amdhsa -mcpu=$GFX -c -o threads_bootstrap.ocl.gcn.bc
-$CXX_GCN threads_bootstrap.cpp -O3 -c -o threads_bootstrap.cpp.gcn.bc
+$CLANGXX $XOPENCL pool_example_amdgpu.cpp -O3 -emit-llvm -nogpulib -target amdgcn-amd-amdhsa -mcpu=$GFX -c -o pool_example_amdgpu.ocl.gcn.bc
+$CXX_GCN pool_example_amdgpu.cpp -O3 -c -o pool_example_amdgpu.cpp.gcn.bc
 
-$LINK threads.gcn.bc threads_bootstrap.ocl.gcn.bc threads_bootstrap.cpp.gcn.bc obj/hostrpc_printf.gcn.bc | $OPT -O2 -o obj/merged_threads_bootstrap.gcn.bc 
-$DIS obj/merged_threads_bootstrap.gcn.bc
+$LINK threads.gcn.bc pool_example_amdgpu.ocl.gcn.bc pool_example_amdgpu.cpp.gcn.bc obj/hostrpc_printf.gcn.bc | $OPT -O2 -o obj/merged_pool_example_amdgpu.gcn.bc 
+$DIS obj/merged_pool_example_amdgpu.gcn.bc
 
-$CXX_GCN_LD obj/merged_threads_bootstrap.gcn.bc -o threads_bootstrap.gcn.so
+$CXX_GCN_LD obj/merged_pool_example_amdgpu.gcn.bc -o pool_example_amdgpu.gcn.so
 
 $CXX_X64 threads.cpp -O3 -c -o threads.x64.bc
-$CXX_X64 threads_bootstrap.cpp -I$HSAINC -O3 -c -o threads_bootstrap.x64.bc
+$CXX_X64 pool_example_amdgpu.cpp -I$HSAINC -O3 -c -o pool_example_amdgpu.x64.bc
 $CXX_X64_LD threads.x64.bc obj/hsa_support.x64.bc obj/catch.o $LDFLAGS -o threads.x64.exe
 
 
-$CXX_X64_LD threads_bootstrap.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o threads_bootstrap.x64.exe
+$CXX_X64_LD pool_example_amdgpu.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o pool_example_amdgpu.x64.exe
 
-./threads_bootstrap.x64.exe
+./pool_example_amdgpu.x64.exe
 
 exit
 
@@ -478,7 +478,7 @@ if (($have_amdgcn)); then
     ./x64_gcn_debug.exe
 fi
 
-# ./threads_bootstrap.x64.exe crashes the vega902 gui at present
+# ./pool_example_amdgpu.x64.exe crashes the vega902 gui at present
 
 if (($have_amdgcn)); then
 time ./persistent_kernel.exe
