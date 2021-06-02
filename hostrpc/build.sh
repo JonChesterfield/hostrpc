@@ -79,7 +79,7 @@ OPT="$RDIR/bin/opt"
 CXX="$CLANGXX -std=c++14 -Wall -Wextra"
 LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR -lelf"
 
-AMDGPU="--target=amdgcn-amd-amdhsa -march=$GFX -mcpu=$GFX -mllvm -amdgpu-fixed-function-abi -Xclang -fconvergent-functions -nogpulib"
+AMDGPU="--target=amdgcn-amd-amdhsa -march=$GFX -mcpu=$GFX -Xclang -fconvergent-functions -nogpulib"
 
 PTX_VER="-Xclang -target-feature -Xclang +ptx63"
 NVGPU="--target=nvptx64-nvidia-cuda -march=sm_50 $PTX_VER -Xclang -fconvergent-functions"
@@ -157,7 +157,9 @@ $LINK obj/allocator_openmp.x64.bc obj/openmp_plugins.x64.bc -o obj/openmp_suppor
 
 
 $CXX_GCN threads.cpp -O3 -c -o threads.gcn.bc
-$CXXCL_GCN threads_bootstrap.cpp -O3 -c -o threads_bootstrap.ocl.gcn.bc
+# $CXXCL_GCN threads_bootstrap.cpp -O3 -c -o threads_bootstrap.ocl.gcn.bc
+
+$CLANGXX $XOPENCL threads_bootstrap.cpp -O3 -emit-llvm -nogpulib -target amdgcn-amd-amdhsa -mcpu=$GFX -c -o threads_bootstrap.ocl.gcn.bc
 $CXX_GCN threads_bootstrap.cpp -O3 -c -o threads_bootstrap.cpp.gcn.bc
 
 $LINK threads.gcn.bc threads_bootstrap.ocl.gcn.bc threads_bootstrap.cpp.gcn.bc obj/hostrpc_printf.gcn.bc | $OPT -O2 -o obj/merged_threads_bootstrap.gcn.bc 

@@ -3,6 +3,42 @@
 
 #include "detail/platform_detect.hpp"
 
+#include "pool_interface_macros.hpp"
+
+#if HOSTRPC_AMDGCN && !defined(__OPENCL_C_VERSION__)
+#define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM) \
+  struct SYMBOL : public pool_interface::hsa_pool<SYMBOL, MAXIMUM>          \
+  {                                                                         \
+    void run();                                                             \
+  }
+#else
+#define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM)
+#endif
+
+#if HOSTRPC_HOST && !defined(__OPENCL_C_VERSION__)
+#define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_HOST(SYMBOL, MAXIMUM) \
+  struct SYMBOL : public pool_interface::pthread_pool<SYMBOL, MAXIMUM>    \
+  {                                                                       \
+    void run();                                                           \
+  }
+#else
+#define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_HOST(SYMBOL, MAXIMUM)
+#endif
+
+#define POOL_INTERFACE_BOILERPLATE_AMDGPU(SYMBOL, MAXIMUM)             \
+  POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM); \
+  POOL_INTERFACE_GPU_OPENCL_WRAPPERS(SYMBOL);                          \
+  POOL_INTERFACE_GPU_C_WRAPPERS(SYMBOL);                               \
+  POOL_INTERFACE_HSA_KERNEL_WRAPPERS(SYMBOL)
+
+#define POOL_INTERFACE_BOILERPLATE_HOST(SYMBOL, MAXIMUM) \
+  POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_HOST(SYMBOL, MAXIMUM);
+
+#if !defined(__OPENCL_C_VERSION__)
+// none of this works under opencl at present
+
+#include <stdint.h>
+
 #include "detail/platform.hpp"
 
 #include "hsa_packet.hpp"
@@ -410,15 +446,90 @@ struct api : private Via<Derived, Max>
   static void teardown() { return static_cast<Base*>(instance())->teardown(); }
 };
 
-#if HOSTRPC_HOST
-template <typename Derived, uint32_t Max>
-using default_pool = pthread_pool<Derived, Max>;
-#endif
-#if HOSTRPC_AMDGCN
-template <typename Derived, uint32_t Max>
-using default_pool = hsa_pool<Derived, Max>;
-#endif
-
 }  // namespace pool_interface
 
+// In a source file.
+
+#if HOSTRPC_HOST && !defined(__OPENCL_C_VERSION__)
+
+#include "hsa.hpp"
+
+// Kernels launched from the GPU, without reference to any host code,
+// presently all use this default header
+// TODO: Not ideal to have the static assert on host side for code running
+// on gpu side
+static_assert(
+    hsa_packet::default_header ==
+        hsa::packet_header(hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
+                           hsa::kernel_dispatch_setup()),
+    "");
+
+struct gpu_kernel_info
+{
+  uint64_t symbol_address = 0;
+  uint32_t private_segment_fixed_size = 0;
+  uint32_t group_segment_fixed_size = 0;
+};
+
+struct hsa_host_pool_state
+{
+  gpu_kernel_info set_requested;
+  gpu_kernel_info bootstrap_entry;
+  gpu_kernel_info teardown;
+  hsa_signal_t signal = {0};
+  hsa_queue_t* queue;
+};
+
+namespace
+{
+inline int initialize_kernel_info(hsa::executable& ex, std::string name,
+                                  gpu_kernel_info* info)
+{
+  uint64_t symbol_address = ex.get_symbol_address_by_name(name.c_str());
+  auto m = ex.get_kernel_info();
+  auto it = m.find(name);
+  if (it == m.end() || symbol_address == 0)
+    {
+      return 1;
+    }
+  if ((it->second.private_segment_fixed_size > UINT32_MAX) ||
+      (it->second.group_segment_fixed_size > UINT32_MAX))
+    {
+      return 1;
+    }
+
+  info->symbol_address = symbol_address;
+  info->private_segment_fixed_size =
+      (uint32_t)it->second.private_segment_fixed_size;
+  info->group_segment_fixed_size =
+      (uint32_t)it->second.group_segment_fixed_size;
+  return 0;
+}
+
+inline void wait_for_signal_equal_zero(hsa_signal_t signal,
+                                       uint64_t timeout_hint = UINT64_MAX)
+{
+  do
+    {
+    }
+  while (hsa_signal_wait_acquire(signal, HSA_SIGNAL_CONDITION_EQ, 0,
+                                 timeout_hint, HSA_WAIT_STATE_ACTIVE) != 0);
+}
+
+inline void invoke_teardown(gpu_kernel_info teardown, hsa_signal_t signal,
+                            hsa_queue_t* queue)
+{
+  const hsa_signal_value_t init = 1;
+  hsa_signal_store_screlease(signal, init);
+
+  hsa::launch_kernel(
+      teardown.symbol_address, teardown.private_segment_fixed_size,
+      teardown.group_segment_fixed_size, queue, signal.handle, 0, {0});
+
+  wait_for_signal_equal_zero(signal, 50000 /*000000*/);
+}
+}  // namespace
+#endif
+
+#endif  // !__OPENCL_C_VERSION__
 #endif
