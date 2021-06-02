@@ -174,14 +174,9 @@ $CXX_X64_LD threads.x64.bc obj/hsa_support.x64.bc obj/catch.o $LDFLAGS -o thread
 
 $CXX_X64_LD pool_example_amdgpu.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o pool_example_amdgpu.x64.exe
 
-# Not totally reliable, sometimes raises memory access errors
-set +e
-./pool_example_amdgpu.x64.exe
-set -e
 
 $CXX_X64 -I$HSAINC pool_example_host.cpp -O3 -c -o obj/pool_example_host.x64.bc
 $CXX_X64_LD obj/pool_example_host.x64.bc $LDFLAGS -o pool_example_host.x64.exe
-./pool_example_host.x64.exe
 
 $CXX_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.code.bc
 $CXXCL_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.kern.bc
@@ -232,14 +227,10 @@ if (($have_nvptx)); then
  $CLANGXX nvptx_loader.cpp obj/cuda_support.x64.bc --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -lcudart -pthread -o ../nvptx_loader.exe
 fi
 
-
 if (($have_amdgcn)); then
 $CLANG -std=c11 $COMMONFLAGS $GCNFLAGS test_example.c -c -o obj/test_example.gcn.bc
 $LINK obj/test_example.gcn.bc obj/hostrpc_printf.gcn.bc amdgcn_loader_device.gcn.bc -o test_example.gcn.bc
 $CXX_GCN_LD test_example.gcn.bc -o test_example.gcn
-set +e
-./test_example.gcn
-set -e
 fi
 
 $CLANG -std=c11 -I$HSAINC $COMMONFLAGS $X64FLAGS printf_test.c -c -o obj/printf_test.x64.bc
@@ -397,7 +388,7 @@ if (($have_amdgcn)); then
     $LINK obj/openmp_support.x64.bc obj/hsa_support.x64.bc obj/syscall.x64.bc -o obj/demo_bitcode_gcn.omp.bc
 
 # openmp is taking an excessive amount of time to compile, drop it for now
-    $CLANGXX -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  -DDEMO_AMDGCN=1 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang obj/demo_bitcode_gcn.omp.bc -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR && ./demo_openmp_gcn
+ #   $CLANGXX -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  -DDEMO_AMDGCN=1 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang obj/demo_bitcode_gcn.omp.bc -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR && ./demo_openmp_gcn
 fi
 
 if (($have_nvptx)); then
@@ -469,7 +460,20 @@ time valgrind --leak-check=full --fair-sched=yes ./prototype/states.exe
 
 set +e # Keep running tests after one fails
 
-./threads.x64.exe
+# ./threads.x64.exe
+
+time ./x64_x64_stress.exe
+
+if (($have_amdgcn)); then
+./test_example.gcn
+fi
+
+# Not totally reliable, sometimes raises memory access errors
+if (($have_amdgcn)); then
+    ./pool_example_amdgpu.x64.exe
+fi
+./pool_example_host.x64.exe
+
 
 if (($have_amdgcn)); then
     ./x64_gcn_debug.exe
@@ -482,7 +486,6 @@ time ./persistent_kernel.exe
 fi
 
 time ./tests.exe
-time ./x64_x64_stress.exe
 
 if (($have_amdgcn)); then
 echo "Call hostcall/loader executable"

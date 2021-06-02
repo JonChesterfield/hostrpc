@@ -135,6 +135,11 @@ template <typename Derived, template <typename, uint32_t> class Via,
           uint32_t Max>
 struct api;
 
+static inline bool print_enabled()
+{
+  return false && platform::is_master_lane();
+}
+
 template <uint32_t Max, typename Implementation>
 struct threads_base
 {
@@ -157,7 +162,7 @@ struct threads_base
     uint32_t uuid = allocate();
     if (uuid < /*requested()*/ maximum())  // maximum should be correct too
       {
-        if (platform::is_master_lane())
+        if (print_enabled())
           printf("uuid %u: spawning %u\n", Implementation().get_current_uuid(),
                  uuid);
         if (Implementation().spawn_with_uuid(uuid) == 0)
@@ -181,7 +186,7 @@ struct threads_base
     if (uuid >= req)
       {
         deallocate();
-        if (platform::is_master_lane())
+        if (print_enabled())
           printf("uuid %u >= %u, deallocate (live %u)\n", uuid, req, alive());
         return;
       }
@@ -189,7 +194,7 @@ struct threads_base
     uint32_t a = alive();
     if (a < req)
       {
-        if (platform::is_master_lane())
+        if (print_enabled())
           printf("uuid %u: alive %u < req %u, spawn\n", uuid, a, req);
         // spawn extra. could spawn multiple extra.
         spawn();
