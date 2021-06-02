@@ -50,7 +50,8 @@
                                                                               \
   std::array<gpu_symbols, maximum_number_gpu> SYMBOL##_global;                \
                                                                               \
-  int SYMBOL##_initialize(hsa::executable &ex, unsigned gpu)                  \
+  int SYMBOL##_initialize(hsa::executable &ex, hsa_queue_t *queue,            \
+                          unsigned gpu)                                       \
   {                                                                           \
     if (gpu < maximum_number_gpu)                                             \
       {                                                                       \
@@ -63,24 +64,25 @@
             &SYMBOL##_global[gpu].bootstrap_entry);                           \
         rc += initialize_kernel_info(ex, "__device_" #SYMBOL "_teardown.kd",  \
                                      &SYMBOL##_global[gpu].teardown);         \
+        if (rc != 0)                                                          \
+          {                                                                   \
+            return 1;                                                         \
+          }                                                                   \
                                                                               \
+        SYMBOL##_global[gpu].queue = queue;                                   \
         if (hsa_signal_create(1, 0, NULL, &SYMBOL##_global[gpu].signal) !=    \
             HSA_STATUS_SUCCESS)                                               \
           {                                                                   \
             return 1;                                                         \
           }                                                                   \
-                                                                              \
-        if (rc == 0)                                                          \
-          {                                                                   \
-            return 0;                                                         \
-          }                                                                   \
+        return 0;                                                             \
       }                                                                       \
     return 1;                                                                 \
   }                                                                           \
                                                                               \
-  void SYMBOL##_set_requested(hsa_queue_t *queue, unsigned gpu,               \
-                              uint64_t requested)                             \
+  void SYMBOL##_set_requested(unsigned gpu, uint64_t requested)               \
   {                                                                           \
+    hsa_queue_t *queue = SYMBOL##_global[gpu].queue;                          \
     assert(gpu < maximum_number_gpu);                                         \
     gpu_kernel_info &req = SYMBOL##_global[gpu].set_requested;                \
     hsa::launch_kernel(req.symbol_address, req.private_segment_fixed_size,    \
@@ -88,9 +90,9 @@
                        {0});                                                  \
   }                                                                           \
                                                                               \
-  void SYMBOL##_bootstrap_entry(hsa_queue_t *queue, unsigned gpu,             \
-                                uint64_t requested)                           \
+  void SYMBOL##_bootstrap_entry(unsigned gpu, uint64_t requested)             \
   {                                                                           \
+    hsa_queue_t *queue = SYMBOL##_global[gpu].queue;                          \
     assert(gpu < maximum_number_gpu);                                         \
     gpu_kernel_info &req = SYMBOL##_global[gpu].bootstrap_entry;              \
     hsa::launch_kernel(req.symbol_address, req.private_segment_fixed_size,    \
@@ -98,8 +100,9 @@
                        {0});                                                  \
   }                                                                           \
                                                                               \
-  void SYMBOL##_teardown(hsa_queue_t *queue, unsigned gpu)                    \
+  void SYMBOL##_teardown(unsigned gpu)                                        \
   {                                                                           \
+    hsa_queue_t *queue = SYMBOL##_global[gpu].queue;                          \
     assert(gpu < maximum_number_gpu);                                         \
     invoke_teardown(SYMBOL##_global[gpu].teardown,                            \
                     SYMBOL##_global[gpu].signal, queue, gpu);                 \
@@ -153,7 +156,7 @@ struct gpu_symbols
   gpu_kernel_info bootstrap_entry;
   gpu_kernel_info teardown;
   hsa_signal_t signal = {0};
-
+  hsa_queue_t *queue;
   ~gpu_symbols() { hsa_signal_destroy(signal); }
 };
 
@@ -242,8 +245,6 @@ int main_with_hsa()
       exit(1);
     }
 
-  example_initialize(ex, 0);
-
   if (hostrpc_print_enable_on_hsa_agent(ex, kernel_agent) != 0)
     {
       fprintf(stderr, "Failed to create host printf thread\n");
@@ -257,14 +258,16 @@ int main_with_hsa()
       exit(1);
     }
 
-  example_bootstrap_entry(queue, 0, 24);
+  example_initialize(ex, queue, 0);
+
+  example_bootstrap_entry(0, 8);
 
   // leave them running for a while
   usleep(1000000);
 
   fprintf(stderr, "Start to wind down\n");
 
-  example_teardown(queue, 0);
+  example_teardown(0);
 
   return 0;
 }
