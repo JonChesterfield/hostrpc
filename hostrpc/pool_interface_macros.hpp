@@ -60,66 +60,62 @@
 
 // functions that, post _initialize, run the corresponding function on the pool
 #if HOSTRPC_HOST && !defined(__OPENCL_C_VERSION__)
-#define POOL_INTERFACE_HSA_KERNEL_WRAPPERS(SYMBOL)                            \
-                                                                              \
-  hsa_host_pool_state SYMBOL##_global;                                        \
-                                                                              \
-  int SYMBOL##_initialize(hsa::executable &ex, hsa_queue_t *queue)            \
+#define POOL_INTERFACE_STATICS_VIA_HSA(SYMBOL)                                \
+  int SYMBOL::initialize(hsa::executable &ex, hsa_queue_t *queue)             \
   {                                                                           \
     int rc = 0;                                                               \
     rc += initialize_kernel_info(ex, "__device_" #SYMBOL "_set_requested.kd", \
-                                 &SYMBOL##_global.set_requested);             \
-    rc +=                                                                     \
-        initialize_kernel_info(ex, "__device_" #SYMBOL "_bootstrap_entry.kd", \
-                               &SYMBOL##_global.bootstrap_entry);             \
+                                 &set_requested_);                            \
+    rc += initialize_kernel_info(                                             \
+        ex, "__device_" #SYMBOL "_bootstrap_entry.kd", &bootstrap_entry_);    \
     rc += initialize_kernel_info(ex, "__device_" #SYMBOL "_teardown.kd",      \
-                                 &SYMBOL##_global.teardown);                  \
+                                 &teardown_);                                 \
     if (rc != 0)                                                              \
       {                                                                       \
         return 1;                                                             \
       }                                                                       \
                                                                               \
-    SYMBOL##_global.queue = queue;                                            \
-    if (hsa_signal_create(1, 0, NULL, &SYMBOL##_global.signal) !=             \
-        HSA_STATUS_SUCCESS)                                                   \
+    queue_ = queue;                                                           \
+    if (hsa_signal_create(1, 0, NULL, &signal_) != HSA_STATUS_SUCCESS)        \
       {                                                                       \
         return 1;                                                             \
       }                                                                       \
     return 0;                                                                 \
   }                                                                           \
-  int SYMBOL##_finalize()                                                     \
+  int SYMBOL::finalize()                                                      \
   {                                                                           \
-    if (SYMBOL##_global.signal.handle)                                        \
+    if (signal_.handle)                                                       \
       {                                                                       \
-        hsa_signal_destroy(SYMBOL##_global.signal);                           \
+        hsa_signal_destroy(signal_);                                          \
       }                                                                       \
     return 0;                                                                 \
   }                                                                           \
-  void SYMBOL##_set_requested(uint64_t requested)                             \
+  void SYMBOL::set_requested(uint64_t requested)                              \
   {                                                                           \
-    hsa_queue_t *queue = SYMBOL##_global.queue;                               \
-    gpu_kernel_info &req = SYMBOL##_global.set_requested;                     \
+    gpu_kernel_info &req = set_requested_;                                    \
     hsa::launch_kernel(req.symbol_address, req.private_segment_fixed_size,    \
-                       req.group_segment_fixed_size, queue, requested, 0,     \
+                       req.group_segment_fixed_size, queue_, requested, 0,    \
                        {0});                                                  \
   }                                                                           \
                                                                               \
-  void SYMBOL##_bootstrap_entry(uint64_t requested)                           \
+  void SYMBOL::bootstrap_entry(uint64_t requested)                            \
   {                                                                           \
-    hsa_queue_t *queue = SYMBOL##_global.queue;                               \
-    gpu_kernel_info &req = SYMBOL##_global.bootstrap_entry;                   \
+    gpu_kernel_info &req = bootstrap_entry_;                                  \
     hsa::launch_kernel(req.symbol_address, req.private_segment_fixed_size,    \
-                       req.group_segment_fixed_size, queue, requested, 0,     \
+                       req.group_segment_fixed_size, queue_, requested, 0,    \
                        {0});                                                  \
   }                                                                           \
                                                                               \
-  void SYMBOL##_teardown()                                                    \
-  {                                                                           \
-    hsa_queue_t *queue = SYMBOL##_global.queue;                               \
-    invoke_teardown(SYMBOL##_global.teardown, SYMBOL##_global.signal, queue); \
-  }
+  void SYMBOL::teardown() { invoke_teardown(teardown_, signal_, queue_); }
 #else
-#define POOL_INTERFACE_HSA_KERNEL_WRAPPERS(SYMBOL)
+#define POOL_INTERFACE_STATICS_VIA_HSA(SYMBOL)
+#endif
+
+#if HOSTRPC_HOST && !defined(__OPENCL_C_VERSION__)
+#define POOL_INTERFACE_STATICS_VIA_PTHREAD(SYMBOL)
+
+#else
+#define POOL_INTERFACE_STATICS_VIA_PTHREAD(SYMBOL)
 #endif
 
 #endif

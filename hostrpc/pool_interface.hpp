@@ -5,34 +5,78 @@
 
 #include "pool_interface_macros.hpp"
 
-#if HOSTRPC_AMDGCN && !defined(__OPENCL_C_VERSION__)
+#if defined(__OPENCL_C_VERSION__)
+#define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM)
+#else
+#if HOSTRPC_AMDGCN
 #define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM) \
   struct SYMBOL : public pool_interface::hsa_pool<SYMBOL, MAXIMUM>          \
   {                                                                         \
     void run();                                                             \
-  }
-#else
-#define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM)
+  };
+#endif
+#if HOSTRPC_HOST
+#define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM) \
+  struct SYMBOL                                                             \
+  {                                                                         \
+    static int initialize(hsa::executable& ex, hsa_queue_t* queue);         \
+    static int finalize();                                                  \
+    static void bootstrap_entry(uint64_t N);                                \
+    static void set_requested(uint64_t N);                                  \
+    static void teardown();                                                 \
+                                                                            \
+   private:                                                                 \
+    static gpu_kernel_info set_requested_;                                  \
+    static gpu_kernel_info bootstrap_entry_;                                \
+    static gpu_kernel_info teardown_;                                       \
+    static hsa_signal_t signal_;                                            \
+    static hsa_queue_t* queue_;                                             \
+  };                                                                        \
+  gpu_kernel_info SYMBOL::set_requested_;                                   \
+  gpu_kernel_info SYMBOL::bootstrap_entry_;                                 \
+  gpu_kernel_info SYMBOL::teardown_;                                        \
+  hsa_signal_t SYMBOL::signal_ = {0};                                       \
+  hsa_queue_t* SYMBOL::queue_ = nullptr;
+
+#endif
 #endif
 
-#if HOSTRPC_HOST && !defined(__OPENCL_C_VERSION__)
+#if defined(__OPENCL_C_VERSION__)
+#define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_HOST(SYMBOL, MAXIMUM)
+#else
+#if HOSTRPC_AMDGCN
+#define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_HOST(SYMBOL, MAXIMUM)
+#endif
+#if HOSTRPC_HOST
 #define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_HOST(SYMBOL, MAXIMUM) \
   struct SYMBOL : public pool_interface::pthread_pool<SYMBOL, MAXIMUM>    \
   {                                                                       \
+    using Base = pool_interface::pthread_pool<SYMBOL, MAXIMUM>;           \
     void run();                                                           \
-  }
-#else
-#define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_HOST(SYMBOL, MAXIMUM)
+    static int initialize() { return 0; }                                 \
+    static int finalize() { return 0; }                                   \
+    static void bootstrap_entry(uint64_t N)                               \
+    {                                                                     \
+      Base::bootstrap((uint32_t)N, 0);                                    \
+    };                                                                    \
+    static void set_requested(uint64_t N)                                 \
+    {                                                                     \
+      Base::set_requested((uint32_t)N);                                   \
+    }                                                                     \
+    static void teardown() { Base::teardown(); };                         \
+  };
+#endif
 #endif
 
 #define POOL_INTERFACE_BOILERPLATE_AMDGPU(SYMBOL, MAXIMUM)             \
   POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM); \
+  POOL_INTERFACE_STATICS_VIA_HSA(SYMBOL);                              \
   POOL_INTERFACE_GPU_OPENCL_WRAPPERS(SYMBOL);                          \
-  POOL_INTERFACE_GPU_C_WRAPPERS(SYMBOL);                               \
-  POOL_INTERFACE_HSA_KERNEL_WRAPPERS(SYMBOL)
+  POOL_INTERFACE_GPU_C_WRAPPERS(SYMBOL);
 
-#define POOL_INTERFACE_BOILERPLATE_HOST(SYMBOL, MAXIMUM) \
-  POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_HOST(SYMBOL, MAXIMUM);
+#define POOL_INTERFACE_BOILERPLATE_HOST(SYMBOL, MAXIMUM)             \
+  POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_HOST(SYMBOL, MAXIMUM); \
+  POOL_INTERFACE_STATICS_VIA_PTHREAD(SYMBOL);
 
 #if !defined(__OPENCL_C_VERSION__)
 // none of this works under opencl at present
@@ -138,6 +182,45 @@ struct threads_base
       }
   }
 
+  void set_req_zero_until_alive_zero()
+  {
+  start:;
+    // repeatedly sets zero to win races with threads that spawn more
+    // todo: test / prove whether this is aggressive enough, may need to
+    // adjust alive or use additional state to ensure termination
+    set_requested(0);
+    if (alive() != 0)
+      {
+        // wait for the managed threads to exit
+        if (Implementation().respawn_self())
+          {
+            return;
+          }
+        else
+          {
+            goto start;
+          }
+      }
+  }
+
+  bool bootstrap_work_already_done(uint32_t req)
+  {
+    // This thread was created by a kernel launch, account for it
+    uint32_t uuid = allocate();
+
+    // bootstrap uses inline argument to set requested as a convenience
+    set_requested(req);
+
+    if ((uuid != 0)     // already a thread running
+        || (req == 0))  // changing count to zero
+      {
+        deallocate();
+        return true;
+      }
+
+    return false;
+  }
+
   HOSTRPC_ATOMIC(uint32_t) live = 0;
   HOSTRPC_ATOMIC(uint32_t) req = 0;
 
@@ -186,7 +269,9 @@ template <typename Derived, uint32_t Max>
 struct via_pthreads : public threads_base<Max, via_pthreads<Derived, Max>>
 {
  public:
-  friend threads_base<Max, via_pthreads<Derived, Max>>;
+  using base = threads_base<Max, via_pthreads<Derived, Max>>;
+  friend base;
+
   uint32_t get_current_uuid() { return current_uuid; }
 
   bool respawn_self() { return false; }
@@ -201,19 +286,27 @@ struct via_pthreads : public threads_base<Max, via_pthreads<Derived, Max>>
 
   void run() { static_cast<Derived*>(this)->run(); }
 
-  void bootstrap_target() { static_cast<Derived*>(this)->loop(); }
+  static void bootstrap_target() { Derived::instance()->loop(); }
 
-  void bootstrap(uint32_t, const unsigned char*)
+  void bootstrap(uint32_t req, const unsigned char*)
   {
-    // TODO
-    __builtin_unreachable();
+    if (base::bootstrap_work_already_done(req))
+      {
+        return;
+      }
+
+    if (spawn_with_uuid(0) == 0)
+      {
+        // success
+      }
+    else
+      {
+        // currently can't report failure to bootstrap
+        base::deallocate();
+      }
   }
 
-  void teardown()
-  {
-    // TODO
-    __builtin_unreachable();
-  }
+  void teardown() { base::set_req_zero_until_alive_zero(); }
 
  private:
   static thread_local uint32_t current_uuid;
@@ -225,7 +318,7 @@ struct via_pthreads : public threads_base<Max, via_pthreads<Derived, Max>>
     uint32_t u32 = static_cast<uint32_t>(u64);
     current_uuid = u32;
 
-    Derived::instance()->loop();
+    bootstrap_target();
 
     return NULL;
   }
@@ -309,24 +402,16 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
 
   void run() { static_cast<Derived*>(this)->run(); }
 
-  void bootstrap_target() { static_cast<Derived*>(this)->loop(); }
+  static void bootstrap_target() { Derived::instance()->loop(); }
 
-  void bootstrap(uint32_t requested, const unsigned char* descriptor)
+  void bootstrap(uint32_t req, const unsigned char* descriptor)
   {
-    // This thread was created by a kernel launch, account for it
-    uint32_t uuid = base::allocate();
-    if (platform::is_master_lane()) printf("boostrap got uuid %u\n", uuid);
-
-    // bootstrap uses inline argument to set requested as a convenience
-    uint32_t req = requested;
-    base::set_requested(req);
-
-    if ((uuid != 0)     // already a thread running
-        || (req == 0))  // changing count to zero
+    if (base::bootstrap_work_already_done(req))
       {
-        base::deallocate();
         return;
       }
+
+    // This thread now owns uuid=0
 
     // If the target name is known, e.g. because it is derived from the
     // type name, can avoid passing a kernel in kernarg
@@ -344,25 +429,7 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
 
   void teardown()
   {
-  start:;
-    // repeatedly sets zero to win races with threads that spawn more
-    // todo: test / prove whether this is aggressive enough, may need to
-    // adjust alive or use additional state to ensure termination
-    base::set_requested(0);
-    uint32_t a = base::alive();
-
-    if (a != 0)
-      {
-        // wait for the managed threads to exit
-        if (respawn_self())
-          {
-            return;
-          }
-        else
-          {
-            goto start;
-          }
-      }
+    base::set_req_zero_until_alive_zero();
 
     // All (pool managed) threads have exited. Teardown self.
     __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();

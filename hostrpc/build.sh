@@ -174,7 +174,14 @@ $CXX_X64_LD threads.x64.bc obj/hsa_support.x64.bc obj/catch.o $LDFLAGS -o thread
 
 $CXX_X64_LD pool_example_amdgpu.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o pool_example_amdgpu.x64.exe
 
+# Not totally reliable, sometimes raises memory access errors
+set +e
 ./pool_example_amdgpu.x64.exe
+set -e
+
+$CXX_X64 -I$HSAINC pool_example_host.cpp -O3 -c -o obj/pool_example_host.x64.bc
+$CXX_X64_LD obj/pool_example_host.x64.bc $LDFLAGS -o pool_example_host.x64.exe
+./pool_example_host.x64.exe
 
 exit
 

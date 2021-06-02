@@ -1,5 +1,4 @@
 #include "detail/platform_detect.hpp"
-
 #include "pool_interface.hpp"
 
 POOL_INTERFACE_BOILERPLATE_AMDGPU(example, 32);
@@ -8,7 +7,6 @@ POOL_INTERFACE_BOILERPLATE_AMDGPU(example, 32);
 #include "detail/platform.hpp"
 
 #if HOSTRPC_AMDGCN
-
 void example::run()
 {
   if (platform::is_master_lane())
@@ -17,7 +15,6 @@ void example::run()
 
   platform::sleep_briefly();
 }
-
 #endif
 
 #if HOSTRPC_HOST
@@ -57,18 +54,18 @@ int main_with_hsa()
       exit(1);
     }
 
-  example_initialize(ex, queue);
+  example::initialize(ex, queue);
 
-  example_bootstrap_entry(8);
+  example::bootstrap_entry(8);
 
   // leave them running for a while
   usleep(1000000);
 
   fprintf(stderr, "Start to wind down\n");
 
-  example_teardown();
+  example::teardown();
 
-  example_finalize();
+  example::finalize();
 
   return 0;
 }
