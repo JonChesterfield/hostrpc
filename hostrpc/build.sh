@@ -173,7 +173,10 @@ $CXX_X64_LD threads.x64.bc obj/hsa_support.x64.bc obj/catch.o $LDFLAGS -o thread
 
 
 $CXX_X64_LD pool_example_amdgpu.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o pool_example_amdgpu.x64.exe
-
+$RDIR/bin/amdgpu-arch
+./pool_example_amdgpu.x64.exe #works
+./pool_example_amdgpu.x64.exe #hangs then persistent memory fault
+exit
 
 $CXX_X64 -I$HSAINC pool_example_host.cpp -O3 -c -o obj/pool_example_host.x64.bc
 $CXX_X64_LD obj/pool_example_host.x64.bc $LDFLAGS -o pool_example_host.x64.exe
@@ -475,15 +478,15 @@ fi
 ./pool_example_host.x64.exe
 
 
-if (($have_amdgcn)); then
-    ./x64_gcn_debug.exe
-fi
+#if (($have_amdgcn)); then
+#    ./x64_gcn_debug.exe
+#fi
 
 # ./pool_example_amdgpu.x64.exe crashes the vega902 gui at present
 
-if (($have_amdgcn)); then
-time ./persistent_kernel.exe
-fi
+#if (($have_amdgcn)); then
+#time ./persistent_kernel.exe
+#fi
 
 time ./tests.exe
 

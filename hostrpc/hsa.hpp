@@ -490,7 +490,7 @@ inline std::unordered_map<std::string, kernel_info> parse_metadata(
 
 struct executable
 {
-  static const bool verbose = false;
+  static const bool verbose = true;
   // hsa expects executable management to be quite dynamic
   // one can load multiple shared libraries, which can probably reference
   // symbols from each other. It supports 'executable_global_variable_define'
@@ -572,10 +572,23 @@ struct executable
   {
     if (HSA_STATUS_SUCCESS == init_state())
       {
+        if (verbose)
+          {
+            printf("executable: init success\n");
+          }
         if (HSA_STATUS_SUCCESS == load_from_memory(bytes, size))
           {
+            if (verbose)
+              {
+                printf("executable: load_from_memory success\n");
+              }
+
             if (HSA_STATUS_SUCCESS == freeze_and_validate())
               {
+                if (verbose)
+                  {
+                    printf("executable: freeze_and_validate\n");
+                  }
                 return;
               }
             else

@@ -9,9 +9,10 @@ POOL_INTERFACE_BOILERPLATE_AMDGPU(example, 32);
 #if HOSTRPC_AMDGCN
 uint32_t example::run(uint32_t state)
 {
-  if (platform::is_master_lane())
-    printf("run %u from %u (of %u/%u)\n", state, get_current_uuid(), alive(),
-           requested());
+  if (0)
+    if (platform::is_master_lane())
+      printf("run %u from %u (of %u/%u)\n", state, get_current_uuid(), alive(),
+             requested());
 
   platform::sleep_briefly();
   return state + 1;
@@ -32,7 +33,7 @@ INCBIN(pool_example_amdgpu_so, "pool_example_amdgpu.gcn.so");
 int main_with_hsa()
 {
   hsa_agent_t kernel_agent = hsa::find_a_gpu_or_exit();
-
+  fprintf(stderr, "Using agent %lu\n", kernel_agent.handle);
   auto ex = hsa::executable(kernel_agent, pool_example_amdgpu_so_data,
                             pool_example_amdgpu_so_size);
   if (!ex.valid())
@@ -41,8 +42,12 @@ int main_with_hsa()
               "pool_example_amdgpu.gcn.so");
       exit(1);
     }
+  else
+    {
+      fprintf(stderr, "Loaded executable %s\n", "pool_example_amdgpu.gcn.so");
+    }
 
-  if (hostrpc_print_enable_on_hsa_agent(ex, kernel_agent) != 0)
+  if (0 && hostrpc_print_enable_on_hsa_agent(ex, kernel_agent) != 0)
     {
       fprintf(stderr, "Failed to create host printf thread\n");
       exit(1);
@@ -55,12 +60,22 @@ int main_with_hsa()
       exit(1);
     }
 
+  {
+    unsigned char *base;
+    __builtin_memcpy(&base, (char *)queue + 8, 8);
+    uint32_t size;
+    __builtin_memcpy(&size, (char *)queue + 24, 4);
+
+    fprintf(stderr, "Queue is %p, packet base %p, size %u\n", queue, base,
+            size);
+  }
+
   example::initialize(ex, queue);
 
-  example::bootstrap_entry(8);
+  example::bootstrap_entry(1024);
 
   // leave them running for a while
-  usleep(1000000);
+  usleep(10000000);
 
   fprintf(stderr, "Start to wind down\n");
 
@@ -68,12 +83,25 @@ int main_with_hsa()
 
   example::finalize();
 
+  fprintf(stderr, "Finalized\n");
+  usleep(1000 * 1000);
+
+  {
+    hsa_status_t rc = hsa_queue_destroy(queue);
+    if (rc != HSA_STATUS_SUCCESS)
+      {
+        fprintf(stderr, "Failed to destroy queue: %s\n",
+                hsa::status_string(rc));
+      }
+  }
+
+  fprintf(stderr, "Destroyed\n");
+  usleep(1000 * 1000);
   return 0;
 }
 
 int main()
 {
-  hsa::init state;
   fprintf(stderr, "In main\n");
   return main_with_hsa();
 }
