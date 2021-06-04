@@ -537,11 +537,9 @@ struct client_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE void rpc_invoke_use_given_slot(Use use,
                                                   uint32_t slot) noexcept
   {
-    platform::fence_acquire();
-
     // call the continuation
     use(&shared_buffer[slot]);
-
+    platform::fence_release();
     // mark the work as no longer in use
     // todo: is it better to leave this for the GC?
     // can free slots more lazily by updating the staging outbox and

@@ -39,9 +39,9 @@ struct client_t : public process_t
     }
 
     if (in & out) {
-      // use result
-      std::atomic_thread_fence(std::memory_order_acquire);
+      // read from buffer then write to outbox
       u(buffer);
+      std::atomic_thread_fence(std::memory_order_release);
       outbox->store(0, std::memory_order_release); out = 0;
     }
 
