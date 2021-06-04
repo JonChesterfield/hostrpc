@@ -173,10 +173,6 @@ $CXX_X64_LD threads.x64.bc obj/hsa_support.x64.bc obj/catch.o $LDFLAGS -o thread
 
 
 $CXX_X64_LD pool_example_amdgpu.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o pool_example_amdgpu.x64.exe
-$RDIR/bin/amdgpu-arch
-./pool_example_amdgpu.x64.exe #works
-./pool_example_amdgpu.x64.exe #hangs then persistent memory fault
-exit
 
 $CXX_X64 -I$HSAINC pool_example_host.cpp -O3 -c -o obj/pool_example_host.x64.bc
 $CXX_X64_LD obj/pool_example_host.x64.bc $LDFLAGS -o pool_example_host.x64.exe
@@ -476,6 +472,15 @@ if (($have_amdgcn)); then
     ./pool_example_amdgpu.x64.exe
 fi
 ./pool_example_host.x64.exe
+
+
+$RDIR/bin/amdgpu-arch
+./pool_example_amdgpu.x64.exe #works
+./test_example.gcn
+
+./pool_example_amdgpu.x64.exe #hangs then persistent memory fault
+
+exit
 
 
 #if (($have_amdgcn)); then
