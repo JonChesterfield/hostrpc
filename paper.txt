@@ -89,33 +89,52 @@ The corresponding sequence from the server is:
 
 The state transitions are linear and ordered by the write-only property. With instantaneous mailbox delivery, the sequence is:
 
-Name                Client Server
-                    In Out In Out
-Quiescent           0  0   0  0
-Work posted         0  1   1  0
-Server working      0  1   1  0
-Result posted       1  1   1  1
-Client working      1  1   1  1
-Client finished     1  0   0  1
-Server finished     0  0   0  0
-Client return       0  0   0  0
+\begin{center}
+\begin{tabular}{l | l l l l}
+      \multicolumn{1}{l|}{} &
+      \multicolumn{2}{l}{Client} &
+      \multicolumn{2}{l}{Server} \\
+State            & In & Out & In & Out \\
+\hline
+Quiescent        &  0 & 0   & 0  & 0  \\
+Work posted      &  0 & 1   & 1  & 0  \\
+Server working   &  0 & 1   & 1  & 0  \\
+Result posted    &  1 & 1   & 1  & 1  \\
+Client working   &  1 & 1   & 1  & 1  \\
+Client finished  &  1 & 0   & 0  & 1  \\
+Server finished  &  0 & 0   & 0  & 0  \\
+Client return    &  0 & 0   & 0  & 0  \\
+
+\end{tabular}
+\end{center}
 
 If the mailbox delay is made explicit, and the two bit state given as an integer, the same table is:
 
-Name                Client Server Client Server
-                    In Out In Out
-Quiescent           0  0   0  0        0      0
-Work posted         0  1   0  0        1      0
-                    0  1   1  0        1      2
-Server working      0  1   1  0        1      2
-Result posted       0  1   1  1        1      3
-                    1  1   1  1        3      3
-Client working      1  1   1  1        3      3
-Client finished     1  0   1  1        2      3
-                    1  0   0  1        2      1
-Server finished     1  0   0  0        2      0
-                    0  0   0  0        0      0
-Client return       0  0   0  0        0      0
+\begin{center}
+\begin{tabular}{l | l l l l | l l}
+      \multicolumn{1}{l|}{} &
+      \multicolumn{2}{l}{Client} &
+      \multicolumn{2}{l|}{Server} &
+      \multicolumn{1}{l}{Client} &
+      \multicolumn{1}{l}{Server} \\
+State            &   In  & Out  & In  & Out     &        &  \\
+\hline
+Quiescent        &   0   & 0    & 0   & 0       & 0      & 0 \\
+Work posted      &   0   & 1    & 0   & 0       & 1      & 0 \\
+                 &   0   & 1    & 1   & 0       & 1      & 2 \\
+Server working   &   0   & 1    & 1   & 0       & 1      & 2 \\
+Result posted    &   0   & 1    & 1   & 1       & 1      & 3 \\
+                 &   1   & 1    & 1   & 1       & 3      & 3 \\
+Client working   &   1   & 1    & 1   & 1       & 3      & 3 \\
+Client finished  &   1   & 0    & 1   & 1       & 2      & 3 \\
+                 &   1   & 0    & 0   & 1       & 2      & 1 \\
+Server finished  &   1   & 0    & 0   & 0       & 2      & 0 \\
+                 &   0   & 0    & 0   & 0       & 0      & 0 \\
+Client return    &   0   & 0    & 0   & 0       & 0      & 0 \\
+
+\end{tabular}
+\end{center}
+
 
 Writes do not race between client and server as each address is only written by one of them. Memory operations are ordered by fences within each process. Each process reads from inbox, then reads from the buffer, then writes to the outbox.
 
