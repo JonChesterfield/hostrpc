@@ -2,63 +2,71 @@ Shared memory remote procedure calls
 
 The remote procedure call (RPC) is the simplest possible interface for executing code on some other processor. It's a function call, same as any other. That surface simplicity hides a variety of well known problems, as characterised by Tanenbaum & Renesse. Vinoksi's paper arguing to retire RPC on similar grounds is titled "Convenience over Correctness". The observation behind this paper is that almost none of the problems apply on a shared memory system, such as a recent host + gpu heterogenous machine. This paper sketches an implementation of RPC for GPU systems as a complement to the existing kernel launch paradigm. 
 
-Ambiguity over which role is server and which client
-Unexpected messages. No problem, reliable transfer pipe.
-Single threaded servers. The server probably has to deal with multiple concurrent clients. That ship has sailed.
-Two army problem is another instance of communication errors.
-Multicast. RPC is inherently two party, doesn't really do it.
-Parameter passing, marshalling, globals. Still bad, but have shared pointers.
-Timing, i.e. cant do realtime. Sure.
-Server crash. Ensuring exactly once semantics. Client crash.
-ABI mismatch. Endian.
-Client stalls while waiting. True, but not essential. See sect #.
-Lack of streamlining. Same fix as above.
-Cost modelling. I.e. it's bad to run a function remotely that would be quicker than the overhead.
-
-Background
-- RPC in general, based loosely around Tanenbaum
-- A note on distributed computing. Broadly same ground. Has a final remark that objects on the same machine can be handled without the failure modes.
+Terminology is not uniform in this domain. Let client be the entity that initiates the procedure call and server be the one that does the work of the call. Process will refer to either client or server. Thread will refer to a posix thread on a cpu, to a warp on nvptx, or to a wavefront on amdgpu.
 
 
-Why
-GPU programming is primarily based on a host processor offloading tasks to a GPU. This is the case for CUDA, HIP, OpenCL, OpenMP, SYCL, DPC++. An exception is the reverse offload work of Chen et al, which runs the main() routine on an Intel MIC chip, using a remote procedure call to exceute control flow heavy tasks on the host processor. (todo: sent email, did they reply?). There are however tasks that a GPU cannot do without cooperation from the host such as host memory allocation and file I/O. Printf and malloc may be special cased in the compiler, e.g. printf works with Cuda but fprintf does not. The author is involved with the LLVM OpenMP implementation on AMDGPU, where the library described here is intended to provide that cooperation.
+# Background
 
-The opposite direction also works, where a persistent kernel is launched on the GPU that acts as the server part of the RPC pair. The host processor can then run functions on the GPU through the RPC plumbing, instead of through the kernel launch API. This will probably be slower, as there is no dedicated hardware acceleration for the RPC subsystem, but may be more convienient. Offload between GPUs of different architectures is not yet tested but expected to work if the host memory can be exposed to both drivers successfully.
+Remote procedure calls are a procedure call that executes on a different process. Syntactically they are usually a local function that forwards the arguments to the remote process and retrieves the result before returning.
 
-Running both client and server on the same processor gives a means of sharing work between threads locally. That may be of use on nvptx platforms, where the device side kernel launch forces a process tree that can be escaped using N persistent kernels, or as a means of sharing work across numa nodes. 
+# Problems, following those articulared by Tanenbaum and Renesse.
 
-Finally this is a proof of concept for code that library compiles and runs as freestanding C++, Cuda, HIP, OpenMP and OpenCL. 
+Some problems, "Who is the Server and Who is the Client", "Multicast", "Timing Problems" (realtime), "Bad Assumptions" (performance) are cases where RPC does not fit the problem domain. These are not addressed by shared memory. "Single Threaded Servers" are indeed ruled out by a RPC implementation, but in the context of GPU compute, single threaded systems are generally ruled out by performance requirements anyway.
 
-Implementation
-RPC traditionally names the two machines involved the 'server' and the 'client', where the client initiates the call and the server performs it before copying results back. This paper follows that terminology. We assume a register architecture for the server and the client. (todo: must we?) registers are memory, perhaps better written in terms of 'memory'
+"Unexpected Messages", "The Two Army Problem", "Exception Handling", "Repeated Execution Semantics", "Loss of State", "Orphans", are all symptoms of a network failing. This paper assumes shared memory within a node is reliable to the extent that the node is reliable - once the connection to the GPU starts to experience unrecoverable errors, the whole node has failed, and no form of GPU compute can function.
 
-A function call, outside of the RPC approach, follows N steps:
+"Parameter Marshalling", "Parameter Passing", "Global Variables" all require some care. The implementation associated with this paper passes N uint64_t values and expects a layer above to serialize types into those N arguments, or into shared memory to be passed by pointer. The heterogenous machine hazard is present but largely solved on existing shared memory systems by choosing compatible representations, with the edge cases handled in serialisation.
+
+"Lack of Parallelism" is unlikely to be a problem with both server and client multithreaded. "Lack of Streaming", where the client waits on the server, is addressed in #.
+
+# Distributed computing
+Sun Microsystems published a note on distributed computing, which offers an object orientated perspective on local and distributed computation fundamentally differing. Partial failure and inability to directly pass pointers are invasive problems. The final section of the paper describes a middle ground, where the objects are guaranteed to be on the same machine, in which case indeterminacy is largely the same as for a single process. It does not distinguish a common address space from a local computation. The thesis of this paper is essentially that shared memory systems, where said shared memory is not subject to network failure modes, are much closer to local computation than to distributed.
+
+
+# Why
+GPU programming is primarily based on a host processor offloading tasks to a GPU. This is the case for languages CUDA, HIP, OpenCL, OpenMP, SYCL, DPC++. An exception is the reverse offload work of Chen et al, which runs the main() routine on an Intel MIC chip, using a remote procedure call to exceute control flow heavy tasks on the host processor. The source code for that work is unavailable, the paper suggests it builds on Intel provided abstractions. There are however tasks that a GPU cannot do without cooperation from the host, such as file I/O or host memory allocation. Printf and malloc may be special cased in the compiler for some languages, e.g. printf works with Cuda but fprintf does not. A library implementation of remote procedure calls can be used to fill in the gaps across all language implementations, or as a means of implementing features like OpenMP 5.0 reverse offloading.
+
+The opposite direction also works, where a persistent kernel is launched on the GPU that acts as the server part of the RPC pair. The host processor can then run functions on the GPU through the RPC plumbing, instead of through the kernel launch API. This will probably be slower, as there is no dedicated hardware acceleration for the RPC subsystem, but may be more convienient. Offload between GPUs of different architectures is not yet tested but expected to work if the host memory can be shared with both simultaneously, e.g. allowing an nvptx processor to offload work to an amdgpu processor on the same PCI subsystem. Direct memory access from one GPU to another should also be feasible.
+
+Running both client and server on the same processor gives a means of sharing work between threads locally. That may be of use on nvptx platforms, where the device side kernel launch forces a process tree that can be escaped using N persistent kernels, or as a means of sharing work across numa nodes. The author is considering using an instance as part of a sandboxing system, where an independent Linux process runs under severe seccomp restrictions, with write access to the RPC structure but nowhere else, for running untrusted machine code.
+
+Finally this is a proof of concept for code that library compiles with clang and runs as freestanding C++, Cuda, HIP, OpenMP and the C++ dialect of OpenCL. That may be of interest for header files shared across multiple implemntations, e.g. for a GPU libc.
+
+
+# Requirements
+The two processes require access to shared memory, implemented with sufficient write ordering that an atomic write to a flag is seen after writes to a buffer. PCI Express may require the flag to be at a higher memory address than the buffer for that to be robustly true. The cuda and hsa programming environments meet that requirement if appropriate fences are used. Atomic load and store are sufficient, compare and swap better, fetch_and/fetch_or ideal.
+
+That is, given a shared memory system that allows control over the order in which writes are seen, one can implement remote procedure calls to make easier use of said shared memory system.
+
+# Implementation
+
+A function call, outside of the RPC approach, follows a sequence:
 - A call site names the function to be invoked, zero or more arguments, zero or more result values
-- The arguments are copied to somewhere that the called function knows to look for them, maybe named registers or offsets from the stack pointer
-- Space may be allocated for returned values, either as offsets from the stack pointer or moving live data out of registers
+- The arguments are copied to somewhere that the called function knows to look for them
+- Space is allocated for returned values
 - The location to return to is written somewhere, as if it was another argument
-- Control flow changes to that of the called function, e.g. by writing to the instruction pointer
+- Control flow jumps to that of the called function
 - The called function retrieves arguments from the location above (number)?
 - Computation occurs
 - The called function writes results to the location above (number)?
 - Control flow changes to that specified in number
 - The return values are now read from the expected location
 
-Two things may be apparent from that process. The call site and destination need to agree on where to find and place arguments and return values. This is the 'calling convention', the details of which vary with architecture and sometimes with caller/caller pair within a program. Using predictable registers or stack offsets is common as it minimises the work done at runtime to determine where to find the values. The other is that calling a function and returning from a function are closely related. With careful choice of calling convention, they can be identical.
+The call site and destination need to agree on where to find and place arguments and return values. This is the 'calling convention', the details of which vary with architecture and sometimes with caller/caller pair within a program. Using predictable registers or stack offsets is common as it minimises the work done at runtime to determine where to find the values. Some systems elide the return, noting that it is very similar to a call, by translating to continuation passing. There is an analogue to RPC, see section #.
 
 Adjusting the call process to work across machine or process boundaries involves specifying a calling convention. In this paper we assume shared memory, but no shared registers, so the place to copy arguments to when making a call is somewhere in shared memory. Returns likewise copy through shared memory. The instruction stream is not assumed to be in shared memory so that the client and server can be running concurrently or on different architectures. Control flow on the client therefore involves waiting for a response from the server before continuing, and on the server involves waiting for a request from a client. This waiting is one of the historic objections to the RPC architecture, addressed further in section #.
 
-One client, one server:
+# One client, one server:
 
-The calling process involves N clients and M servers forming transient pairings, during which the client thread communicates with a single dedicated server thread. That one-to-one interaction is described first, before the N-to-M is layered on top. The analogy is of mail boxes coordinating access to a shared buffer.
+The calling process involves N clients and M servers forming transient pairings, during which the client thread communicates with a single dedicated server thread. That one-to-one interaction is described first, before the N-to-M is layered on top. The analogy is of mail boxes coordinating access to a shared buffer. Where boolean is the smallest integer the processes can write to atomically:
 
-The client and server each own, in memory shared with the other:
+The client and server each have access to, in shared memory:
 - a boolean outbox, to which it may atomically write 0 or 1
 - a boolean inbox, from which is may atomically read 0 or 1
 - a fixed size out buffer from which it may write N uint64_t's
 - a fixed size in buffer from which it may read N uint64_t's
 
-The boolean mailboxes are strictly single writer. The client writes to some addresses that the server reads and vice versa. They are cross-wired, in that a given client/server pair use two mailboxes and two buffers in total. The 'out' objects on the client are the same memory as the 'in' objects on the server and vice versa. That propogates changes to the writable outbox through to the read-only inbox, subject to the properties of the underlying architecture as constrained by memory fences. Note that writes to the fixed size buffer must be ordered relative to the mailboxes, but need not be atomic.
+The boolean mailboxes are strictly single writer. The client writes to some addresses that the server reads and vice versa. They are cross-wired, in that a given client/server pair use two mailboxes and two buffers in total. The 'out' objects on the client are the same memory as the 'in' objects on the server and vice versa. That propagates changes to the writable outbox through to the read-only inbox, subject to the properties of the underlying architecture as constrained by memory fences. Note that writes to the fixed size buffer must be ordered relative to the outbox write but need not be atomic.
 
 Starting from all mailboxes containing zero and leaving optimisations aside, the calling sequence from the client is:
 - Write arguments to the fixed size out bufffer
@@ -87,12 +95,12 @@ Quiescent           0  0   0  0
 Work posted         0  1   1  0
 Server working      0  1   1  0
 Result posted       1  1   1  1
-Work received       1  1   1  1
+Client working      1  1   1  1
 Client finished     1  0   0  1
-Server release      0  0   0  0
+Server finished     0  0   0  0
 Client return       0  0   0  0
 
-If the mailbox delay is made explicit, and the two bit state given as an integer, ethe same table is:
+If the mailbox delay is made explicit, and the two bit state given as an integer, the same table is:
 
 Name                Client Server Client Server
                     In Out In Out
@@ -102,43 +110,58 @@ Work posted         0  1   0  0        1      0
 Server working      0  1   1  0        1      2
 Result posted       0  1   1  1        1      3
                     1  1   1  1        3      3
-Work received       1  1   1  1        3      3
+Client working      1  1   1  1        3      3
 Client finished     1  0   1  1        2      3
                     1  0   0  1        2      1
-Server release      1  0   0  0        2      0
+Server finished     1  0   0  0        2      0
                     0  0   0  0        0      0
 Client return       0  0   0  0        0      0
 
-Writes do not race between client and server as each address is only written by one of them. Memory operations are ordered by fences within the client and within the server. Between client and server, we require that the shared memory implementation, assisted by system fences, is sufficient to prevent reordering between writes to the fixed out buffer and the mailbox that indicates it has been written. A shared memory system where writes become visible in arbitrary order, without providing any method such as fences to constrain it, would be a difficult one to use. AMDGPU and NVPTX provide a consistent write order given fences (reference, maybe to pcie?). 
+Writes do not race between client and server as each address is only written by one of them. Memory operations are ordered by fences within each process. Each process reads from inbox, then reads from the buffer, then writes to the outbox.
 
 
-Many clients, many servers
-The one-to-one client/server state machine requires exclusive ownership of the memory used to communicate between the two. Scaling to multiple clients or multiple servers is done with multiple one-to-one state machines, each of which runs independently and as described above.
+# Many clients, many servers
+The one-to-one client/server state machine requires exclusive ownership of the memory used to communicate between the two. Scaling to multiple clients or multiple servers is done with multiple one-to-one state machines, each of which runs independently and as described above, with some additional locking.
 
-Thread scheduler
+# Thread scheduler
 Linux provides a fair scheduler, at least by default. A thread which takes a lock and is suspended will ultimately be rescheduled, allowing the system as a whole to make progress. Cuda does not preemptively schedule threads (warps in cuda terminology); once one starts executing it will run to completion, modulo the program ending prematurely. This also makes locking code safe. OpenCL provides no forward progress guarantees, and HSA makes limited ones. See #gpu fairness. This implementation assumes the scheduler is unfair, specifically that a thread which holds a lock may be descheduled and never return. Global locks are therefore unavailable. Forward progress can be ensured on amdgpu by using at least as many distinct locks as there can be simultaneous wavefronts on a HSA queue.
 
-Implementation limits
-This implementation assumes a limit on the number of concurrent RPC calls can be specified at library initialization time. For example, it may be limited by the maximum number of concurrently executing threads the hardware can support. It then allocates that many instances of the communication state up front, as a contiguous array, to avoid the complexity of reallocating concurrently accessed structures. This may be revised in future.
+# Implementation limits
+This implementation assumes a limit on the number of concurrent RPC calls is specified at library initialization time. For example, it may be limited by the maximum number of concurrently executing threads the hardware can support. It then allocates that many instances of the communication state up front, as a contiguous array, to avoid the complexity of reallocating concurrently accessed structures. This may be revised in future.
 
-Mutual exclusion
+# Mutual exclusion
+Each one-to-one state machine can be used by a single client and a single server at a time. Mutual exclusion, combined with the implementation choice of a fixed size array of said state machines, means picking an index which is otherwise unused. The concept of holding a lock on an index is important for describing optimisations.
+The lock acquire is very cheap for systems where the process is comprised of N threads each of which can be dedicated to a single index. For example, if the array is as wide as the maximum number of warps on an nvptx machine, compiler intrinsics can uniquely identify that warp, and use that identifier as an index. It is also cheap if the process contains a single thread, which may be the case for a CPU server implemntation, or if a feature of the surrounding infrastructure for thread management provides an ID in [0, number-threads).
+In other cases, a slot can be found dynamically using a bitmap of length equal to the maximum number of calls as an array of mutal exclusion locks. This lock array is local to the process so atomic compare and swap to set a bit at index I is taking a lock at I, which can be released by fetch_and with a mask. 
+Provided locks or a-priori knowledge ensures each one-to-one state machine is only in use by one pair of processes at a time, correctness of the whole system follows from correctness of a single pair.
 
-Given an implementation limit of at most N calls in progress, a bitmap of length N is used as an array of mutual exclusion locks. Atomic compare and swap to set a bit at index I is taking a lock at I, fetch_or to clear the bit releases. The client searches for an available slot in [0, N), which is one with inbox, outbox and lock bits clear. If it succeeds in taking the lock, it continues as in the one-to-one case. Otherwise it continues searching.
+Multiple client algorithm:
+- find an index that is outbox clear, inbox clear
+- acquire a lock on that index
+- proceed as in the one-to-one case
+- release the lock
 
-This can be significantly optimised if there is a way to map the current thread to a stable integer in [0, N). Either by passing it in from the application or from hardware intrinsics. This is not yet implemented.
-
-The server is similar and uses its own mutex array. Each thread searches for available work, which is an inbox set, outbox clear and lock clear. If it can take the lock, it proceeds as above, otherwise it continues searching. If every server instance started the search from zero, higher slots would starve, so the server state manages a last-used index and searches from there.
-
-Storage cost
-For a concurrent limit of N and a fixed size buffer of size M, cost is N * (2*M + 2mailbox) for ~ 2*N*M bits. Representative numbers for an amdgpu client and x64 host are 2048 threads, 4096 bit buffer, ~ 8MiB of shared memory, plus a 256byte lock array on each. Smaller arrays are likely to be faster when forward progress is otherwise ensured.
-
-
-Optimisations
-
-async, batching,
-
-Extensions
-
-exceeding fixed buffer size
+Multiple server algorithm:
+- find an index that is outbox clear, inbox set
+- acquire a lock on that index
+- if it is no longer outbox clear, inbox set, release lock and return
+- proceed as in the one-to-one-case
+- release the lock
 
 
+# Optimisations
+## Asynchronous call
+Some function calls have no return value, e.g. for memory deallocation. The state machine described so far requires the client to detect that the call has succeeded and set the client outbox to 0, ultimately freeing up the slot for reuse. This can be relaxed, permitting the client to return immediately after posting work by setting the outbox to 1, provided some other client call can recognise the case and clean up. This case will look like outbox and inbox set, indicating work has been recieved, but the corresponding lock is not set, so no client is waiting for it. The server is unchanged.
+
+## Bit packing
+The previous assumed a boolean is stored in the smallest integer that the process can write atomically. If the process can write with fetch_or, or atomic compare and swap, the mailbox entries can be packed into fewer machine words that are written atomically. Fetch_or is ideal but not provided as part of the base PCIe spec. Atomic compare and swap is usually susceptible to the ABA problem, but in this case the bit corresponding to the current slot can only be changed by the thread holding the corresponding lock. The compare and swap can never spuriously succeed as no other thread is trying to set the same value.
+
+## Batching outbox
+The processes access to shared memory may be high latency and based on atomic compare and swap, e.g. across PCIe. The failure case is then expensive, where a given thread lost the race and must try again. For a 64 bit compare and swap, 64 outbox updates can be passed with a single successful compare. This can be done by maintaining a process local bitmap for the outbox which is updated with fetch_and/fetch_or to change the index currently locked. After updating the process local bitmap, enter a loop trying to update the shared memory outbox. The cases are then:
+- CAS success, have written to the outbox, return
+- CAS failed, indexed bit is different to the local outbox, try again
+- CAS failed, indexed bit is the same as the local outbox, return
+That amounts to each competing thread trying to update multiple values and returning as soon as it, or one of the other threads, succeeds in propagating the locked value.
+
+## Exceeding fixed buffer size
+Shared memory RPC can handle larger arguments by allocating memory and passing a pointer. An alternative is a variant on the asynchronous call, where the client takes a lock and issues multiple call/return sequences before dropping the lock. The server can combine the buffers at that index. This is used in a printf implementation where the data passed can exceed any fixed size buffer but an allocation round trip introduces failure modes.
