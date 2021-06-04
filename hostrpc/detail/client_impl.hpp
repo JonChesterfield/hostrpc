@@ -236,8 +236,8 @@ struct client_impl : public SZT, public Counter
           {
             Word i = inbox.load_word(size, w);
             in = bits::nthbitset(i, subindex);
-            platform::fence_acquire();  // may not need this
           }
+        platform::fence_acquire();
         assert(in);
 
         // now in & out
@@ -261,8 +261,8 @@ struct client_impl : public SZT, public Counter
           {
             Word i = inbox.load_word(size, w);
             in = bits::nthbitset(i, subindex);
-            platform::fence_acquire();  // may not need this
           }
+        platform::fence_acquire();
         return;  // ready
       }
     // io io io io
@@ -306,6 +306,7 @@ struct client_impl : public SZT, public Counter
         Counter::waiting_for_result();
         platform::sleep();
       }
+    platform::fence_acquire();
   }
 
   template <typename Op>

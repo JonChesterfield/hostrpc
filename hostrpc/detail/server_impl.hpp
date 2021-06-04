@@ -429,8 +429,8 @@ struct server_impl : public SZT, public Counter
           {
             Word i = inbox.load_word(size, w);
             in = bits::nthbitset(i, subindex);
-            platform::fence_acquire();  // may not need this
           }
+        platform::fence_acquire();
       }
     // io io io io
     // 00 01 10 --
@@ -451,8 +451,8 @@ struct server_impl : public SZT, public Counter
           {
             Word i = inbox.load_word(size, w);
             in = bits::nthbitset(i, subindex);
-            platform::fence_acquire();  // may not need this
           }
+        platform::fence_acquire();
       }
     // io io io io
     // -- -- 10 --
