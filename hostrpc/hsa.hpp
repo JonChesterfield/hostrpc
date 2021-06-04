@@ -832,9 +832,10 @@ inline void packet_store_release(uint32_t* packet, uint16_t header,
   hsa_packet::packet_store_release(packet, header, rest);
 }
 
-constexpr inline uint16_t header(hsa_packet_type_t type)
+constexpr inline uint16_t header(hsa_packet_type_t type, bool barrier = false)
 {
   uint16_t header = type << HSA_PACKET_HEADER_TYPE;
+  header |= (barrier?1:0) << HSA_PACKET_HEADER_BARRIER;
   header |= HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_ACQUIRE_FENCE_SCOPE;
   header |= HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_RELEASE_FENCE_SCOPE;
   return header;
@@ -850,7 +851,7 @@ inline void launch_kernel(uint64_t symbol_address,
                           uint32_t private_segment_fixed_size,
                           uint32_t group_segment_fixed_size, hsa_queue_t* queue,
                           uint64_t inline_argument, uint64_t kernarg_address,
-                          hsa_signal_t completion_signal)
+                          hsa_signal_t completion_signal, bool barrier = false)
 {
   uint64_t packet_id = hsa::acquire_available_packet_id(queue);
   hsa_kernel_dispatch_packet_t* packet =
@@ -871,7 +872,7 @@ inline void launch_kernel(uint64_t symbol_address,
   memcpy(&packet->reserved2, &inline_argument, 8);
 
   packet_store_release((uint32_t*)packet,
-                       hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
+                       hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH, barrier),
                        kernel_dispatch_setup());
 
 #if 0
@@ -886,7 +887,7 @@ inline void launch_kernel(uint64_t symbol_address,
 inline int launch_kernel(hsa::executable& ex, hsa_queue_t* queue,
                          const char* kernel_entry, uint64_t inline_argument,
                          uint64_t kernarg_address,
-                         hsa_signal_t completion_signal)
+                         hsa_signal_t completion_signal, bool barrier = false)
 {
   uint64_t symbol_address = ex.get_symbol_address_by_name(kernel_entry);
   auto m = ex.get_kernel_info();
@@ -900,7 +901,7 @@ inline int launch_kernel(hsa::executable& ex, hsa_queue_t* queue,
       launch_kernel(symbol_address,
                     (uint32_t)it->second.private_segment_fixed_size,
                     (uint32_t)it->second.group_segment_fixed_size, queue,
-                    inline_argument, kernarg_address, completion_signal);
+                    inline_argument, kernarg_address, completion_signal, barrier);
       return 0;
     }
 }

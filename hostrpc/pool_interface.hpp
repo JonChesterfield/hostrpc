@@ -621,9 +621,10 @@ inline void invoke_teardown(gpu_kernel_info teardown, hsa_signal_t signal,
   const hsa_signal_value_t init = 1;
   hsa_signal_store_screlease(signal, init);
 
+  bool barrier = true;
   hsa::launch_kernel(
       teardown.symbol_address, teardown.private_segment_fixed_size,
-      teardown.group_segment_fixed_size, queue, signal.handle, 0, {0});
+      teardown.group_segment_fixed_size, queue, signal.handle, 0, {0}, barrier);
 
   wait_for_signal_equal_zero(signal, 50000 /*000000*/);
 }

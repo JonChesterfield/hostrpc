@@ -27,8 +27,12 @@ uint32_t example::run(uint32_t state)
 INCBIN(pool_example_amdgpu_so, "pool_example_amdgpu.gcn.so");
 
 // need to split enable print off from the macro
+#define WITH_PRINTF 0
+
+#if WITH_PRINTF
 #undef printf
 #include "hostrpc_printf.h"
+#endif
 
 int main_with_hsa()
 {
@@ -47,12 +51,14 @@ int main_with_hsa()
       fprintf(stderr, "Loaded executable %s\n", "pool_example_amdgpu.gcn.so");
     }
 
-  if (0 && hostrpc_print_enable_on_hsa_agent(ex, kernel_agent) != 0)
+#if WITH_PRINTF
+  if (hostrpc_print_enable_on_hsa_agent(ex, kernel_agent) != 0)
     {
       fprintf(stderr, "Failed to create host printf thread\n");
       exit(1);
     }
-
+#endif
+  
   hsa_queue_t *queue = hsa::create_queue(kernel_agent);
   if (!queue)
     {
@@ -77,14 +83,12 @@ int main_with_hsa()
   // leave them running for a while
   usleep(10000000);
 
-  fprintf(stderr, "Start to wind down\n");
+  fprintf(stderr, "Call teardown\n");
 
   example::teardown();
 
   example::finalize();
 
-  fprintf(stderr, "Finalized\n");
-  usleep(1000 * 1000);
 
   {
     hsa_status_t rc = hsa_queue_destroy(queue);
@@ -95,14 +99,14 @@ int main_with_hsa()
       }
   }
 
-  fprintf(stderr, "Destroyed\n");
-  usleep(1000 * 1000);
+  fprintf(stderr, "Finished\n");
   return 0;
 }
 
 int main()
 {
   fprintf(stderr, "In main\n");
+  hsa::init hsa_state;
   return main_with_hsa();
 }
 
