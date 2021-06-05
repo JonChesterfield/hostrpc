@@ -1,3 +1,9 @@
+\begin{abstract}
+  Abstract required.
+\end{abstract}
+
+\maketitle
+
 \section{Introduction}
 
 The remote procedure call (RPC) is a simple interface for executing code on some other processor. It's a function call, same as any other. That surface simplicity hides a variety of well known problems, as characterised by Tanenbaum and Renesse\cite{TB}. Vinoksi's\cite{4557985} paper arguing to retire RPC on similar grounds is titled "Convenience over Correctness". The observation behind this paper is that almost none of the problems inherent to RPC apply on a shared memory system, such as a heterogeneous host + graphics processing unit (GPU) machine. Further, a shared memory system with limited write ordering guarantees is sufficient to implement a RPC library, so the convenience could become widely available. This paper includes a minimal implementation of the proposed algorithm, with a real world implementation at [[redacted-for-review]] for GPU systems as a complement to the kernel launch paradigm. 
@@ -19,7 +25,7 @@ RPC is not a universal solution to remote computation. A calculation that can be
 \subsubsection{Partial failures}
 Where RPC crosses a network it is exposed to the failure mode of the network. Multiple problems listed are consequences of defining a function that does not forward failure information, "2.2 Unexpected Messages, 2.4 The Two Army Problem, all four sections of 4 Abnormal Situations\cite{TB}".
 
-Modern RPC frameworks accept this, e.g. Apache Thrift raises exceptions on infrastructure failures and Google's gRPC returns a message that includes failure information alongside the call result. However, embracing the reality of network failures changes call interfaces and introduces error handling at the call site.
+Modern RPC frameworks accept this. Apache Thrift\cite{Thrift} reports exceptions on infrastructure failures, to be handled by the application. Google's gRPC\cite{gRPC} returns a message that includes failure information alongside the call result. However, embracing the reality of network failures changes call interfaces and introduces error handling at the call site. It no longer looks like a local function call.
 
 A single node shared memory machine uses higher reliability communication between components than an external network, e.g. PCIe includes error detection and recovery and is less prone to cables being unplugged in service. Further, an error in communication between processors within a single node can be expected to crash the processor or the entire node. Error recovery is then at the user or cluster level.
 
@@ -33,21 +39,24 @@ The implementation suggested here does not amend the interface to propagate erro
 \subsection{Distributed computing}
 Sun Microsystems published a note on distributed computing, which offers an object orientated perspective on local and distributed computation fundamentally differing. Partial failure and inability to directly pass pointers are invasive problems. The final section of the paper describes a middle ground, where the objects are guaranteed to be on the same machine, in which case indeterminacy is largely the same as for a single process. It does not distinguish a common address space from a local computation. The thesis of this paper is essentially that shared memory systems, where said shared memory is not subject to network failure modes, are much closer to local computation than to distributed.
 
-
-\section{Why}
-GPU programming is primarily based on a host processor offloading tasks to a GPU. This is the case for languages CUDA, HIP, OpenCL, OpenMP, SYCL, DPC++. An exception is the reverse offload work of Chen et al, which runs the main() routine on an Intel MIC chip, using a remote procedure call to execute control flow heavy tasks on the host processor. The source code for that work is unavailable, the paper suggests it builds on Intel provided abstractions. There are however tasks that a GPU cannot do without cooperation from the host, such as file I/O or host memory allocation. Printf and malloc may be special cased in the compiler for some languages, e.g. printf works with Cuda but fprintf does not. A library implementation of remote procedure calls can be used to fill in the gaps across all language implementations, or as a means of implementing features like OpenMP 5.0 reverse offloading.
-
-The opposite direction also works, where a persistent kernel is launched on the GPU that acts as the server part of the RPC pair. The host processor can then run functions on the GPU through the RPC plumbing, instead of through the kernel launch API. This will probably be slower, as there is no dedicated hardware acceleration for the RPC subsystem, but may be more convenient. Offload between GPUs of different architectures is not yet tested but expected to work if the host memory can be shared with both simultaneously, e.g. allowing an nvptx processor to offload work to an amdgpu processor on the same PCI subsystem. Direct memory access from one GPU to another should also be feasible.
-
-Running both client and server on the same processor gives a means of sharing work between threads locally. That may be of use on nvptx platforms, where the device side kernel launch forces a process tree that can be escaped using N persistent kernels, or as a means of sharing work across numa nodes. The author is considering using an instance as part of a sandboxing system, where an independent Linux process runs under severe seccomp restrictions, with write access to the RPC structure but nowhere else, for running untrusted machine code.
-
-Finally this is a proof of concept for code that library compiles with clang and runs as freestanding C++, Cuda, HIP, OpenMP and the C++ dialect of OpenCL. That may be of interest for header files shared across multiple implementations, e.g. for a GPU libc.
-
-
 \section{Requirements}
-The two processes require access to shared memory, implemented with sufficient write ordering that an atomic write to a flag is seen after writes to a buffer. PCI Express may require the flag to be at a higher memory address than the buffer for that to be robustly true. The cuda and hsa programming environments meet that requirement if appropriate fences are used. Atomic load and store are sufficient, compare and swap better, fetch\_and/fetch\_or ideal.
+The two processes require access to shared memory, implemented with sufficient write ordering that an atomic write to a flag is seen after writes to a buffer. PCI Express may require the flag to be at a higher memory address than the buffer for that to be robustly true. The CUDA and HSA programming environments meet that requirement if appropriate fences are used. Atomic load and store are sufficient, compare and swap better, fetch\_and/fetch\_or ideal.
 
 That is, given a shared memory system that allows control over the order in which writes are seen, one can implement remote procedure calls to make easier use of said shared memory system.
+
+\section{Motivation}
+\subsection{Host services}
+GPU programming is primarily based on a host processor offloading tasks to a GPU. This is the case for languages CUDA, HIP, OpenCL, OpenMP, SYCL, DPC++. Exceptions are the reverse offload work of Chen et al. \cite{8606083}, source unavailable, which runs on an Intel MIC chip and uses a form of RPC to execute some tasks on the host processor and the as yet unimplemented reverse offloading feature of OpenMP 5.0\cite{openmp-5.0-spec}, section 4.1.6. 
+There are tasks that the GPU cannot do without cooperation from the host, such as file and network I/O or host memory allocation. Some functions may be special cased in the compiler for some languages, e.g. printf works from CUDA GPU code (it writes to stdout at kernel exit) but fprintf is unavailable. Allocating shared memory from code running on the GPU is generally unavailable. A library implementation of RPC can be used to fill in the gaps across all language implementations, or as a means of implementing features like OpenMP 5.0 reverse offloading.
+The Linux kernel syscall interface is essentially a named function call taking a fixed number of integer arguments, albeit implemented with hardware support. If the RPC function is set up to pass integers from the GPU to the host syscall interface, the GPU is granted direct access to whatever syscalls the associated host process is able to make. For example, \_\_NR\_open, \_\_NR\_write, \_\_NR\_fsync, \_\_NR\_close in sequence can be used to write to a file on the host.
+
+\subsection{Fine grain offload}
+A persistent kernel launched on the GPU can act as the server process while threads on the host (or another GPU) are the client process. The client can then run functions on the GPU through the RPC infrastructure instead of through the kernel launch API. This is likely to be slower than the vendor provided API, The kernel API may use memory allocation or waiting on asychronous signals whereas this RPC is zero syscall and based on polling as that is the lowest common denominator.
+Launching a kernel, particularly across language boundaries such as an OpenMP target region run through HIP host APIs, is subtle and error prone. Using the RPC interface instead allows implementing functions in one language and calling from another without any additional complexity. The RPC implementation itself needs to work with the native kernel API for setup and completion. Once implemented in the library however, applications can add and call functions with greater convenience.
+
+\subsection{Process isolation}
+If both client and server run as Linux processes on the same CPU, RPC on shared memory provides a zero syscall means of communicating between the two processes. A sandbox can then be implemented for a Linux client process by using seccomp to irreversibly drop access to syscalls with the still open RPC connection used to request services from the server. This may be a reasonable way to handle a JIT for a safe language implementation.
+
 
 \section{Implementation}
 
@@ -63,11 +72,11 @@ A function call, outside of the RPC approach, follows a sequence:
 - Control flow changes to that specified in number
 - The return values are now read from the expected location
 
-The call site and destination need to agree on where to find and place arguments and return values. This is the 'calling convention', the details of which vary with architecture and sometimes with caller/caller pair within a program. Using predictable registers or stack offsets is common as it minimises the work done at runtime to determine where to find the values. Some systems elide the return, noting that it is very similar to a call, by translating to continuation passing. There is an analogue to RPC, see section #.
+The call site and destination need to agree on where to find and place arguments and return values. This is the 'calling convention', the details of which vary with architecture, language and sometimes with caller/callee pair within a program. Using predictable registers or stack offsets is common as it minimises the work done at runtime to determine where to find the values. Calls in tail position may be compiled as direct branches to minimise stack usage. <- todo, how much detail is useful here
 
-Adjusting the call process to work across machine or process boundaries involves specifying a calling convention. In this paper we assume shared memory, but no shared registers, so the place to copy arguments to when making a call is somewhere in shared memory. Returns likewise copy through shared memory. The instruction stream is not assumed to be in shared memory so that the client and server can be running concurrently or on different architectures. Control flow on the client therefore involves waiting for a response from the server before continuing, and on the server involves waiting for a request from a client. This waiting is one of the historic objections to the RPC architecture, addressed further in section #.
+Adjusting the call process to work across machine or process boundaries involves specifying a calling convention. In this paper we assume shared memory, but no shared registers, so the place to copy arguments to when making a call is somewhere in shared memory. Returns likewise copy through shared memory. The instruction stream is not assumed to be in shared memory so that the client and server can be running concurrently or on different architectures. Control flow on the client therefore involves waiting for a response from the server before continuing, and on the server involves waiting for a request from a client. When the client does not need a result, and does not need to know the call has occurred, it can return before waiting as in \autoref{async_call}. Waiting on the server is minimised by separating work and cleanup steps which can then run on different threads.
 
-\section{One client, one server:}
+\subsection{One client, one server}
 
 The calling process involves N clients and M servers forming transient pairings, during which the client thread communicates with a single dedicated server thread. That one-to-one interaction is described first, before the N-to-M is layered on top. The analogy is of mail boxes coordinating access to a shared buffer. Where boolean is the smallest integer the processes can write to atomically, the client and server each have access to, in shared memory:
 - a boolean outbox, to which it may atomically write 0 or 1
@@ -156,15 +165,15 @@ Mailbox writes do not race between client and server as each address is only wri
 
 \subsection{Minimal implementation}
 
-Minimal implementation of the one-to-one state machine, with no optimisations, written for exposition. It will compile and run successfully if the listings are concatenated and the four external functions implemented.
+Minimal implementation of the one-to-one state machine, with no optimisations, written for exposition. It will compile (as C++14) and run successfully if the listings are concatenated in order and the four external functions implemented.
 
-The two processes have the same fields, represented by a common base in \autoref{lst:minimal_types}. Each exposes a templated function as the application hook, here shown as calls to external C functions.
+The two processes have the same fields as represented by the common base in \autoref{lst:minimal_types}. Each exposes a templated function as the application hook, here shown as calls to external C functions.
 
 \begin{lstlisting}[style=c_code_style, caption={Types}, label={lst:minimal_types}]
 header.cpp
 \end{lstlisting}
 
-The memory allocation cannot be owned by the client or the server, as communication is by each using the same pointer for different mail boxes. For GPU systems, the allocation is likely to be done by the host, in which case the GPU may not be able to deallocate the corresponding memory. In the [redacted] implemementation this is handled as in section #. Here, \autoref{lst:minimal_main} puts the state on the free store and spawns separate C++ threads to serve as the RPC processes. The calls variable represents minimal plumbing to handle process shutdown.
+The memory allocation cannot be owned by the client or the server, as communication is by each using the same pointer for different mail boxes. For GPU systems, the allocation is likely to be done by the host, in which case the GPU may not be able to deallocate the corresponding memory. In the [redacted] implemementation one type instance, separate to client and to server, owns the allocated memory and outlives the processes. Here, \autoref{lst:minimal_main} puts the state on the free store and spawns separate C++ threads to serve as the RPC processes. The calls variable represents minimal plumbing to handle process shutdown.
 
 \begin{lstlisting}[style=c_code_style, caption={Main}, label={lst:minimal_main}]
 main.cpp
@@ -182,16 +191,16 @@ server.cpp
 \end{lstlisting}
 
 
-\section{Many clients, many servers}
+\subsection{Many clients, many servers}
 The one-to-one client/server state machine requires exclusive ownership of the memory used to communicate between the two. Scaling to multiple clients or multiple servers is done with multiple one-to-one state machines, each of which runs independently and as described above, with some additional locking.
 
-\section{Thread scheduler}
-Linux provides a fair scheduler, at least by default. A thread which takes a lock and is suspended will ultimately be rescheduled, allowing the system as a whole to make progress. Cuda does not preemptively schedule threads (warps in cuda terminology); once one starts executing it will run to completion, modulo the program ending prematurely. This also makes locking code safe. OpenCL provides no forward progress guarantees, and HSA makes limited ones. See gpufairness / \cite{SorensenED18}. This implementation assumes the scheduler is unfair, specifically that a thread which holds a lock may be descheduled and never return. Global locks are therefore unavailable. Forward progress can be ensured on amdgpu by using at least as many distinct locks as there can be simultaneous wavefronts on a HSA queue.
+\subsubsection{Thread scheduler}
+Linux provides a fair scheduler, at least by default. A thread which takes a lock and is suspended will ultimately be rescheduled, allowing the system as a whole to make progress. CUDA does not preemptively schedule threads (warps in CUDA terminology); once one starts executing it will run to completion, modulo the program ending prematurely. This also makes locking code safe. OpenCL provides no forward progress guarantees, and HSA makes limited ones. See gpufairness / \cite{SorensenED18}. This implementation assumes the scheduler is unfair, specifically that a thread which holds a lock may be descheduled and never return. Global locks are therefore unavailable. Forward progress can be ensured on amdgpu by using at least as many distinct locks as there can be simultaneous wavefronts on a HSA queue.
 
-\section{Implementation limits}
+\subsubsection{Implementation limits}
 This implementation assumes a limit on the number of concurrent RPC calls is specified at library initialization time. For example, it may be limited by the maximum number of concurrently executing threads the hardware can support. It then allocates that many instances of the communication state up front, as a contiguous array, to avoid the complexity of reallocating concurrently accessed structures. This may be revised in future.
 
-\section{Mutual exclusion}
+\subsubsection{Mutual exclusion}
 Each one-to-one state machine can be used by a single client and a single server at a time. Mutual exclusion, combined with the implementation choice of a fixed size array of said state machines, means picking an index which is otherwise unused. The concept of holding a lock on an index is important for describing optimisations.
 The lock acquire is very cheap for systems where the process is comprised of N threads each of which can be dedicated to a single index. For example, if the array is as wide as the maximum number of warps on an nvptx machine, compiler intrinsics can uniquely identify that warp, and use that identifier as an index. It is also cheap if the process contains a single thread, which may be the case for a CPU server implementation, or if a feature of the surrounding infrastructure for thread management provides an ID in [0, number-threads).
 In other cases, a slot can be found dynamically using a bitmap of length equal to the maximum number of calls as an array of mutual exclusion locks. This lock array is local to the process so atomic compare and swap to set a bit at index I is taking a lock at I, which can be released by fetch\_and with a mask. 
@@ -230,10 +239,4 @@ Shared memory RPC can handle larger arguments by allocating memory and passing a
 
 
 \section{Conclusion}
-
-
-%\section{Implementation}\label{sec:implementation}
-
-
-\section{Evaluation}
 

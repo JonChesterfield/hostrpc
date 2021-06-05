@@ -1,9 +1,10 @@
 #include "minimal/header.cpp"
 
+#include "minimal/main.cpp"
+
 #include "minimal/client.cpp"
 #include "minimal/server.cpp"
 
-#include "minimal/main.cpp"
 
 void client_fill(uint32_t *buffer) {
   for (int i = 0; i < 4; i++) {
