@@ -1,15 +1,15 @@
 \section{Introduction}
 
-The remote procedure call (RPC) is the simplest possible interface for executing code on some other processor. It's a function call, same as any other. That surface simplicity hides a variety of well known problems, as characterised by Tanenbaum and Renesse. Vinoksi's paper arguing to retire RPC on similar grounds is titled "Convenience over Correctness". The observation behind this paper is that almost none of the problems apply on a shared memory system, such as a recent host + gpu heterogeneous machine. This paper sketches an implementation of RPC for GPU systems as a complement to the existing kernel launch paradigm. 
-
-Terminology is not uniform in this domain. Let client be the entity that initiates the procedure call and server be the one that does the work of the call. Process will refer to either client or server. Thread will refer to a posix thread on a cpu, to a warp on nvptx, or to a wavefront on amdgpu.
+The remote procedure call (RPC) is the simplest possible interface for executing code on some other processor. It's a function call, same as any other. That surface simplicity hides a variety of well known problems, as characterised by Tanenbaum and Renesse\cite{Tanenbaum1988ACO}. Vinoksi's\cite{4557985} paper arguing to retire RPC on similar grounds is titled "Convenience over Correctness". The observation behind this paper is that almost none of the problems apply on a shared memory system, such as a recent host + GPU heterogeneous machine. Further, a shared memory system with limited write ordering guarantees is sufficient to implement a RPC library. This paper includes a minimal implementation of the algorithm, with a real world implementation at [[redacted-for-review]] for GPU systems as a complement to the kernel launch paradigm. 
 
 
 \section{Background}
 
+Terminology is not uniform in this domain. Let client be the entity that initiates the procedure call and server be the one that does the work of the call. Process will refer to either client or server. Thread will refer to a posix thread on a cpu, to a warp on nvptx, or to a wavefront on amdgpu.
+
 Remote procedure calls are a procedure call that executes on a different process. Syntactically they are usually a local function that forwards the arguments to the remote process and retrieves the result before returning.
 
-\section{Problems, following those articulated by Tanenbaum and Renesse.}
+\section{Problems, following those articulated by Tanenbaum and Renesse.}\cite{Tanenbaum1988ACO}
 
 Some problems, "Who is the Server and Who is the Client", "Multicast", "Timing Problems" (realtime), "Bad Assumptions" (performance) are cases where RPC does not fit the problem domain. These are not addressed by shared memory. "Single Threaded Servers" are indeed ruled out by a RPC implementation, but in the context of GPU compute, single threaded systems are generally ruled out by performance requirements anyway.
 
@@ -17,7 +17,7 @@ Some problems, "Who is the Server and Who is the Client", "Multicast", "Timing P
 
 "Parameter Marshalling", "Parameter Passing", "Global Variables" all require some care. The implementation associated with this paper passes N uint64\_t values and expects a layer above to serialize types into those N arguments, or into shared memory to be passed by pointer. The heterogenous machine hazard is present but largely solved on existing shared memory systems by choosing compatible representations, with the edge cases handled in serialisation.
 
-"Lack of Parallelism" is unlikely to be a problem with both server and client multi-threaded. "Lack of Streaming", where the client waits on the server, is addressed in #.
+"Lack of Parallelism" is unlikely to be a problem with both server and client multi-threaded. "Lack of Streaming", where the client waits on the server, is addressed in \autoref{async_call}.
 
 \section{Distributed computing}
 Sun Microsystems published a note on distributed computing, which offers an object orientated perspective on local and distributed computation fundamentally differing. Partial failure and inability to directly pass pointers are invasive problems. The final section of the paper describes a middle ground, where the objects are guaranteed to be on the same machine, in which case indeterminacy is largely the same as for a single process. It does not distinguish a common address space from a local computation. The thesis of this paper is essentially that shared memory systems, where said shared memory is not subject to network failure modes, are much closer to local computation than to distributed.
@@ -175,7 +175,7 @@ server.cpp
 The one-to-one client/server state machine requires exclusive ownership of the memory used to communicate between the two. Scaling to multiple clients or multiple servers is done with multiple one-to-one state machines, each of which runs independently and as described above, with some additional locking.
 
 \section{Thread scheduler}
-Linux provides a fair scheduler, at least by default. A thread which takes a lock and is suspended will ultimately be rescheduled, allowing the system as a whole to make progress. Cuda does not preemptively schedule threads (warps in cuda terminology); once one starts executing it will run to completion, modulo the program ending prematurely. This also makes locking code safe. OpenCL provides no forward progress guarantees, and HSA makes limited ones. See #gpufairness. This implementation assumes the scheduler is unfair, specifically that a thread which holds a lock may be descheduled and never return. Global locks are therefore unavailable. Forward progress can be ensured on amdgpu by using at least as many distinct locks as there can be simultaneous wavefronts on a HSA queue.
+Linux provides a fair scheduler, at least by default. A thread which takes a lock and is suspended will ultimately be rescheduled, allowing the system as a whole to make progress. Cuda does not preemptively schedule threads (warps in cuda terminology); once one starts executing it will run to completion, modulo the program ending prematurely. This also makes locking code safe. OpenCL provides no forward progress guarantees, and HSA makes limited ones. See gpufairness / \cite{SorensenED18}. This implementation assumes the scheduler is unfair, specifically that a thread which holds a lock may be descheduled and never return. Global locks are therefore unavailable. Forward progress can be ensured on amdgpu by using at least as many distinct locks as there can be simultaneous wavefronts on a HSA queue.
 
 \section{Implementation limits}
 This implementation assumes a limit on the number of concurrent RPC calls is specified at library initialization time. For example, it may be limited by the maximum number of concurrently executing threads the hardware can support. It then allocates that many instances of the communication state up front, as a contiguous array, to avoid the complexity of reallocating concurrently accessed structures. This may be revised in future.
@@ -201,7 +201,7 @@ Multiple server algorithm:
 
 
 \section{Optimisations}
-\subsection\ Asynchronous call
+\subsection{Asynchronous call}\label{async_call}
 Some function calls have no return value, e.g. for memory deallocation. The state machine described so far requires the client to detect that the call has succeeded and set the client outbox to 0, ultimately freeing up the slot for reuse. This can be relaxed, permitting the client to return immediately after posting work by setting the outbox to 1, provided some other client call can recognise the case and clean up. This case will look like outbox and inbox set, indicating work has been received, but the corresponding lock is not set, so no client is waiting for it. The server is unchanged.
 
 \subsection{Bit packing}
