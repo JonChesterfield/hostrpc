@@ -1,8 +1,3 @@
-void client_fill(uint32_t *);
-void server_work(uint32_t *);
-void client_use(uint32_t *);
-void server_clean(uint32_t *);
-
 server_t server;
 client_t client;
 
