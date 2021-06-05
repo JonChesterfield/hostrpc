@@ -4,9 +4,11 @@
 #include <memory>
 #include <thread>
 
+using namespace std;
+
 struct process_t {
-  const std::atomic_bool *inbox;
-  std::atomic_bool *outbox;
+  const atomic_bool *inbox;
+  atomic_bool *outbox;
   uint32_t *buffer;
 };
 
@@ -18,4 +20,3 @@ struct server_t : public process_t {
   // return true if a callback was invoked
   template <typename W, typename C> bool run(W work, C clean);
 };
-

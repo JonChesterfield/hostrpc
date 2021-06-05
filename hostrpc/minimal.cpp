@@ -1,6 +1,8 @@
 #include "minimal/header.cpp"
+
 #include "minimal/client.cpp"
 #include "minimal/server.cpp"
+
 #include "minimal/main.cpp"
 
 void client_fill(uint32_t *buffer) {
@@ -28,4 +30,3 @@ void server_clean(uint32_t *buffer) {
     buffer[i] = 0;
   }
 }
-
