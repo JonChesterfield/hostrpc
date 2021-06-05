@@ -1,5 +1,5 @@
 \begin{abstract}
-  Abstract required.
+The remote procedure call (RPC) is a simple interface for executing code on some other processor. Almost none of the problems inherent to RPC apply on a shared memory system. Further, a shared memory system is sufficient to implement a RPC library. This paper includes a minimal implementation of the proposed algorithm, with a real world implementation tested on x86-64, amdgpu and nvptx architectures at [[redacted-for-review]]. This can bring host capabilities to the GPU or offload code without using kernel launch APIs. The client and server both compile and run on each architecture.
 \end{abstract}
 
 \maketitle
