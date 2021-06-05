@@ -89,6 +89,7 @@ The corresponding sequence from the server is:
 
 The state transitions are linear and ordered by the write-only property. With instantaneous mailbox delivery, the sequence is:
 
+\begin{table}
 \begin{center}
 \begin{tabular}{l | l l l l}
       \multicolumn{1}{l|}{} &
@@ -107,9 +108,13 @@ Client return    &  0 & 0   & 0  & 0  \\
 
 \end{tabular}
 \end{center}
+\caption{Small state machine}
+\label{tbl:small}
+\end{table}
 
 If the mailbox delay is made explicit, and the two bit state given as an integer, the same table is:
 
+\begin{table}
 \begin{center}
 \begin{tabular}{l | l l l l | l l}
       \multicolumn{1}{l|}{} &
@@ -134,10 +139,38 @@ Client return    &   0   & 0    & 0   & 0       & 0      & 0 \\
 
 \end{tabular}
 \end{center}
+\caption{Large state machine}
+\label{tbl:large}
+\end{table}
 
 
 Writes do not race between client and server as each address is only written by one of them. Memory operations are ordered by fences within each process. Each process reads from inbox, then reads from the buffer, then writes to the outbox.
 
+\subsection{Algorithm in C++ syntax}
+
+
+As C++ syntax, \autoref{lst:minimal_types}.
+
+\begin{lstlisting}[style=c_code_style, caption={Types}, label={lst:minimal_types}]
+header.cpp
+\end{lstlisting}
+
+
+\begin{lstlisting}[style=c_code_style, caption={Code}, label={lst:minimal_client}]
+client.cpp
+\end{lstlisting}
+
+Words. Hope to see caption.
+
+
+\begin{lstlisting}[style=c_code_style, caption={Code}, label={lst:minimal_server}]
+server.cpp
+\end{lstlisting}
+
+
+\begin{lstlisting}[style=c_code_style, caption={Code}, label={lst:minimal_main}]
+main.cpp
+\end{lstlisting}
 
 \section{Many clients, many servers}
 The one-to-one client/server state machine requires exclusive ownership of the memory used to communicate between the two. Scaling to multiple clients or multiple servers is done with multiple one-to-one state machines, each of which runs independently and as described above, with some additional locking.
@@ -169,7 +202,7 @@ Multiple server algorithm:
 
 
 \section{Optimisations}
-@subsection@ Asynchronous call
+\subsection\ Asynchronous call
 Some function calls have no return value, e.g. for memory deallocation. The state machine described so far requires the client to detect that the call has succeeded and set the client outbox to 0, ultimately freeing up the slot for reuse. This can be relaxed, permitting the client to return immediately after posting work by setting the outbox to 1, provided some other client call can recognise the case and clean up. This case will look like outbox and inbox set, indicating work has been received, but the corresponding lock is not set, so no client is waiting for it. The server is unchanged.
 
 \subsection{Bit packing}
