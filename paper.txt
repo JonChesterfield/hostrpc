@@ -1,25 +1,36 @@
 \section{Introduction}
 
-The remote procedure call (RPC) is the simplest possible interface for executing code on some other processor. It's a function call, same as any other. That surface simplicity hides a variety of well known problems, as characterised by Tanenbaum and Renesse\cite{Tanenbaum1988ACO}. Vinoksi's\cite{4557985} paper arguing to retire RPC on similar grounds is titled "Convenience over Correctness". The observation behind this paper is that almost none of the problems apply on a shared memory system, such as a recent host + GPU heterogeneous machine. Further, a shared memory system with limited write ordering guarantees is sufficient to implement a RPC library. This paper includes a minimal implementation of the algorithm, with a real world implementation at [[redacted-for-review]] for GPU systems as a complement to the kernel launch paradigm. 
+The remote procedure call (RPC) is a simple interface for executing code on some other processor. It's a function call, same as any other. That surface simplicity hides a variety of well known problems, as characterised by Tanenbaum and Renesse\cite{TB}. Vinoksi's\cite{4557985} paper arguing to retire RPC on similar grounds is titled "Convenience over Correctness". The observation behind this paper is that almost none of the problems inherent to RPC apply on a shared memory system, such as a heterogeneous host + graphics processing unit (GPU) machine. Further, a shared memory system with limited write ordering guarantees is sufficient to implement a RPC library, so the convenience could become widely available. This paper includes a minimal implementation of the proposed algorithm, with a real world implementation at [[redacted-for-review]] for GPU systems as a complement to the kernel launch paradigm. 
 
 
 \section{Background}
 
 Terminology is not uniform in this domain. Let client be the entity that initiates the procedure call and server be the one that does the work of the call. Process will refer to either client or server. Thread will refer to a posix thread on a cpu, to a warp on nvptx, or to a wavefront on amdgpu.
 
-Remote procedure calls are a procedure call that executes on a different process. Syntactically they are usually a local function that forwards the arguments to the remote process and retrieves the result before returning.
+Remote procedure calls (RPC) are a procedure call that executes on a different process. Syntactically they are usually a local function that forwards the arguments to the remote process and retrieves the result before returning. The local functions, known as stubs, are frequently generated from declarative code as the argument forwarding process is mechanical. 
 
-\section{Problems, following those articulated by Tanenbaum and Renesse.}\cite{Tanenbaum1988ACO}
+\subsection{Known problems with RPC}
 
-Some problems, "Who is the Server and Who is the Client", "Multicast", "Timing Problems" (realtime), "Bad Assumptions" (performance) are cases where RPC does not fit the problem domain. These are not addressed by shared memory. "Single Threaded Servers" are indeed ruled out by a RPC implementation, but in the context of GPU compute, single threaded systems are generally ruled out by performance requirements anyway.
+This section follows those articulated by Tanenbaum and Renesse \cite{TB}, written towards the decline of industry enthusiasm for RPC as a distrubuted computation strategy. "2.3\cite{TB}" notes that RPC implies a multithreaded server but in the context of GPU compute, single threaded systems are ruled out by performance requirements anyway.
 
-"Unexpected Messages", "The Two Army Problem", "Exception Handling", "Repeated Execution Semantics", "Loss of State", "Orphans", are all symptoms of a network failing. This paper assumes shared memory within a node is reliable to the extent that the node is reliable - once the connection to the GPU starts to experience unrecoverable errors, the whole node has failed, and no form of GPU compute can function.
+\subsubsection{When RPC doesn't fit the domain}
+RPC is not a universal solution to remote computation. A calculation that can be done quicker locally, "6.2.1. Bad Assumptions\cite{TB}", or one with realtime constraints "3.4 Timing Problems\cite{TB}" should be done locally. The client/server pairing doesn't map easily onto "2.5 Multicast\cite{TB}" or compute pipelines "2.1\cite{TB}", though pipelines are similar to continuation passing style which is considered in \autoref{async_call}.
 
-"Parameter Marshalling", "Parameter Passing", "Global Variables" all require some care. The implementation associated with this paper passes N uint64\_t values and expects a layer above to serialize types into those N arguments, or into shared memory to be passed by pointer. The heterogenous machine hazard is present but largely solved on existing shared memory systems by choosing compatible representations, with the edge cases handled in serialisation.
+\subsubsection{Partial failures}
+Where RPC crosses a network it is exposed to the failure mode of the network. Multiple problems listed are consequences of defining a function that does not forward failure information, "2.2 Unexpected Messages, 2.4 The Two Army Problem, all four sections of 4 Abnormal Situations\cite{TB}".
+
+Modern RPC frameworks accept this, e.g. Apache Thrift raises exceptions on infrastructure failures and Google's gRPC returns a message that includes failure information alongside the call result. However, embracing the reality of network failures changes call interfaces and introduces error handling at the call site.
+
+A single node shared memory machine uses higher reliability communication between components than an external network, e.g. PCIe includes error detection and recovery and is less prone to cables being unplugged in service. Further, an error in communication between processors within a single node can be expected to crash the processor or the entire node. Error recovery is then at the user or cluster level.
+
+The implementation suggested here does not amend the interface to propagate errors as that removes the programmer convenience. It is thus only appropriate when failures are not partial and will need handling at the system level.
+
+\subsubsection{ABI concerns}
+"3.1 Parameter Marshalling, 3.2 Parameter Passing and 3.3 Global Variables\cite{TB}" all require some care. The implementation associated with this paper passes N uint64\_t values and expects a layer above to serialize types into those N arguments, or into shared memory to be passed by pointer. The heterogenous machine hazard is present but largely solved on existing shared memory systems by choosing compatible representations, with the edge cases handled in serialisation.
 
 "Lack of Parallelism" is unlikely to be a problem with both server and client multi-threaded. "Lack of Streaming", where the client waits on the server, is addressed in \autoref{async_call}.
 
-\section{Distributed computing}
+\subsection{Distributed computing}
 Sun Microsystems published a note on distributed computing, which offers an object orientated perspective on local and distributed computation fundamentally differing. Partial failure and inability to directly pass pointers are invasive problems. The final section of the paper describes a middle ground, where the objects are guaranteed to be on the same machine, in which case indeterminacy is largely the same as for a single process. It does not distinguish a common address space from a local computation. The thesis of this paper is essentially that shared memory systems, where said shared memory is not subject to network failure modes, are much closer to local computation than to distributed.
 
 
