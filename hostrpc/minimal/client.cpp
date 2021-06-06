@@ -13,9 +13,8 @@ template <typename F, typename U> void client_t::run(F fill, U use) {
 
   if (!in & out) {
     // wait for result
-    while (!in) {
+    while (!in)
       in = inbox->load(memory_order_relaxed);
-    }
     atomic_thread_fence(memory_order_acquire);
   }
 
@@ -29,9 +28,8 @@ template <typename F, typename U> void client_t::run(F fill, U use) {
 
   if (in & !out) {
     /// wait for server to garbage collect
-    while (in) {
+    while (in)
       in = inbox->load(memory_order_relaxed);
-    }
     atomic_thread_fence(memory_order_acquire);
   }
 }

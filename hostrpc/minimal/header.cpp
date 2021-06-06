@@ -3,7 +3,6 @@
 #include <cstdio>
 #include <memory>
 #include <thread>
-
 using namespace std;
 
 struct process_t {

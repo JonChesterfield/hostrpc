@@ -1,17 +1,21 @@
 \begin{abstract}
-The remote procedure call (RPC) is a simple interface for executing code on some other processor. Almost none of the problems inherent to RPC apply on a shared memory system. Further, a shared memory system is sufficient to implement a RPC library. This paper includes a minimal implementation of the proposed algorithm, with a real world implementation tested on x86-64, amdgpu and nvptx architectures at [[redacted-for-review]]. This can bring host capabilities to the GPU or offload code without using kernel launch APIs. The client and server both compile and run on each architecture.
+The remote procedure call (RPC) is a simple interface for executing code on a different machine. Almost none of the well known problems inherent to RPC apply on a shared memory system. Further, a shared memory system is sufficient to implement a RPC library, so that said simple interface can be more widely available.
+
+This paper includes a minimal implementation of the proposed algorithm, with a real world implementation tested on x86-64, AMDGPU and NVPTX architectures at [[redacted-for-review]]. This can bring host capabilities to the GPU or offload code without using kernel launch APIs. The client and server both compile and run on each architecture.
 \end{abstract}
 
 \maketitle
 
 \section{Introduction}
 
-The remote procedure call (RPC) is a simple interface for executing code on some other processor. It's a function call, same as any other. That surface simplicity hides a variety of well known problems, as characterised by Tanenbaum and Renesse\cite{TB}. Vinoksi's\cite{4557985} paper arguing to retire RPC on similar grounds is titled "Convenience over Correctness". The observation behind this paper is that almost none of the problems inherent to RPC apply on a shared memory system, such as a heterogeneous host + graphics processing unit (GPU) machine. Further, a shared memory system with limited write ordering guarantees is sufficient to implement a RPC library, so the convenience could become widely available. This paper includes a minimal implementation of the proposed algorithm, with a real world implementation at [[redacted-for-review]] for GPU systems as a complement to the kernel launch paradigm. 
+The remote procedure call (RPC) is a simple interface for executing code on a different machine. It's a function call, same as any other. That surface simplicity hides a variety of well known problems as characterised by Tanenbaum and Renesse\cite{TB}. Vinoksi's\cite{4557985} paper arguing to retire RPC on similar grounds is titled "Convenience over Correctness".
+
+The observation behind this paper is that almost none of the problems inherent to RPC apply on a shared memory system, such as a heterogeneous host and graphics processing unit(s) (GPU) machine. Further, a shared memory system with limited write ordering guarantees is sufficient to implement a RPC library, so the convenience can be more widely available. This paper includes a minimal implementation of the proposed algorithm, with a real world implementation tested on x86-64, AMDGPU and NVPTX architectures at [[redacted-for-review]].
 
 
 \section{Background}
 
-Terminology is not uniform in this domain. Let client be the entity that initiates the procedure call and server be the one that does the work of the call. Process will refer to either client or server. Thread will refer to a posix thread on a cpu, to a warp on nvptx, or to a wavefront on amdgpu.
+Terminology is not uniform in this domain. Let client be the entity that initiates the procedure call and server be the one that does the work of the call. Process will refer to either client or server. Thread will refer to a posix thread on a cpu, to a warp on NVPTX, or to a wavefront on AMDGPU.
 
 Remote procedure calls (RPC) are a procedure call that executes on a different process. Syntactically they are usually a local function that forwards the arguments to the remote process and retrieves the result before returning. The local functions, known as stubs, are frequently generated from declarative code as the argument forwarding process is mechanical. 
 
@@ -20,7 +24,7 @@ Remote procedure calls (RPC) are a procedure call that executes on a different p
 This section follows those articulated by Tanenbaum and Renesse \cite{TB}, written towards the decline of industry enthusiasm for RPC as a distrubuted computation strategy. "2.3\cite{TB}" notes that RPC implies a multithreaded server but in the context of GPU compute, single threaded systems are ruled out by performance requirements anyway.
 
 \subsubsection{When RPC doesn't fit the domain}
-RPC is not a universal solution to remote computation. A calculation that can be done quicker locally, "6.2.1. Bad Assumptions\cite{TB}", or one with realtime constraints "3.4 Timing Problems\cite{TB}" should be done locally. The client/server pairing doesn't map easily onto "2.5 Multicast\cite{TB}" or compute pipelines "2.1\cite{TB}", though pipelines are similar to continuation passing style which is considered in \autoref{async_call}.
+RPC is not a universal solution to remote computation. A calculation that can be done quicker locally, "6.2.1. Bad Assumptions\cite{TB}", or one with real time constraints "3.4 Timing Problems\cite{TB}" should be done locally. The client/server pairing doesn't map easily onto "2.5 Multicast\cite{TB}" or compute pipelines "2.1\cite{TB}", though pipelines are similar to continuation passing style which is considered in \autoref{async_call}.
 
 \subsubsection{Partial failures}
 Where RPC crosses a network it is exposed to the failure mode of the network. Multiple problems listed are consequences of defining a function that does not forward failure information, "2.2 Unexpected Messages, 2.4 The Two Army Problem, all four sections of 4 Abnormal Situations\cite{TB}".
@@ -37,7 +41,9 @@ The implementation suggested here does not amend the interface to propagate erro
 "Lack of Parallelism" is unlikely to be a problem with both server and client multi-threaded. "Lack of Streaming", where the client waits on the server, is addressed in \autoref{async_call}.
 
 \subsection{Distributed computing}
-Sun Microsystems published a note on distributed computing\cite{waldo1996note} which offers an object orientated perspective on local and distributed computation fundamentally differing. Partial failure and inability to directly pass pointers are the invasive problems for API design. The final section of the paper describes a middle ground, where the objects are guaranteed to be on the same machine, in which case indeterminacy is largely the same as for a single process. It does not distinguish a common address space from a local computation. The thesis of this paper is essentially that shared memory systems, where said shared memory is not subject to network failure modes, are much closer to local computation than to distributed.
+Sun Microsystems published a note on distributed computing\cite{waldo1996note} which offers an object orientated perspective on local and distributed computation fundamentally differing. Partial failure and inability to directly pass pointers are the invasive problems for API design. The final section of the paper describes a middle ground, where the objects are guaranteed to be on the same machine, in which case indeterminacy is largely the same as for a single process. It does not distinguish a common address space from a local computation.
+
+The thesis of this paper is essentially that shared memory systems, where said shared memory is not subject to network failure modes, are much closer to local computation than to distributed.
 
 \section{Requirements}
 The two processes require access to shared memory, implemented with sufficient write ordering that an atomic write to a flag is seen after writes to a buffer. PCIe may require the flag to be at a higher memory address than the buffer for that to be robustly true. The CUDA and HSA programming environments meet that requirement if appropriate fences are used. Atomic load and store are sufficient, compare and swap better, fetch\_and/fetch\_or ideal.
@@ -47,22 +53,39 @@ That is, given a shared memory system that allows control over the order in whic
 \section{Motivation}
 \subsection{Host services}
 GPU programming is primarily based on a host processor offloading tasks to a GPU. This is the case for languages CUDA, HIP, OpenCL, OpenMP, SYCL, DPC++. Exceptions are the reverse offload work of Chen et al. \cite{8606083}, source unavailable, which runs on an Intel MIC chip and uses a form of RPC to execute some tasks on the host processor and the as yet unimplemented reverse offloading feature of OpenMP 5.0\cite{openmp-5.0-spec}, section 4.1.6. 
+
 There are tasks that the GPU cannot do without cooperation from the host, such as file and network I/O or host memory allocation. Some functions may be special cased in the compiler for some languages, e.g. printf works from CUDA GPU code (it writes to stdout at kernel exit) but fprintf is unavailable. Allocating shared memory from code running on the GPU is generally unavailable. A library implementation of RPC can be used to fill in the gaps across all language implementations, or as a means of implementing features like OpenMP 5.0 reverse offloading.
+
 The Linux kernel syscall interface is essentially a named function call taking a fixed number of integer arguments, albeit implemented with hardware support. If the RPC function is set up to pass integers from the GPU to the host syscall interface, the GPU is granted direct access to whatever syscalls the associated host process is able to make. For example, \_\_NR\_open, \_\_NR\_write, \_\_NR\_fsync, \_\_NR\_close in sequence can be used to write to a file on the host.
 
 \subsection{Fine grain offload}
-A persistent kernel launched on the GPU can act as the server process while threads on the host (or another GPU) are the client process. The client can then run functions on the GPU through the RPC infrastructure instead of through the kernel launch API. This is likely to be slower than the vendor provided API, The kernel API may use memory allocation or waiting on asychronous signals whereas this RPC is zero syscall and based on polling as that is the lowest common denominator.
+A persistent kernel launched on the GPU can act as the server process while threads on the host (or another GPU) are the client process. The client can then run functions on the GPU through the RPC infrastructure instead of through the kernel launch API. This is likely to be slower than the vendor provided API, The kernel API may use memory allocation or waiting on asynchronous signals whereas this RPC is zero syscall and based on polling as that is the lowest common denominator.
+
 Launching a kernel, particularly across language boundaries such as an OpenMP target region run through HIP host APIs, is subtle and error prone. Using the RPC interface instead allows implementing functions in one language and calling from another without any additional complexity. The RPC implementation itself needs to work with the native kernel API for setup and completion. Once implemented in the library however, applications can add and call functions with greater convenience.
 
 \subsection{Process isolation}
-If both client and server run as Linux processes on the same CPU, RPC on shared memory provides a zero syscall means of communicating between the two processes. A sandbox can then be implemented for a Linux client process by using seccomp to irreversibly drop access to syscalls with the still open RPC connection used to request services from the server. This may be a reasonable way to handle a JIT for a safe language implementation.
+If both client and server run as Linux processes on the same CPU, RPC on shared memory provides a zero syscall means of communicating between the two processes. A sandbox can then be implemented for a Linux client process by using seccomp to irreversibly drop access to syscalls with the still open RPC connection used to request services from the server. This may be a reasonable way to handle just in time compilation for a memory safe language implementation.
 
+\section{interface}
+There is some memory management inherent to coordinating the buffers. Expressed in C++ syntax, the interface for a given instantiation of the RPC infrastructure, is equivalent to \autoref{lst:interface}.
+
+\begin{lstlisting}[style=c_code_style, caption={Interface}, label={lst:interface}]
+void server::execute(uint64_t data[8]);
+void client::call(uint64_t data[8])
+{
+ copy_data_to_server(data);
+ server::execute(); // runs on the remote machine
+ copy_data_from_server(data);
+}
+\end{lstlisting}
+
+Eight uint64\_t as the argument size is suggested based on the x64 cache line size, and is enough data to invoke a Linux syscall API from the GPU, but otherwise arbitrary. An implementation such as \autoref{minimal} factors out the synchronisation and data copies, while the application implements the specific behaviour desired through callbacks.
 
 \section{Implementation}
 
 Implementing mutual exclusion on shared memory has known solutions, such as that attributed to Th. J. Dekker\cite{dijkstra1962over} and the later Peterson's algorithm\cite{peterson1981myths}. Those, and more complicated subsequent solutions, are not ideal for RPC which requires strictly alternating access to the shared buffer.
 
-\subsection{One client, one server}
+\subsection{One client, one server}\label{one_to_one}
 
 The complexity is in the single client, single server case. Scaling up to multiple of each, \autoref{many}, involves multiple independent instances of the base case. This section describes the algorithm in prose, \autoref{tbl:large} as a state transition, \autoref{minimal} as executable code.
 
@@ -155,66 +178,6 @@ Client return    &   0   & 0    & 0   & 0       & 0      & 0   & Client \\
 \label{tbl:large}
 \end{table}
 
-
-% The state transitions are linear and ordered by the write-only property. With instantaneous mailbox delivery, the sequence is:
-% 
-% \begin{table}
-% \begin{center}
-% \begin{tabular}{l | l l l l}
-%       \multicolumn{1}{l|}{} &
-%       \multicolumn{2}{l}{Client} &
-%       \multicolumn{2}{l}{Server} \\
-% State            & In & Out & In & Out \\
-% \hline
-% Quiescent        &  0 & 0   & 0  & 0  \\
-% Work posted      &  0 & 1   & 1  & 0  \\
-% Server working   &  0 & 1   & 1  & 0  \\
-% Result posted    &  1 & 1   & 1  & 1  \\
-% Client working   &  1 & 1   & 1  & 1  \\
-% Client finished  &  1 & 0   & 0  & 1  \\
-% Server finished  &  0 & 0   & 0  & 0  \\
-% Client return    &  0 & 0   & 0  & 0  \\
-% 
-% \end{tabular}
-% \end{center}
-% \caption{Small state machine}
-% \label{tbl:small}
-% \end{table}
-% 
-% If the mailbox delay is made explicit, and the two bit state given as an integer, the same table is:
-% 
-% \begin{table}
-% \begin{center}
-% \begin{tabular}{l | l l l l | l l}
-%       \multicolumn{1}{l|}{} &
-%       \multicolumn{2}{l}{Client} &
-%       \multicolumn{2}{l|}{Server} &
-%       \multicolumn{1}{l}{Client} &
-%       \multicolumn{1}{l}{Server} \\
-% State            &   In  & Out  & In  & Out     &        &  \\
-% \hline
-% Quiescent        &   0   & 0    & 0   & 0       & 0      & 0 \\
-% Work posted      &   0   & 1    & 0   & 0       & 1      & 0 \\
-%                  &   0   & 1    & 1   & 0       & 1      & 2 \\
-% Server working   &   0   & 1    & 1   & 0       & 1      & 2 \\
-% Result posted    &   0   & 1    & 1   & 1       & 1      & 3 \\
-%                  &   1   & 1    & 1   & 1       & 3      & 3 \\
-% Client working   &   1   & 1    & 1   & 1       & 3      & 3 \\
-% Client finished  &   1   & 0    & 1   & 1       & 2      & 3 \\
-%                  &   1   & 0    & 0   & 1       & 2      & 1 \\
-% Server finished  &   1   & 0    & 0   & 0       & 2      & 0 \\
-%                  &   0   & 0    & 0   & 0       & 0      & 0 \\
-% Client return    &   0   & 0    & 0   & 0       & 0      & 0 \\
-% 
-% \end{tabular}
-% \end{center}
-% \caption{Large state machine}
-% \label{tbl:large}
-% \end{table}
-% 
-% 
-% Mailbox writes do not race between client and server as each address is only written by one of them. Memory operations are ordered by fences within each process. Each process reads from inbox, then reads and/or writes from the buffer, then writes to the outbox.
-
 \subsection{Executable implementation}\label{minimal}
 This is a minimal implementation of the one-to-one state machine, with no optimisations or cross architecture concerns, written for exposition. It will compile (as C++14) and run successfully if the listings are concatenated in order and the four external functions implemented, e.g. to do arithmetic or print to the console.
 
@@ -231,34 +194,34 @@ main.cpp
 \end{lstlisting}
 
 
-The client (\autoref{lst:minimal_client}) and server (\autoref{lst:minimal_server}) implementations each make the handling of the four possible states explicit instead of folding the dead branches for clearer comparison to \autoref{tbl:large}.
+The client and server (\autoref{lst:minimal_client_server}) implementations each make the handling of the four possible states explicit instead of folding the dead branches for clearer comparison to \autoref{tbl:large}.
 
-\begin{lstlisting}[style=c_code_style, caption={Client}, label={lst:minimal_client}]
+\begin{lstlisting}[style=c_code_style, caption={Client and Server}, label={lst:minimal_client_server}]
 client.cpp
-\end{lstlisting}
-
-\begin{lstlisting}[style=c_code_style, caption={Server}, label={lst:minimal_server}]
 server.cpp
 \end{lstlisting}
-
 
 \subsection{Many clients, many servers}\label{many}
 The one-to-one client/server state machine requires exclusive ownership of the memory used to communicate between the two. Scaling to multiple clients or multiple servers is done with multiple one-to-one state machines, each of which runs independently and as described above, with additional locking within the process to manage mutual exclusion of the scalar state machines. No additional coordination is needed between processes.
 
 \subsubsection{Thread scheduler}
-Linux provides a completely fair scheduler by default. A thread which takes a lock and is suspended will ultimately be rescheduled, allowing the system as a whole to make progress. CUDA does not preemptively schedule threads (warps in CUDA terminology); once one starts executing it will run to completion, modulo the program ending prematurely. This also makes simple locking code possible. OpenCL provides no forward progress guarantees, and HSA makes limited ones\cite{SorensenED18}. This implementation assumes the scheduler is not fair, such that a thread which holds a lock may be descheduled and never return. Global locks are therefore unavailable. Forward progress can be ensured on amdgpu by using at least as many distinct state machines as there can be simultaneous wavefronts on a HSA queue.
+Linux provides a completely fair scheduler by default. A thread which takes a lock and is suspended will ultimately be rescheduled, allowing the system as a whole to make progress. CUDA does not preemptively schedule threads (warps in CUDA terminology); once one starts executing it will run to completion, modulo the program ending prematurely. This also makes simple locking code possible. OpenCL provides no forward progress guarantees, and HSA makes limited ones\cite{SorensenED18}. This implementation assumes the scheduler is not fair, such that a thread which holds a lock may be descheduled and never return. Global locks are therefore unavailable. Forward progress can be ensured on AMDGPU by using at least as many distinct state machines as there can be simultaneous wavefronts on a HSA queue.
 
 \subsubsection{Implementation limits}
-This implementation assumes a limit on the number of concurrent RPC calls is specified at library initialization time. For example, it may be limited by the maximum number of concurrently executing threads the hardware can support. It then allocates that many instances of the communication state up front, as a contiguous array, to avoid the complexity of reallocating concurrently accessed structures. On contempory AMDGPU hardware it implies ~8MiB of host memory reserved per instance, with some overhead from cache invalidation as a result. This may be revised in future.
+This implementation assumes a limit on the number of concurrent RPC calls is specified at library initialization time. For example, it may be limited by the maximum number of concurrently executing threads the hardware can support. It then allocates that many instances of the communication state up front, as a contiguous array, to avoid the complexity of reallocating concurrently accessed structures. On contemporary AMDGPU hardware it implies ~8MiB of host memory reserved per instance, with some overhead from cache invalidation as a result. This may be revised in future.
 
 \subsubsection{Mutual exclusion}
 Each one-to-one state machine can be used by a single client and a single server at a time. Mutual exclusion, combined with the implementation choice of a fixed size array of said state machines, means picking an index which is otherwise unused.
-The lock acquire can be very cheap for systems where the process is comprised of N threads each of which can be dedicated to a single index. For example, if the array is as wide as the maximum number of warps on an nvptx machine, compiler intrinsics can uniquely identify that warp, and use that identifier as an index. It is also cheap if the process contains a single thread, which may be the case for a CPU server implementation, or if a feature of the surrounding infrastructure for thread management provides an ID in [0, number-threads).
-In other cases, a slot can be found dynamically using a bitmap of length equal to the maximum number of calls as an array of mutual exclusion locks. This lock array is local to the process so atomic compare and swap to set a bit at index I is taking a lock at I, which can be released by fetch\_and with a mask. 
-Provided locks or a priori knowledge ensures each one-to-one state machine is only in use by one pair of processes at a time, correctness of the whole system follows from correctness of a single pair. The concept of holding a lock on an index is useful for describing optimisations, whether the lock is a bit set in a bitmap or implicit.
 
-\subsection{Algorithm adapation for process locking}
-%This doesn't format well
+The additional invariant relative to \autoref{one_to_one} is that a given outbox can now only be written to while the corresponding lock is held. That is sufficient to serialize operations on the individual state machines.
+
+The lock acquire can be very cheap for systems where the process is comprised of N threads each of which can be dedicated to a single index. For example, if the array is as wide as the maximum number of warps on an NVPTX machine, compiler intrinsics can uniquely identify that warp, and use that identifier as an index. It is also cheap if the process contains a single thread, which may be the case for a CPU server implementation, or if a feature of the surrounding infrastructure for thread management provides an ID in [0, number-threads).
+
+In other cases, a slot can be found dynamically using a bitmap of length equal to the maximum number of calls as an array of mutual exclusion locks. This lock array is local to the process so atomic compare and swap to set a bit at index I is taking a lock at I, which can be released by fetch\_and with a mask. 
+Provided locks or a priori knowledge ensures each one-to-one state machine is only in use by one pair of processes at a time, correctness of the whole system follows from correctness of a single pair. The concept of holding a lock on an index is useful for reasoning about optimisations, whether the lock is a bit set in a bitmap or implicit.
+
+\subsection{Algorithm adaption for process locking}
+Both processes proceed by selecting a state machine that they can make progress on, claiming the lock for it, and then checking whether there is still work to be done. 
 Multiple client algorithm:
 \begin{itemize}
 \item find an index that is outbox clear, inbox clear
@@ -267,7 +230,6 @@ Multiple client algorithm:
 \item proceed as in the one-to-one case
 \item release the lock
 \end{itemize}
-
 Multiple server algorithm:
 \begin{itemize}
 \item find an index that is outbox clear, inbox set
@@ -277,11 +239,11 @@ Multiple server algorithm:
 \item release the lock
 \end{itemize}
 
-
 \section{Optimisations}
 \subsection{Asynchronous call}\label{async_call}
 Some function calls have no return value, e.g. for memory deallocation. The state machine described so far requires the client to detect that the call has succeeded and set the client outbox to 0, ultimately freeing up the slot for reuse. This can be relaxed, permitting the client to return immediately after posting work by setting the outbox to 1, provided some other client call can recognise the case and clean up.
-The case of a previous async call is detectable when the outbox and inbox set, indicating a result has been received, however the corresponding lock is not set (or is implicit), so no client is waiting for it. The server code does not need to be changed.
+
+The case of a previous asynchronous call is detectable when the outbox and inbox set, indicating a result has been received, however the corresponding lock is not set (or is implicit), so no client is waiting for it. The server code does not need to be changed.
 A call may be split into an asynchronous one that triggers some work and a later synchronous call that retrieves the result, or multiple asynchronous calls to query whether the result is available yet. This diverges from the simple RPC model of an invisible local call though, requiring application collaboration, so is not explored further in this paper.
 
 \subsection{Bit packing}
@@ -297,9 +259,24 @@ The processes access to shared memory may be high latency and based on atomic co
 That amounts to each competing thread trying to update multiple values and returning as soon as it, or one of the other threads, succeeds in propagating the locked value.
 
 \subsection{Exceeding fixed buffer size}
-Shared memory RPC can handle larger arguments by allocating memory and passing a pointer. An alternative is a variant on the asynchronous call, where the client takes a lock and issues multiple call/return sequences before dropping the lock. The server can combine the buffers at that index. This is used in a printf implementation where the data passed can exceed any fixed size buffer but an allocation round trip introduces failure modes. Notably, because the lock is an integer index, it is also usable as a unique identifer during the call which helps the server reassemble associated buffers. This remains opaque to the call site.
+Shared memory RPC can handle larger arguments by allocating memory and passing a pointer. An alternative is a variant on the asynchronous call, where the client takes a lock and issues multiple call/return sequences before dropping the lock. The server can combine the buffers at that index. This is used in a printf implementation where the data passed can exceed any fixed size buffer but an allocation round trip introduces failure modes. Notably, because the lock is an integer index, it is also usable as a unique identifier during the call which help the server reassemble associated buffers. This remains opaque to the call site.
+
+\section{Limitations and future work}
+\subsection{Syntax}
+Development efforts have been focused on providing a correct and performant means of calling a function on N integers. Ease of use requires a layer on top of this to handle implicit serialization of types and passing function pointers.
+
+\subsection{Combinatorial testing}
+Verifying that the client and server process both compile on various architectures, as various languages, can be done in linear time on a single machine with a cross compiler. Verifying that each pair executes successfully requires further infrastructure, such as a unit test framework and thread pool definition that can execute on each architecture, to reach the point where a single client/server application can be compiled repeatedly and run under various different environments.
+
+\subsection{Further architectures}\label{further}
+The implementation is presently tested on pre-Volta NVPTX, where the remote call is made on a per-warp basis. Extending to Volta means passing a thread mask down the call stack and allowing each thread in the warp to initiate the remote call, closer to the x86-64 model. Extending to a PowerPC host may uncover little endian assumptions. Intel or ARM GPUs will require additional implementations of some platform specific code.
+
+\subsection{Performance}
+Different pairs of architecture, and different communication fabrics benefit from different optimisations. For example, batching may be worthwhile across high latency PCIe and a net loss on a faster connection. Determining the optimal set of variations for different systems will follow from benchmarks that can run across various different systems, so follows on from \autoref{further}. This should all be variations in derived template parameters, unobservable to applications that are already using the unspecialized library.
 
 \section{Conclusion}
 Remote procedure calls are a simple interface if and only if there are no network induced failure modes. This is the case on a single shared memory GPU node. The synchronisation required can be implemented on shared memory systems with two atomic booleans per RPC state instance with single writer semantics and a fixed size shared buffer for argument and return passing.
 
 A mechanism built on shared memory such as this, or waiting for vendor support, enables file I/O and similar from GPU code. Mmap of a file into shared memory from the GPU is a particularly good fit.
+
+Once coupled with a code generation scheme such as \cite{Thrift} or similar, a state machine such as this provides a convenient means of executing functions on a different processor to the caller. 

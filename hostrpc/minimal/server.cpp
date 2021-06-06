@@ -5,9 +5,8 @@ template <typename W, typename C> bool server_t::run(W work, C clean) {
 
   if (in & out) {
     // work done, wait for client
-    while (in) {
+    while (in)
       in = inbox->load(memory_order_relaxed);
-    }
     atomic_thread_fence(memory_order_acquire);
   }
 
@@ -22,9 +21,8 @@ template <typename W, typename C> bool server_t::run(W work, C clean) {
 
   if (!in & !out) {
     // nothing to do, wait for work
-    while (!in) {
+    while (!in)
       in = inbox->load(memory_order_relaxed);
-    }
     atomic_thread_fence(memory_order_acquire);
   }
 

@@ -13,18 +13,15 @@ int main() {
 
   thread st([]() -> void {
     for (uint32_t count = 0; count < 2 * calls;) {
-      if (server.run(server_work, server_clean)) {
+      if (server.run(server_work, server_clean))
         count++;
-      }
     }
   });
 
   thread ct([]() -> void {
-    for (uint32_t i = 0; i < calls; i++) {
+    for (uint32_t i = 0; i < calls; i++)
       client.run(client_fill, client_use);
-    }
   });
 
-  st.join();
-  ct.join();
+  st.join(); ct.join();
 }
