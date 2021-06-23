@@ -414,11 +414,12 @@ static int main_with_hsa(int argc, char **argv)
     {
       printf("Spawn queue\n");
     }
+  
   hsa_queue_t *queue;
   {
     hsa_status_t rc = hsa_queue_create(
         kernel_agent /* make the queue on this agent */,
-        131072 /* todo: size it, this hardcodes max size for vega20 */,
+        hsa::agent_get_info_queue_max_size(kernel_agent),
         HSA_QUEUE_TYPE_MULTI /* baseline */,
         callbackQueue /* called on every async event? */,
         NULL /* data passed to previous */,
