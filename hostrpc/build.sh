@@ -20,6 +20,10 @@ DEVICERTL="$RDIR/lib/libomptarget-amdgcn-$GFX.bc"
 mkdir -p obj
 mkdir -p lib
 
+
+clang++ -W -Wno-deprecated-copy -Wno-missing-field-initializers -Wno-inline-new-delete -Wno-unused-parameter -std=c++14 -ffreestanding -I $HOME/relacy/ minimal.cpp -stdlib=libc++ -o a.out
+exit 0
+
 echo "Using toolchain at $RDIR, GFX=$GFX"
 
 have_nvptx=0

@@ -1,13 +1,7 @@
-#include <atomic>
-#include <cstdint>
-#include <cstdio>
-#include <memory>
-#include <thread>
-using namespace std;
 
 struct process_t {
-  const atomic_bool *inbox;
-  atomic_bool *outbox;
+  const NS::atomic_bool *inbox;
+  NS::atomic_bool *outbox;
   uint32_t *buffer;
 };
 
