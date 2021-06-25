@@ -47,6 +47,7 @@ struct race_test : rl::test_suite<race_test, 2>
     if (0 == thread_index)
       {
         client.run(client_fill, client_use);
+        
         if (0) for (uint32_t i = 0; i < calls; i++)
           {
             client.run(client_fill, client_use);
@@ -54,11 +55,19 @@ struct race_test : rl::test_suite<race_test, 2>
       }
     else
       {
-        server.run(server_work, server_clean);
+        if (server.run(server_work, server_clean))
+          {
+            // progress
+          } else {
+          yield();
+        }
         
         if (0) for (uint32_t count = 0; count < 2 * calls;)
           {
-            if (server.run(server_work, server_clean)) count++;
+            if (server.run(server_work, server_clean))
+              {
+                count++;
+              }
           }
       }
   }
@@ -79,7 +88,7 @@ extern "C" int main(void)
   p.context_bound = 3;
 
   p.iteration_count = 10000;
-  p.execution_depth_limit = 10000;
+  p.execution_depth_limit = 1000000;
   rl::simulate<race_test>(p);
 
   return 0;

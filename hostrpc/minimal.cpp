@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#define yield()   rl::rl_sched_yield($)
 
 #include "minimal/header.cpp"
 
