@@ -30,6 +30,7 @@ struct x64_gcn_type : public x64_gcn_type_base<SZ>
              typename base::AllocRemote(coarse_handle))
   {
   }
+  x64_gcn_type() = default;
 };
 
 }  // namespace hostrpc

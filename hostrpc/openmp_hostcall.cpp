@@ -1,4 +1,5 @@
-#include "../../../hostrpc/src/hostrpc.h"
+
+
 #include "detail/common.hpp"
 #include "detail/platform.hpp"
 #include "detail/platform_detect.hpp"
@@ -31,25 +32,17 @@ client_type *get_client()
 {
   // Less obvious is that some asm is needed on the device to trigger the
   // handling,
-  /*
   __asm__("; hostcall_invoke: record need for hostcall support\n\t"
           ".type needs_hostcall_buffer,@object\n\t"
           ".global needs_hostcall_buffer\n\t"
           ".comm needs_hostcall_buffer,4":::);
 
-   */
   // and that the result of hostrpc_assign_buffer, if zero is failure, else
   // it's written into a point in the implicit arguments where the GPU can
   // retrieve it from
   // size_t* argptr = (size_t *)__builtin_amdgcn_implicitarg_ptr();
   // result is found in argptr[3]
 
-  __asm__(
-      "; hostcall_invoke: record need for hostcall support\n\t"
-      ".type needs_hostcall_buffer,@object\n\t"
-      ".global needs_hostcall_buffer\n\t"
-      ".comm needs_hostcall_buffer,4" ::
-          :);
   size_t *argptr = (size_t *)__builtin_amdgcn_implicitarg_ptr();
   return (client_type *)argptr[3];
 }
@@ -121,6 +114,9 @@ extern "C"
 #endif
 
 #if HOSTRPC_HOST
+
+#include "hsa.hpp"
+
 // overrides weak functions in rtl.cpp
 extern "C"
 {
@@ -134,7 +130,7 @@ extern "C"
 
 struct operate
 {
-  static void op(unsigned lane, hostrpc::cacheline_t *line)
+  static void op( hostrpc::cacheline_t *line)
   {
     uint64_t op = line->element[0];
     switch (op)
@@ -167,7 +163,7 @@ struct operate
     for (unsigned c = 0; c < 64; c++)
       {
         hostrpc::cacheline_t *line = &page->cacheline[c];
-        op(c, line);
+        op(line);
       }
   }
 };
@@ -183,9 +179,31 @@ struct clear
   }
 };
 
+struct device_state
+{
+  using T = hostrpc::x64_gcn_type<hostrpc::size_runtime>;
+  T storage; // move-only type
+  unsigned long device_client_pointer = 0;
+  T::server_type * host_server_pointer = 0;
+};
+
+std::vector<device_state> hostrpc_storage;
+
 unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
                                     uint32_t device_id)
 {
+  (void)this_Q;
+  while (hostrpc_storage.size() < device_id)
+    {
+      hostrpc_storage.emplace_back();
+    }
+
+  if (hostrpc_storage[device_id].device_client_pointer)
+    {
+      return hostrpc_storage[device_id].device_client_pointer;
+    }
+
+
   // gets called a lot, so if the result is already available, need to return it
   // probably a vector<unsigned long>
   // is called under a lock
@@ -207,88 +225,23 @@ unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
       return 0;
     }
 
-  size_t size = hostrpc::runtime_size(numCu * waverPerCu);
+  auto size = hostrpc::size_runtime(numCu * waverPerCu);
 
-  //todo: make the client object and also spin up a thread
+  hsa_region_t fine_grain = hsa::region_fine_grained(agent);
+  hsa_region_t coarse_grain = hsa::region_coarse_grained(agent);
+
+
+  auto state = device_state::T (size, fine_grain.handle, coarse_grain.handle);
+  if (!state.valid()) { return 0; }
+
+
+  // todo: client, server pointers (vector resizes), spin up a thread
+
+  return 0;
 }
 
 hsa_status_t hostrpc_init() { return HSA_STATUS_SUCCESS; }
-hsa_status_t hostrpc_terminate() { return HSA_STATUS_SUCCESS; }
+hsa_status_t hostrpc_terminate() { hostrpc_storage.clear(); return HSA_STATUS_SUCCESS; }
 
 #endif
 
-namespace hostcall_ops
-{
-#if HOSTRPC_HOST
-void operate(hostrpc::page_t *page)
-{
-  for (unsigned c = 0; c < 64; c++)
-    {
-      hostrpc::cacheline_t &line = page->cacheline[c];
-
-      assert(line.element[0] <= UINT32_MAX);
-      uint32_t service_id = (uint32_t)line.element[0];
-      uint64_t *payload = &line.element[1];
-
-      // A bit dubious in that the existing code expects payload to have
-      // length 8 and we're passing one of length 7, but nothing yet
-      // implemented goes beyond [3]
-      uint32_t device_id = 0;  // todo
-      hostrpc_execute_service(static_cast<uint32_t>(service_id), device_id,
-                              payload);
-    }
-}
-void clear(hostrpc::page_t *page)
-{
-  for (unsigned c = 0; c < 64; c++)
-    {
-      hostrpc::cacheline_t &line = page->cacheline[c];
-      for (unsigned i = 0; i < 8; i++)
-        {
-          line.element[i] = HOSTRPC_SERVICE_NO_OPERATION;
-        }
-    }
-}
-#endif
-
-#if defined __AMDGCN__
-void pass_arguments(hostrpc::page_t *page, uint64_t d[8])
-{
-  hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
-  for (unsigned i = 0; i < 8; i++)
-    {
-      line->element[i] = d[i];
-    }
-}
-void use_result(hostrpc::page_t *page, uint64_t d[8])
-{
-  hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
-  for (unsigned i = 0; i < 8; i++)
-    {
-      d[i] = line->element[i];
-    }
-}
-
-extern "C" hostrpc_result_t __attribute__((used))
-hostrpc_invoke(uint32_t service_id, uint64_t arg0, uint64_t arg1, uint64_t arg2,
-               uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6,
-               uint64_t arg7)
-{
-  // changes the control flow in hsa/impl
-  __asm__(
-      "; hostcall_invoke: record need for hostcall support\n\t"
-      ".type needs_hostcall_buffer,@object\n\t"
-      ".global needs_hostcall_buffer\n\t"
-      ".comm needs_hostcall_buffer,4" ::
-          :);
-
-  uint64_t buf[8] = {service_id, arg0, arg1, arg2, arg3, arg4, arg5, arg6};
-
-  hostcall_client(buf);
-
-  return {buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], UINT64_MAX};
-}
-
-#endif
-
-}  // namespace hostcall_ops

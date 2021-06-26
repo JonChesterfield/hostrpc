@@ -8,9 +8,11 @@ set -o pipefail
 DERIVE=${1:-4}
 
 # Aomp
-RDIR=$HOME/rocm/aomp
-GFX=`$RDIR/bin/mygpu -d gfx906` # lost the entry for gfx750 at some point
-DEVICERTL="$RDIR/lib/libdevice/libomptarget-amdgcn-$GFX.bc"
+if false; then
+    RDIR=$HOME/rocm/aomp
+    GFX=`$RDIR/bin/mygpu -d gfx906` # lost the entry for gfx750 at some point
+    DEVICERTL="$RDIR/lib/libdevice/libomptarget-amdgcn-$GFX.bc"
+fi
 
 # trunk
 RDIR=$HOME/llvm-install
@@ -20,9 +22,16 @@ DEVICERTL="$RDIR/lib/libomptarget-amdgcn-$GFX.bc"
 mkdir -p obj
 mkdir -p lib
 
-
-clang++ -W -Wno-deprecated-copy -Wno-missing-field-initializers -Wno-inline-new-delete -Wno-unused-parameter -std=c++14 -ffreestanding -I $HOME/relacy/ minimal.cpp -stdlib=libc++ -o a.out
-exit 0
+if [[ -d "$HOME/relacy" ]]
+then
+    echo "Using existing relacy"
+else
+    echo "Cloning relacy"
+    git clone https://github.com/dvyukov/relacy.git $HOME/relacy
+fi
+    
+    
+clang++ -W -Wno-deprecated-copy -Wno-missing-field-initializers -Wno-inline-new-delete -Wno-unused-parameter -std=c++14 -ffreestanding -I $HOME/relacy/ minimal.cpp -stdlib=libc++ -o minimal.out
 
 echo "Using toolchain at $RDIR, GFX=$GFX"
 
@@ -191,6 +200,11 @@ $CXX_X64 -I$HSAINC x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.x64.bc
 
 $CXX obj/x64_gcn_debug.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o x64_gcn_debug.exe
 
+
+$CXX_X64 -I$HSAINC openmp_hostcall.cpp -c -o obj/openmp_hostcall.x64.bc
+$CXX_GCN openmp_hostcall.cpp -c -o obj/openmp_hostcall.gcn.bc
+
+exit
 
 $CXX_X64 syscall.cpp -c -o obj/syscall.x64.bc 
 
