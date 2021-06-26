@@ -204,6 +204,9 @@ $CXX obj/x64_gcn_debug.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o x64_gcn_debug.e
 $CXX_X64 -I$HSAINC openmp_hostcall.cpp -c -o obj/openmp_hostcall.x64.bc
 $CXX_GCN openmp_hostcall.cpp -c -o obj/openmp_hostcall.gcn.bc
 
+
+$CXX_X64_LD obj/openmp_hostcall.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o openmp_hostcall.x64.exe
+
 exit
 
 $CXX_X64 syscall.cpp -c -o obj/syscall.x64.bc 

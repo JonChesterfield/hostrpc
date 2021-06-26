@@ -57,7 +57,13 @@ struct interface
 
     // Move only makes it easier to avoid calling free twice on the same pointer
     HOSTRPC_ANNOTATE raw(const raw &) = delete;
-    HOSTRPC_ANNOTATE raw(raw &&other) : ptr(other.ptr) { other.ptr = nullptr; }
+    HOSTRPC_ANNOTATE raw& operator=(raw&& other) noexcept
+    {
+      ptr = other.ptr;
+      other.ptr = nullptr;
+      return *this;
+    }
+    HOSTRPC_ANNOTATE raw(raw &&other) noexcept : ptr(other.ptr) { other.ptr = nullptr; }
     HOSTRPC_ANNOTATE bool valid() { return ptr != nullptr; }
     HOSTRPC_ANNOTATE status destroy()
     {
@@ -350,10 +356,15 @@ inline constexpr typename remove_reference<T>::type &&move(T &&x)
 }
 }  // namespace cxx
 
-template <typename AllocBuffer, typename AllocInboxOutbox, typename AllocLocal,
-          typename AllocRemote>
+template <typename AllocBufferT, typename AllocInboxOutboxT, typename AllocLocalT,
+          typename AllocRemoteT>
 struct store_impl
 {
+  using AllocBuffer = AllocBufferT;
+  using AllocInboxOutbox = AllocInboxOutboxT;
+  using AllocLocal = AllocLocalT;
+  using AllocRemote = AllocRemoteT;
+  
   typename AllocBuffer::raw buffer;
   typename AllocInboxOutbox::raw recv;
   typename AllocInboxOutbox::raw send;

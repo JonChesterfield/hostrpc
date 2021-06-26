@@ -32,10 +32,12 @@ client_type *get_client()
 {
   // Less obvious is that some asm is needed on the device to trigger the
   // handling,
-  __asm__("; hostcall_invoke: record need for hostcall support\n\t"
-          ".type needs_hostcall_buffer,@object\n\t"
-          ".global needs_hostcall_buffer\n\t"
-          ".comm needs_hostcall_buffer,4":::);
+  __asm__(
+      "; hostcall_invoke: record need for hostcall support\n\t"
+      ".type needs_hostcall_buffer,@object\n\t"
+      ".global needs_hostcall_buffer\n\t"
+      ".comm needs_hostcall_buffer,4" ::
+          :);
 
   // and that the result of hostrpc_assign_buffer, if zero is failure, else
   // it's written into a point in the implicit arguments where the GPU can
@@ -116,6 +118,7 @@ extern "C"
 #if HOSTRPC_HOST
 
 #include "hsa.hpp"
+#include <list>
 
 // overrides weak functions in rtl.cpp
 extern "C"
@@ -130,7 +133,7 @@ extern "C"
 
 struct operate
 {
-  static void op( hostrpc::cacheline_t *line)
+  static void op(hostrpc::cacheline_t *line)
   {
     uint64_t op = line->element[0];
     switch (op)
@@ -179,30 +182,53 @@ struct clear
   }
 };
 
-struct device_state
+struct storage_t
 {
-  using T = hostrpc::x64_gcn_type<hostrpc::size_runtime>;
-  T storage; // move-only type
-  unsigned long device_client_pointer = 0;
-  T::server_type * host_server_pointer = 0;
-};
+  using type = hostrpc::x64_gcn_type<hostrpc::size_runtime>;
+  std::vector<type> stash;
+  std::vector<type::storage_type::AllocLocal::raw> server_pointers;
+  std::vector<type::storage_type::AllocRemote::raw> client_pointers;
 
-std::vector<device_state> hostrpc_storage;
+  storage_t() = default;
+  ~storage_t()
+  {
+    size_t N = server_pointers.size();
+    assert(N == client_pointers.size());
+    for (size_t i = 0; i < N; i++)
+      {
+        // todo: ensure destroy can be called on non-valid pointers
+        server_pointers[i].destroy();
+        client_pointers[i].destroy();
+      }
+  }
+} storage;
 
 unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
                                     uint32_t device_id)
 {
   (void)this_Q;
-  while (hostrpc_storage.size() < device_id)
+  (void)device_id;
+
+  while (storage.client_pointers.size() < device_id)
     {
-      hostrpc_storage.emplace_back();
+      storage.stash.push_back({});
+      storage.server_pointers.push_back({});
+      storage.client_pointers.push_back({});
     }
 
-  if (hostrpc_storage[device_id].device_client_pointer)
-    {
-      return hostrpc_storage[device_id].device_client_pointer;
-    }
+  auto as_ulong = [](uint32_t device_id) -> unsigned long {
+    // assumes null is zero, todo: can that be dropped
+    void *p = storage.client_pointers[device_id].remote_ptr();
+    unsigned long t;
+    __builtin_memcpy(&t, &p, 8);
+    return t;
+    return t;
+  };
 
+  if (unsigned long r = as_ulong(device_id))
+    {
+      return r;
+    }
 
   // gets called a lot, so if the result is already available, need to return it
   // probably a vector<unsigned long>
@@ -226,22 +252,58 @@ unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
     }
 
   auto size = hostrpc::size_runtime(numCu * waverPerCu);
-
   hsa_region_t fine_grain = hsa::region_fine_grained(agent);
   hsa_region_t coarse_grain = hsa::region_coarse_grained(agent);
 
+  storage.stash[device_id] =
+      storage_t::type{size, fine_grain.handle, coarse_grain.handle};
 
-  auto state = device_state::T (size, fine_grain.handle, coarse_grain.handle);
-  if (!state.valid()) { return 0; }
+  {
+    auto alloc = storage_t::type::storage_type::AllocLocal();
+    storage.server_pointers[device_id] =
+        alloc.allocate(sizeof(storage_t::type::server_type));
+    auto local = storage.server_pointers[device_id].local_ptr();
+    __builtin_memcpy(local, &storage.stash[device_id].server,
+                     sizeof(storage_t::type::server_type));
+  }
 
+  // allocate pointer on gpu, memcpy client to it
+  {
+    auto alloc =
+        storage_t::type::storage_type::AllocRemote(coarse_grain.handle);
+    storage.client_pointers[device_id] =
+        alloc.allocate(sizeof(storage_t::type::client_type));
 
-  // todo: client, server pointers (vector resizes), spin up a thread
+    auto remote = storage.client_pointers[device_id].remote_ptr();
+    int cp =
+        hsa::copy_host_to_gpu(agent, remote, &storage.stash[device_id].client,
+                              sizeof(storage_t::type::client_type));
+    if (!cp)
+      {
+        // bad, need to do some cleanup
 
-  return 0;
+        return 0;
+      }
+  }
+
+  // finally need to spawn a thread to run the server process
+
+  return as_ulong(device_id);
 }
 
 hsa_status_t hostrpc_init() { return HSA_STATUS_SUCCESS; }
-hsa_status_t hostrpc_terminate() { hostrpc_storage.clear(); return HSA_STATUS_SUCCESS; }
+hsa_status_t hostrpc_terminate()
+{
+  // storage = {}; // wants various copy constructors defined on storage, drop it for now
+  return HSA_STATUS_SUCCESS;
+}
 
 #endif
 
+
+#if HOSTRPC_HOST
+int main()
+{
+
+}
+#endif
