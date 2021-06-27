@@ -1,5 +1,3 @@
-
-
 #include "detail/common.hpp"
 #include "detail/platform.hpp"
 #include "detail/platform_detect.hpp"
@@ -28,7 +26,7 @@ extern "C"
 
 using client_type = hostrpc::x64_gcn_type<hostrpc::size_runtime>::client_type;
 
-client_type *get_client()
+static client_type *get_client()
 {
   // Less obvious is that some asm is needed on the device to trigger the
   // handling,
@@ -117,7 +115,10 @@ extern "C"
 
 #if HOSTRPC_HOST
 
+#include "hostrpc_thread.hpp"
 #include "hsa.hpp"
+#include "server_thread_state.hpp"
+
 #include <list>
 
 // overrides weak functions in rtl.cpp
@@ -189,6 +190,14 @@ struct storage_t
   std::vector<type::storage_type::AllocLocal::raw> server_pointers;
   std::vector<type::storage_type::AllocRemote::raw> client_pointers;
 
+  using sts_ty =
+      hostrpc::server_thread_state<type::server_type, operate, clear>;
+
+  std::list<sts_ty> thread_state;
+  std::vector<hostrpc::thread<sts_ty>> threads;
+
+  HOSTRPC_ATOMIC(uint32_t) server_control;
+
   storage_t() = default;
   ~storage_t()
   {
@@ -201,7 +210,9 @@ struct storage_t
         client_pointers[i].destroy();
       }
   }
-} storage;
+};
+
+static storage_t storage;  // global.
 
 unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
                                     uint32_t device_id)
@@ -286,24 +297,44 @@ unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
       }
   }
 
-  // finally need to spawn a thread to run the server process
+  // finally spawn a thread to run the server process, and handle book keeping
+  // of it
+  storage.thread_state.push_back(hostrpc::make_server_thread_state(
+      reinterpret_cast<storage_t::type::server_type *>(
+          (void *)storage.server_pointers[device_id].local_ptr()),
+      &storage.server_control, operate{}, clear{}));
+  storage.threads.push_back(hostrpc::make_thread(&storage.thread_state.back()));
 
   return as_ulong(device_id);
 }
 
-hsa_status_t hostrpc_init() { return HSA_STATUS_SUCCESS; }
+hsa_status_t hostrpc_init()
+{
+  platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
+                         __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+      &storage.server_control, 1);
+
+  return HSA_STATUS_SUCCESS;
+}
 hsa_status_t hostrpc_terminate()
 {
-  // storage = {}; // wants various copy constructors defined on storage, drop it for now
+  platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
+                         __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+      &storage.server_control, 0);
+
+  for (auto &i : storage.threads)
+    {
+      i.join();
+    }
+  // storage = {}; // wants various copy constructors defined on storage, drop
+  // it for now. todo: finish cleanup.
   return HSA_STATUS_SUCCESS;
 }
 
-#endif
+// These parts are in library code as they aren't freestanding safe
+// However, want to minimise the cmake needed to jury rig this into prod
+#include "allocator_host_libc.cpp"
+#include "allocator_hsa.cpp"
+#include "hostrpc_thread.cpp"
 
-
-#if HOSTRPC_HOST
-int main()
-{
-
-}
 #endif

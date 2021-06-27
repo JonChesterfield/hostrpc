@@ -7,17 +7,17 @@ set -o pipefail
 
 DERIVE=${1:-4}
 
-# Aomp
 if false; then
+    # Aomp
     RDIR=$HOME/rocm/aomp
     GFX=`$RDIR/bin/mygpu -d gfx906` # lost the entry for gfx750 at some point
     DEVICERTL="$RDIR/lib/libdevice/libomptarget-amdgcn-$GFX.bc"
+else
+    # trunk
+    RDIR=$HOME/llvm-install-debug
+    GFX=`$RDIR/bin/amdgpu-arch | uniq`
+    DEVICERTL="$RDIR/lib/libomptarget-amdgcn-$GFX.bc"
 fi
-
-# trunk
-RDIR=$HOME/llvm-install
-GFX=`$RDIR/bin/amdgpu-arch | uniq`
-DEVICERTL="$RDIR/lib/libomptarget-amdgcn-$GFX.bc"
 
 mkdir -p obj
 mkdir -p lib
@@ -201,13 +201,24 @@ $CXX_X64 -I$HSAINC x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.x64.bc
 $CXX obj/x64_gcn_debug.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o x64_gcn_debug.exe
 
 
+# Ideally would have a test case that links the x64 and gcn bitcode, but can't work out
+# how to do that. I think mlink-builtin-bitcode used to be architecture aware, but
+# currently it cheerfully links gcn and x64 bitcode together to make a thing that
+# crashes the bitcode reader
+# therefore, openmp_hostcall is presently built into the openmp deviceRTL and amdgpu plugin
+# by #including it from this repo. Stand alone tests can then (optimistically) assume that
+# the allocator is available, and the hostcall machinery spun up by the plugin
+# The drawback is needing to rebuild llvm when the source changes.
 $CXX_X64 -I$HSAINC openmp_hostcall.cpp -c -o obj/openmp_hostcall.x64.bc
 $CXX_GCN openmp_hostcall.cpp -c -o obj/openmp_hostcall.gcn.bc
 
-
-$CXX_X64_LD obj/openmp_hostcall.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o openmp_hostcall.x64.exe
+$CXX_X64_LD -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa openmp_malloc.cpp -o openmp_malloc.exe
+echo "LD_LIBRARY_PATH=$RDIR/lib ./openmp_malloc.exe"
+LD_LIBRARY_PATH=$RDIR/lib ./openmp_malloc.exe
 
 exit
+
+
 
 $CXX_X64 syscall.cpp -c -o obj/syscall.x64.bc 
 
