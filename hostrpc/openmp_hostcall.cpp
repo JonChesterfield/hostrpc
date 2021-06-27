@@ -148,13 +148,18 @@ struct operate
             uint64_t size;
             __builtin_memcpy(&size, &line->element[1], 8);
             // needs a memory region derived from a kernel_agent
+
+            line->element[0] = 42;
             (void)size;  // todo
+            fprintf(stderr, "Malloc %zu bytes, returning %lu\n", size,
+                    line->element[0]);
             break;
           }
         case opcodes_free:
           {
             void *ptr;
             __builtin_memcpy(&ptr, &line->element[1], 8);
+            fprintf(stderr, "Free %p pointer\n", ptr);
             hsa_memory_free(ptr);
             break;
           }
@@ -198,8 +203,9 @@ struct storage_t
 
   HOSTRPC_ATOMIC(uint32_t) server_control;
 
-  storage_t() = default;
-  ~storage_t()
+  storage_t() { fprintf(stderr, "storage ctor\n"); }
+
+  void drop()
   {
     size_t N = server_pointers.size();
     assert(N == client_pointers.size());
@@ -209,18 +215,40 @@ struct storage_t
         server_pointers[i].destroy();
         client_pointers[i].destroy();
       }
+    server_pointers.clear();
+    client_pointers.clear();
+    stash.clear();
+  }
+
+  ~storage_t()
+  {
+    fprintf(stderr, "storage dtor\n");
+    drop();
   }
 };
 
-static storage_t storage;  // global.
+struct storage_global
+{
+  static storage_t &instance()
+  {
+    static storage_t storage;
+    return storage;
+  }
+
+ private:
+  storage_global() = default;
+  storage_global(storage_global const &) = delete;
+  void operator=(storage_global const &) = delete;
+};
 
 unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
                                     uint32_t device_id)
 {
+  storage_t &storage = storage_global::instance();
   (void)this_Q;
   (void)device_id;
 
-  while (storage.client_pointers.size() < device_id)
+  while (storage.client_pointers.size() <= device_id)
     {
       storage.stash.push_back({});
       storage.server_pointers.push_back({});
@@ -229,15 +257,17 @@ unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
 
   auto as_ulong = [](uint32_t device_id) -> unsigned long {
     // assumes null is zero, todo: can that be dropped
-    void *p = storage.client_pointers[device_id].remote_ptr();
+    void *p =
+        storage_global::instance().client_pointers[device_id].remote_ptr();
     unsigned long t;
     __builtin_memcpy(&t, &p, 8);
-    return t;
     return t;
   };
 
   if (unsigned long r = as_ulong(device_id))
     {
+      fprintf(stderr, "Dev[%u]: Use %p as device handle\n", device_id,
+              (void *)r);
       return r;
     }
 
@@ -269,30 +299,55 @@ unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
   storage.stash[device_id] =
       storage_t::type{size, fine_grain.handle, coarse_grain.handle};
 
+  fprintf(stderr, "Dev[%u]:\n", device_id);
+  storage.stash[device_id].dump();
+
   {
     auto alloc = storage_t::type::storage_type::AllocLocal();
     storage.server_pointers[device_id] =
         alloc.allocate(sizeof(storage_t::type::server_type));
     auto local = storage.server_pointers[device_id].local_ptr();
+    fprintf(stderr, "Dev[%u]:  Alloc %p to store server\n", device_id,
+            (void *)local);
     __builtin_memcpy(local, &storage.stash[device_id].server,
                      sizeof(storage_t::type::server_type));
   }
 
   // allocate pointer on gpu, memcpy client to it
   {
+    constexpr size_t SZ = sizeof(storage_t::type::client_type);
     auto alloc =
         storage_t::type::storage_type::AllocRemote(coarse_grain.handle);
-    storage.client_pointers[device_id] =
-        alloc.allocate(sizeof(storage_t::type::client_type));
+    storage.client_pointers[device_id] = alloc.allocate(SZ);
 
     auto remote = storage.client_pointers[device_id].remote_ptr();
-    int cp =
-        hsa::copy_host_to_gpu(agent, remote, &storage.stash[device_id].client,
-                              sizeof(storage_t::type::client_type));
-    if (!cp)
+    fprintf(stderr, "Dev[%u]:  Alloc %p to store client\n", device_id,
+            (void *)remote);
+
+    auto bufferS = hsa::allocate(fine_grain, SZ);
+    void *buffer = bufferS.get();
+
+    fprintf(stderr, "Copy host to gpu. Dst %p, src %p, via %p\n",
+            (void *)remote, (void *)(&storage.stash[device_id].client), buffer);
+
+    if (!buffer)
+      {
+        fprintf(stderr, "Fine grain alloc failed\n");
+        return 0;
+      }
+    memcpy(buffer, &storage.stash[device_id].client, SZ);
+    for (size_t i = 0; i < SZ; i += 8)
+      {
+        printf("source[%zu] 0x%lu\n", i,
+               *(uint64_t *)((char *)&storage.stash[device_id].client + i));
+        printf("buffer[%zu] 0x%lu\n", i, *(uint64_t *)((char *)buffer + i));
+      }
+    int cp = hsa::copy_host_to_gpu(agent, remote, buffer, SZ);
+
+    if (cp != 0)
       {
         // bad, need to do some cleanup
-
+        fprintf(stderr, "Copy to GPU failed\n");
         return 0;
       }
   }
@@ -305,11 +360,17 @@ unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
       &storage.server_control, operate{}, clear{}));
   storage.threads.push_back(hostrpc::make_thread(&storage.thread_state.back()));
 
-  return as_ulong(device_id);
+  {
+    unsigned long r = as_ulong(device_id);
+    fprintf(stderr, "Dev[%u]: Use %p as device handle\n", device_id, (void *)r);
+    return r;
+  }
 }
 
 hsa_status_t hostrpc_init()
 {
+  fprintf(stderr, "Hostrpc_init\n");
+  storage_t &storage = storage_global::instance();
   platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
                          __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
       &storage.server_control, 1);
@@ -318,6 +379,8 @@ hsa_status_t hostrpc_init()
 }
 hsa_status_t hostrpc_terminate()
 {
+  storage_t &storage = storage_global::instance();
+  fprintf(stderr, "Hostrpc_terminate\n");
   platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
                          __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
       &storage.server_control, 0);
@@ -326,6 +389,9 @@ hsa_status_t hostrpc_terminate()
     {
       i.join();
     }
+
+  storage.drop();
+
   // storage = {}; // wants various copy constructors defined on storage, drop
   // it for now. todo: finish cleanup.
   return HSA_STATUS_SUCCESS;

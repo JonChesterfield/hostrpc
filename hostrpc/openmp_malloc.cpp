@@ -32,7 +32,7 @@ int main()
     void *p = __kmpc_impl_malloc(128);
     for (unsigned i = 0; i < 128; i++)
       {
-        *(char *)p = i;
+        // *(char *)p = i;
       }
     __kmpc_impl_free(p);
   }
