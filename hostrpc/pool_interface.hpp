@@ -417,6 +417,10 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
 
   int spawn_with_uuid(uint32_t uuid)
   {
+    // may be worth adding a spawn-multiple. Would work by fetch-add N to
+    // the count, then spawning N waves that get incrementing values as the
+    // uuid, derivable from compiler intrinsics from the dispatch
+    // those that overshoot can exit early
     enqueue_helper(uuid, 0);
     return 0;
   }
@@ -451,6 +455,13 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
   void teardown()
   {
     base::set_req_zero_until_alive_zero(0);
+
+    // Relaunched repeatedly until alive count hit zero. That means there are N
+    // threads running, all moving towards exit, none of which will relaunch
+    // themselves.
+    // This logic copies a signal out of userdata and puts it in the completion
+    // slot to signal the host that we're done. It may be simpler to modify
+    // the signal directly.
 
     // All (pool managed) threads have exited. Teardown self.
     __attribute__((address_space(4))) void* p = __builtin_amdgcn_dispatch_ptr();
