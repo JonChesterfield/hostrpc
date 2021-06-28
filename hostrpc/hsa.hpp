@@ -282,8 +282,6 @@ inline const char* enum_as_str(hsa_region_segment_t e)
 {
   switch (e)
     {
-      default:
-        return "UNKNOWN SEGMENT";
       case HSA_REGION_SEGMENT_GLOBAL:
         return "HSA_REGION_SEGMENT_GLOBAL";
       case HSA_REGION_SEGMENT_READONLY:
@@ -295,6 +293,7 @@ inline const char* enum_as_str(hsa_region_segment_t e)
       case HSA_REGION_SEGMENT_KERNARG:
         return "HSA_REGION_SEGMENT_KERNARG";
     }
+  return "UNKNOWN SEGMENT";
 }
 
 inline const char* enum_as_str(hsa_region_global_flag_t e)

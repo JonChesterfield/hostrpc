@@ -16,6 +16,7 @@ enum opcodes
 };
 
 #if HOSTRPC_AMDGCN
+#pragma omp declare target
 
 // overrides weak functions in target_impl.hip
 extern "C"
@@ -26,26 +27,7 @@ extern "C"
 
 using client_type = hostrpc::x64_gcn_type<hostrpc::size_runtime>::client_type;
 
-static client_type *get_client()
-{
-  // Less obvious is that some asm is needed on the device to trigger the
-  // handling,
-  __asm__(
-      "; hostcall_invoke: record need for hostcall support\n\t"
-      ".type needs_hostcall_buffer,@object\n\t"
-      ".global needs_hostcall_buffer\n\t"
-      ".comm needs_hostcall_buffer,4" ::
-          :);
-
-  // and that the result of hostrpc_assign_buffer, if zero is failure, else
-  // it's written into a point in the implicit arguments where the GPU can
-  // retrieve it from
-  // size_t* argptr = (size_t *)__builtin_amdgcn_implicitarg_ptr();
-  // result is found in argptr[3]
-
-  size_t *argptr = (size_t *)__builtin_amdgcn_implicitarg_ptr();
-  return (client_type *)argptr[3];
-}
+static client_type *get_client();
 
 struct fill
 {
@@ -111,6 +93,28 @@ extern "C"
   }
 }
 
+static client_type *get_client()
+{
+  // Less obvious is that some asm is needed on the device to trigger the
+  // handling,
+  __asm__(
+      "; hostcall_invoke: record need for hostcall support\n\t"
+      ".type needs_hostcall_buffer,@object\n\t"
+      ".global needs_hostcall_buffer\n\t"
+      ".comm needs_hostcall_buffer,4" ::
+          :);
+
+  // and that the result of hostrpc_assign_buffer, if zero is failure, else
+  // it's written into a point in the implicit arguments where the GPU can
+  // retrieve it from
+  // size_t* argptr = (size_t *)__builtin_amdgcn_implicitarg_ptr();
+  // result is found in argptr[3]
+
+  size_t *argptr = (size_t *)__builtin_amdgcn_implicitarg_ptr();
+  return (client_type *)argptr[3];
+}
+
+#pragma omp end declare target
 #endif
 
 #if HOSTRPC_HOST
@@ -132,47 +136,19 @@ extern "C"
   hsa_status_t hostrpc_terminate();
 }
 
+namespace
+{
 struct operate
 {
-  static void op(hostrpc::cacheline_t *line)
-  {
-    uint64_t op = line->element[0];
-    switch (op)
-      {
-        case opcodes_nop:
-          {
-            break;
-          }
-        case opcodes_malloc:
-          {
-            uint64_t size;
-            __builtin_memcpy(&size, &line->element[1], 8);
-            // needs a memory region derived from a kernel_agent
-
-            line->element[0] = 42;
-            (void)size;  // todo
-            fprintf(stderr, "Malloc %zu bytes, returning %lu\n", size,
-                    line->element[0]);
-            break;
-          }
-        case opcodes_free:
-          {
-            void *ptr;
-            __builtin_memcpy(&ptr, &line->element[1], 8);
-            fprintf(stderr, "Free %p pointer\n", ptr);
-            hsa_memory_free(ptr);
-            break;
-          }
-      }
-    return;
-  }
+  hsa_region_t coarse_region;
+  operate(hsa_region_t r) : coarse_region(r) {}
+  void op(hostrpc::cacheline_t *line);
 
   void operator()(hostrpc::page_t *page)
   {
     for (unsigned c = 0; c < 64; c++)
       {
-        hostrpc::cacheline_t *line = &page->cacheline[c];
-        op(line);
+        op(&page->cacheline[c]);
       }
   }
 };
@@ -187,6 +163,47 @@ struct clear
       }
   }
 };
+
+void operate::op(hostrpc::cacheline_t *line)
+{
+  const bool verbose = false;
+  uint64_t op = line->element[0];
+  switch (op)
+    {
+      case opcodes_nop:
+        {
+          break;
+        }
+      case opcodes_malloc:
+        {
+          uint64_t size;
+          memcpy(&size, &line->element[1], 8);
+
+          void *res;
+          hsa_status_t r = hsa_memory_allocate(coarse_region, size, &res);
+          if (r != HSA_STATUS_SUCCESS)
+            {
+              res = nullptr;
+            }
+
+          memcpy(&line->element[0], &res, 8);
+          if (verbose)
+            fprintf(stderr,
+                    "Malloc %zu bytes, returning %lu, from region %lu\n", size,
+                    line->element[0], coarse_region.handle);
+          break;
+        }
+      case opcodes_free:
+        {
+          void *ptr;
+          memcpy(&ptr, &line->element[1], 8);
+          if (verbose) fprintf(stderr, "Free %p pointer\n", ptr);
+          hsa_memory_free(ptr);
+          break;
+        }
+    }
+  return;
+}
 
 struct storage_t
 {
@@ -203,7 +220,7 @@ struct storage_t
 
   HOSTRPC_ATOMIC(uint32_t) server_control;
 
-  storage_t() { fprintf(stderr, "storage ctor\n"); }
+  storage_t() = default;
 
   void drop()
   {
@@ -220,11 +237,7 @@ struct storage_t
     stash.clear();
   }
 
-  ~storage_t()
-  {
-    fprintf(stderr, "storage dtor\n");
-    drop();
-  }
+  ~storage_t() { drop(); }
 };
 
 struct storage_global
@@ -240,6 +253,35 @@ struct storage_global
   storage_global(storage_global const &) = delete;
   void operator=(storage_global const &) = delete;
 };
+}  // namespace
+
+hsa_status_t hostrpc_init()
+{
+  storage_t &storage = storage_global::instance();
+  platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
+                         __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+      &storage.server_control, 1);
+
+  return HSA_STATUS_SUCCESS;
+}
+hsa_status_t hostrpc_terminate()
+{
+  storage_t &storage = storage_global::instance();
+  platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
+                         __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+      &storage.server_control, 0);
+
+  for (auto &i : storage.threads)
+    {
+      i.join();
+    }
+
+  storage.drop();
+
+  // storage = {}; // wants various copy constructors defined on storage, drop
+  // it for now. todo: finish cleanup.
+  return HSA_STATUS_SUCCESS;
+}
 
 unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
                                     uint32_t device_id)
@@ -266,8 +308,6 @@ unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
 
   if (unsigned long r = as_ulong(device_id))
     {
-      fprintf(stderr, "Dev[%u]: Use %p as device handle\n", device_id,
-              (void *)r);
       return r;
     }
 
@@ -299,16 +339,11 @@ unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
   storage.stash[device_id] =
       storage_t::type{size, fine_grain.handle, coarse_grain.handle};
 
-  fprintf(stderr, "Dev[%u]:\n", device_id);
-  storage.stash[device_id].dump();
-
   {
     auto alloc = storage_t::type::storage_type::AllocLocal();
     storage.server_pointers[device_id] =
         alloc.allocate(sizeof(storage_t::type::server_type));
     auto local = storage.server_pointers[device_id].local_ptr();
-    fprintf(stderr, "Dev[%u]:  Alloc %p to store server\n", device_id,
-            (void *)local);
     __builtin_memcpy(local, &storage.stash[device_id].server,
                      sizeof(storage_t::type::server_type));
   }
@@ -321,33 +356,20 @@ unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
     storage.client_pointers[device_id] = alloc.allocate(SZ);
 
     auto remote = storage.client_pointers[device_id].remote_ptr();
-    fprintf(stderr, "Dev[%u]:  Alloc %p to store client\n", device_id,
-            (void *)remote);
 
     auto bufferS = hsa::allocate(fine_grain, SZ);
     void *buffer = bufferS.get();
 
-    fprintf(stderr, "Copy host to gpu. Dst %p, src %p, via %p\n",
-            (void *)remote, (void *)(&storage.stash[device_id].client), buffer);
-
     if (!buffer)
       {
-        fprintf(stderr, "Fine grain alloc failed\n");
         return 0;
       }
     memcpy(buffer, &storage.stash[device_id].client, SZ);
-    for (size_t i = 0; i < SZ; i += 8)
-      {
-        printf("source[%zu] 0x%lu\n", i,
-               *(uint64_t *)((char *)&storage.stash[device_id].client + i));
-        printf("buffer[%zu] 0x%lu\n", i, *(uint64_t *)((char *)buffer + i));
-      }
+
     int cp = hsa::copy_host_to_gpu(agent, remote, buffer, SZ);
 
     if (cp != 0)
       {
-        // bad, need to do some cleanup
-        fprintf(stderr, "Copy to GPU failed\n");
         return 0;
       }
   }
@@ -357,44 +379,10 @@ unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
   storage.thread_state.push_back(hostrpc::make_server_thread_state(
       reinterpret_cast<storage_t::type::server_type *>(
           (void *)storage.server_pointers[device_id].local_ptr()),
-      &storage.server_control, operate{}, clear{}));
+      &storage.server_control, operate{coarse_grain}, clear{}));
   storage.threads.push_back(hostrpc::make_thread(&storage.thread_state.back()));
 
-  {
-    unsigned long r = as_ulong(device_id);
-    fprintf(stderr, "Dev[%u]: Use %p as device handle\n", device_id, (void *)r);
-    return r;
-  }
-}
-
-hsa_status_t hostrpc_init()
-{
-  fprintf(stderr, "Hostrpc_init\n");
-  storage_t &storage = storage_global::instance();
-  platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
-                         __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
-      &storage.server_control, 1);
-
-  return HSA_STATUS_SUCCESS;
-}
-hsa_status_t hostrpc_terminate()
-{
-  storage_t &storage = storage_global::instance();
-  fprintf(stderr, "Hostrpc_terminate\n");
-  platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
-                         __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
-      &storage.server_control, 0);
-
-  for (auto &i : storage.threads)
-    {
-      i.join();
-    }
-
-  storage.drop();
-
-  // storage = {}; // wants various copy constructors defined on storage, drop
-  // it for now. todo: finish cleanup.
-  return HSA_STATUS_SUCCESS;
+  return as_ulong(device_id);
 }
 
 // These parts are in library code as they aren't freestanding safe

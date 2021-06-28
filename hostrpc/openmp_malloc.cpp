@@ -16,7 +16,6 @@ extern "C"
   }
 }
 
-
 #pragma omp declare target
 extern "C"
 {
@@ -27,13 +26,29 @@ extern "C"
 
 int main()
 {
-#pragma omp target device(0)
-  {
-    void *p = __kmpc_impl_malloc(128);
-    for (unsigned i = 0; i < 128; i++)
+  for (unsigned i = 0; i < 3; i++)
+    {
+      printf("Rep %u\n", i);
+
+#pragma omp target device(1)
       {
-        // *(char *)p = i;
+        void *p = __kmpc_impl_malloc(128);
+        for (unsigned i = 0; i < 128; i++)
+          {
+            *(char *)p = i;
+          }
+        __kmpc_impl_free(p);
       }
-    __kmpc_impl_free(p);
-  }
+
+#pragma omp target device(0)
+      {
+        void *p = __kmpc_impl_malloc(256);
+        for (unsigned i = 0; i < 256; i++)
+          {
+            *(char *)p = i;
+          }
+        __kmpc_impl_free(p);
+      }
+    }
+  return 0;
 }
