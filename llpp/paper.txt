@@ -1,7 +1,7 @@
 \begin{abstract}
 The remote procedure call (RPC) is a simple interface for executing code on a different machine. Almost none of the well known problems inherent to RPC apply on a shared memory system. Further, a shared memory system is sufficient to implement a RPC library, so that said simple interface can be more widely available.
 
-This paper includes a minimal implementation of the proposed algorithm, with a real world implementation tested on x86-64, AMDGPU and NVPTX architectures at [[redacted-for-review]]. This can bring host capabilities to the GPU or offload code without using kernel launch APIs. The client and server both compile and run on each architecture.
+This paper includes a minimal implementation of the proposed algorithm, with a real world implementation tested on x86-64, AMDGPU and NVPTX architectures on GitHub\cite{Chesterfield}. This can bring host capabilities to the GPU or offload code without using kernel launch APIs. The client and server both compile and run on each architecture.
 \end{abstract}
 
 \maketitle
@@ -10,7 +10,16 @@ This paper includes a minimal implementation of the proposed algorithm, with a r
 
 The remote procedure call (RPC) is a simple interface for executing code on a different machine. It's a function call, same as any other. That surface simplicity hides a variety of well known problems as characterised by Tanenbaum and Renesse\cite{TB}. Vinoksi's\cite{4557985} paper arguing to retire RPC on similar grounds is titled "Convenience over Correctness".
 
-The observation behind this paper is that almost none of the problems inherent to RPC apply on a shared memory system, such as a heterogeneous host and graphics processing unit(s) (GPU) machine. Further, a shared memory system with limited write ordering guarantees is sufficient to implement a RPC library, so the convenience can be more widely available. This paper includes a minimal implementation of the proposed algorithm, with a real world implementation tested on x86-64, AMDGPU and NVPTX architectures at [[redacted-for-review]].
+The observation behind this paper is that almost none of the problems inherent to RPC apply on a shared memory system, such as a heterogeneous host and graphics processing unit(s) (GPU) machine. Further, a shared memory system with limited write ordering guarantees is sufficient to implement a RPC library, so the convenience can be more widely available. This paper includes a minimal implementation of the proposed algorithm, with a real world implementation tested on x86-64, AMDGPU and NVPTX architectures on GitHub\cite{Chesterfield}.
+
+\section{Application}
+
+The initial motivation for this project was to provide malloc/free capability for LLVM's AMDGPU OpenMP implementation. This has been implemented, the details can be found in openmp\_hostcall.cpp\cite{Chesterfield}. That file, when compiled into both host and device runtime, replaces weak stub symbols in the LLVM library with a working malloc/free pair.
+
+\begin{lstlisting}[style=c_code_style, caption={Main}, label={lst:minimal_main}]
+openmp_hostcall_amdgpu.cpp
+\end{lstlisting}
+
 
 
 \section{Background}
@@ -187,12 +196,11 @@ The two processes have the same fields as represented by the common base in \aut
 header.cpp
 \end{lstlisting}
 
-The memory allocation is not owned by the client or the server (as in C++ RAII) as both client and server access the same memory. For GPU systems, the allocation is likely to be done by the host, in which case the GPU may not be able to deallocate the corresponding memory. In the [redacted] implementation one type instance, separate to client and to server, owns the allocated memory and outlives the processes. Here, \autoref{lst:minimal_main} puts the state on the free store, managed by stack objects, and spawns separate C++ threads to serve as the RPC processes. The calls variable represents minimal plumbing to handle process shutdown.
+The memory allocation is not owned by the client or the server (as in C++ RAII) as both client and server access the same memory. For GPU systems, the allocation is likely to be done by the host, in which case the GPU may not be able to deallocate the corresponding memory. In the GitHub\cite{Chesterfield} implementation one type instance, separate to client and to server, owns the allocated memory and outlives the processes. Here, \autoref{lst:minimal_main} puts the state on the free store, managed by stack objects, and spawns separate C++ threads to serve as the RPC processes. The calls variable represents minimal plumbing to handle process shutdown.
 
 \begin{lstlisting}[style=c_code_style, caption={Main}, label={lst:minimal_main}]
 main.cpp
 \end{lstlisting}
-
 
 The client and server (\autoref{lst:minimal_client_server}) implementations each make the handling of the four possible states explicit instead of folding the dead branches for clearer comparison to \autoref{tbl:large}.
 

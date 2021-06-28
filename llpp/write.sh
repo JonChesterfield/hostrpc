@@ -7,6 +7,7 @@ FILE=main.tex
 rm -f $FILE
 
 MINIMAL=minimal
+REAL=../hostrpc
 
 touch $FILE
 cat header >> $FILE
@@ -19,5 +20,10 @@ clang++ -std=c++14 -Wall minimal.cpp -pthread -o a.out
 
 for i in header.cpp client.cpp server.cpp main.cpp; do
     sed -e "/$i/{r $MINIMAL/$i" -e "d}" $FILE > tmp
+    mv tmp $FILE
+done
+
+for i in openmp_hostcall_amdgpu.cpp; do
+    sed -e "/$i/{r $REAL/$i" -e "d}" $FILE > tmp
     mv tmp $FILE
 done
