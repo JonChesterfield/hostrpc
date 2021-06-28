@@ -14,17 +14,54 @@ The observation behind this paper is that almost none of the problems inherent t
 
 \section{Application}
 
-The initial motivation for this project was to provide malloc/free capability for LLVM's AMDGPU OpenMP implementation. This has been implemented, the details can be found in openmp\_hostcall.cpp\cite{Chesterfield}. That file, when compiled into both host and device runtime, replaces weak stub symbols in the LLVM library with a working malloc/free pair.
+This is a low level library, implemented in freestanding C++. It primarily implements a state machine for coordinating access to a preallocated block of shared memory between host and GPU. The interface exposed permits passing a fixed number of integers between threads running on different processors in the same machine, analogous to passing registers into the Linux kernel syscall interface. Some syntax choices are forced by compiling the same headers as any of C++, CUDA, HIP, OpenCL C++ or OpenMP.  The association with LLVM is from exploiting Clang intrinsics to achieve the cross-language compilation and an intent to implement the libc related parts of the LLVM OpenMP runtime libraries with it.
 
-\begin{lstlisting}[style=c_code_style, caption={Main}, label={lst:minimal_main}]
+\subsection{Interface}
+The proposed interface is essentially that of \autoref{lst:pseudo_interface}.
+
+\begin{lstlisting}[style=c_code_style, caption={Pseudocode interface}, label={lst:pseudo_interface}]
+interface.cpp
+\end{lstlisting}
+
+Architecture specific details, such available atomic operators and whether calls should be batched, are encoded in the client/server type. Application specific details are provided by invocable types like callback\_t, passed by value to rpc\_invoke and rpc\_handle.
+
+\subsection{Hello World}
+Hello world from a HIP kernel, implemented by passing raw Linux syscall numbers to the host application, is shown in \autoref{lst:demo_kernel}. This is backed by a host thread which can only allocate/free shared memory and invoke a syscall on the integers passed to it by the GPU.
+\newpage
+
+\begin{lstlisting}[style=c_code_style, caption={Hello world via syscall}, label={lst:demo_kernel}]
+demo_kernel.hip
+\end{lstlisting}
+
+\subsection{GPU memory allocation in LLVM}
+The first real world use case for this library is intended to be GPU side provide malloc/free for LLVM's AMDGPU OpenMP implementation. This is summarised here, the details can be found in openmp\_hostcall.cpp\cite{Chesterfield}. That file, when compiled into both host and device runtime libraries, replaces weak stub symbols in the LLVM library with a working allocator. Most of the complexity left out here is matching the existing API in the host runtime, e.g. dedicating a thread to repeatedly calling rpc\_handle and retrieving the RPC instance.
+
+The client GPU callbacks, \autoref{lst:memory_amdgpu}, write an opcode to the start of the shared buffer then function arguments, call rpc\_invoke, then copy results back. As free() returns void, the RPC returns without waiting for the round trip. The type, x64\_gcn\_type<runtime>, manages the memory for the RPC instance. It outlives calls from the AMDGPU client to the x86-64 server.
+
+The \#pragma omp target annotation is for compilation as part of the LLVM deviceRTL library, implemented in OpenMP. The host side is compiled as C++ to match the LLVM libomptarget plugins.
+
+\begin{lstlisting}[style=c_code_style, caption={Memory allocation, AMDGPU part}, label={lst:memory_amdgpu}]
 openmp_hostcall_amdgpu.cpp
 \end{lstlisting}
 
+The server host callbacks, \autoref{lst:memory_host}, read the opcode from the buffer and act on it, or reset the buffer opcode to no operation. This latter is useful when different client calls are made with different GPU threads active in the warp. The threads write to offsets based on their ID and the inactive ones pick up no-op written by the server previously.
 
+\begin{lstlisting}[style=c_code_style, caption={Memory allocation, host part}, label={lst:memory_host}]
+openmp_hostcall_host.cpp
+\end{lstlisting}
+
+\section{Alternatives}
+The state of the art is to use C++ derived programming languages with GPU extensions. These define kernels explicitly, possibly in the same source, possibly with language support for copying data to/from the kernels. These kernel functions are run, sometimes implicitly, on the GPU.
+
+This proposal primarily adds the ability for those kernels to request services from the host while they are still running. For example, add this to a CUDA application, and a refinement of \autoref{lst:demo_kernel} can provide file I/O.
+
+If the client and server architectures are swapped, this provides a means of running code on the GPU, optionally asynchronously. This should be expected to be slower than the native kernel launch.
+
+OpenMP reverse offloading may fit in the same design space as this but the author does not know of an implementation of it.
 
 \section{Background}
 
-Terminology is not uniform in this domain. Let client be the entity that initiates the procedure call and server be the one that does the work of the call. Process will refer to either client or server. Thread will refer to a posix thread on a cpu, to a warp on NVPTX, or to a wavefront on AMDGPU.
+Terminology is not uniform in this domain. Let client be the entity that initiates the procedure call and server be the one that does the work of the call. Process will refer to either client or server. Thread will refer to a posix thread on a CPU, to a warp on NVPTX, or to a wavefront on AMDGPU.
 
 Remote procedure calls (RPC) are a procedure call that executes on a different process. Syntactically they are usually a local function that forwards the arguments to the remote process and retrieves the result before returning. The local functions, known as stubs, are frequently generated from declarative code as the argument forwarding process is mechanical. 
 
@@ -45,7 +82,7 @@ A single node shared memory machine uses higher reliability communication betwee
 The implementation suggested here does not amend the interface to propagate errors as that removes the programmer convenience. It is thus only appropriate when failures are not partial and will need handling at the system level.
 
 \subsubsection{ABI concerns}
-"3.1 Parameter Marshalling, 3.2 Parameter Passing and 3.3 Global Variables\cite{TB}" all require some care. The implementation associated with this paper passes N uint64\_t values and expects a layer above to serialize types into those N arguments, or into shared memory to be passed by pointer. The heterogenous machine hazard is present but largely solved on existing shared memory systems by choosing compatible representations, with the edge cases handled in serialisation.
+"3.1 Parameter Marshalling, 3.2 Parameter Passing and 3.3 Global Variables\cite{TB}" all require some care. The implementation associated with this paper passes N uint64\_t values and expects a layer above to serialize types into those N arguments, or into shared memory to be passed by pointer. The heterogeneous machine hazard is present but largely solved on existing shared memory systems by choosing compatible representations, with the edge cases handled in serialisation.
 
 "Lack of Parallelism" is unlikely to be a problem with both server and client multi-threaded. "Lack of Streaming", where the client waits on the server, is addressed in \autoref{async_call}.
 
@@ -75,23 +112,7 @@ Launching a kernel, particularly across language boundaries such as an OpenMP ta
 \subsection{Process isolation}
 If both client and server run as Linux processes on the same CPU, RPC on shared memory provides a zero syscall means of communicating between the two processes. A sandbox can then be implemented for a Linux client process by using seccomp to irreversibly drop access to syscalls with the still open RPC connection used to request services from the server. This may be a reasonable way to handle just in time compilation for a memory safe language implementation.
 
-\section{interface}
-There is some memory management inherent to coordinating the buffers. Expressed in C++ syntax, the interface for a given instantiation of the RPC infrastructure, is equivalent to \autoref{lst:interface}.
-
-\begin{lstlisting}[style=c_code_style, caption={Interface}, label={lst:interface}]
-void server::execute(uint64_t data[8]);
-void client::call(uint64_t data[8])
-{
- copy_data_to_server(data);
- server::execute(); // runs on the remote machine
- copy_data_from_server(data);
-}
-\end{lstlisting}
-
-Eight uint64\_t as the argument size is suggested based on the x64 cache line size, and is enough data to invoke a Linux syscall API from the GPU, but otherwise arbitrary. An implementation such as \autoref{minimal} factors out the synchronisation and data copies, while the application implements the specific behaviour desired through callbacks.
-
-\section{Implementation}
-
+\section{Underlying algorithm}
 Implementing mutual exclusion on shared memory has known solutions, such as that attributed to Th. J. Dekker\cite{dijkstra1962over} and the later Peterson's algorithm\cite{peterson1981myths}. Those, and more complicated subsequent solutions, are not ideal for RPC which requires strictly alternating access to the shared buffer.
 
 \subsection{One client, one server}\label{one_to_one}
@@ -108,54 +129,6 @@ Where boolean is the smallest integer the processes can write to atomically, the
 The boolean mailboxes are strictly single writer. The client outbox is the server inbox, writable by the client. The client inbox is the server outbox, writable by the server.
 
 The state change is strictly sequential. \autoref{tbl:large} shows the changes for a complete call, proceeding down the rows. After writing to the outbox, the process waits for a change to the inbox value caused by the other process writing. Read/write access to the buffer is based on the process local mailbox values, chosen such that at most one process has access at a time.
-
-
-% A function call, outside of the RPC approach, follows a sequence:
-% - A call site names the function to be invoked, zero or more arguments, zero or more result values
-% - The arguments are copied to somewhere that the called function knows to look for them
-% - Space is allocated for returned values
-% - The location to return to is written somewhere, as if it was another argument
-% - Control flow jumps to that of the called function
-% - The called function retrieves arguments from the location above (number)?
-% - Computation occurs
-% - The called function writes results to the location above (number)?
-% - Control flow changes to that specified in number
-% - The return values are now read from the expected location
-% 
-% The call site and destination need to agree on where to find and place arguments and return values. This is the 'calling convention', the details of which vary with architecture, language and sometimes with caller/callee pair within a program. Using predictable registers or stack offsets is common as it minimises the work done at runtime to determine where to find the values. Calls in tail position may be compiled as direct branches to minimise stack usage. <- todo, how much detail is useful here
-
-% Adjusting the call process to work across machine or process boundaries involves specifying a calling convention. In this paper we assume shared memory, but no shared registers, so the place to copy arguments to when making a call is somewhere in shared memory. Returns likewise copy through shared memory. The instruction stream is not assumed to be in shared memory so that the client and server can be running concurrently or on different architectures. Control flow on the client therefore involves waiting for a response from the server before continuing, and on the server involves waiting for a request from a client. When the client does not need a result, and does not need to know the call has occurred, it can return before waiting as in \autoref{async_call}. Waiting on the server is minimised by separating work and cleanup steps which can then run on different threads.
-
-
-% The calling process involves N clients and M servers forming transient pairings, during which the client thread communicates with a single dedicated server thread. That one-to-one interaction is described first, before the N-to-M is layered on top. The analogy is of mail boxes coordinating access to a shared buffer. Where boolean is the smallest integer the processes can write to atomically, the client and server each have access to, in shared memory:
-% - a boolean outbox, to which it may atomically write 0 or 1
-% - a boolean inbox, from which is may atomically read 0 or 1
-% - a fixed size buffer from which it may read and write N uint64\_t's
-% 
-% The boolean mailboxes are strictly single writer. The client writes to some addresses that the server reads and vice versa. They are cross-wired, in that a given client/server pair use two mailboxes and one buffer in total. The 'outbox' on the client is the same memory as the 'inbox' on the server and vice versa. That propagates changes to the writable outbox through to the read-only inbox, subject to the properties of the underlying architecture as constrained by memory fences. Note that writes to the fixed size buffer must be ordered relative to the outbox write but need not be atomic.
-
-Starting from all mailboxes containing zero and leaving optimisations aside, the calling sequence from the client is:
-\begin{itemize}
-\item Write arguments to the fixed size buffer
-\item Write 1 to the outbox
-\item Wait for the inbox to change to 1
-\item Read results from the fixed size buffer
-\item Write 0 to the outbox
-\item Wait for the inbox to change to 0
-\item Return
-\end{itemize}
-
-The corresponding sequence from the server is:
-\begin{itemize}
-\item Wait for the inbox to change to 1
-\item Read arguments from the fixed size buffer
-\item Do work as specified by arguments
-\item Write results to the fixed size buffer
-\item Write 1 to the outbox
-\item Wait for the inbox to change to 0
-\item Write 0 to the outbox
-\item Goto start
-\end{itemize}
 
 \begin{table}
 \begin{center}
@@ -180,12 +153,36 @@ Client finished  &   1   & 0    & 1   & 1       & 2      & 3   & - \\
 Server finished  &   1   & 0    & 0   & 0       & 2      & 0   & - \\
                  &   0   & 0    & 0   & 0       & 0      & 0   & - \\
 Client return    &   0   & 0    & 0   & 0       & 0      & 0   & Client \\
-
 \end{tabular}
 \end{center}
 \caption{State transitions}
 \label{tbl:large}
+\vspace{-5mm} % see also: \pagebreak
 \end{table}
+
+Starting from all mailboxes containing zero and leaving optimisations aside, the calling sequence from the client is:
+\begin{itemize}
+\item Write arguments to the fixed size buffer
+\item Write 1 to the outbox
+\item Wait for the inbox to change to 1
+\item Read results from the fixed size buffer
+\item Write 0 to the outbox
+\item Wait for the inbox to change to 0
+\item Return
+\end{itemize}
+
+The corresponding sequence from the server is:
+\begin{itemize}
+\item Wait for the inbox to change to 1
+\item Read arguments from the fixed size buffer
+\item Do work as specified by arguments
+\item Write results to the fixed size buffer
+\item Write 1 to the outbox
+\item Wait for the inbox to change to 0
+\item Write 0 to the outbox
+\item Goto start
+\end{itemize}
+
 
 \subsection{Executable implementation}\label{minimal}
 This is a minimal implementation of the one-to-one state machine, with no optimisations or cross architecture concerns, written for exposition. It will compile (as C++14) and run successfully if the listings are concatenated in order and the four external functions implemented, e.g. to do arithmetic or print to the console.
@@ -197,12 +194,13 @@ header.cpp
 \end{lstlisting}
 
 The memory allocation is not owned by the client or the server (as in C++ RAII) as both client and server access the same memory. For GPU systems, the allocation is likely to be done by the host, in which case the GPU may not be able to deallocate the corresponding memory. In the GitHub\cite{Chesterfield} implementation one type instance, separate to client and to server, owns the allocated memory and outlives the processes. Here, \autoref{lst:minimal_main} puts the state on the free store, managed by stack objects, and spawns separate C++ threads to serve as the RPC processes. The calls variable represents minimal plumbing to handle process shutdown.
+\pagebreak
 
 \begin{lstlisting}[style=c_code_style, caption={Main}, label={lst:minimal_main}]
 main.cpp
 \end{lstlisting}
 
-The client and server (\autoref{lst:minimal_client_server}) implementations each make the handling of the four possible states explicit instead of folding the dead branches for clearer comparison to \autoref{tbl:large}.
+The client and server (\autoref{lst:minimal_client_server}) implementations each make the handling of the four possible states explicit instead of folding the dead branches for clearer comparison to the state transitions of \autoref{tbl:large}.
 
 \begin{lstlisting}[style=c_code_style, caption={Client and Server}, label={lst:minimal_client_server}]
 client.cpp
@@ -279,7 +277,7 @@ Verifying that the client and server process both compile on various architectur
 \subsection{Further architectures}\label{further}
 The implementation is presently tested on pre-Volta NVPTX, where the remote call is made on a per-warp basis. Extending to Volta means passing a thread mask down the call stack and allowing each thread in the warp to initiate the remote call, closer to the x86-64 model. Extending to a PowerPC host may uncover little endian assumptions. Intel or ARM GPUs will require additional implementations of some platform specific code.
 
-\subsection{Performance}
+\subsection{Performance tuning}
 Different pairs of architecture, and different communication fabrics benefit from different optimisations. For example, batching may be worthwhile across high latency PCIe and a net loss on a faster connection. Determining the optimal set of variations for different systems will follow from benchmarks that can run across various different systems, so follows on from \autoref{further}. This should all be variations in derived template parameters, unobservable to applications that are already using the unspecialized library.
 
 \section{Conclusion}

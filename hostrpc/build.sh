@@ -216,9 +216,6 @@ $CXX_X64_LD -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa openmp_malloc.cpp -o ope
 echo "LD_LIBRARY_PATH=$RDIR/lib ./openmp_malloc.exe"
 LD_LIBRARY_PATH=$RDIR/lib ./openmp_malloc.exe
 
-exit
-
-
 
 $CXX_X64 syscall.cpp -c -o obj/syscall.x64.bc 
 
@@ -395,7 +392,7 @@ if (($have_amdgcn)); then
     $LINK obj/hsa_support.x64.bc obj/syscall.x64.bc -o obj/demo.hip.link.x64.bc
 
     # hip presently fails to build, so the library will be missing
-    # $CLANGXX -I$HSAINC -std=c++11 -x hip demo.hip -o demo --offload-arch=gfx906 -Xclang -mlink-builtin-bitcode -Xclang obj/demo.hip.link.x64.bc -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 -L$HSALIBDIR -lhsa-runtime64 -Wl,-rpath=$HSALIBDIR -pthread -ldl
+    $CLANGXX -I$HSAINC -std=c++11 -x hip demo.hip -o demo --offload-arch=gfx906 -Xclang -mlink-builtin-bitcode -Xclang obj/demo.hip.link.x64.bc -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 -L$HSALIBDIR -lhsa-runtime64 -Wl,-rpath=$HSALIBDIR -pthread -ldl
     # ./demo hsa runtime presently segfaults in hip's library
 fi
 

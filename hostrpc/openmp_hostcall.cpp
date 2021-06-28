@@ -90,83 +90,16 @@ static client_type *get_client()
 // overrides weak functions in rtl.cpp
 extern "C"
 {
-  // gets called repeatedly
-  // uses agent to size queue
-  unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
+  unsigned long hostrpc_assign_buffer(hsa_agent_t agent,
+                                      hsa_queue_t *this_Q,
                                       uint32_t device_id);
   hsa_status_t hostrpc_init();
   hsa_status_t hostrpc_terminate();
 }
 
-namespace
-{
-struct operate
-{
-  hsa_region_t coarse_region;
-  operate(hsa_region_t r) : coarse_region(r) {}
-  void op(hostrpc::cacheline_t *line);
+#include "openmp_hostcall_host.cpp"
 
-  void operator()(hostrpc::page_t *page)
-  {
-    for (unsigned c = 0; c < 64; c++)
-      {
-        op(&page->cacheline[c]);
-      }
-  }
-};
-
-struct clear
-{
-  void operator()(hostrpc::page_t *page)
-  {
-    for (unsigned c = 0; c < 64; c++)
-      {
-        page->cacheline[c].element[0] = opcodes_nop;
-      }
-  }
-};
-
-void operate::op(hostrpc::cacheline_t *line)
-{
-  const bool verbose = false;
-  uint64_t op = line->element[0];
-  switch (op)
-    {
-      case opcodes_nop:
-        {
-          break;
-        }
-      case opcodes_malloc:
-        {
-          uint64_t size;
-          memcpy(&size, &line->element[1], 8);
-
-          void *res;
-          hsa_status_t r = hsa_memory_allocate(coarse_region, size, &res);
-          if (r != HSA_STATUS_SUCCESS)
-            {
-              res = nullptr;
-            }
-
-          memcpy(&line->element[0], &res, 8);
-          if (verbose)
-            fprintf(stderr,
-                    "Malloc %zu bytes, returning %lu, from region %lu\n", size,
-                    line->element[0], coarse_region.handle);
-          break;
-        }
-      case opcodes_free:
-        {
-          void *ptr;
-          memcpy(&ptr, &line->element[1], 8);
-          if (verbose) fprintf(stderr, "Free %p pointer\n", ptr);
-          hsa_memory_free(ptr);
-          break;
-        }
-    }
-  return;
-}
-
+namespace {
 struct storage_t
 {
   using type = hostrpc::x64_gcn_type<hostrpc::size_runtime>;

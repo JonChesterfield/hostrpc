@@ -1,5 +1,5 @@
 template <typename W, typename C> bool server_t::run(W work, C clean) {
-    
+
   bool in = inbox->load(NS::memory_order_relaxed);
   bool out = outbox->load(NS::memory_order_relaxed);
   NS::atomic_thread_fence(NS::memory_order_acquire);

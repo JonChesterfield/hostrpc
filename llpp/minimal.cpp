@@ -5,7 +5,6 @@
 #include "minimal/client.cpp"
 #include "minimal/server.cpp"
 
-
 void client_fill(uint32_t *buffer) {
   for (int i = 0; i < 4; i++) {
     buffer[i] = i + 3;

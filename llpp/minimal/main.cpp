@@ -23,7 +23,8 @@ int main() {
       client.run(client_fill, client_use);
   });
 
-  st.join(); ct.join();
+  st.join();
+  ct.join();
 
   return 0;
 }
