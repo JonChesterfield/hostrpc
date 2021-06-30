@@ -10,14 +10,14 @@ This paper includes a minimal implementation of the proposed algorithm, with a r
 
 The remote procedure call (RPC) is a simple interface for executing code on a different machine. It's a function call, same as any other. That surface simplicity hides a variety of well known problems as characterised by Tanenbaum and Renesse\cite{TB}. Vinoksi's\cite{4557985} paper arguing to retire RPC on similar grounds is titled "Convenience over Correctness".
 
-The observation behind this paper is that almost none of the problems inherent to RPC apply on a shared memory system, such as a heterogeneous host and graphics processing unit(s) (GPU) machine. Further, a shared memory system with limited write ordering guarantees is sufficient to implement a RPC library, so the convenience can be more widely available. This paper includes a minimal implementation of the proposed algorithm, with a real world implementation tested on x86-64, AMDGPU and NVPTX architectures on GitHub\cite{Chesterfield}.
+The observation behind this paper is that almost none of the problems inherent to RPC apply on a shared memory system, such as a heterogeneous host and graphics processing unit(s) (GPU) machine. Further, a shared memory system with limited write ordering guarantees is sufficient to implement a RPC library so this convenience can be made more widely available. This paper includes a minimal implementation of the proposed algorithm, with a real world implementation tested on x86-64, AMDGPU and NVPTX architectures on GitHub\cite{Chesterfield}.
 
 \section{Application}
 
-This is a low level library, implemented in freestanding C++. It primarily implements a state machine for coordinating access to a preallocated block of shared memory between host and GPU. The interface exposed permits passing a fixed number of integers between threads running on different processors in the same machine, analogous to passing registers into the Linux kernel syscall interface. Some syntax choices are forced by compiling the same headers as any of C++, CUDA, HIP, OpenCL C++ or OpenMP.  The association with LLVM is from exploiting Clang intrinsics to achieve the cross-language compilation and an intent to implement the libc related parts of the LLVM OpenMP runtime libraries with it.
+This is a low level library implemented in freestanding C++. It provides a state machine for coordinating access to a preallocated block of shared memory between host and GPU. The interface exposed permits passing a fixed number of integers between threads running on different processors in the same machine. Since some integers can be pointers to further shared memory, this is sufficient to pass arbitrary data. Design inspiration was drawn from the Linux syscall interface. The association with LLVM is from exploiting Clang intrinsics to achieve the cross-language compilation and an intent to implement the libc related parts of the LLVM OpenMP runtime libraries with it. Some syntax choices are forced by working in the common subset of C++, CUDA, HIP, OpenCL C++ or OpenMP.
 
 \subsection{Interface}
-The proposed interface is essentially that of \autoref{lst:pseudo_interface}.
+The proposed interface is approximately that of \autoref{lst:pseudo_interface}.
 
 \begin{lstlisting}[style=c_code_style, caption={Pseudocode interface}, label={lst:pseudo_interface}]
 interface.cpp
@@ -34,11 +34,11 @@ demo_kernel.hip
 \end{lstlisting}
 
 \subsection{GPU memory allocation in LLVM}
-The first real world use case for this library is intended to be GPU side provide malloc/free for LLVM's AMDGPU OpenMP implementation. This is summarised here, the details can be found in openmp\_hostcall.cpp\cite{Chesterfield}. That file, when compiled into both host and device runtime libraries, replaces weak stub symbols in the LLVM library with a working allocator. Most of the complexity left out here is matching the existing API in the host runtime, e.g. dedicating a thread to repeatedly calling rpc\_handle and retrieving the RPC instance.
+The first real world use case for this library is intended to be providing GPU side malloc and free for LLVM's AMDGPU OpenMP implementation. This is summarised here, the details can be found in openmp\_hostcall.cpp\cite{Chesterfield}. That file, when compiled into both the host and device runtime libraries, replaces weak stub symbols in the LLVM library with a working allocator. Most of the complexity left out here is matching the existing API in the host runtime, e.g. dedicating a thread to repeatedly calling rpc\_handle and retrieving the RPC instance.
 
-The client GPU callbacks, \autoref{lst:memory_amdgpu}, write an opcode to the start of the shared buffer then function arguments, call rpc\_invoke, then copy results back. As free() returns void, the RPC returns without waiting for the round trip. The type, x64\_gcn\_type<runtime>, manages the memory for the RPC instance. It outlives calls from the AMDGPU client to the x86-64 server.
+The client GPU callbacks, \autoref{lst:memory_amdgpu}, write an opcode to the start of the shared buffer followed by forwarding function arguments, call rpc\_invoke, then copy results back. As free() returns void, the RPC returns without waiting for the round trip to the server. The type, x64\_gcn\_type<runtime>, manages the memory for the RPC instance. An instance of this type outlives calls from the AMDGPU client to the x86-64 server.
 
-The \#pragma omp target annotation is for compilation as part of the LLVM deviceRTL library, implemented in OpenMP. The host side is compiled as C++ to match the LLVM libomptarget plugins.
+The \#pragma omp target annotation is for compilation as part of the LLVM deviceRTL library which implemented in OpenMP. The host side is compiled as C++ to match the LLVM libomptarget plugins. Using different languages for the client and server is convenient for the build scripts.
 
 \begin{lstlisting}[style=c_code_style, caption={Memory allocation, AMDGPU part}, label={lst:memory_amdgpu}]
 openmp_hostcall_amdgpu.cpp
@@ -278,7 +278,7 @@ Verifying that the client and server process both compile on various architectur
 The implementation is presently tested on pre-Volta NVPTX, where the remote call is made on a per-warp basis. Extending to Volta means passing a thread mask down the call stack and allowing each thread in the warp to initiate the remote call, closer to the x86-64 model. Extending to a PowerPC host may uncover little endian assumptions. Intel or ARM GPUs will require additional implementations of some platform specific code.
 
 \subsection{Performance tuning}
-Different pairs of architecture, and different communication fabrics benefit from different optimisations. For example, batching may be worthwhile across high latency PCIe and a net loss on a faster connection. Determining the optimal set of variations for different systems will follow from benchmarks that can run across various different systems, so follows on from \autoref{further}. This should all be variations in derived template parameters, unobservable to applications that are already using the unspecialized library.
+Different pairs of architecture and different communication fabrics benefit from different optimisations. For example, batching may be worthwhile across high latency PCIe and a net loss on a faster connection. Determining the optimal set of variations for different systems will follow from benchmarks that can run across various different systems, so follows on from \autoref{further}. This should all be variations in derived template parameters, unobservable to applications that are already using the unspecialized library.
 
 \section{Conclusion}
 Remote procedure calls are a simple interface if and only if there are no network induced failure modes. This is the case on a single shared memory GPU node. The synchronisation required can be implemented on shared memory systems with two atomic booleans per RPC state instance with single writer semantics and a fixed size shared buffer for argument and return passing.
