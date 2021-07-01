@@ -5,11 +5,9 @@
   \providecommand\BibTeX{{%
     \normalfont B\kern-0.5em{\scshape i\kern-0.25em b}\kern-0.8em\TeX}}}
 
-
 \copyrightyear{2021}
 \acmYear{2021}
-\setcopyright{acmlicensed}
-\acmConference[ICPP Workshops '21]{50th International Conference on Parallel Processing Workshop}{August 9--12, 2021}{Lemont, IL, USA}
+\setcopyright{acmlicensed}\acmConference[ICPP Workshops '21]{50th International Conference on Parallel Processing Workshop}{August 9--12, 2021}{Lemont, IL, USA}
 \acmBooktitle{50th International Conference on Parallel Processing Workshop (ICPP Workshops '21), August 9--12, 2021, Lemont, IL, USA}
 \acmPrice{15.00}
 \acmDOI{10.1145/3458744.3473357}

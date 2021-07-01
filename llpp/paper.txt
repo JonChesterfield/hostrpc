@@ -1,7 +1,7 @@
 \begin{abstract}
 The remote procedure call (RPC) is a simple interface for executing code on a different machine. Almost none of the well known problems inherent to RPC apply on a shared memory system. Further, a shared memory system is sufficient to implement a RPC library, so that said simple interface can be more widely available.
 
-This paper includes a minimal implementation of the proposed algorithm, with a real world implementation tested on x86-64, AMDGPU and NVPTX architectures on GitHub\cite{Chesterfield}. This can bring host capabilities to the GPU or offload code without using kernel launch APIs. The client and server both compile and run on each architecture.
+This paper includes a minimal implementation of the proposed algorithm, with a real world implementation tested on x86-64, AMDGPU and NVPTX architectures. This can bring host capabilities to the GPU or offload code without using kernel launch APIs. The client and server both compile and run on each architecture.
 \end{abstract}
 
 \maketitle
@@ -10,11 +10,11 @@ This paper includes a minimal implementation of the proposed algorithm, with a r
 
 The remote procedure call (RPC) is a simple interface for executing code on a different machine. It's a function call, same as any other. That surface simplicity hides a variety of well known problems as characterised by Tanenbaum and Renesse\cite{TB}. Vinoksi's\cite{4557985} paper arguing to retire RPC on similar grounds is titled "Convenience over Correctness".
 
-The observation behind this paper is that almost none of the problems inherent to RPC apply on a shared memory system, such as a heterogeneous host and graphics processing unit(s) (GPU) machine. Further, a shared memory system with limited write ordering guarantees is sufficient to implement a RPC library so this convenience can be made more widely available. This paper includes a minimal implementation of the proposed algorithm, with a real world implementation tested on x86-64, AMDGPU and NVPTX architectures on GitHub\cite{Chesterfield}.
+The observation behind this paper is that almost none of the problems inherent to RPC apply on a shared memory system, such as a heterogeneous host and graphics processing unit(s) (GPU) machine. Further, a shared memory system with limited write ordering guarantees is sufficient to implement a RPC library so this convenience can be made more widely available. This paper includes a minimal implementation of the proposed algorithm, with a real world implementation tested on x86-64, AMDGPU and NVPTX architectures and available on GitHub\cite{Chesterfield}.
 
 \section{Application}
 
-This is a low level library implemented in freestanding C++. It provides a state machine for coordinating access to a preallocated block of shared memory between host and GPU. The interface exposed permits passing a fixed number of integers between threads running on different processors in the same machine. Since some integers can be pointers to further shared memory, this is sufficient to pass arbitrary data. Design inspiration was drawn from the Linux syscall interface. The association with LLVM is from exploiting Clang intrinsics to achieve the cross-language compilation and an intent to implement the libc related parts of the LLVM OpenMP runtime libraries with it. Some syntax choices are forced by working in the common subset of C++, CUDA, HIP, OpenCL C++ or OpenMP.
+This is a low level library implemented in freestanding C++. It provides a state machine for coordinating access to a preallocated block of shared memory between host and GPU. The interface exposed permits passing a fixed number of integers between threads running on different processors in the same machine. Since some integers can be pointers to further shared memory, this is sufficient to pass arbitrary data. Design inspiration was drawn from the Linux syscall interface. The work is implemented with LLVM/Clang's intrinsics to achieve the cross-language compilation. It is a first step towards OpenMP 5.1 reverse offload capability in the LLVM compiler suite. Further, it might allow LLVM to provide libc functionality natively on (GPU) devices. Some syntax choices are forced by working in the common subset of C++, CUDA, HIP, OpenCL C++ or OpenMP.
 
 \subsection{Interface}
 The proposed interface is approximately that of \autoref{lst:pseudo_interface}.
