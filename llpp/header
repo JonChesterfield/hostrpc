@@ -1,0 +1,56 @@
+\documentclass[sigconf]{acmart}
+
+%% \BibTeX command to typeset BibTeX logo in the docs
+\AtBeginDocument{%
+  \providecommand\BibTeX{{%
+    \normalfont B\kern-0.5em{\scshape i\kern-0.25em b}\kern-0.8em\TeX}}}
+
+
+\copyrightyear{2021}
+\acmYear{2021}
+\setcopyright{acmlicensed}
+\acmConference[ICPP Workshops '21]{50th International Conference on Parallel Processing Workshop}{August 9--12, 2021}{Lemont, IL, USA}
+\acmBooktitle{50th International Conference on Parallel Processing Workshop (ICPP Workshops '21), August 9--12, 2021, Lemont, IL, USA}
+\acmPrice{15.00}
+\acmDOI{10.1145/3458744.3473357}
+\acmISBN{978-1-4503-8441-4/21/08}
+
+\usepackage{tikz}
+\usepackage{graphicx}
+\usepackage{pgfplots}
+\usepackage{fontawesome}
+\usepackage{listings}
+\usepackage{multirow}
+
+\usetikzlibrary{calc,trees,positioning,arrows,chains,shapes.geometric,%
+    decorations.pathreplacing,decorations.pathmorphing,shapes,%
+    matrix,shapes.symbols,patterns}
+
+\pgfplotsset{compat=1.17}
+
+
+\lstset{basicstyle=\ttfamily, captionpos=b}
+\lstdefinestyle{c_code_style}{
+basicstyle=\small\ttfamily,
+keywordstyle=\color{blue},
+commentstyle=\color{gray},
+breaklines=true,
+language=C++,
+morekeywords={uint64_t},
+}
+
+
+\begin{document}
+
+
+\title{Shared Memory Remote Procedure Calls}
+
+
+\author{Jon Chesterfield}
+% \orcidID{0000-0002-8546-2014} % todo: render
+\email{jonathanchesterfield@gmail.com}
+
+\lstset{basicstyle=\ttfamily, captionpos=b}
+
+\keywords{Shared memory, GPU compute, Remote procedure calls}
+
