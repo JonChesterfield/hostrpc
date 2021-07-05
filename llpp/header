@@ -24,8 +24,8 @@
     decorations.pathreplacing,decorations.pathmorphing,shapes,%
     matrix,shapes.symbols,patterns}
 
-\pgfplotsset{compat=1.17}
-
+% acm is using an old pgfplots version that requires <= 1.16
+\pgfplotsset{compat=1.16}
 
 \lstset{basicstyle=\ttfamily, captionpos=b}
 \lstdefinestyle{c_code_style}{
