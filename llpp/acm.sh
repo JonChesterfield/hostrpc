@@ -2,18 +2,20 @@
 
 rm -rf acm && mkdir acm && cd acm
 
-mkdir icppworkshops21-13
+NAME=icppworkshops21-13
+
+mkdir $NAME
 cd icpp*
 
 mkdir pdf
-cp ../../llpp_2021_shmem.pdf pdf/
+cp ../../llpp_2021_shmem.pdf pdf/$NAME.pdf
 
 mkdir Source
-cp ../../main.tex Source/
+cp ../../main.tex Source/$NAME.tex
 cp ../../reference.bib Source/
 
 mkdir supplements
 
 cd -
 
-zip -r icppworkshops21-13.zip icppworkshops21-13
+zip -r $NAME.zip $NAME
