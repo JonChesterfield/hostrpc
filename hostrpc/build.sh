@@ -14,7 +14,7 @@ if false; then
     DEVICERTL="$RDIR/lib/libdevice/libomptarget-amdgcn-$GFX.bc"
 else
     # trunk
-    RDIR=$HOME/llvm-install-debug
+    RDIR=$HOME/llvm-install
     GFX=`$RDIR/bin/amdgpu-arch | uniq`
     DEVICERTL="$RDIR/lib/libomptarget-amdgcn-$GFX.bc"
 fi
@@ -212,11 +212,6 @@ $CXX obj/x64_gcn_debug.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o x64_gcn_debug.e
 $CXX_X64 -I$HSAINC openmp_hostcall.cpp -c -o obj/openmp_hostcall.x64.bc
 $CXX_GCN openmp_hostcall.cpp -c -o obj/openmp_hostcall.gcn.bc
 
-$CXX_X64_LD -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa openmp_malloc.cpp -o openmp_malloc.exe
-echo "LD_LIBRARY_PATH=$RDIR/lib ./openmp_malloc.exe"
-LD_LIBRARY_PATH=$RDIR/lib ./openmp_malloc.exe
-
-
 $CXX_X64 syscall.cpp -c -o obj/syscall.x64.bc 
 
 # amdgcn loader links these, but shouldn't. need to refactor.
@@ -392,7 +387,9 @@ if (($have_amdgcn)); then
     $LINK obj/hsa_support.x64.bc obj/syscall.x64.bc -o obj/demo.hip.link.x64.bc
 
     # hip presently fails to build, so the library will be missing
+    set +e
     $CLANGXX -I$HSAINC -std=c++11 -x hip demo.hip -o demo --offload-arch=gfx906 -Xclang -mlink-builtin-bitcode -Xclang obj/demo.hip.link.x64.bc -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 -L$HSALIBDIR -lhsa-runtime64 -Wl,-rpath=$HSALIBDIR -pthread -ldl
+    set -e
     # ./demo hsa runtime presently segfaults in hip's library
 fi
 
