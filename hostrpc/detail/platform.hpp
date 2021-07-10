@@ -165,7 +165,7 @@ HOSTRPC_ANNOTATE constexpr bool atomic_params_readmodifywrite()
 // No assert available. Probably want to change to platform::require
 // and provide implementations for each arch.
 #define assert(x) (void)0
-#define printf(...) hostrpc_inline_printf()
+#define printf(...) __hostrpc_printf(__VA_ARGS__)
 
 extern "C" HOSTRPC_ANNOTATE __attribute__((always_inline)) inline int
 hostrpc_inline_printf()
@@ -182,7 +182,7 @@ hostrpc_inline_printf()
 // allocate/execute functions, which don't necessarily exist.
 // Clobber it with the preprocessor as a workaround.
 #ifndef __HIP__
-#define printf(...) hostrpc_inline_printf()
+#define printf(...) __hostrpc_printf(__VA_ARGS__)
 extern "C" HOSTRPC_ANNOTATE __attribute__((always_inline)) inline int
 hostrpc_inline_printf()
 {

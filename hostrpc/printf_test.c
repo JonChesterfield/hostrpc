@@ -1,5 +1,7 @@
 #include "hostrpc_printf.h"
 
+#define printf(...) __hostrpc_printf(__VA_ARGS__)
+
 #include "detail/platform_detect.hpp"
 
 #ifdef PRECOMPILE
@@ -102,6 +104,7 @@ static inline bool is_master_lane(void)
 #endif
 
 #include "printf_specifier.data"
+
 
 EVILUNIT_MAIN_MODULE()
 {

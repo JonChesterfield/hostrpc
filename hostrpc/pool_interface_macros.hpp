@@ -70,7 +70,8 @@
     rc += initialize_kernel_info(                                             \
         ex, "__device_" #SYMBOL "_bootstrap_entry.kd", &bootstrap_entry_);    \
     rc += initialize_kernel_info(ex, "__device_" #SYMBOL "_teardown.kd",      \
-                                 &teardown_);                                 \
+                                 &teardown_);                           \
+                                                                        \
     if (rc != 0)                                                              \
       {                                                                       \
         return 1;                                                             \
@@ -95,7 +96,7 @@
   {                                                                           \
     gpu_kernel_info &req = set_requested_;                                    \
     hsa::launch_kernel(req.symbol_address, req.private_segment_fixed_size,    \
-                       req.group_segment_fixed_size, queue_, requested, 0,    \
+                       req.group_segment_fixed_size, queue_, requested, requested,    \
                        {0});                                                  \
   }                                                                           \
                                                                               \
@@ -103,11 +104,13 @@
   {                                                                           \
     gpu_kernel_info &req = bootstrap_entry_;                                  \
     hsa::launch_kernel(req.symbol_address, req.private_segment_fixed_size,    \
-                       req.group_segment_fixed_size, queue_, requested, 0,    \
+                       req.group_segment_fixed_size, queue_,            \
+                       requested,                                       \
+                       requested,                                               \
                        {0});                                                  \
   }                                                                           \
                                                                               \
-  void SYMBOL::teardown() { invoke_teardown(teardown_, signal_, queue_); }
+  void SYMBOL::teardown() { invoke_teardown(teardown_, set_requested_, signal_, queue_); }
 #else
 #define POOL_INTERFACE_STATICS_VIA_HSA(SYMBOL)
 #endif

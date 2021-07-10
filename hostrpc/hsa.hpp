@@ -848,9 +848,12 @@ constexpr inline uint16_t kernel_dispatch_setup()
 // kernarg, signal may be zero
 inline void launch_kernel(uint64_t symbol_address,
                           uint32_t private_segment_fixed_size,
-                          uint32_t group_segment_fixed_size, hsa_queue_t* queue,
-                          uint64_t inline_argument, uint64_t kernarg_address,
-                          hsa_signal_t completion_signal, bool barrier = false)
+                          uint32_t group_segment_fixed_size,
+                          hsa_queue_t* queue,
+                          uint64_t inline_argument,
+                          uint64_t kernarg_address,
+                          hsa_signal_t completion_signal,
+                          bool barrier = false)
 {
   uint64_t packet_id = hsa::acquire_available_packet_id(queue);
   hsa_kernel_dispatch_packet_t* packet =
@@ -868,15 +871,17 @@ inline void launch_kernel(uint64_t symbol_address,
   // HSA marks this reserved, must be zero.
   // gfx9 passes the value through accurately, without error
   // will therefore use it as an implementation-defined arg slot
+  // that may not be the case for packets launched from the gpu
   memcpy(&packet->reserved2, &inline_argument, 8);
 
+  //platform::fence_release();
   packet_store_release((uint32_t*)packet,
                        hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH, barrier),
                        kernel_dispatch_setup());
 
-#if 0
+#if 1
   printf("Launch kernel:\n");
-  dump_kernel((unsigned char*)packet);
+  hsa_packet::dump_kernel((unsigned char*)packet);
 #endif
 
   hsa_signal_store_release(queue->doorbell_signal, packet_id);

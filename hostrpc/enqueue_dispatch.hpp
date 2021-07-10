@@ -1,6 +1,9 @@
 #ifndef ENQUEUE_DISPATCH_HPP_INCLUDED
 #define ENQUEUE_DISPATCH_HPP_INCLUDED
 
+
+#include "hsa_packet.hpp"
+
 #if defined(__AMDGCN__)
 
 #include <stdint.h>
@@ -111,11 +114,14 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
       (__attribute__((address_space(1))) char *)__builtin_amdgcn_queue_ptr();
 
   // Acquire an available packet id
+  using global_atomic_uint32 =
+      __attribute__((address_space(1))) HOSTRPC_ATOMIC(uint32_t) ;
+  
   using global_atomic_uint64 =
-      __attribute__((address_space(1))) HOSTRPC_ATOMIC(uint64_t) *;
-  auto write_dispatch_id = reinterpret_cast<global_atomic_uint64>(
+      __attribute__((address_space(1))) HOSTRPC_ATOMIC(uint64_t) ;
+  auto write_dispatch_id = reinterpret_cast<global_atomic_uint64*>(
       my_queue + offset::write_dispatch_id());
-  auto read_dispatch_id = reinterpret_cast<global_atomic_uint64>(
+  auto read_dispatch_id = reinterpret_cast<global_atomic_uint64*>(
       my_queue + offset::read_dispatch_id());
 
   // Need to get queue->size and queue->base_address to use the packet id
@@ -139,7 +145,7 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
           platform::atomic_fetch_add<uint64_t, __ATOMIC_RELAXED,
                                      __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
               write_dispatch_id, 1);
-
+      
       bool full = true;
       while (full)
         {
@@ -167,14 +173,41 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
                                 (packet_id & mask)));
 #endif
 
-      __builtin_memcpy(packet, src, packet_size);
+
+      platform::fence_acquire(); // new
+      
+    
+      {
+
+        const global_atomic_uint32* s = (const global_atomic_uint32*) (src);
+        global_atomic_uint32* d = (global_atomic_uint32*) (packet);
+        
+       for (unsigned i = 1; i < 16; i++)
+        {
+          // storing to first four bytes may be a bad move if CP is watching it
+          // if that is the problem, can still copy the rest 8bytes at a time
+          platform::atomic_store<uint32_t, __ATOMIC_RELAXED,
+                                 __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(&d[i],
+                                                        platform::atomic_load<uint32_t,
+                                                         __ATOMIC_RELAXED,
+                                                     __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(&s[i]));
+        }
+      }
+      
+      // __builtin_memcpy(packet, src, packet_size);
+
+      //printf("Kernel at %u\n",__LINE__);
+      //dump_kernel(packet);
 
       func(packet);
 
+      //printf("Kernel at %u\n",__LINE__);
+      //dump_kernel(packet);
+      
 #if 0
-      printf("enqueue_dispatch written packet:\n");
-      dump_kernel(packet);
-      {
+      printf("enqueue_dispatch written packet[%lu]\n",packet_id);
+      hsa_packet::dump_kernel(packet);
+      if (0) {
         unsigned char * kernel = (unsigned char*)packet;
         for (unsigned i = 0; i < 64; i++)
           {
@@ -185,19 +218,19 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
       }
 #endif
 
-      using header_type =
-          __attribute__((address_space(1))) HOSTRPC_ATOMIC(uint32_t);
-
       uint32_t header =
           platform::atomic_load<uint32_t, __ATOMIC_RELAXED,
                                 __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
-              (const header_type *)(src));
+              (const global_atomic_uint32 *)(src));
+
+
+      // platform::fence_release(); // new
 
       platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
                              __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
-          (header_type *)packet, header);
+          (global_atomic_uint32 *)packet, header);
 
-      platform::fence_release();
+       platform::fence_release(); // old
 
       // storing is excitingly architecture specific. Implementing for gfx >=
       // 900 which can write directly to hardware_doorbell_ptr

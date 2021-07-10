@@ -12,6 +12,7 @@
 #else
 #undef printf
 #include "hostrpc_printf.h"
+#define printf(...) __hostrpc_printf(__VA_ARGS__)
 #endif
 
 namespace hsa_packet
@@ -120,10 +121,10 @@ inline void dump_kernel(const unsigned char* kernel)
          (unsigned long)inst.private_segment_size);
   printf("  group_segment_size:   %lu\n",
          (unsigned long)inst.group_segment_size);
-  printf("  kernel_object:        %lu\n", (unsigned long)inst.kernel_object);
-  printf("  kernarg_address:      %lu\n", (unsigned long)inst.kernarg_address);
-  printf("  reserved2:            %lu\n", (unsigned long)inst.reserved2);
-  printf("  completion_signal:    %lu\n",
+  printf("  kernel_object:        0x%lx\n", (unsigned long)inst.kernel_object);
+  printf("  kernarg_address:      0x%lx\n", (unsigned long)inst.kernarg_address);
+  printf("  reserved2:            0x%lx\n", (unsigned long)inst.reserved2);
+  printf("  completion_signal:    0x%lx\n",
          (unsigned long)inst.completion_signal);
 }
 

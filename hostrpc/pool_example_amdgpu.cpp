@@ -1,7 +1,7 @@
 #include "detail/platform_detect.hpp"
 #include "pool_interface.hpp"
 
-POOL_INTERFACE_BOILERPLATE_AMDGPU(example, 32);
+POOL_INTERFACE_BOILERPLATE_AMDGPU(example, 8);
 
 #if !defined(__OPENCL_C_VERSION__)
 #include "detail/platform.hpp"
@@ -9,7 +9,7 @@ POOL_INTERFACE_BOILERPLATE_AMDGPU(example, 32);
 #if HOSTRPC_AMDGCN
 uint32_t example::run(uint32_t state)
 {
-  if (0)
+  if (1)
     if (platform::is_master_lane())
       printf("run %u from %u (of %u/%u)\n", state, get_current_uuid(), alive(),
              requested());
@@ -27,7 +27,7 @@ uint32_t example::run(uint32_t state)
 INCBIN(pool_example_amdgpu_so, "pool_example_amdgpu.gcn.so");
 
 // need to split enable print off from the macro
-#define WITH_PRINTF 0
+#define WITH_PRINTF 1
 
 #if WITH_PRINTF
 #undef printf
@@ -76,19 +76,22 @@ int main_with_hsa()
             size);
   }
 
+  fprintf(stderr, "Call initialize\n");
   example::initialize(ex, queue);
 
+  fprintf(stderr, "Call bootstrap\n");
   example::bootstrap_entry(1024);
 
   // leave them running for a while
-  usleep(10000000);
+  usleep(1000000);
 
   fprintf(stderr, "Call teardown\n");
 
   example::teardown();
 
-  example::finalize();
+  fprintf(stderr, "Call finalize\n");
 
+  example::finalize();
 
   {
     hsa_status_t rc = hsa_queue_destroy(queue);
@@ -96,7 +99,9 @@ int main_with_hsa()
       {
         fprintf(stderr, "Failed to destroy queue: %s\n",
                 hsa::status_string(rc));
-      }
+      } else {
+      fprintf(stderr, "Queue destroyed\n");
+    }
   }
 
   fprintf(stderr, "Finished\n");

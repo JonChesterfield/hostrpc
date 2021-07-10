@@ -375,8 +375,12 @@ $CXX_GCN -D__HAVE_ROCR_HEADERS=0 persistent_kernel.cpp -c -o persistent_kernel.g
 
 $CXXCL_GCN persistent_kernel.cpp -c -o persistent_kernel.gcn.kern.bc
 $LINK persistent_kernel.gcn.code.bc persistent_kernel.gcn.kern.bc $OCKL_LIBS -o persistent_kernel.gcn.bc
+
+set +e
 $CXX_GCN_LD persistent_kernel.gcn.bc -o persistent_kernel.gcn.so
 $CXX_X64 -I$HSAINC persistent_kernel.cpp -c -o persistent_kernel.x64.bc
+set -e
+
 
 $CXX_CUDA -std=c++14 --cuda-device-only -nogpuinc -nobuiltininc $PTX_VER detail/platform.cu -c -emit-llvm -o detail/platform.ptx.bc
 
@@ -482,6 +486,7 @@ set -e
 
 time valgrind --leak-check=full --fair-sched=yes ./prototype/states.exe
 
+exit
 
 set +e # Keep running tests after one fails
 

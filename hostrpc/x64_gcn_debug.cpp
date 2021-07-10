@@ -10,6 +10,7 @@ kernel void __device_example(void) { example(); }
 
 #undef printf
 #include "hostrpc_printf.h"
+#define printf(...) __hostrpc_printf(__VA_ARGS__)
 
 #if (HOSTRPC_AMDGCN)
 extern "C" void example(void)

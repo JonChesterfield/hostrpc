@@ -106,7 +106,7 @@ extern "C"
 
 // this is moderately annoying when included into host code, maybe
 // rename it when off device
-#define printf(FMT, ...)                                  \
+#define __hostrpc_printf(FMT, ...)                                  \
   {                                                       \
     size_t __offset = 0;                                  \
     (void)__offset;                                       \
