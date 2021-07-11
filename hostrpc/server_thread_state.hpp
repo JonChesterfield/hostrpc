@@ -51,7 +51,7 @@ struct server_thread_state
           }
 
         // nothing to do, but not told to stop. spin.
-        platform::sleep();
+        platform::sleep_briefly();
       }
   }
 };

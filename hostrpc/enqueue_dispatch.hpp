@@ -99,6 +99,15 @@ inline size_t hardware_doorbell()
 }
 }  // namespace offset
 
+enum {  offset_reserved2 = 384 / 8,};
+static constexpr inline uint32_t getlo(uint64_t x) { return static_cast<uint32_t>(x); }
+
+static constexpr inline uint32_t gethi(uint64_t x)
+{
+  return static_cast<uint32_t>(x >> 32u);
+}
+
+
 template <typename F>
 inline void enqueue_dispatch(F func, const unsigned char *src)
 {
@@ -139,12 +148,20 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
   assert(size == my_amd_queue->hsa_queue.size);
 #endif
 
+  __attribute__((address_space(4))) const void* p = __builtin_amdgcn_dispatch_ptr();
+  uint64_t user_sig;
+  __builtin_memcpy(&user_sig, (const unsigned char*)p + offset_reserved2, 8);
+  uint32_t uuid = getlo(user_sig);
+  uint32_t state = gethi(user_sig);
+  
   if (platform::is_master_lane())
     {
       uint64_t packet_id =
           platform::atomic_fetch_add<uint64_t, __ATOMIC_RELAXED,
                                      __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
               write_dispatch_id, 1);
+
+      printf("Respawn %u w/ state %u enqueue-dispatch slot %lu\n", uuid, state, packet_id);
       
       bool full = true;
       while (full)
@@ -155,6 +172,7 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
                                     __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
                   read_dispatch_id);
           full = packet_id >= (size + idx);
+          platform::sleep_briefly();
         }
 
       const uint32_t mask = size - 1;
@@ -178,7 +196,6 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
       
     
       {
-
         const global_atomic_uint32* s = (const global_atomic_uint32*) (src);
         global_atomic_uint32* d = (global_atomic_uint32*) (packet);
         
@@ -222,10 +239,15 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
           platform::atomic_load<uint32_t, __ATOMIC_RELAXED,
                                 __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
               (const global_atomic_uint32 *)(src));
+          platform::atomic_load<uint32_t, __ATOMIC_RELAXED,
+                                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+              (const global_atomic_uint32 *)(src));
 
 
       // platform::fence_release(); // new
 
+      printf("Respawn %u w/ state %u writing slot %lu\n", uuid, state, packet_id);
+          
       platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
                              __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
           (global_atomic_uint32 *)packet, header);
@@ -248,6 +270,11 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
                          doorbell_handle + offset::hardware_doorbell(),
                          sizeof(HOSTRPC_ATOMIC(uint64_t *)));
 
+        printf("Doorbell: uuid %u, write %lu to address 0x%lx, handle at 0x%lx\n",
+               uuid, packet_id, (uint64_t)hardware_doorbell_ptr,(uint64_t)doorbell_handle);
+
+
+        // hsa may be using release fence + relaxed store for this
         platform::atomic_store<uint64_t, __ATOMIC_RELEASE,
                                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
             hardware_doorbell_ptr, packet_id);

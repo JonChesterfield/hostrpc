@@ -879,7 +879,7 @@ inline void launch_kernel(uint64_t symbol_address,
                        hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH, barrier),
                        kernel_dispatch_setup());
 
-#if 1
+#if 0
   printf("Launch kernel:\n");
   hsa_packet::dump_kernel((unsigned char*)packet);
 #endif
