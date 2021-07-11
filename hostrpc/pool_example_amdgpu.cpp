@@ -1,7 +1,7 @@
 #include "detail/platform_detect.hpp"
 #include "pool_interface.hpp"
 
-POOL_INTERFACE_BOILERPLATE_AMDGPU(example, 16);
+POOL_INTERFACE_BOILERPLATE_AMDGPU(example, 32);
 
 #if !defined(__OPENCL_C_VERSION__)
 #include "detail/platform.hpp"
@@ -80,32 +80,14 @@ int main_with_hsa()
   example::initialize(ex, queue);
 
   fprintf(stderr, "Call bootstrap\n");
-  example::bootstrap_entry(1024);
-  
-  const unsigned t  = 10000000;
-  
-  // leave them running for a while
-  usleep(t);
+  example::bootstrap_entry(1);
+    
+  // leave them running for a while 
+  usleep(1000000);
 
-  fprintf(stderr, "Drop to 8 threads\n");
-  example::set_requested(8);
-
-  usleep(t);
-
-  fprintf(stderr, "Raise to 16 threads\n");
-  example::set_requested(16);
-
-
-  usleep(t);
-
-  
   fprintf(stderr, "Call teardown\n");
 
-
-  
   example::teardown();
-
-  fprintf(stderr, "Call finalize\n");
 
   example::finalize();
 

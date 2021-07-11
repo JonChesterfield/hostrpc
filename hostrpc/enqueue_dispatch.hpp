@@ -290,7 +290,7 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
                                      __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
               write_dispatch_id, 1);
 
-      printf("Enqueue dispatch uuid %u w/ state %u enqueue-dispatch slot %lu\n", uuid, state, packet_id);
+      if (0) printf("Enqueue dispatch uuid %u w/ state %u enqueue-dispatch slot %lu\n", uuid, state, packet_id);
       
       bool full = true;
       while (full)
@@ -375,7 +375,7 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
 
       // platform::fence_release(); // new
 
-      if (0) printf("Respawn %u w/ state %u writing slot %lu\n", uuid, state, packet_id);
+      if (1) printf("Respawn %u w/ state %u writing packet_id %lu\n", uuid, state, packet_id);
           
       platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
                              __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(

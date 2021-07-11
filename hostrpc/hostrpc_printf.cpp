@@ -456,8 +456,7 @@ struct operate
 
         case func_piecewise_print_start:
           {
-            fprintf(stderr, ".");  
-            
+            // fprintf(stderr, ".");  
             thread_print.formatter = incr{};
             if (prefix_thread_id)
               thread_print.formatter.append_cstr_section<7>("[%.2u] ");

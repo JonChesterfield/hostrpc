@@ -215,12 +215,12 @@ struct threads_base
       }
 
     uint32_t nstate = Implementation().run(state);
-
-    if (print_enabled()) {printf("Respawn %u w/ state %u->%u\n", uuid, state,nstate);}
+    if (0) if (print_enabled()) {printf("Respawn %u w/ state %u->%u\n", uuid, state,nstate);}
     state = nstate;
+
     if (Implementation().respawn_self(state))
       {
-        if (print_enabled()) {printf("Respawned %u w/ state %u\n", uuid, state);}        
+        if (0) if (print_enabled()) {printf("Respawned %u w/ state %u\n", uuid, state);}        
         return;
       }
     else
@@ -704,12 +704,12 @@ inline void invoke_teardown(gpu_kernel_info teardown,
   const hsa_signal_value_t init = 1;
   hsa_signal_store_screlease(signal, init);
 
-  fprintf(stderr, "Host: Call set req 0. Doorbell 0x%lx\n", queue->doorbell_signal.handle);
+  if (0) fprintf(stderr, "Host: Call set req 0. Doorbell 0x%lx\n", queue->doorbell_signal.handle);
 
   // teardown is a barrier packet, set to zero asynchronously first
   // for more predictable performance under load
 
-  hsa::launch_kernel(
+  if (0) hsa::launch_kernel(
       set_requested.symbol_address,
       set_requested.private_segment_fixed_size,
       set_requested.group_segment_fixed_size,
