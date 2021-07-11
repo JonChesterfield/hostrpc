@@ -874,13 +874,26 @@ inline void launch_kernel(uint64_t symbol_address,
   // that may not be the case for packets launched from the gpu
   memcpy(&packet->reserved2, &inline_argument, 8);
 
-  //platform::fence_release();
+  platform::fence_release();
   packet_store_release((uint32_t*)packet,
                        hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH, barrier),
                        kernel_dispatch_setup());
 
 #if 1
-  printf("Launch kernel on packet_id %lu:\n", packet_id);
+  char * doorbell_handle;
+  __builtin_memcpy(&doorbell_handle,
+                   &queue->doorbell_signal.handle,
+                   8);
+
+  HOSTRPC_ATOMIC(uint64_t) * hardware_doorbell_ptr;
+  __builtin_memcpy(&hardware_doorbell_ptr,
+                   doorbell_handle + 8,
+                   sizeof(HOSTRPC_ATOMIC(uint64_t *)));
+
+  if (0) printf("Host: Using queue size %u at 0x%lx, writing to 0x%lx\n", queue->size, (uint64_t)queue->base_address,
+         (uint64_t)packet);
+  printf("Launch kernel on packet_id %lu, db at 0x%lx, indir doorbell at 0x%lx\n", packet_id, (uint64_t)doorbell_handle, (uint64_t)hardware_doorbell_ptr);
+  
   hsa_packet::dump_kernel((unsigned char*)packet);
 #endif
 

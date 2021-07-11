@@ -313,6 +313,13 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
 
       unsigned char *packet = (base_address) + packet_size * (packet_id & mask);
 
+
+      if (0) printf("GPU: Using queue size %u at 0x%lx, writing to 0x%lx\n",
+             size, (uint64_t)base_address,
+             (uint64_t)packet);
+               
+               
+      
 #if (__HAVE_ROCR_HEADERS)
       static_assert(packet_size == sizeof(hsa_kernel_dispatch_packet_t), "");
       assert(packet == (char *)((hsa_kernel_dispatch_packet_t *)
@@ -375,7 +382,7 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
 
       // platform::fence_release(); // new
 
-      if (1) printf("Respawn %u w/ state %u writing packet_id %lu\n", uuid, state, packet_id);
+      if (0) printf("Respawn %u w/ state %u writing packet_id %lu\n", uuid, state, packet_id);
           
       platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
                              __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
@@ -388,7 +395,7 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
       // Non-user signals on < 900 have a mailbox structure to write to, most
       // readily accessed by linking against ockl. May just implement inline.
 
-#if 1
+#if 0
       {
        
         auto my_amd_queue = (__attribute__((address_space(1))) amd_queue_t *)my_queue;
