@@ -12,11 +12,16 @@ if false; then
     RDIR=$HOME/rocm/aomp
     GFX=`$RDIR/bin/mygpu -d gfx906` # lost the entry for gfx750 at some point
     DEVICERTL="$RDIR/lib/libdevice/libomptarget-amdgcn-$GFX.bc"
+    EXTRABC=
 else
     # trunk
     RDIR=$HOME/llvm-install
     GFX=`$RDIR/bin/amdgpu-arch | uniq`
     DEVICERTL="$RDIR/lib/libomptarget-amdgcn-$GFX.bc"
+    GFXNUM=$(echo "$GFX" | sed  's/gfx//')
+    $RDIR/bin/llvm-link $HOME/llvm-build/ockl/hsaqs.bc "$RDIR/amdgcn/bitcode/oclc_isa_version_$GFXNUM.bc" | $RDIR/bin/llvm-extract -func __ockl_hsa_signal_store -glob __oclc_ISA_version | $RDIR/bin/opt -O1 -o ockl_hack.bc
+
+    EXTRABC=ockl_hack.bc
 fi
 
 mkdir -p obj
@@ -64,7 +69,7 @@ fi
 
 HSAINC="$RDIR/include/hsa/"
 DEVLIBINC="$HOME/aomp/rocm-device-libs/ockl/inc"
-OCKL_DIR="$HOME/rocm/aomp/amdgcn/bitcode"
+OCKL_DIR="$RDIR/amdgcn/bitcode"
 
 GFXNUM=`echo $GFX | sed 's$gfx$$'`
 if (($have_amdgcn)); then
@@ -175,7 +180,7 @@ $CXX_GCN threads.cpp -O3 -c -o threads.gcn.bc
 $CLANGXX $XOPENCL pool_example_amdgpu.cpp -O3 -emit-llvm -nogpulib -target amdgcn-amd-amdhsa -mcpu=$GFX -c -o pool_example_amdgpu.ocl.gcn.bc
 $CXX_GCN pool_example_amdgpu.cpp -O3 -c -o pool_example_amdgpu.cpp.gcn.bc
 
-$LINK threads.gcn.bc pool_example_amdgpu.ocl.gcn.bc pool_example_amdgpu.cpp.gcn.bc obj/hostrpc_printf.gcn.bc | $OPT -O2 -o obj/merged_pool_example_amdgpu.gcn.bc 
+$LINK threads.gcn.bc pool_example_amdgpu.ocl.gcn.bc pool_example_amdgpu.cpp.gcn.bc obj/hostrpc_printf.gcn.bc $EXTRABC | $OPT -O2 -o obj/merged_pool_example_amdgpu.gcn.bc 
 $DIS obj/merged_pool_example_amdgpu.gcn.bc
 
 $CXX_GCN_LD obj/merged_pool_example_amdgpu.gcn.bc -o pool_example_amdgpu.gcn.so

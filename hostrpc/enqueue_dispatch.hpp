@@ -108,6 +108,135 @@ static constexpr inline uint32_t gethi(uint64_t x)
 }
 
 
+typedef struct hsa_signal_s {
+  /**
+   * Opaque handle. The value 0 is reserved.
+   */
+  uint64_t handle;
+} hsa_signal_t;
+ 
+typedef enum {
+  /**
+   * Queue supports multiple producers.
+   */
+  HSA_QUEUE_TYPE_MULTI = 0,
+  /**
+   * Queue only supports a single producer.
+   */
+  HSA_QUEUE_TYPE_SINGLE = 1
+} hsa_queue_type_t;
+
+typedef enum __ockl_memory_order_e {
+  __ockl_memory_order_relaxed = __ATOMIC_RELAXED,
+  __ockl_memory_order_acquire = __ATOMIC_ACQUIRE,
+  __ockl_memory_order_release = __ATOMIC_RELEASE,
+  __ockl_memory_order_acq_rel = __ATOMIC_ACQ_REL,
+  __ockl_memory_order_seq_cst = __ATOMIC_SEQ_CST,
+} __ockl_memory_order;
+ 
+typedef struct hsa_queue_s {
+  /**
+   * Queue type.
+   */
+  hsa_queue_type_t type;
+
+  /**
+   * Queue features mask. This is a bit-field of ::hsa_queue_feature_t
+   * values. Applications should ignore any unknown set bits.
+   */
+  uint32_t features;
+
+#if 1 // def HSA_LARGE_MODEL
+  void *base_address;
+#elif defined HSA_LITTLE_ENDIAN
+  /**
+   * Starting address of the HSA runtime-allocated buffer used to store the AQL
+   * packets. Must be aligned to the size of an AQL packet.
+   */
+  void *base_address;
+  /**
+   * Reserved. Must be 0.
+   */
+  uint32_t reserved0;
+#else
+  uint32_t reserved0;
+
+  void *base_address;
+#endif
+
+  /**
+   * Signal object used by the application to indicate the ID of a packet that
+   * is ready to be processed. The HSA runtime manages the doorbell signal. If
+   * the application tries to replace or destroy this signal, the behavior is
+   * undefined.
+   *
+   * If @a type is ::HSA_QUEUE_TYPE_SINGLE the doorbell signal value must be
+   * updated in a monotonically increasing fashion. If @a type is
+   * ::HSA_QUEUE_TYPE_MULTI, the doorbell signal value can be updated with any
+   * value.
+   */
+  hsa_signal_t doorbell_signal;
+
+  /**
+   * Maximum number of packets the queue can hold. Must be a power of 2.
+   */
+  uint32_t size;
+  /**
+   * Reserved. Must be 0.
+   */
+  uint32_t reserved1;
+  /**
+   * Queue identifier, which is unique over the lifetime of the application.
+   */
+  uint64_t id;
+
+} hsa_queue_t;
+
+        
+// AMD Queue Properties.
+typedef uint32_t amd_queue_properties32_t;
+
+#  define __ALIGNED__(x) __attribute__((aligned(x)))
+// AMD Queue.
+#define AMD_QUEUE_ALIGN_BYTES 64
+#define AMD_QUEUE_ALIGN __ALIGNED__(AMD_QUEUE_ALIGN_BYTES)
+typedef struct AMD_QUEUE_ALIGN amd_queue_s {
+  hsa_queue_t hsa_queue;
+  uint32_t reserved1[4];
+  volatile uint64_t write_dispatch_id;
+  uint32_t group_segment_aperture_base_hi;
+  uint32_t private_segment_aperture_base_hi;
+  uint32_t max_cu_id;
+  uint32_t max_wave_id;
+  volatile uint64_t max_legacy_doorbell_dispatch_id_plus_1;
+  volatile uint32_t legacy_doorbell_lock;
+  uint32_t reserved2[9];
+  volatile uint64_t read_dispatch_id;
+  uint32_t read_dispatch_id_field_base_byte_offset;
+  uint32_t compute_tmpring_size;
+  uint32_t scratch_resource_descriptor[4];
+  uint64_t scratch_backing_memory_location;
+  uint64_t scratch_backing_memory_byte_size;
+  uint32_t scratch_workitem_byte_size;
+  amd_queue_properties32_t queue_properties;
+  uint32_t reserved3[2];
+  hsa_signal_t queue_inactive_signal;
+  uint32_t reserved4[14];
+} amd_queue_t;
+
+
+
+#define _MANGLE3x(P,N,S) P##_##N##S
+#define MANGLE3x(P,N,S) _MANGLE3x(P,N,S)
+#define _MANGLE3(P,N,S) P##_##N##_##S
+#define MANGLE3(P,N,S) _MANGLE3(P,N,S)
+#define OCKL_MANGLE_T(N,T) MANGLE3(__ockl, N, T)
+
+ extern "C"
+   void OCKL_MANGLE_T(hsa_signal,store)(hsa_signal_t sig, long value, __ockl_memory_order mem_order);
+ 
+ 
+
 template <typename F>
 inline void enqueue_dispatch(F func, const unsigned char *src)
 {
@@ -161,7 +290,7 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
                                      __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
               write_dispatch_id, 1);
 
-      printf("Respawn %u w/ state %u enqueue-dispatch slot %lu\n", uuid, state, packet_id);
+      printf("Enqueue dispatch uuid %u w/ state %u enqueue-dispatch slot %lu\n", uuid, state, packet_id);
       
       bool full = true;
       while (full)
@@ -246,7 +375,7 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
 
       // platform::fence_release(); // new
 
-      printf("Respawn %u w/ state %u writing slot %lu\n", uuid, state, packet_id);
+      if (0) printf("Respawn %u w/ state %u writing slot %lu\n", uuid, state, packet_id);
           
       platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
                              __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
@@ -261,6 +390,13 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
 
 #if 1
       {
+       
+        auto my_amd_queue = (__attribute__((address_space(1))) amd_queue_t *)my_queue;
+        hsa_signal_t sig{my_amd_queue->hsa_queue.doorbell_signal.handle};
+        __ockl_hsa_signal_store(sig, packet_id, __ockl_memory_order_release);
+      }
+#else
+      {
         char *doorbell_handle;
         __builtin_memcpy(&doorbell_handle, my_queue + offset::doorbell_signal(),
                          sizeof(uint64_t));
@@ -270,7 +406,7 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
                          doorbell_handle + offset::hardware_doorbell(),
                          sizeof(HOSTRPC_ATOMIC(uint64_t *)));
 
-        printf("Doorbell: uuid %u, write %lu to address 0x%lx, handle at 0x%lx\n",
+        if (0) printf("Doorbell: uuid %u, write %lu to address 0x%lx, handle at 0x%lx\n",
                uuid, packet_id, (uint64_t)hardware_doorbell_ptr,(uint64_t)doorbell_handle);
 
 
@@ -278,11 +414,6 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
         platform::atomic_store<uint64_t, __ATOMIC_RELEASE,
                                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
             hardware_doorbell_ptr, packet_id);
-      }
-#else
-      {
-        hsa_signal_t sig{my_amd_queue->hsa_queue.doorbell_signal.handle};
-        __ockl_hsa_signal_store(sig, packet_id, __ockl_memory_order_release);
       }
 #endif
     }
