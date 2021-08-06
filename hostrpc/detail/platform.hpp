@@ -182,8 +182,9 @@ hostrpc_inline_printf()
 // allocate/execute functions, which don't necessarily exist.
 // Clobber it with the preprocessor as a workaround.
 
+// need to do something more robust with this
 #if defined( _OPENMP) && HOSTRPC_AMDGCN
-#define printf(...) __hostrpc_printf(__VA_ARGS__)
+#define printf(...) //__hostrpc_printf(__VA_ARGS__)
 #endif
 
 // trying to get hip code to compile

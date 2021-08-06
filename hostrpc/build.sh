@@ -107,7 +107,11 @@ OPT="$RDIR/bin/opt"
 CXX="$CLANGXX -std=c++14 -Wall -Wextra"
 LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR -lelf"
 
-AMDGPU="--target=amdgcn-amd-amdhsa -march=$GFX -Xclang -fconvergent-functions -nogpulib"
+# Some languages need march and some need mcpu
+# Failing to specify it means functions are emitted without target-cpu or similar
+# attributes, which are subsequently miscompiled. No target-cpu implies some sort
+# of gfx700, which raises errors from the compiler backend. Set march and mcpu for now.
+AMDGPU="--target=amdgcn-amd-amdhsa -march=$GFX -mcpu=$GFX -Xclang -fconvergent-functions -nogpulib"
 
 PTX_VER="-Xclang -target-feature -Xclang +ptx63"
 NVGPU="--target=nvptx64-nvidia-cuda -march=sm_50 $PTX_VER -Xclang -fconvergent-functions"
@@ -435,14 +439,18 @@ $CLANGXX -std=c++14 -Wall -Wextra -O0 -g test_storage.cpp obj/openmp_support.x64
 if (($have_amdgcn)); then
     $LINK obj/openmp_support.x64.bc obj/hsa_support.x64.bc obj/syscall.x64.bc -o obj/demo_bitcode_gcn.omp.bc
 
-# openmp is taking an excessive amount of time to compile, drop it for now
- #   $CLANGXX -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  -DDEMO_AMDGCN=1 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang obj/demo_bitcode_gcn.omp.bc -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR && ./demo_openmp_gcn
+    # openmp is taking an excessive amount of time to compile, drop it for now
+    # this now fails to compile (fairly quickly), looks like mlink-builtin-bitcode is mixing
+    # the two ISAs
+    time $CLANGXX -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX -mcpu=$GFX -DDEMO_AMDGCN=1 demo_openmp.cpp \
+         -Xclang -mlink-builtin-bitcode -Xclang obj/demo_bitcode_gcn.omp.bc -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR && ./demo_openmp_gcn
 fi
 
 if (($have_nvptx)); then
     $LINK obj/openmp_support.x64.bc obj/cuda_support.x64.bc obj/syscall.x64.bc -o demo_bitcode_ptx.omp.bc
     
-    $CLANGXX -I$HSAINC -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50 -I/usr/local/cuda/include -DDEMO_NVPTX=1 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode_ptx.omp.bc -Xclang -mlink-builtin-bitcode -Xclang detail/platform.ptx.bc -o demo_openmp_ptx -L/usr/local/cuda/lib64/ -lcuda -lcudart_static -ldl -lrt -pthread
+    $CLANGXX -I$HSAINC -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50 -I/usr/local/cuda/include -DDEMO_NVPTX=1 demo_openmp.cpp \
+             -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode_ptx.omp.bc -Xclang -mlink-builtin-bitcode -Xclang detail/platform.ptx.bc -o demo_openmp_ptx -L/usr/local/cuda/lib64/ -lcuda -lcudart_static -ldl -lrt -pthread
 fi
 
 
