@@ -73,11 +73,23 @@ static bool find_plugin(const char *dir, const char *name)
         {
           fprintf(stderr, "Seek %s\n", buffer.get());
           void *r = dlopen(buffer.get(), RTLD_NOW | RTLD_NOLOAD);
-          if (r != nullptr)
+          if (r == nullptr)
             {
-              dlclose(r);
-              return true;
+              return false;
             }
+          bool have_devices = false;
+
+          if (void *s = dlsym(r, "__tgt_rtl_number_of_devices"))
+            {
+              int (*num)(void) = reinterpret_cast<decltype(num)>(s);
+              have_devices = (num() > 0);
+            }
+
+          // both cuda and amdgpu plugins exist now, so what is actually of
+          // interest is whether they exist and can find any devices
+
+          dlclose(r);
+          return have_devices;
         }
     }
   return false;
