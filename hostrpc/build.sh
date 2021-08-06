@@ -7,21 +7,42 @@ set -o pipefail
 
 DERIVE=${1:-4}
 
+have_nvptx=0
+if [ -e "/dev/nvidiactl" ]; then
+    have_nvptx=1
+fi
+
+have_amdgcn=0
+if [ -e "/dev/kfd" ]; then
+    have_amdgcn=1
+fi
+
+echo "have_nvptx: $have_nvptx"
+echo "have_amdgcn: $have_amdgcn"
+
+if (($have_nvptx)); then
+    GFX=sm_50 # todo
+else
+    GFX=`$RDIR/bin/amdgpu-arch | uniq`
+fi
+
+
 if false; then
     # Aomp
     RDIR=$HOME/rocm/aomp
-    GFX=`$RDIR/bin/mygpu -d gfx906` # lost the entry for gfx750 at some point
     DEVICERTL="$RDIR/lib/libdevice/libomptarget-amdgcn-$GFX.bc"
     EXTRABC=
 else
     # trunk
-    RDIR=$HOME/llvm-install
-    GFX=`$RDIR/bin/amdgpu-arch | uniq`
+    RDIR=$HOME/llvm-install   
     DEVICERTL="$RDIR/lib/libomptarget-amdgcn-$GFX.bc"
-    GFXNUM=$(echo "$GFX" | sed  's/gfx//')
-    $RDIR/bin/llvm-link $HOME/llvm-build/ockl/hsaqs.bc "$RDIR/amdgcn/bitcode/oclc_isa_version_$GFXNUM.bc" | $RDIR/bin/llvm-extract -func __ockl_hsa_signal_store -glob __oclc_ISA_version | $RDIR/bin/opt -O1 -o ockl_hack.bc
 
-    EXTRABC=ockl_hack.bc
+    if (($have_amdgcn)); then
+        $RDIR/bin/llvm-link $HOME/llvm-build/ockl/hsaqs.bc "$RDIR/amdgcn/bitcode/oclc_isa_version_$GFXNUM.bc" | $RDIR/bin/llvm-extract -func __ockl_hsa_signal_store -glob __oclc_ISA_version | $RDIR/bin/opt -O1 -o ockl_hack.bc
+        EXTRABC=ockl_hack.bc
+    else
+        EXTRABC=
+    fi
 fi
 
 mkdir -p obj
@@ -40,15 +61,6 @@ clang++ -W -Wno-deprecated-copy -Wno-missing-field-initializers -Wno-inline-new-
 
 echo "Using toolchain at $RDIR, GFX=$GFX"
 
-have_nvptx=0
-if [ -e "/dev/nvidiactl" ]; then
-    have_nvptx=1
-fi
-
-have_amdgcn=0
-if [ -e "/dev/kfd" ]; then
-    have_amdgcn=1
-fi
 
 if (($have_nvptx)); then
     # Clang looks for this file, but cuda stopped shipping it
@@ -113,7 +125,6 @@ NVPTXFLAGS=" -O2 -ffreestanding -fno-exceptions -Wno-atomic-alignment -emit-llvm
 CXX_X64="$CLANGXX -std=c++14 $COMMONFLAGS $X64FLAGS"
 CXX_GCN="$CLANGXX -std=c++14 $COMMONFLAGS $GCNFLAGS"
 
-
 CXXCL="$CLANGXX -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 -D__OPENCL__ -D__OPENCL_C_VERSION__=200"
 CXXCL_GCN="$CXXCL -emit-llvm -ffreestanding $AMDGPU"
 CXXCL_PTX="$CXXCL -emit-llvm -ffreestanding $NVGPU"
@@ -138,7 +149,10 @@ fi
 # Code running on the host can link in host, hsa or cuda support library.
 # Fills in gaps in the cuda/hsa libs, implements allocators
 
-$CXX_GCN hostrpc_printf.cpp -O3 -c -o obj/hostrpc_printf.gcn.bc
+if (($have_amdgcn)); then
+    $CXX_GCN hostrpc_printf.cpp -O3 -c -o obj/hostrpc_printf.gcn.bc
+fi
+
 $CXX_X64 -I$HSAINC hostrpc_printf.cpp -O3 -c -o obj/hostrpc_printf.x64.bc
 $CXX_X64 -I$HSAINC incprintf.cpp -O3 -c -o obj/incprintf.x64.bc
 
@@ -174,37 +188,38 @@ $CXX_X64 openmp_plugins.cpp -c -o obj/openmp_plugins.x64.bc
 $LINK obj/allocator_openmp.x64.bc obj/openmp_plugins.x64.bc -o obj/openmp_support.x64.bc
 
 
-$CXX_GCN threads.cpp -O3 -c -o threads.gcn.bc
-# $CXXCL_GCN pool_example_amdgpu.cpp -O3 -c -o pool_example_amdgpu.ocl.gcn.bc
+if (($have_amdgcn)); then
+    $CXX_GCN threads.cpp -O3 -c -o threads.gcn.bc
 
-$CLANGXX $XOPENCL pool_example_amdgpu.cpp -O3 -emit-llvm -nogpulib -target amdgcn-amd-amdhsa -mcpu=$GFX -c -o pool_example_amdgpu.ocl.gcn.bc
-$CXX_GCN pool_example_amdgpu.cpp -O3 -c -o pool_example_amdgpu.cpp.gcn.bc
+    # $CXXCL_GCN pool_example_amdgpu.cpp -O3 -c -o pool_example_amdgpu.ocl.gcn.bc
 
-$LINK threads.gcn.bc pool_example_amdgpu.ocl.gcn.bc pool_example_amdgpu.cpp.gcn.bc obj/hostrpc_printf.gcn.bc $EXTRABC | $OPT -O2 -o obj/merged_pool_example_amdgpu.gcn.bc 
-$DIS obj/merged_pool_example_amdgpu.gcn.bc
+    $CLANGXX $XOPENCL pool_example_amdgpu.cpp -O3 -emit-llvm -nogpulib -target amdgcn-amd-amdhsa -mcpu=$GFX -c -o pool_example_amdgpu.ocl.gcn.bc
+    $CXX_GCN pool_example_amdgpu.cpp -O3 -c -o pool_example_amdgpu.cpp.gcn.bc
 
-$CXX_GCN_LD obj/merged_pool_example_amdgpu.gcn.bc -o pool_example_amdgpu.gcn.so
+    $LINK threads.gcn.bc pool_example_amdgpu.ocl.gcn.bc pool_example_amdgpu.cpp.gcn.bc obj/hostrpc_printf.gcn.bc $EXTRABC | $OPT -O2 -o obj/merged_pool_example_amdgpu.gcn.bc 
+    $DIS obj/merged_pool_example_amdgpu.gcn.bc
 
-$CXX_X64 threads.cpp -O3 -c -o threads.x64.bc
-$CXX_X64 pool_example_amdgpu.cpp -I$HSAINC -O3 -c -o pool_example_amdgpu.x64.bc
-$CXX_X64_LD threads.x64.bc obj/hsa_support.x64.bc obj/catch.o $LDFLAGS -o threads.x64.exe
+    $CXX_GCN_LD obj/merged_pool_example_amdgpu.gcn.bc -o pool_example_amdgpu.gcn.so
 
+    $CXX_X64 threads.cpp -O3 -c -o threads.x64.bc
+    $CXX_X64 pool_example_amdgpu.cpp -I$HSAINC -O3 -c -o pool_example_amdgpu.x64.bc
+    $CXX_X64_LD threads.x64.bc obj/hsa_support.x64.bc obj/catch.o $LDFLAGS -o threads.x64.exe
 
-$CXX_X64_LD pool_example_amdgpu.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o pool_example_amdgpu.x64.exe
+    $CXX_X64_LD pool_example_amdgpu.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o pool_example_amdgpu.x64.exe
+fi
+
 
 $CXX_X64 -I$HSAINC pool_example_host.cpp -O3 -c -o obj/pool_example_host.x64.bc
 $CXX_X64_LD obj/pool_example_host.x64.bc $LDFLAGS -o pool_example_host.x64.exe
 
+if (($have_amdgcn)); then
 $CXX_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.code.bc
 $CXXCL_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.kern.bc
 $LINK obj/x64_gcn_debug.gcn.code.bc obj/x64_gcn_debug.gcn.kern.bc obj/hostrpc_printf.gcn.bc -o obj/x64_gcn_debug.gcn.bc
-
 $CXX_GCN_LD obj/x64_gcn_debug.gcn.bc -o x64_gcn_debug.gcn.so
 
 $CXX_X64 -I$HSAINC x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.x64.bc
-
 $CXX obj/x64_gcn_debug.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o x64_gcn_debug.exe
-
 
 # Ideally would have a test case that links the x64 and gcn bitcode, but can't work out
 # how to do that. I think mlink-builtin-bitcode used to be architecture aware, but
@@ -216,15 +231,18 @@ $CXX obj/x64_gcn_debug.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o x64_gcn_debug.e
 # The drawback is needing to rebuild llvm when the source changes.
 $CXX_X64 -I$HSAINC openmp_hostcall.cpp -c -o obj/openmp_hostcall.x64.bc
 $CXX_GCN openmp_hostcall.cpp -c -o obj/openmp_hostcall.gcn.bc
+fi
 
 $CXX_X64 syscall.cpp -c -o obj/syscall.x64.bc 
 
 # amdgcn loader links these, but shouldn't. need to refactor.
-$CXX_GCN hostcall.cpp -c -o hostcall.gcn.bc
-$CXX_X64 -I$HSAINC hostcall.cpp -c -o hostcall.x64.bc
-# Build the device code that uses said library
-$CXX_X64 -I$HSAINC amdgcn_main.cpp -c -o amdgcn_main.x64.bc
-$CXX_GCN amdgcn_main.cpp -c -o amdgcn_main.gcn.bc
+if (($have_amdgcn)); then
+    $CXX_GCN hostcall.cpp -c -o hostcall.gcn.bc
+    $CXX_X64 -I$HSAINC hostcall.cpp -c -o hostcall.x64.bc
+    # Build the device code that uses said library
+    $CXX_X64 -I$HSAINC amdgcn_main.cpp -c -o amdgcn_main.x64.bc
+    $CXX_GCN amdgcn_main.cpp -c -o amdgcn_main.gcn.bc
+fi
 
 # build loaders - run int main() {} on the gpu
 
@@ -510,11 +528,13 @@ fi
 ./pool_example_host.x64.exe
 
 
+if (($have_amdgcn)); then
 $RDIR/bin/amdgpu-arch
 ./pool_example_amdgpu.x64.exe #works
 ./test_example.gcn
 
 ./pool_example_amdgpu.x64.exe #hangs then persistent memory fault
+fi
 
 exit
 
