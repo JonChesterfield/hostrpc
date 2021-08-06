@@ -20,14 +20,16 @@ fi
 echo "have_nvptx: $have_nvptx"
 echo "have_amdgcn: $have_amdgcn"
 
+RDIR=$HOME/llvm-install   
+
 if (($have_nvptx)); then
     GFX=sm_50 # todo
+    GFXNUM=$(echo "$GFX" | sed 's/sm_//')
 else
     GFX=`$RDIR/bin/amdgpu-arch | uniq`
+    GFXNUM=$(echo "$GFX" | sed 's/gfx//')
 fi
 
-# trunk
-RDIR=$HOME/llvm-install   
 DEVICERTL="$RDIR/lib/libomptarget-amdgcn-$GFX.bc"
 
 if (($have_amdgcn)); then
