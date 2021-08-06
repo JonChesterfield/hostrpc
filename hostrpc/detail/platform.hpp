@@ -181,14 +181,9 @@ hostrpc_inline_printf()
 // aomp clang currently rewrites any variadic function to a pair of
 // allocate/execute functions, which don't necessarily exist.
 // Clobber it with the preprocessor as a workaround.
-#ifndef __HIP__
+
+#if defined( _OPENMP) && HOSTRPC_AMDGCN
 #define printf(...) __hostrpc_printf(__VA_ARGS__)
-extern "C" HOSTRPC_ANNOTATE __attribute__((always_inline)) inline int
-hostrpc_inline_printf()
-{
-  // printf is implement with hostcall, so going to have to do without
-  return 0;
-}
 #endif
 
 // trying to get hip code to compile

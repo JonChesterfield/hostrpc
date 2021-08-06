@@ -26,24 +26,18 @@ else
     GFX=`$RDIR/bin/amdgpu-arch | uniq`
 fi
 
+# trunk
+RDIR=$HOME/llvm-install   
+DEVICERTL="$RDIR/lib/libomptarget-amdgcn-$GFX.bc"
 
-if false; then
-    # Aomp
-    RDIR=$HOME/rocm/aomp
-    DEVICERTL="$RDIR/lib/libdevice/libomptarget-amdgcn-$GFX.bc"
-    EXTRABC=
+if (($have_amdgcn)); then
+    $RDIR/bin/llvm-link $HOME/llvm-build/ockl/hsaqs.bc "$RDIR/amdgcn/bitcode/oclc_isa_version_$GFXNUM.bc" | $RDIR/bin/llvm-extract -func __ockl_hsa_signal_store -glob __oclc_ISA_version | $RDIR/bin/opt -O1 -o ockl_hack.bc
+    EXTRABC=ockl_hack.bc
 else
-    # trunk
-    RDIR=$HOME/llvm-install   
-    DEVICERTL="$RDIR/lib/libomptarget-amdgcn-$GFX.bc"
-
-    if (($have_amdgcn)); then
-        $RDIR/bin/llvm-link $HOME/llvm-build/ockl/hsaqs.bc "$RDIR/amdgcn/bitcode/oclc_isa_version_$GFXNUM.bc" | $RDIR/bin/llvm-extract -func __ockl_hsa_signal_store -glob __oclc_ISA_version | $RDIR/bin/opt -O1 -o ockl_hack.bc
-        EXTRABC=ockl_hack.bc
-    else
-        EXTRABC=
-    fi
+    EXTRABC=
 fi
+
+LOADPREFIX='LD_LIBRARY_PATH='$RDIR'/lib '
 
 mkdir -p obj
 mkdir -p lib
@@ -69,7 +63,9 @@ if (($have_nvptx)); then
         echo "Found version: $VER"
     else
         VER=`/usr/local/cuda/bin/nvcc  --version | awk '/Cuda compilation/ {print $6}'`
-        echo "CUDA Version $VER" > /usr/local/cuda/version.txt
+        echo "Execute following to write to /usr/local:"
+        echo 'echo "CUDA Version '$VER'" > /usr/local/cuda/version.txt'
+        exit 1
     fi
 fi
 
@@ -109,7 +105,7 @@ OPT="$RDIR/bin/opt"
 CXX="$CLANGXX -std=c++14 -Wall -Wextra"
 LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR -lelf"
 
-AMDGPU="--target=amdgcn-amd-amdhsa -march=$GFX -mcpu=$GFX -Xclang -fconvergent-functions -nogpulib"
+AMDGPU="--target=amdgcn-amd-amdhsa -march=$GFX -Xclang -fconvergent-functions -nogpulib"
 
 PTX_VER="-Xclang -target-feature -Xclang +ptx63"
 NVGPU="--target=nvptx64-nvidia-cuda -march=sm_50 $PTX_VER -Xclang -fconvergent-functions"
@@ -129,8 +125,7 @@ CXXCL="$CLANGXX -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 -D__OPENCL__ -D__OPENC
 CXXCL_GCN="$CXXCL -emit-llvm -ffreestanding $AMDGPU"
 CXXCL_PTX="$CXXCL -emit-llvm -ffreestanding $NVGPU"
 
-TRUNKBIN="$HOME/.emacs.d/bin"
-CXX_PTX="$TRUNKBIN/clang++ $NVPTXFLAGS"
+CXX_PTX="$CLANGXX $NVPTXFLAGS"
 
 
 XCUDA="-x cuda --cuda-gpu-arch=sm_50 --cuda-path=/usr/local/cuda"
@@ -328,29 +323,29 @@ $CXX_X64 codegen/foo_cxx.cpp -S -o codegen/foo_cxx.x64.ll
 $CXX_GCN codegen/foo_cxx.cpp -S -o codegen/foo_cxx.gcn.ll
 $CXX_PTX codegen/foo_cxx.cpp -S -o codegen/foo_cxx.ptx.ll
 
-$TRUNKBIN/clang++ $XCUDA -std=c++14 --cuda-device-only -nocudainc -nocudalib codegen/foo.cu -emit-llvm -S -o codegen/foo.cuda.ptx.ll
+$CLANGXX $XCUDA -std=c++14 --cuda-device-only -nocudainc -nocudalib codegen/foo.cu -emit-llvm -S -o codegen/foo.cuda.ptx.ll
 
-$TRUNKBIN/clang++ $XCUDA -std=c++14 --cuda-host-only -nocudainc -nocudalib codegen/foo.cu -emit-llvm -S -o codegen/foo.cuda.x64.ll
+$CLANGXX $XCUDA -std=c++14 --cuda-host-only -nocudainc -nocudalib codegen/foo.cu -emit-llvm -S -o codegen/foo.cuda.x64.ll
 
 cd codegen
-$TRUNKBIN/clang++ $XCUDA -std=c++14 -nocudainc -nocudalib foo.cu -emit-llvm -S
+$CLANGXX $XCUDA -std=c++14 -nocudainc -nocudalib foo.cu -emit-llvm -S
 mv foo.ll foo.cuda.both_x64.ll
 mv foo-cuda-nvptx64-nvidia-cuda-*.ll foo.cuda.both_ptx.ll
 cd -
 
 
 # aomp has broken cuda-device-only
-$TRUNKBIN/clang++ -x hip --cuda-gpu-arch=gfx906 -nogpulib -std=c++14 -O1 --cuda-device-only codegen/foo.cu -emit-llvm -S -o codegen/foo.hip.gcn.ll
-$TRUNKBIN/clang++ -x hip --cuda-gpu-arch=gfx906 -nogpulib -std=c++14 -O1 --cuda-host-only codegen/foo.cu -emit-llvm -S -o codegen/foo.hip.x64.ll
+$CLANGXX -x hip --cuda-gpu-arch=gfx906 -nogpulib -nogpuinc -std=c++14 -O1 --cuda-device-only codegen/foo.cu -emit-llvm -S -o codegen/foo.hip.gcn.ll
+$CLANGXX -x hip --cuda-gpu-arch=gfx906 -nogpulib -nogpuinc -std=c++14 -O1 --cuda-host-only codegen/foo.cu -emit-llvm -S -o codegen/foo.hip.x64.ll
 
 # hip doesn't understand -emit-llvm (or -S, or -c) when trying to do host and device together
 # so can't test that here
 
 # This ignores -S for some reason
-$CLANGXX -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  codegen/foo.omp.cpp -c -emit-llvm --cuda-device-only -o codegen/foo.omp.gcn.bc && $DIS codegen/foo.omp.gcn.bc && rm codegen/foo.omp.gcn.bc
+$CLANGXX -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=gfx906 codegen/foo.omp.cpp -c -emit-llvm --cuda-device-only -o codegen/foo.omp.gcn.bc && $DIS codegen/foo.omp.gcn.bc && rm codegen/foo.omp.gcn.bc
 
 # ignores host-only, so the IR has a binary gfx pasted at the top
-$CLANGXX -O2  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GFX  codegen/foo.omp.cpp -S -emit-llvm --cuda-host-only -o codegen/foo.omp.gcn-x64.ll
+$CLANGXX -O2  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=gfx906  codegen/foo.omp.cpp -S -emit-llvm --cuda-host-only -o codegen/foo.omp.gcn-x64.ll
 
 
 $CLANGXX -O2  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50  codegen/foo.omp.cpp -c -emit-llvm -S --cuda-device-only -o codegen/foo.omp.ptx.ll
@@ -360,18 +355,15 @@ $CLANGXX -O2  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvid
 # OpenCL compilation model is essentially that of c++
 $CLANGXX $XOPENCL -S -emit-llvm codegen/foo_cxx.cpp -S -o codegen/foo.cl.x64.ll
 
-$CLANGXX $XOPENCL -S -nogpulib -emit-llvm -target amdgcn-amd-amdhsa -mcpu=$GFX codegen/foo_cxx.cpp -S -o codegen/foo.cl.gcn.ll
+$CLANGXX $XOPENCL -S -nogpulib -emit-llvm -target amdgcn-amd-amdhsa -mcpu=gfx906 codegen/foo_cxx.cpp -S -o codegen/foo.cl.gcn.ll
 
 # recognises mcpu but warns that it is unused
 $CLANGXX $XOPENCL -S -nogpulib -emit-llvm -target nvptx64-nvidia-cuda codegen/foo_cxx.cpp -S -o codegen/foo.cl.ptx.ll
-
-
 
 $CLANGXX $XCUDA -std=c++14 --cuda-device-only -nocudainc -nocudalib codegen/client.cpp -emit-llvm -S -o codegen/client.cuda.ptx.ll
 $CLANGXX $XCUDA -std=c++14 --cuda-host-only -nocudainc -nocudalib codegen/client.cpp -emit-llvm -S -o codegen/client.cuda.x64.ll
 
 
-# HIP has excessive requirements on function annotation that cuda does not, ignore for now
 # Fails to annotate CFG at O0
 $CLANGXX $XHIP -std=c++14 -O1 --cuda-device-only codegen/client.cpp -S -o codegen/client.hip.gcn.ll
 $CLANGXX $XHIP -std=c++14 -O1 --cuda-host-only codegen/client.cpp -S -o codegen/client.hip.x64.ll
@@ -385,6 +377,8 @@ fi
 
 $CXX_X64 -I$HSAINC tests.cpp -c -o tests.x64.bc
 $CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc
+
+if (($have_amdgcn)); then
 
 $CXX_GCN -DDERIVE_VAL=$DERIVE x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.code.bc
 $CXXCL_GCN -DDERIVE_VAL=$DERIVE x64_gcn_stress.cpp -c -o x64_gcn_stress.gcn.kern.bc
@@ -403,7 +397,7 @@ set +e
 $CXX_GCN_LD persistent_kernel.gcn.bc -o persistent_kernel.gcn.so
 $CXX_X64 -I$HSAINC persistent_kernel.cpp -c -o persistent_kernel.x64.bc
 set -e
-
+fi
 
 $CXX_CUDA -std=c++14 --cuda-device-only -nogpuinc -nobuiltininc $PTX_VER detail/platform.cu -c -emit-llvm -o detail/platform.ptx.bc
 
@@ -446,24 +440,22 @@ fi
 if (($have_nvptx)); then
     $LINK obj/openmp_support.x64.bc obj/cuda_support.x64.bc obj/syscall.x64.bc -o demo_bitcode_ptx.omp.bc
     
-    $CLANGXX -I$HSAINC -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50 -I/usr/local/cuda/include -DDEMO_NVPTX=1 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode_ptx.omp.bc -Xclang -mlink-builtin-bitcode -Xclang detail/platform.ptx.bc -o demo_openmp_ptx -L/usr/local/cuda/lib64/ -lcuda -lcudart_static -ldl -lrt -pthread && ./demo_openmp_ptx
+    $CLANGXX -I$HSAINC -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_50 -I/usr/local/cuda/include -DDEMO_NVPTX=1 demo_openmp.cpp -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode_ptx.omp.bc -Xclang -mlink-builtin-bitcode -Xclang detail/platform.ptx.bc -o demo_openmp_ptx -L/usr/local/cuda/lib64/ -lcuda -lcudart_static -ldl -lrt -pthread
 fi
-
-
 
 
 # Build the device library that calls into main()
 
-
-
+if (($have_amdgcn)); then
 $LINK amdgcn_main.gcn.bc amdgcn_loader_device.gcn.bc  hostcall.gcn.bc obj/hostrpc_printf.gcn.bc -o executable_device.gcn.bc
 
 # Link the device image
 $CXX_GCN_LD executable_device.gcn.bc -o a.gcn.out
+fi
 
 if (($have_nvptx)); then
 
-"$TRUNKBIN/llvm-link" nvptx_main.ptx.bc loader/nvptx_loader_entry.cu.ptx.bc detail/platform.ptx.bc -o executable_device.ptx.bc
+$LINK nvptx_main.ptx.bc loader/nvptx_loader_entry.cu.ptx.bc detail/platform.ptx.bc -o executable_device.ptx.bc
 
 $LINK nvptx_main.ptx.bc loader/nvptx_loader_entry.cu.ptx.bc detail/platform.ptx.bc -o executable_device.ptx.bc
 
@@ -497,7 +489,9 @@ $CXX_X64_LD prototype/states.x64.bc obj/catch.o $LDFLAGS -o prototype/states.exe
 
 $CXX_X64_LD x64_x64_stress.x64.bc obj/host_support.x64.bc obj/catch.o $LDFLAGS -o x64_x64_stress.exe
 
+if (($have_amdgcn)); then
 $CXX_X64_LD x64_gcn_stress.x64.bc obj/hsa_support.x64.bc obj/catch.o $LDFLAGS -o x64_gcn_stress.exe
+fi
 
 $CXX_X64_LD tests.x64.bc obj/host_support.x64.bc obj/catch.o $LDFLAGS -o tests.exe
 
@@ -509,7 +503,8 @@ set -e
 
 time valgrind --leak-check=full --fair-sched=yes ./prototype/states.exe
 
-exit
+
+
 
 set +e # Keep running tests after one fails
 
@@ -536,18 +531,10 @@ $RDIR/bin/amdgpu-arch
 ./pool_example_amdgpu.x64.exe #hangs then persistent memory fault
 fi
 
-exit
 
-
-#if (($have_amdgcn)); then
-#    ./x64_gcn_debug.exe
-#fi
-
-# ./pool_example_amdgpu.x64.exe crashes the vega902 gui at present
-
-#if (($have_amdgcn)); then
-#time ./persistent_kernel.exe
-#fi
+if (($have_nvptx)); then
+bash -c "$LOADPREFIX ./demo_openmp_ptx"
+fi
 
 time ./tests.exe
 
