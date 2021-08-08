@@ -14,8 +14,8 @@
 #include "raiifile.hpp"
 
 #include "hostrpc_printf.h"
+#include "hostrpc_printf_enable.h"
 #include "launch.hpp"
-#undef printf
 
 // written for rtl.cpp
 namespace
@@ -412,7 +412,7 @@ static int main_with_hsa(int argc, char **argv)
 
   if (verbose)
     {
-      printf("Spawn queue\n");
+      fprintf(stderr, "Spawn queue\n");
     }
   
   hsa_queue_t *queue;
@@ -492,7 +492,7 @@ static int main_with_hsa(int argc, char **argv)
   auto rc = hsa_signal_create(1, 0, NULL, &packet->completion_signal);
   if (rc != HSA_STATUS_SUCCESS)
     {
-      printf("Can't make signal\n");
+      fprintf(stderr, "Can't make signal\n");
       exit(1);
     }
 
@@ -507,7 +507,7 @@ static int main_with_hsa(int argc, char **argv)
     }
   else
     {
-      printf("Error: get_kernel_info failed for kernel %s\n", kernel_entry);
+      fprintf(stderr, "Error: get_kernel_info failed for kernel %s\n", kernel_entry);
       exit(1);
     }
 
@@ -519,7 +519,7 @@ static int main_with_hsa(int argc, char **argv)
 
   if (verbose)
     {
-      printf("Launch kernel\n");
+      fprintf(stderr, "Launch kernel\n");
     }
   do
     {
@@ -532,7 +532,7 @@ static int main_with_hsa(int argc, char **argv)
 
   if (verbose)
     {
-      printf("Kernel signalled\n");
+      fprintf(stderr, "Kernel signalled\n");
     }
   int result[number_return_values];
   memcpy(&result, result_location, sizeof(int) * number_return_values);
@@ -556,10 +556,10 @@ static int main_with_hsa(int argc, char **argv)
     {
       fprintf(stderr, "Warning: Non-uniform return values\n");
 
-      printf("Queue in x64: %lx\n", (uint64_t)queue);
+      fprintf(stderr,"Queue in x64: %lx\n", (uint64_t)queue);
       uint64_t v = ((uint64_t)result[0] & 0x00000000FFFFFFFFull) |
                    (((uint64_t)result[1] & 0x00000000FFFFFFFFull) << 32u);
-      printf("Queue: %lx\n", v);
+      fprintf(stderr,"Queue: %lx\n", v);
       for (size_t i = 0; i < number_return_values; i++)
         {
           fprintf(stderr, "rc[%zu] = %x\n", i, result[i]);
@@ -568,7 +568,7 @@ static int main_with_hsa(int argc, char **argv)
 
   if (verbose)
     {
-      printf("Result[0] %d\n", result[0]);
+      fprintf(stderr, "Result[0] %d\n", result[0]);
     }
   return result[0];
 }

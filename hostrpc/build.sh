@@ -129,7 +129,9 @@ NVGPU="--target=nvptx64-nvidia-cuda -march=$PTXGFX $PTX_VER -Xclang -fconvergent
 
 COMMONFLAGS="-Wall -Wextra -emit-llvm " # -DNDEBUG -Wno-type-limits "
 # cuda/openmp pass the host O flag through to ptxas, which crashes on debug info if > 0
-X64FLAGS=" -O2 -g -pthread " # nvptx can't handle debug info on x64 for O>0
+# there's a failure mode in trunk clang - 'remaining virtual register operands' - but it
+# resists changing the pipeline to llvm-link + llc, will have to debug it later
+X64FLAGS=" -O2 -pthread " # nvptx can't handle debug info on x64 for O>0
 GCNFLAGS=" -O2 -ffreestanding -fno-exceptions $AMDGPU"
 # atomic alignment objection seems reasonable - may want 32 wide atomics on nvptx
 # clang/ptx back end is crashing in llvm::DwarfDebug::constructCallSiteEntryDIEs
@@ -202,6 +204,8 @@ $CXX_X64 -I$RDIR/include allocator_openmp.cpp -c -o obj/allocator_openmp.x64.bc
 $CXX_X64 openmp_plugins.cpp -c -o obj/openmp_plugins.x64.bc
 $LINK obj/allocator_openmp.x64.bc obj/openmp_plugins.x64.bc -o obj/openmp_support.x64.bc
 
+# currently standalone
+$CXX_X64 hostrpc_printf_enable.cpp -I$HSAINC -O3 -c -o obj/hostrpc_printf_enable.x64.bc
 
 if (($have_amdgcn)); then
     $CXX_GCN threads.cpp -O3 -c -o threads.gcn.bc
@@ -217,10 +221,11 @@ if (($have_amdgcn)); then
     $CXX_GCN_LD obj/merged_pool_example_amdgpu.gcn.bc -o pool_example_amdgpu.gcn.so
 
     $CXX_X64 threads.cpp -O3 -c -o threads.x64.bc
-    $CXX_X64 pool_example_amdgpu.cpp -I$HSAINC -O3 -c -o pool_example_amdgpu.x64.bc
+    $CXX_X64 pool_example_amdgpu.cpp -I$HSAINC -O3 -c -o obj/pool_example_amdgpu.x64.bc
+    
     $CXX_X64_LD threads.x64.bc obj/hsa_support.x64.bc obj/catch.o $LDFLAGS -o threads.x64.exe
 
-    $CXX_X64_LD pool_example_amdgpu.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o pool_example_amdgpu.x64.exe
+    $CXX_X64_LD obj/pool_example_amdgpu.x64.bc obj/hostrpc_printf_enable.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o pool_example_amdgpu.x64.exe
 fi
 
 
@@ -234,7 +239,8 @@ $LINK obj/x64_gcn_debug.gcn.code.bc obj/x64_gcn_debug.gcn.kern.bc obj/hostrpc_pr
 $CXX_GCN_LD obj/x64_gcn_debug.gcn.bc -o x64_gcn_debug.gcn.so
 
 $CXX_X64 -I$HSAINC x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.x64.bc
-$CXX obj/x64_gcn_debug.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o x64_gcn_debug.exe
+
+$CXX obj/x64_gcn_debug.x64.bc obj/hsa_support.x64.bc obj/hostrpc_printf_enable.x64.bc $LDFLAGS -o x64_gcn_debug.exe
 
 # Ideally would have a test case that links the x64 and gcn bitcode, but can't work out
 # how to do that. I think mlink-builtin-bitcode used to be architecture aware, but
@@ -276,7 +282,7 @@ if (($have_amdgcn)); then
   $LINK loader/amdgcn_loader_entry.gcn.bc loader/opencl_loader_cast.gcn.bc | $OPT -O2 -o amdgcn_loader_device.gcn.bc
 
   $CXX_X64 -I$HSAINC amdgcn_loader.cpp -c -o loader/amdgcn_loader.x64.bc
-  $CXX_X64_LD $LDFLAGS loader/amdgcn_loader.x64.bc obj/hsa_support.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o ../amdgcn_loader.exe
+  $CXX_X64_LD $LDFLAGS loader/amdgcn_loader.x64.bc obj/hsa_support.x64.bc obj/hostrpc_printf_enable.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o ../amdgcn_loader.exe
 fi
 
 if (($have_nvptx)); then

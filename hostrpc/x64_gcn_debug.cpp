@@ -78,6 +78,8 @@ extern "C" void example(void)
 #include <stdio.h>
 #include <vector>
 
+#include "hostrpc_printf_enable.h"
+
 INCBIN(x64_gcn_debug_so, "x64_gcn_debug.gcn.so");
 
 int main()

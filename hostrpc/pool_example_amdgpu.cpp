@@ -68,8 +68,7 @@ INCBIN(pool_example_amdgpu_so, "pool_example_amdgpu.gcn.so");
 #define WITH_PRINTF 1
 
 #if WITH_PRINTF
-#undef printf
-#include "hostrpc_printf.h"
+#include "hostrpc_printf_enable.h"
 #endif
 
 int main_with_hsa()
