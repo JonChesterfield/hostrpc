@@ -37,11 +37,7 @@ HOSTRPC_ANNOTATE __attribute__((unused)) bool fs_contains_nul(const char *str,
 
 enum func_type : uint64_t
 {
-  func_print_nop = 0,
-  func_print_uuu = 1,
-  func_print_start = 2,
-  func_print_finish = 3,
-  func_print_append_str = 4,
+  func_piecewise_print_nop = 0,
 
   func_piecewise_print_start = 5,
   func_piecewise_print_end = 6,
@@ -55,88 +51,8 @@ enum func_type : uint64_t
   func_piecewise_pass_element_uint64 = 12,
   func_piecewise_pass_element_double = 13,
   func_piecewise_pass_element_void = 14,
-  func_piecewise_pass_element_write_int32 = 15,
   func_piecewise_pass_element_write_int64 = 16,
 
-};
-
-struct print_uuu_instance
-{
-  uint64_t ID = func_print_uuu;
-  char fmt[32] = {0};
-  uint64_t arg0 = 0;
-  uint64_t arg1 = 0;
-  uint64_t arg2 = 0;
-
-  HOSTRPC_ANNOTATE print_uuu_instance(const char *fmt_, uint64_t x0,
-                                      uint64_t x1, uint64_t x2)
-      : arg0(x0), arg1(x1), arg2(x2)
-  {
-    __builtin_memcpy(fmt, fmt_, fs_strnlen(fmt_, sizeof(fmt)));
-  }
-
-  HOSTRPC_ANNOTATE print_uuu_instance(const char *d)
-  {
-    __builtin_memcpy(&ID, d, sizeof(ID));
-    d += sizeof(ID);
-    __builtin_memcpy(&fmt, d, sizeof(fmt));
-    d += sizeof(fmt);
-    __builtin_memcpy(&arg0, d, sizeof(arg0));
-    d += sizeof(arg0);
-    __builtin_memcpy(&arg1, d, sizeof(arg1));
-    d += sizeof(arg1);
-    __builtin_memcpy(&arg2, d, sizeof(arg2));
-    d += sizeof(arg2);
-  }
-};
-
-struct print_start
-{
-  uint64_t ID = func_print_start;
-  char unused[56];
-  HOSTRPC_ANNOTATE print_start() {}
-};
-struct print_finish
-{
-  uint64_t ID = func_print_finish;
-  uint64_t packets;
-  char unused[48];
-  HOSTRPC_ANNOTATE print_finish(uint64_t packets) : packets(packets) {}
-
-  HOSTRPC_ANNOTATE print_finish(const char *d)
-  {
-    __builtin_memcpy(&ID, d, sizeof(ID));
-    d += sizeof(ID);
-    __builtin_memcpy(&packets, d, sizeof(packets));
-    d += sizeof(packets);
-  }
-};
-
-struct print_append_str
-{
-  uint64_t ID = func_print_append_str;
-  uint64_t start_port;
-  uint64_t position;
-  char payload[8] = {0};
-  char unused[32];
-  HOSTRPC_ANNOTATE print_append_str(uint64_t start_port, uint64_t position,
-                                    const char *str)
-      : start_port(start_port), position(position)
-  {
-    __builtin_memcpy(payload, str, fs_strnlen(str, sizeof(payload)));
-  }
-
-  HOSTRPC_ANNOTATE print_append_str(const char *d)
-  {
-    __builtin_memcpy(&ID, d, sizeof(ID));
-    d += sizeof(ID);
-    __builtin_memcpy(&start_port, d, sizeof(start_port));
-    d += sizeof(start_port);
-    __builtin_memcpy(&position, d, sizeof(position));
-    d += sizeof(position);
-    __builtin_memcpy(&payload, d, sizeof(payload));
-    d += sizeof(payload);
-  }
 };
 
 struct piecewise_print_start_t
@@ -202,6 +118,7 @@ using SZ = hostrpc::size_runtime;
 __attribute__((visibility("default")))
 hostrpc::x64_gcn_type<SZ>::client_type hostrpc_x64_gcn_debug_client[1];
 
+namespace {
 template <typename T>
 struct send_by_copy
 {
@@ -231,6 +148,7 @@ struct recv_by_copy
     __builtin_memcpy(i, dline, 64);
   }
 };
+}
 
 __PRINTF_API_EXTERNAL uint32_t piecewise_print_start(const char *fmt)
 {
@@ -266,15 +184,7 @@ __PRINTF_API_EXTERNAL int piecewise_print_end(uint32_t port)
   return 0;  // should be return code from printf
 }
 
-__PRINTF_API_EXTERNAL void piecewise_pass_element_write_int32(uint32_t port,
-                                                              int32_t *x)
-{
-  int64_t tmp = *x;
-  piecewise_pass_element_write_int64(port, &tmp);
-  *x = (int32_t)tmp;
-}
-
-// These may want to be their own functions, for now delagate to u64
+// These may want to be their own functions, for now delegate to u64
 
 __PRINTF_API_EXTERNAL void piecewise_pass_element_int32(uint32_t port,
                                                         int32_t v)
@@ -411,7 +321,7 @@ struct print_wip
   {
     field() = default;
 
-    uint64_t tag = func_print_nop;
+    uint64_t tag = func_piecewise_print_nop;
 
     static field cstr()
     {
@@ -449,14 +359,14 @@ struct operate
     const bool prefix_thread_id = false;
     switch (ID)
       {
-        case func_print_nop:
+        case func_piecewise_print_nop:
           {
             break;
           }
 
         case func_piecewise_print_start:
           {
-            // fprintf(stderr, ".");  
+            // fprintf(stderr, ".");
             thread_print.formatter = incr{};
             if (prefix_thread_id)
               thread_print.formatter.append_cstr_section<7>("[%.2u] ");
@@ -470,7 +380,7 @@ struct operate
           {
             std::vector<char> r = thread_print.formatter.finalize();
             printf("%s", r.data());
-            thread_print.acc.tag = func_print_nop;
+            thread_print.acc.tag = func_piecewise_print_nop;
             break;
           }
 
@@ -480,7 +390,7 @@ struct operate
                 reinterpret_cast<piecewise_pass_element_cstr_t *>(
                     &line->element[0]);
 
-            if (thread_print.acc.tag == func_print_nop)
+            if (thread_print.acc.tag == func_piecewise_print_nop)
               {
                 // starting new cstr
                 thread_print.acc = print_wip::field::cstr();
@@ -518,7 +428,7 @@ struct operate
 
                     // end of string
 
-                    assert(thread_print.acc.tag != func_print_nop);
+                    assert(thread_print.acc.tag != func_piecewise_print_nop);
                     thread_print.acc = {};
                   }
               }
@@ -540,7 +450,7 @@ struct operate
               {
                 case func_piecewise_pass_element_uint64:
                   {
-                    if (thread_print.acc.tag == func_print_nop)
+                    if (thread_print.acc.tag == func_piecewise_print_nop)
                       {
                         thread_print.update_bytes_written(
                             thread_print.formatter
@@ -560,7 +470,7 @@ struct operate
                   }
                 case func_piecewise_pass_element_double:
                   {
-                    if (thread_print.acc.tag == func_print_nop)
+                    if (thread_print.acc.tag == func_piecewise_print_nop)
                       {
                         thread_print.update_bytes_written(
                             thread_print.formatter
@@ -592,7 +502,7 @@ struct operate
                 reinterpret_cast<piecewise_pass_element_write_t *>(
                     &line->element[0]);
 
-            if (thread_print.acc.tag == func_print_nop)
+            if (thread_print.acc.tag == func_piecewise_print_nop)
               {
                 if (0)
                   printf(

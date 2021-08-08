@@ -45,7 +45,7 @@ else
 fi
 
 if (($have_amdgcn)); then
-    $RDIR/bin/llvm-link $HOME/llvm-build/ockl/hsaqs.bc "$RDIR/amdgcn/bitcode/oclc_isa_version_$GCNGFXNUM.bc" | $RDIR/bin/llvm-extract -func __ockl_hsa_signal_store -glob __oclc_ISA_version | $RDIR/bin/opt -O1 -o ockl_hack.bc
+    $RDIR/bin/llvm-link $HOME/llvm-build/devlibs/ockl/hsaqs.bc "$RDIR/amdgcn/bitcode/oclc_isa_version_$GCNGFXNUM.bc" | $RDIR/bin/llvm-extract -func __ockl_hsa_signal_store -glob __oclc_ISA_version | $RDIR/bin/opt -O1 -o ockl_hack.bc
     EXTRABC=ockl_hack.bc
 else
     EXTRABC=
@@ -450,11 +450,13 @@ $CLANGXX -std=c++14 -Wall -Wextra -O0 -g test_storage.cpp obj/openmp_support.x64
 if (($have_amdgcn)); then
     $LINK obj/openmp_support.x64.bc obj/hsa_support.x64.bc obj/syscall.x64.bc -o obj/demo_bitcode_gcn.omp.bc
 
-    # openmp is taking an excessive amount of time to compile, drop it for now
+    # openmp was taking an excessive amount of time to compile
     # this now fails to compile (fairly quickly), looks like mlink-builtin-bitcode is mixing
-    # the two ISAs
-    time $CLANGXX -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GCNGFX -mcpu=$GCNGFX -DDEMO_AMDGCN=1 demo_openmp.cpp \
+    # the two ISAs in a single module
+    set +e
+    $CLANGXX -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GCNGFX -mcpu=$GCNGFX -DDEMO_AMDGCN=1 demo_openmp.cpp \
          -Xclang -mlink-builtin-bitcode -Xclang obj/demo_bitcode_gcn.omp.bc -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR && ./demo_openmp_gcn
+    set -e
 fi
 
 if (($have_nvptx)); then

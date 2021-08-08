@@ -21,7 +21,11 @@ extern "C"
 #endif
 #endif
 
-// printf implementation macros
+#ifdef __attribute__
+#warning "__attribute__ is a macro, missing freestanding?"
+#endif
+
+// printf implementation macros, noinline is convenient for reading IR
 #define __PRINTF_API_EXTERNAL_ HOSTRPC_ANNOTATE __attribute__((noinline))
 #define __PRINTF_API_INTERNAL_ \
   HOSTRPC_ANNOTATE static inline __attribute__((unused))
@@ -31,11 +35,6 @@ extern "C"
 #define __PRINTF_API_INTERNAL __PRINTF_API_INTERNAL_
 #else
 #define __PRINTF_API_EXTERNAL __PRINTF_API_EXTERNAL_
-
-#ifdef __attribute__
-#warning "__attribute__ is a macro, missing freestanding?"
-#endif
-
 #define __PRINTF_API_INTERNAL \
   __PRINTF_API_INTERNAL_ __attribute__((overloadable))
 #endif
@@ -63,8 +62,9 @@ extern "C"
   __PRINTF_WRAP7(FMT, U, X0, X1, X2, X3, X4, X5) __PRINTF_WRAP(FMT, 6, X6)
 #define __PRINTF_WRAP9(FMT, U, X0, X1, X2, X3, X4, X5, X6, X7) \
   __PRINTF_WRAP8(FMT, U, X0, X1, X2, X3, X4, X5, X6) __PRINTF_WRAP(FMT, 7, X7)
-#define __PRINTF_WRAP10(FMT, U, X0, X1, X2, X3, X4, X5, X6, X7, X8)        \
-  __PRINTF_WRAP9(FMT, U, X0, X1, X2, X3, X4, X5, X6, X7) __PRINTF_WRAP(FMT, 8, X8)
+#define __PRINTF_WRAP10(FMT, U, X0, X1, X2, X3, X4, X5, X6, X7, X8) \
+  __PRINTF_WRAP9(FMT, U, X0, X1, X2, X3, X4, X5, X6, X7)            \
+  __PRINTF_WRAP(FMT, 8, X8)
 
 #if 0
 /*
@@ -73,7 +73,9 @@ extern "C"
  * http://stackoverflow.com/questions/11317474/macro-to-count-number-of-arguments
  * This is considered to be a standard preprocessor technique in common
  * knowledge.
- * One place attributes the original implementationo to Laurent Deniau, January 2006
+/* 
+ * Counting arguments with the preprocessor. Fairly standard technique, one place
+ * attributed the original implementation to:
  * Laurent Deniau, "__VA_NARG__," 17 January 2006, <comp.std.c> (29 November 2007).
  * https://groups.google.com/forum/?fromgroups=#!topic/comp.std.c/d-6Mj5Lko_s
  */
@@ -106,18 +108,18 @@ extern "C"
 
 // this is moderately annoying when included into host code, maybe
 // rename it when off device
-#define __hostrpc_printf(FMT, ...)                                  \
-  {                                                       \
-    size_t __offset = 0;                                  \
-    (void)__offset;                                       \
-    const char *__fmt = FMT;                              \
-    const size_t __strlen = __printf_strlen(__fmt);       \
-    (void)__strlen;                                       \
-    uint32_t __port = piecewise_print_start(__fmt);       \
-    size_t __spec_loc = 0;                                \
-    (void)__spec_loc;                                     \
-    __PRINTF_DISPATCH_ARGS(__fmt, UNUSED, ##__VA_ARGS__)  \
-    piecewise_print_end(__port);                          \
+#define __hostrpc_printf(FMT, ...)                       \
+  {                                                      \
+    size_t __offset = 0;                                 \
+    (void)__offset;                                      \
+    const char *__fmt = FMT;                             \
+    const size_t __strlen = __printf_strlen(__fmt);      \
+    (void)__strlen;                                      \
+    uint32_t __port = piecewise_print_start(__fmt);      \
+    size_t __spec_loc = 0;                               \
+    (void)__spec_loc;                                    \
+    __PRINTF_DISPATCH_ARGS(__fmt, UNUSED, ##__VA_ARGS__) \
+    piecewise_print_end(__port);                         \
   }
 
 // Functions implemented out of header. printf resolves to multiple calls to
@@ -138,17 +140,15 @@ __PRINTF_API_EXTERNAL void piecewise_pass_element_uint64(uint32_t port,
 __PRINTF_API_EXTERNAL void piecewise_pass_element_double(uint32_t port,
                                                          double x);
 
-// copy null terminated string starting at x, print the string
-__PRINTF_API_EXTERNAL void piecewise_pass_element_cstr(uint32_t port,
-                                                       const char *x);
 // print the address of the argument on the gpu
 __PRINTF_API_EXTERNAL void piecewise_pass_element_void(uint32_t port,
                                                        const void *x);
 
-// implement %n specifier
-__PRINTF_API_EXTERNAL void piecewise_pass_element_write_int32(uint32_t port,
-                                                              int32_t *x);
+// copy null terminated string starting at x, print the string
+__PRINTF_API_EXTERNAL void piecewise_pass_element_cstr(uint32_t port,
+                                                       const char *x);
 
+// implement %n specifier, may need one per sizeof target
 __PRINTF_API_EXTERNAL void piecewise_pass_element_write_int64(uint32_t port,
                                                               int64_t *x);
 
@@ -278,7 +278,8 @@ __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
           // a mutable char * to an int64_t that has been cast
           int64_t tmp;
           piecewise_pass_element_write_int64(port, &tmp);
-          *(int64_t *)x = tmp; // todo: can't assume this, doesn't work for %n & some-char
+          *(int64_t *)x =
+              tmp;  // todo: can't assume this, doesn't work for %n & some-char
           break;
         }
       case spec_none:
@@ -295,7 +296,7 @@ __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
   (void)spec;
   // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
   int64_t tmp = 0;
-  piecewise_print_element(port, spec, (const char*)&tmp);
+  piecewise_print_element(port, spec, (const char *)&tmp);
   *x = (signed short)tmp;
 }
 
@@ -306,7 +307,7 @@ __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
   (void)spec;
   // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
   int64_t tmp = 0;
-  piecewise_print_element(port, spec,(const char*)&tmp);
+  piecewise_print_element(port, spec, (const char *)&tmp);
   *x = (int)tmp;
 }
 
@@ -317,7 +318,7 @@ __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
   (void)spec;
   // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
   int64_t tmp = 0;
-  piecewise_print_element(port,spec, (const char*)&tmp);
+  piecewise_print_element(port, spec, (const char *)&tmp);
   *x = (long)tmp;
 }
 
@@ -328,7 +329,7 @@ __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
   (void)spec;
   // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
   int64_t tmp = 0;
-  piecewise_print_element(port, spec,(const char*)&tmp);
+  piecewise_print_element(port, spec, (const char *)&tmp);
   *x = (size_t)tmp;
 }
 
@@ -339,7 +340,7 @@ __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
   (void)spec;
   // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
   int64_t tmp = 0;
-  piecewise_print_element(port,spec, (const char*)&tmp);
+  piecewise_print_element(port, spec, (const char *)&tmp);
   *x = (long long)tmp;
 }
 #endif
@@ -351,7 +352,9 @@ __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
     piecewise_print_element(port, spec, (VIA)x);        \
   }
 
+
 // Implement types that undergo argument promotion as promotions
+
 __PRINTF_DISPATCH_INDIRECT(bool, int)
 __PRINTF_DISPATCH_INDIRECT(signed char, int)
 __PRINTF_DISPATCH_INDIRECT(unsigned char, unsigned int)
@@ -360,30 +363,31 @@ __PRINTF_DISPATCH_INDIRECT(unsigned short, unsigned int)
 __PRINTF_DISPATCH_INDIRECT(float, double)
 
 // Pointers take behaviour from the format string (%s/%p/%n), so redirect
-// signed/unsigned/void via the const char* which contains the switch
+// signed/unsigned/void via the const void* which contains the switch
 __PRINTF_DISPATCH_INDIRECT(const char *, const void *)
 __PRINTF_DISPATCH_INDIRECT(const signed char *, const void *)
 __PRINTF_DISPATCH_INDIRECT(const unsigned char *, const void *)
 
-
-  
 #undef __PRINTF_DISPATCH_INDIRECT
 
 // because __builtin_strlen resolves to strlen, which amdgcn does not lower
 // todo: check if memcpy on unknown length has the same problem
 __PRINTF_API_INTERNAL size_t __printf_strlen(const char *str)
 {
-  if (__builtin_constant_p(str)) {
-    return __builtin_strlen(str);
-  } else {
-    for (size_t i = 0;; i++)
-      {
-        if (str[i] == '\0')
-          {
-            return i;
-          }
-      }
-  }
+  if (__builtin_constant_p(str))
+    {
+      return __builtin_strlen(str);
+    }
+  else
+    {
+      for (size_t i = 0;; i++)
+        {
+          if (str[i] == '\0')
+            {
+              return i;
+            }
+        }
+    }
 }
 
 __PRINTF_API_INTERNAL
@@ -448,7 +452,8 @@ __PRINTF_API_INTERNAL bool __printf_conversion_specifier_p(char c)
 {
   // excluding % which is handled elsewhere
 
-  char specs[] = {'c','s','d','i','o','x','X','u','f','F','e','E','a','A','g','G','n','p'};
+  char specs[] = {'c', 's', 'd', 'i', 'o', 'x', 'X', 'u', 'f',
+                  'F', 'e', 'E', 'a', 'A', 'g', 'G', 'n', 'p'};
   size_t N = sizeof(specs);
 
   bool hit = false;
@@ -458,7 +463,6 @@ __PRINTF_API_INTERNAL bool __printf_conversion_specifier_p(char c)
     }
   return hit;
 }
-
 
 __PRINTF_API_INTERNAL
 size_t __printf_next_start(const char *format, size_t len, size_t input_offset)
@@ -494,18 +498,18 @@ size_t __printf_next_end(const char *format, size_t len, size_t input_offset)
   for (; o < len; o++)
     {
       {
-        #if 1
+#if 1
         if (__printf_conversion_specifier_p(format[o]))
           {
             return o;
           }
-        #else
+#else
         /* todo: this loop should be < 3 iters */
         if (!__printf_length_modifier_p(format[o]))
           {
             return o;
           }
-        #endif
+#endif
       }
     }
   return len;
@@ -537,11 +541,9 @@ __attribute__((always_inline)) size_t __printf_next_specifier_location(
       IMPL();
     }
 #endif
-  
+
   return __printf_next_end(format, len,
                            __printf_next_start(format, len, input_offset));
-
-
 }
 
 // redundant parts of API / convenience hacks
