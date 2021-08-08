@@ -2,7 +2,6 @@
 #define HOSTRPC_PRINTF_H_INCLUDED
 
 #include "detail/platform_detect.hpp"
-#include <stdint.h>
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -352,7 +351,6 @@ __PRINTF_API_INTERNAL void piecewise_print_element(uint32_t port,
     piecewise_print_element(port, spec, (VIA)x);        \
   }
 
-
 // Implement types that undergo argument promotion as promotions
 
 __PRINTF_DISPATCH_INDIRECT(bool, int)
@@ -420,48 +418,31 @@ __PRINTF_API_INTERNAL bool __printf_haszero(uint32_t v)
   return ((v - UINT32_C(0x01010101)) & ~v & UINT32_C(0x80808080));
 }
 
-__PRINTF_API_INTERNAL bool __printf_length_modifier_p(char c)
+static uint32_t __printf_haystack(char a, char b, char c, char d)
 {
-  // test if 'c' is one of hljztL, as if so, need to keep scanning to
-  // find the s/n/p
-  // unfortunately there are other things it can be, beyond length modifier
-  // ., possibly *, numbers
+  uint32_t res = (a << 0u) | (b << 8u) | (c << 16u) | (d << 24u);
+  return res;
+}
+
+__PRINTF_API_INTERNAL bool __printf_conversion_specifier_p(char c)
+{
+  // excluding % which is handled elsewhere
   unsigned char uc;
   __builtin_memcpy(&uc, &c, 1);
 
   // 32 bit codegen is noticably better for amdgcn and ~ same as 64 bit for x64
   // Six characters to check, so checks 'h' repeatedly to avoid a zero.
   uint32_t broadcast = UINT32_C(0x01010101) * uc;
-  uint32_t haystackA = ('h' << 0) | ('l' << 8) | ('j' << 16) | ('z' << 24);
-  uint32_t haystackB = ('t' << 0) | ('L' << 8) | ('h' << 16) | ('h' << 24);
+  uint32_t A = __printf_haystack('c', 's', 'd', 'i');
+  uint32_t B = __printf_haystack('o', 'x', 'X', 'u');
+  uint32_t C = __printf_haystack('f', 'F', 'e', 'E');
+  uint32_t D = __printf_haystack('a', 'A', 'g', 'G');
+  uint32_t E = __printf_haystack('n', 'p', 'n', 'p');
 
-  // ~ (A & B)
-  //  ~A | ~B
-  // todo: looks redundant, but manually simplifying doesn't help codegen
-  // uint32_t vA = (broadcast ^ haystackA);
-  // uint32_t vB = (broadcast ^ haystackB);
-  // return
-  //      ((vA -UINT32_C(0x01010101)) & ~vA & UINT32_C(0x80808080)) |
-  //      ((vB -UINT32_C(0x01010101)) & ~vB & UINT32_C(0x80808080));
-
-  return __printf_haszero(broadcast ^ haystackA) |
-         __printf_haszero(broadcast ^ haystackB);
-}
-
-__PRINTF_API_INTERNAL bool __printf_conversion_specifier_p(char c)
-{
-  // excluding % which is handled elsewhere
-
-  char specs[] = {'c', 's', 'd', 'i', 'o', 'x', 'X', 'u', 'f',
-                  'F', 'e', 'E', 'a', 'A', 'g', 'G', 'n', 'p'};
-  size_t N = sizeof(specs);
-
-  bool hit = false;
-  for (size_t i = 0; i < N; i++)
-    {
-      hit = hit | (c == specs[i]);
-    }
-  return hit;
+  // Works, but can probably be optimised further
+  return __printf_haszero(broadcast ^ A) | __printf_haszero(broadcast ^ B) |
+         __printf_haszero(broadcast ^ C) | __printf_haszero(broadcast ^ D) |
+         __printf_haszero(broadcast ^ E);
 }
 
 __PRINTF_API_INTERNAL
@@ -497,20 +478,10 @@ size_t __printf_next_end(const char *format, size_t len, size_t input_offset)
   o++; /* step over the % */
   for (; o < len; o++)
     {
-      {
-#if 1
-        if (__printf_conversion_specifier_p(format[o]))
-          {
-            return o;
-          }
-#else
-        /* todo: this loop should be < 3 iters */
-        if (!__printf_length_modifier_p(format[o]))
-          {
-            return o;
-          }
-#endif
-      }
+      if (__printf_conversion_specifier_p(format[o]))
+        {
+          return o;
+        }
     }
   return len;
 }
@@ -544,19 +515,6 @@ __attribute__((always_inline)) size_t __printf_next_specifier_location(
 
   return __printf_next_end(format, len,
                            __printf_next_start(format, len, input_offset));
-}
-
-// redundant parts of API / convenience hacks
-__PRINTF_API_INTERNAL void print_string(const char *str)
-{
-  uint32_t port = piecewise_print_start("%s");
-  if (port == UINT32_MAX)
-    {
-      return;
-    }
-
-  piecewise_pass_element_cstr(port, str);
-  piecewise_print_end(port);
 }
 
 #endif

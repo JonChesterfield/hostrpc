@@ -1,38 +1,24 @@
 #include "EvilUnit.h"
 #include "hostrpc_printf.h"
 
-static bool length_modifier_p_slow(char c)
+static bool __printf_conversion_specifier_p_reference(char c)
 {
-  switch (c)
-    {
-      case 'h':
-      case 'l':
-      case 'j':
-      case 'z':
-      case 't':
-      case 'L':
-        return true;
-      default:
-        return false;
-    }
-}
+  // excluding % which is handled elsewhere
 
-static inline MODULE(length_modifier)
-{
-  TEST("compare")
-  {
-    for (unsigned i = 0; i < 256; i++)
-      {
-        unsigned char uc = (unsigned char)i;
-        char tmp;
-        __builtin_memcpy(&tmp, &uc, 1);
-        CHECK(__printf_length_modifier_p(tmp) == length_modifier_p_slow(tmp));
-      }
-  }
+  char specs[] = {'c', 's', 'd', 'i', 'o', 'x', 'X', 'u', 'f',
+                  'F', 'e', 'E', 'a', 'A', 'g', 'G', 'n', 'p'};
+  size_t N = sizeof(specs);
+
+  bool hit = false;
+  for (size_t i = 0; i < N; i++)
+    {
+      hit = hit | (c == specs[i]);
+    }
+  return hit;
 }
 
 static enum __printf_spec_t next_specifier(const char *format, size_t len,
-                                  size_t *input_offset)
+                                           size_t *input_offset)
 {
   size_t loc = __printf_next_specifier_location(format, len, *input_offset);
   *input_offset = loc;
@@ -47,8 +33,21 @@ static enum __printf_spec_t next_spec(const char *format)
 
 MODULE(specifier)
 {
-  DEPENDS(length_modifier);
-  
+  TEST("conversion_specifier")
+  {
+    for (unsigned i = 0; i < 256; i++)
+      {
+        unsigned char u = (unsigned char)i;
+        char c;
+        __builtin_memcpy(&c, &u, 1);
+
+        bool cur = __printf_conversion_specifier_p(c);
+        bool ref = __printf_conversion_specifier_p_reference(c);
+
+        CHECK(cur == ref);
+      }
+  }
+
   TEST("count")
   {
     CHECK(next_spec("%") == spec_none);

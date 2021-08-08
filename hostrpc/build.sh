@@ -161,9 +161,8 @@ fi
 # Code running on the host can link in host, hsa or cuda support library.
 # Fills in gaps in the cuda/hsa libs, implements allocators
 
-$CLANG -O1 conv.c -o conv
-./conv
-exit 0
+$CLANG $AMDGPU -O2 -emit-llvm -S conv.c -o obj/codegen_conv.ll
+$CLANG $AMDGPU -O2 -S conv.c -o obj/codegen_conv.s
 
 if (($have_amdgcn)); then
     $CXX_GCN hostrpc_printf.cpp -O3 -c -o obj/hostrpc_printf.gcn.bc

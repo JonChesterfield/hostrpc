@@ -13,6 +13,20 @@ kernel void __device_example(void) { example(); }
 #define printf(...) __hostrpc_printf(__VA_ARGS__)
 
 #if (HOSTRPC_AMDGCN)
+
+// redundant parts of API / convenience hacks
+static void print_string(const char *str)
+{
+  uint32_t port = piecewise_print_start("%s");
+  if (port == UINT32_MAX)
+    {
+      return;
+    }
+
+  piecewise_pass_element_cstr(port, str);
+  piecewise_print_end(port);
+}
+
 extern "C" void example(void)
 {
   unsigned id = platform::get_lane_id();

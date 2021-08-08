@@ -118,7 +118,8 @@ using SZ = hostrpc::size_runtime;
 __attribute__((visibility("default")))
 hostrpc::x64_gcn_type<SZ>::client_type hostrpc_x64_gcn_debug_client[1];
 
-namespace {
+namespace
+{
 template <typename T>
 struct send_by_copy
 {
@@ -148,7 +149,7 @@ struct recv_by_copy
     __builtin_memcpy(i, dline, 64);
   }
 };
-}
+}  // namespace
 
 __PRINTF_API_EXTERNAL uint32_t piecewise_print_start(const char *fmt)
 {
@@ -534,6 +535,7 @@ struct operate
   void operator()(hostrpc::page_t *page)
   {
     const bool verbose = false;
+
     uint32_t slot = page - start_local_buffer;
     if (verbose) fprintf(stderr, "Invoked operate on slot %u\n", slot);
 
@@ -670,7 +672,8 @@ pthread_mutex_t global::mutex = PTHREAD_MUTEX_INITIALIZER;
 int hostrpc_print_enable_on_hsa_agent(hsa_executable_t ex,
                                       hsa_agent_t kernel_agent)
 {
-  const bool verbose = false;
+  const bool verbose = true;
+
   if (verbose) fprintf(stderr, "called print enable\n");
   const char *gpu_local_ptr = "hostrpc_x64_gcn_debug_client";
 
