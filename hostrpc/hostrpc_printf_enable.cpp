@@ -165,16 +165,10 @@ struct print_wip
 
 using print_buffer_t = std::vector<std::array<print_wip, 64> >;
 
-template <typename ServerType>
 struct operate
 {
   print_buffer_t *print_buffer = nullptr;
-  hostrpc::page_t *start_local_buffer = nullptr;
-  operate(print_buffer_t *print_buffer, ServerType *ThisServer)
-      : print_buffer(print_buffer)
-  {
-    start_local_buffer = ThisServer->shared_buffer;
-  }
+  operate(print_buffer_t *print_buffer) : print_buffer(print_buffer) {}
   operate() = default;
 
   void perthread(unsigned c, hostrpc::cacheline_t *line,
@@ -359,9 +353,6 @@ struct operate
   void operator()(uint32_t slot, hostrpc::page_t *page)
   {
     const bool verbose = false;
-
-    uint32_t slot2 = page - start_local_buffer;
-    assert(slot == slot2);
     if (verbose) fprintf(stderr, "Invoked operate on slot %u\n", slot);
 
     std::array<print_wip, 64> &print_slot_buffer = (*print_buffer)[slot];
@@ -394,9 +385,9 @@ struct global
 {
   struct wrap_state
   {
-    using sts_ty = hostrpc::server_thread_state<
-        hostrpc::x64_gcn_type<SZ>::server_type,
-        operate<hostrpc::x64_gcn_type<SZ>::server_type>, clear>;
+    using sts_ty =
+        hostrpc::server_thread_state<hostrpc::x64_gcn_type<SZ>::server_type,
+                                     operate, clear>;
 
     std::unique_ptr<hostrpc::x64_gcn_type<SZ> > p;
     HOSTRPC_ATOMIC(uint32_t) server_control;
@@ -443,8 +434,7 @@ struct global
       print_buffer = std::make_unique<print_buffer_t>();
       print_buffer->resize(N.N());
 
-      operate<hostrpc::x64_gcn_type<SZ>::server_type> op(print_buffer.get(),
-                                                         &p->server);
+      operate op(print_buffer.get());
       server_state = sts_ty(&p->server, &server_control, op, clear{});
 
       thrd = std::make_unique<hostrpc::thread<sts_ty> >(

@@ -335,16 +335,6 @@ TEST_CASE("x64_gcn_stress")
     // Reasonable chance we also want to initialize the data before the first
     // call
 
-    auto page_to_index = [&](uint32_t slot, hostrpc::page_t *page) -> int64_t {
-      hostrpc::page_t *base = p.client.shared_buffer;
-
-      intptr_t d = page - base;
-      // fprintf(stderr,"base %lx, page %lx, diff %ld\n", (uint64_t)base,
-      // (uint64_t)page, d);
-      assert(d == slot);
-      return d;
-    };
-
     auto str = [](bool hit) -> const char * { return hit ? "FAIL" : "pass"; };
     auto op_func = [&](uint32_t slot, hostrpc::page_t *page) {
 #if 1
@@ -363,7 +353,7 @@ TEST_CASE("x64_gcn_stress")
       if (hit)
         {
           fprintf(stderr, "Operate (%s)(%ld): first values %lu/%lu/%lu\n",
-                  str(hit), page_to_index(slot, page), f[0], f[1], f[2]);
+                  str(hit), slot, f[0], f[1], f[2]);
         }
 
 #endif
@@ -400,7 +390,7 @@ TEST_CASE("x64_gcn_stress")
       if (hit)
         {
           fprintf(stderr, "Clear (%s)(%ld): first values %lu/%lu/%lu\n",
-                  str(hit), page_to_index(slot, page), f[0], f[1], f[2]);
+                  str(hit), slot, f[0], f[1], f[2]);
         }
 
 #endif
