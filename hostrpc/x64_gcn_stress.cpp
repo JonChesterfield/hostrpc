@@ -352,7 +352,7 @@ TEST_CASE("x64_gcn_stress")
         }
       if (hit)
         {
-          fprintf(stderr, "Operate (%s)(%ld): first values %lu/%lu/%lu\n",
+          fprintf(stderr, "Operate (%s)(%u): first values %lu/%lu/%lu\n",
                   str(hit), slot, f[0], f[1], f[2]);
         }
 
@@ -389,7 +389,7 @@ TEST_CASE("x64_gcn_stress")
         }
       if (hit)
         {
-          fprintf(stderr, "Clear (%s)(%ld): first values %lu/%lu/%lu\n",
+          fprintf(stderr, "Clear (%s)(%u): first values %lu/%lu/%lu\n",
                   str(hit), slot, f[0], f[1], f[2]);
         }
 

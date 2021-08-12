@@ -39,7 +39,7 @@ struct x64_device_type : public x64_device_type_base<SZ, device_num>
 template <typename C>
 static bool invoke(C *client, uint64_t x[8])
 {
-  auto fill = [&](hostrpc::page_t *page) -> void {
+  auto fill = [&](uint32_t, hostrpc::page_t *page) -> void {
     hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
     line->element[0] = x[0];
     line->element[1] = x[1];
@@ -51,7 +51,7 @@ static bool invoke(C *client, uint64_t x[8])
     line->element[7] = x[7];
   };
 
-  auto use = [&](hostrpc::page_t *page) -> void {
+  auto use = [&](uint32_t, hostrpc::page_t *page) -> void {
     hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
     x[0] = line->element[0];
     x[1] = line->element[1];

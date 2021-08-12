@@ -45,9 +45,11 @@ extern "C" __attribute__((visibility("default"))) int main(int argc,
 
   for (unsigned i = 0; i < 4; i++)
     {
+      hostrpc::fill_nop  f;
+      hostrpc::use_nop  u;
       s += x64_nvptx_client_state
                ->rpc_invoke<hostrpc::fill_nop, hostrpc::use_nop>(
-                   hostrpc::fill_nop{}, hostrpc::use_nop{});
+                   f, u);
     }
 
   return s;

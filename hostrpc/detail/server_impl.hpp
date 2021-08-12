@@ -106,14 +106,22 @@ struct server_impl : public SZT, public Counter
   // If passed location, will use it to round robin across slots
 
   template <typename Operate, typename Clear>
-  HOSTRPC_ANNOTATE bool rpc_handle(Operate op, Clear cl,
+  HOSTRPC_ANNOTATE bool rpc_handle(Operate &op, Clear& cl,
                                    uint32_t* location) noexcept
   {
     return rpc_handle_impl<Operate, Clear, true>(op, cl, location);
   }
 
+  template <typename Operate, typename Clear>
+  HOSTRPC_ANNOTATE bool rpc_handle(Operate &&op, Clear&& cl,
+                                   uint32_t* location) noexcept
+  {
+    return rpc_handle_impl<Operate, Clear, true>(op, cl, location);
+  }
+
+  
   template <typename Operate>
-  HOSTRPC_ANNOTATE bool rpc_handle(Operate op, uint32_t* location) noexcept
+  HOSTRPC_ANNOTATE bool rpc_handle(Operate& op, uint32_t* location) noexcept
   {
     struct Clear
     {
@@ -125,21 +133,21 @@ struct server_impl : public SZT, public Counter
 
   // Default location to always start from zero
   template <typename Operate, typename Clear>
-  HOSTRPC_ANNOTATE bool rpc_handle(Operate op, Clear cl) noexcept
+  HOSTRPC_ANNOTATE bool rpc_handle(Operate &op, Clear& cl) noexcept
   {
     uint32_t location = 0;
     return rpc_handle<Operate, Clear>(op, cl, &location);
   }
 
   template <typename Operate>
-  HOSTRPC_ANNOTATE bool rpc_handle(Operate op) noexcept
+  HOSTRPC_ANNOTATE bool rpc_handle(Operate& op) noexcept
   {
     uint32_t location = 0;
     return rpc_handle<Operate>(op, &location);
   }
 
   template <typename Clear>
-  HOSTRPC_ANNOTATE uint32_t rpc_open_port(Clear cl, uint32_t* location_arg)
+  HOSTRPC_ANNOTATE uint32_t rpc_open_port(Clear& cl, uint32_t* location_arg)
   {
     return rpc_open_port_impl<Clear, true>(cl, location_arg);
   }
@@ -156,7 +164,7 @@ struct server_impl : public SZT, public Counter
 
   // default location_arg to zero and discard returned hint
   template <typename Clear>
-  HOSTRPC_ANNOTATE uint32_t rpc_open_port(Clear cl)
+  HOSTRPC_ANNOTATE uint32_t rpc_open_port(Clear& cl)
   {
     uint32_t location_arg = 0;
     return rpc_open_port<Clear>(cl, &location_arg);
@@ -185,7 +193,7 @@ struct server_impl : public SZT, public Counter
   }
 
   template <typename Clear>
-  void rpc_port_wait_until_available(uint32_t port, Clear cl)
+  void rpc_port_wait_until_available(uint32_t port, Clear &cl)
   {
     rpc_port_wait_until_available_impl<Clear, true>(port, cl);
   }
@@ -200,7 +208,7 @@ struct server_impl : public SZT, public Counter
   }
 
   template <typename Operate, typename Clear>
-  HOSTRPC_ANNOTATE void rpc_port_operate(Operate op, Clear cl, uint32_t slot)
+  HOSTRPC_ANNOTATE void rpc_port_operate(Operate &op, Clear &cl, uint32_t slot)
   {
 #if HOSTRPC_HAVE_STDIO
     // printf("rpc port operate slot %u, L%u\n", slot,__LINE__);
@@ -210,7 +218,7 @@ struct server_impl : public SZT, public Counter
   }
 
   template <typename Operate>
-  HOSTRPC_ANNOTATE void rpc_port_operate(Operate op, uint32_t slot)
+  HOSTRPC_ANNOTATE void rpc_port_operate(Operate &op, uint32_t slot)
   {
 #if HOSTRPC_HAVE_STDIO
     // printf("rpc port operate slot %u, L%u\n", slot,__LINE__);
@@ -238,7 +246,7 @@ struct server_impl : public SZT, public Counter
 
   template <typename Operate>
   HOSTRPC_ANNOTATE void rpc_port_operate_given_available_nopublish(
-      Operate op, uint32_t slot)
+      Operate &op, uint32_t slot)
   {
     assert(slot != UINT32_MAX);
 #if HOSTRPC_HAVE_STDIO
@@ -250,7 +258,7 @@ struct server_impl : public SZT, public Counter
   }
 
   template <typename Operate>
-  HOSTRPC_ANNOTATE void rpc_port_operate_given_available(Operate op,
+  HOSTRPC_ANNOTATE void rpc_port_operate_given_available(Operate &op,
                                                          uint32_t slot)
   {
     rpc_port_operate_given_available_nopublish(op, slot);
@@ -279,7 +287,7 @@ struct server_impl : public SZT, public Counter
   }
 
   template <typename Clear, bool have_precondition>
-  HOSTRPC_ANNOTATE void garbage_collect(uint32_t slot, Clear cl)
+  HOSTRPC_ANNOTATE void garbage_collect(uint32_t slot, Clear &cl)
   {
 #if HOSTRPC_HAVE_STDIO
     // printf("gc slot %u\n", slot);
@@ -305,7 +313,7 @@ struct server_impl : public SZT, public Counter
   }
 
   template <typename Clear, bool have_precondition>
-  HOSTRPC_ANNOTATE uint32_t rpc_open_port_impl(Clear cl, uint32_t* location_arg)
+  HOSTRPC_ANNOTATE uint32_t rpc_open_port_impl(Clear &cl, uint32_t* location_arg)
   {
     // if an opened port needs garbage collection, does the gc here and
     // continues looking for a port with work to do
@@ -461,7 +469,7 @@ struct server_impl : public SZT, public Counter
   }
 
   template <typename Operate, typename Clear, bool have_precondition>
-  HOSTRPC_ANNOTATE bool rpc_handle_impl(Operate op, Clear cl,
+  HOSTRPC_ANNOTATE bool rpc_handle_impl(Operate &op, Clear &cl,
                                         uint32_t* location_arg) noexcept
   {
     const uint32_t port =
@@ -485,7 +493,7 @@ struct server_impl : public SZT, public Counter
   }
 
   template <typename Clear, bool have_precondition>
-  HOSTRPC_ANNOTATE bool rpc_handle_verify_slot_available(Clear cl,
+  HOSTRPC_ANNOTATE bool rpc_handle_verify_slot_available(Clear &cl,
                                                          uint32_t slot)
   {
     assert(slot != UINT32_MAX);

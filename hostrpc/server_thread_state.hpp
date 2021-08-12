@@ -2,6 +2,7 @@
 #define SERVER_THREAD_STATE_HPP_INCLUDED
 
 #include "detail/platform.hpp"
+#include "detail/cxx.hpp"
 
 namespace hostrpc
 {
@@ -13,12 +14,14 @@ struct server_thread_state
   HOSTRPC_ATOMIC(uint32_t) * control;
   Operate op;
   Clear cl;
-
-  server_thread_state() {}
+  
+  server_thread_state() = default;   
 
   server_thread_state(Server* server, HOSTRPC_ATOMIC(uint32_t) * control,
                       Operate op, Clear cl)
-      : server(server), control(control), op(op), cl(cl)
+      : server(server),
+        control(control),
+        op(hostrpc::cxx::move(op)), cl(hostrpc::cxx::move(cl))
   {
   }
 

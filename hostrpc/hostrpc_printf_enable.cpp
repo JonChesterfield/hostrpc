@@ -366,6 +366,8 @@ struct operate
 
 struct clear
 {
+  clear() = default;
+
   void operator()(uint32_t, hostrpc::page_t *page)
   {
     for (uint64_t c = 0; c < 64; c++)
@@ -399,7 +401,7 @@ struct global
 
     wrap_state(wrap_state &&) = delete;
     wrap_state &operator=(wrap_state &&) = delete;
-
+    
     wrap_state(hsa_agent_t kernel_agent)
     {
       hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);

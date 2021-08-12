@@ -2,6 +2,7 @@
 #define ALLOCATOR_HPP_INCLUDED
 
 #include "detail/platform_detect.hpp"
+#include "detail/cxx.hpp"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -329,33 +330,6 @@ struct openmp_shared : public interface<Align, openmp_shared<Align>>
   }
 };
 
-namespace cxx
-{
-// std::move reimplemented
-template <class T>
-struct remove_reference
-{
-  typedef T type;
-};
-template <class T>
-struct remove_reference<T &>
-{
-  typedef T type;
-};
-template <class T>
-struct remove_reference<T &&>
-{
-  typedef T type;
-};
-
-template <class T>
-inline constexpr typename remove_reference<T>::type &&move(T &&x)
-{
-  typedef typename remove_reference<T>::type U;
-  return static_cast<U &&>(x);
-}
-}  // namespace cxx
-
 template <typename AllocBufferT, typename AllocInboxOutboxT, typename AllocLocalT,
           typename AllocRemoteT>
 struct store_impl
@@ -382,13 +356,13 @@ struct store_impl
                               typename AllocLocal::raw &&local_staging,
                               typename AllocRemote::raw &&remote_lock,
                               typename AllocRemote::raw &&remote_staging)
-      : buffer(cxx::move(buffer)),
-        recv(cxx::move(recv)),
-        send(cxx::move(send)),
-        local_lock(cxx::move(local_lock)),
-        local_staging(cxx::move(local_staging)),
-        remote_lock(cxx::move(remote_lock)),
-        remote_staging(cxx::move(remote_staging))
+      : buffer(hostrpc::cxx::move(buffer)),
+        recv(hostrpc::cxx::move(recv)),
+        send(hostrpc::cxx::move(send)),
+        local_lock(hostrpc::cxx::move(local_lock)),
+        local_staging(hostrpc::cxx::move(local_staging)),
+        remote_lock(hostrpc::cxx::move(remote_lock)),
+        remote_staging(hostrpc::cxx::move(remote_staging))
   {
   }
 

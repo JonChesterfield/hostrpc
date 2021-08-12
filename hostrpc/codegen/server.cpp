@@ -14,6 +14,10 @@ struct operate_direct
   {
     op_target(page);
   }
+
+  operate_direct(const operate_direct&) = delete;
+  operate_direct(operate_direct&&) = delete;
+
 };
 
 struct clear_direct
@@ -22,6 +26,8 @@ struct clear_direct
   {
     cl_target(page);
   }
+  clear_direct(const clear_direct&) = delete;
+  clear_direct(clear_direct&&) = delete;
 };
 }  // namespace hostrpc
 
