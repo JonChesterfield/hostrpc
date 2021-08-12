@@ -49,8 +49,53 @@ struct use
 #pragma omp end declare target
 #endif
 
-// Implemented out of line for easier embedding in paper.
-#include "openmp_hostcall_amdgpu.cpp"
+#if HOSTRPC_AMDGCN
+#pragma omp declare target
+
+// overrides weak functions in target_impl.hip
+extern "C"
+{
+  void *__kmpc_impl_malloc(size_t);
+  void __kmpc_impl_free(void *);
+}
+
+using client_type = hostrpc::x64_gcn_type<hostrpc::size_runtime>::client_type;
+static client_type *get_client();
+
+void *__kmpc_impl_malloc(size_t x)
+{
+  uint64_t data[8] = {0};
+  data[0] = opcodes_malloc;
+  data[1] = x;
+  fill f(&data[0]);
+  use u(&data[0]);
+  client_type *c = get_client();
+  bool success = false;
+  while (!success)
+    {
+      success = c->rpc_invoke(f, u);
+    }
+  void *res;
+  __builtin_memcpy(&res, &data[0], 8);
+  return res;
+}
+
+void __kmpc_impl_free(void *x)
+{
+  uint64_t data[8] = {0};
+  data[0] = opcodes_free;
+  __builtin_memcpy(&data[1], &x, 8);
+  fill f(&data[0]);
+  client_type *c = get_client();
+  bool success = false;
+  while (!success)
+    {
+      success = c->rpc_invoke(f);  // async
+    }
+}
+
+#pragma omp end declare target
+#endif
 
 #if HOSTRPC_AMDGCN
 #pragma omp declare target
@@ -97,7 +142,64 @@ extern "C"
   hsa_status_t hostrpc_terminate();
 }
 
-#include "openmp_hostcall_host.cpp"
+struct operate
+{
+  hsa_region_t coarse_region;
+  operate(hsa_region_t r) : coarse_region(r) {}
+  void op(hostrpc::cacheline_t *line);
+
+  void operator()(hostrpc::page_t *page)
+  {
+    for (unsigned c = 0; c < 64; c++) op(&page->cacheline[c]);
+  }
+};
+
+struct clear
+{
+  void operator()(hostrpc::page_t *page)
+  {
+    for (unsigned c = 0; c < 64; c++)
+      page->cacheline[c].element[0] = opcodes_nop;
+  }
+};
+
+// in a loop on a pthread,
+// server->rpc_handle<operate, clear>(op, clear);
+
+void operate::op(hostrpc::cacheline_t *line)
+{
+  uint64_t op = line->element[0];
+  switch (op)
+    {
+      case opcodes_nop:
+        {
+          break;
+        }
+      case opcodes_malloc:
+        {
+          uint64_t size;
+          memcpy(&size, &line->element[1], 8);
+
+          void *res;
+          hsa_status_t r = hsa_memory_allocate(coarse_region, size, &res);
+          if (r != HSA_STATUS_SUCCESS)
+            {
+              res = nullptr;
+            }
+
+          memcpy(&line->element[0], &res, 8);
+          break;
+        }
+      case opcodes_free:
+        {
+          void *ptr;
+          memcpy(&ptr, &line->element[1], 8);
+          hsa_memory_free(ptr);
+          break;
+        }
+    }
+  return;
+}
 
 namespace {
 struct storage_t
