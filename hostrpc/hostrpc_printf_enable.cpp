@@ -356,11 +356,12 @@ struct operate
       }
   }
 
-  void operator()(hostrpc::page_t *page)
+  void operator()(uint32_t slot, hostrpc::page_t *page)
   {
     const bool verbose = false;
 
-    uint32_t slot = page - start_local_buffer;
+    uint32_t slot2 = page - start_local_buffer;
+    assert(slot == slot2);
     if (verbose) fprintf(stderr, "Invoked operate on slot %u\n", slot);
 
     std::array<print_wip, 64> &print_slot_buffer = (*print_buffer)[slot];
@@ -374,7 +375,7 @@ struct operate
 
 struct clear
 {
-  void operator()(hostrpc::page_t *page)
+  void operator()(uint32_t, hostrpc::page_t *page)
   {
     for (uint64_t c = 0; c < 64; c++)
       {
@@ -526,10 +527,10 @@ int hostrpc_print_enable_on_hsa_agent(hsa_executable_t ex,
 
   hostrpc::x64_gcn_type<SZ> *p = global_instance.spawn(kernel_agent);
 
-  for (uint64_t i = 0; i < p->server.size(); i++)
+  for (uint32_t i = 0; i < p->server.size(); i++)
     {
       hostrpc::page_t *page = &p->server.shared_buffer[i];
-      clear()(page);
+      clear()(i, page);
     }
 
   {

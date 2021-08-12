@@ -15,7 +15,7 @@ struct send_by_copy
   HOSTRPC_ANNOTATE send_by_copy(T *i) : i(i) {}
   T *i;
 
-  HOSTRPC_ANNOTATE void operator()(hostrpc::page_t *page)
+  HOSTRPC_ANNOTATE void operator()(uint32_t, hostrpc::page_t *page)
   {
     unsigned id = platform::get_lane_id();
     hostrpc::cacheline_t *dline = &page->cacheline[id];
@@ -30,7 +30,7 @@ struct recv_by_copy
   HOSTRPC_ANNOTATE recv_by_copy(T *i) : i(i) {}
   T *i;
 
-  HOSTRPC_ANNOTATE void operator()(hostrpc::page_t *page)
+  HOSTRPC_ANNOTATE void operator()(uint32_t, hostrpc::page_t *page)
   {
     unsigned id = platform::get_lane_id();
     hostrpc::cacheline_t *dline = &page->cacheline[id];

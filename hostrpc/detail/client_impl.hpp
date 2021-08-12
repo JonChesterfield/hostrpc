@@ -14,12 +14,12 @@ namespace hostrpc
 {
 struct fill_nop
 {
-  HOSTRPC_ANNOTATE void operator()(page_t*) {}
+  HOSTRPC_ANNOTATE void operator()(uint32_t, page_t*) {}
 };
 
 struct use_nop
 {
-  HOSTRPC_ANNOTATE void operator()(page_t*) {}
+  HOSTRPC_ANNOTATE void operator()(uint32_t, page_t*) {}
 };
 
 enum class client_state : uint8_t
@@ -481,7 +481,7 @@ struct client_impl : public SZT, public Counter
 
     // wave_populate
     // Fill may have no precondition, in which case this doesn't need to run
-    fill(&shared_buffer[slot]);
+    fill(slot, &shared_buffer[slot]);
 
     // wave_publish work
     {
@@ -538,7 +538,7 @@ struct client_impl : public SZT, public Counter
                                                   uint32_t slot) noexcept
   {
     // call the continuation
-    use(&shared_buffer[slot]);
+    use(slot, &shared_buffer[slot]);
     platform::fence_release();
     // mark the work as no longer in use
     // todo: is it better to leave this for the GC?

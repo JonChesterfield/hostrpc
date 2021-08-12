@@ -22,7 +22,7 @@ struct fill
 {
   uint64_t *d;
   fill(uint64_t *d) : d(d) {}
-  void operator()(hostrpc::page_t *page)
+  void operator()(uint32_t, hostrpc::page_t *page)
   {
     hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
     for (unsigned i = 0; i < 8; i++)
@@ -36,7 +36,7 @@ struct use
 {
   uint64_t *d;
   use(uint64_t *d) : d(d) {}
-  void operator()(hostrpc::page_t *page)
+  void operator()(uint32_t, hostrpc::page_t *page)
   {
     hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
     for (unsigned i = 0; i < 8; i++)
@@ -136,7 +136,7 @@ struct operate
   operate(hsa_region_t r) : coarse_region(r) {}
   void op(hostrpc::cacheline_t *line);
 
-  void operator()(hostrpc::page_t *page)
+  void operator()(uint32_t, hostrpc::page_t *page)
   {
     for (unsigned c = 0; c < 64; c++) op(&page->cacheline[c]);
   }
@@ -144,7 +144,7 @@ struct operate
 
 struct clear
 {
-  void operator()(hostrpc::page_t *page)
+  void operator()(uint32_t, hostrpc::page_t *page)
   {
     for (unsigned c = 0; c < 64; c++)
       page->cacheline[c].element[0] = opcodes_nop;

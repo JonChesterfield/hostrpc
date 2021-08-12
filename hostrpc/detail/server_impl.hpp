@@ -7,14 +7,6 @@
 
 namespace hostrpc
 {
-struct operate_nop
-{
-  HOSTRPC_ANNOTATE static void call(page_t*, void*) {}
-};
-struct clear_nop
-{
-  HOSTRPC_ANNOTATE static void call(page_t*, void*) {}
-};
 
 enum class server_state : uint8_t
 {
@@ -125,7 +117,7 @@ struct server_impl : public SZT, public Counter
   {
     struct Clear
     {
-      HOSTRPC_ANNOTATE void operator()(hostrpc::page_t*){};
+      HOSTRPC_ANNOTATE void operator()(uint32_t, hostrpc::page_t*){};
     };
     Clear cl;
     return rpc_handle_impl<Operate, Clear, false>(op, cl, location);
@@ -156,7 +148,7 @@ struct server_impl : public SZT, public Counter
   {
     struct Clear
     {
-      HOSTRPC_ANNOTATE void operator()(hostrpc::page_t*){};
+      HOSTRPC_ANNOTATE void operator()(uint32_t, hostrpc::page_t*){};
     };
     Clear cl;
     return rpc_open_port_impl<Clear, false>(cl, location_arg);
@@ -201,7 +193,7 @@ struct server_impl : public SZT, public Counter
   {
     struct Clear
     {
-      HOSTRPC_ANNOTATE void operator()(hostrpc::page_t*){};
+      HOSTRPC_ANNOTATE void operator()(uint32_t, hostrpc::page_t*){};
     };
     Clear cl;
     rpc_port_wait_until_available_impl<Clear, false>(port, cl);
@@ -254,7 +246,7 @@ struct server_impl : public SZT, public Counter
 #endif
 
     // make the calls
-    op(&shared_buffer[slot]);
+    op(slot, &shared_buffer[slot]);
   }
 
   template <typename Operate>
@@ -295,7 +287,7 @@ struct server_impl : public SZT, public Counter
     const uint32_t size = this->size();
     if (have_precondition)
       {
-        cl(&shared_buffer[slot]);
+        cl(slot, &shared_buffer[slot]);
       }
 
     platform::fence_release();

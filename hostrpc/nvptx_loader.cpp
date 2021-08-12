@@ -225,14 +225,17 @@ int init(void *image)
 
     struct operate_test
     {
-      void operator()(hostrpc::page_t *)
+      void operator()(uint32_t, hostrpc::page_t *)
       {
         fprintf(stderr, "Invoked operate\n");
       }
     };
     struct clear_test
     {
-      void operator()(hostrpc::page_t *) { fprintf(stderr, "Invoked clear\n"); }
+      void operator()(uint32_t, hostrpc::page_t *)
+      {
+        fprintf(stderr, "Invoked clear\n");
+      }
     };
 
     std::thread serv([&]() {

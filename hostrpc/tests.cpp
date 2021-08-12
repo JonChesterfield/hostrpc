@@ -61,17 +61,20 @@ TEST_CASE("set up single word system")
   {
     fill(_Atomic(uint64_t) * s) : state(s) {}
     _Atomic(uint64_t) * state;
-    void operator()(page_t *p) { p->cacheline[0].element[0] = *state; }
+    void operator()(uint32_t, page_t *p)
+    {
+      p->cacheline[0].element[0] = *state;
+    }
   };
 
   struct use
   {
-    void operator()(page_t *) {}
+    void operator()(uint32_t, page_t *) {}
   };
 
   struct operate
   {
-    void operator()(page_t *p)
+    void operator()(uint32_t, page_t *p)
     {
       uint64_t r = p->cacheline[0].element[0];
       // printf("Server received %lu, forwarding as %lu\n", r, 2 * r);
@@ -81,7 +84,7 @@ TEST_CASE("set up single word system")
 
   struct clear
   {
-    void operator()(page_t *) {}
+    void operator()(uint32_t, page_t *) {}
   };
 
   using SZ = hostrpc::size_compiletime<N>;

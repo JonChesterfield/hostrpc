@@ -138,7 +138,7 @@ extern "C" void __device_persistent_kernel_call(HOSTRPC_ATOMIC(uint32_t) *
   uint32_t location_arg = 0;
   struct operate
   {
-    void operator()(hostrpc::page_t *page)
+    void operator()(uint32_t, hostrpc::page_t *page)
     {
       // Call through to a specific handler, one cache line per lane
       hostrpc::cacheline_t *l = &page->cacheline[platform::get_lane_id()];
@@ -148,7 +148,7 @@ extern "C" void __device_persistent_kernel_call(HOSTRPC_ATOMIC(uint32_t) *
 
   struct clear
   {
-    void operator()(hostrpc::page_t *page)
+    void operator()(uint32_t, hostrpc::page_t *page)
     {
       hostrpc::cacheline_t *l = &page->cacheline[platform::get_lane_id()];
       for (unsigned i = 0; i < 8; i++)
@@ -311,7 +311,7 @@ TEST_CASE("persistent_kernel")
     {
       hostrpc::page_t *d;
       fill(hostrpc::page_t *d) : d(d) {}
-      void operator()(hostrpc::page_t *page)
+      void operator()(uint32_t, hostrpc::page_t *page)
       {
         __builtin_memcpy(page, d, sizeof(hostrpc::page_t));
       };
@@ -321,7 +321,7 @@ TEST_CASE("persistent_kernel")
     {
       hostrpc::page_t *d;
       use(hostrpc::page_t *d) : d(d) {}
-      void operator()(hostrpc::page_t *page)
+      void operator()(uint32_t, hostrpc::page_t *page)
       {
         __builtin_memcpy(d, page, sizeof(hostrpc::page_t));
       };

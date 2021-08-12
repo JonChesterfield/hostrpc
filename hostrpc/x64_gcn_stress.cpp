@@ -54,7 +54,7 @@ struct fill
   fill(hostrpc::page_t *d) : d(d) {}
   hostrpc::page_t *d;
 
-  void operator()(hostrpc::page_t *page)
+  void operator()(uint32_t, hostrpc::page_t *page)
   {
 #if defined(__AMDGCN__)
     copy_page(page, d);
@@ -69,7 +69,7 @@ struct use
   use(hostrpc::page_t *d) : d(d) {}
   hostrpc::page_t *d;
 
-  void operator()(hostrpc::page_t *page)
+  void operator()(uint32_t, hostrpc::page_t *page)
   {
 #if defined(__AMDGCN__)
     copy_page(d, page);
@@ -335,17 +335,18 @@ TEST_CASE("x64_gcn_stress")
     // Reasonable chance we also want to initialize the data before the first
     // call
 
-    auto page_to_index = [&](hostrpc::page_t *page) -> int64_t {
+    auto page_to_index = [&](uint32_t slot, hostrpc::page_t *page) -> int64_t {
       hostrpc::page_t *base = p.client.shared_buffer;
 
       intptr_t d = page - base;
       // fprintf(stderr,"base %lx, page %lx, diff %ld\n", (uint64_t)base,
       // (uint64_t)page, d);
+      assert(d == slot);
       return d;
     };
 
     auto str = [](bool hit) -> const char * { return hit ? "FAIL" : "pass"; };
-    auto op_func = [&](hostrpc::page_t *page) {
+    auto op_func = [&](uint32_t slot, hostrpc::page_t *page) {
 #if 1
       // printf("gcn stress hit server function\n");
       uint64_t f[3] = {
@@ -362,7 +363,7 @@ TEST_CASE("x64_gcn_stress")
       if (hit)
         {
           fprintf(stderr, "Operate (%s)(%ld): first values %lu/%lu/%lu\n",
-                  str(hit), page_to_index(page), f[0], f[1], f[2]);
+                  str(hit), page_to_index(slot, page), f[0], f[1], f[2]);
         }
 
 #endif
@@ -382,7 +383,7 @@ TEST_CASE("x64_gcn_stress")
         }
     };
 
-    auto cl_func = [&](hostrpc::page_t *page) {
+    auto cl_func = [&](uint32_t slot, hostrpc::page_t *page) {
 #if 1
       //   printf("gcn stress hit clear function\n");
       uint64_t f[3] = {
@@ -399,7 +400,7 @@ TEST_CASE("x64_gcn_stress")
       if (hit)
         {
           fprintf(stderr, "Clear (%s)(%ld): first values %lu/%lu/%lu\n",
-                  str(hit), page_to_index(page), f[0], f[1], f[2]);
+                  str(hit), page_to_index(slot, page), f[0], f[1], f[2]);
         }
 
 #endif

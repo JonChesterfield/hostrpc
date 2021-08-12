@@ -63,7 +63,7 @@ type_under_test p(100);
 
 uint32_t stress_pool_server::run(uint32_t server_location)
 {
-  auto op_func = [](hostrpc::page_t *page) {
+  auto op_func = [](uint32_t, hostrpc::page_t *page) {
     for (unsigned c = 0; c < 64; c++)
       {
         hostrpc::cacheline_t &line = page->cacheline[c];
@@ -74,7 +74,7 @@ uint32_t stress_pool_server::run(uint32_t server_location)
       }
   };
 
-  auto cl_func = [](hostrpc::page_t *page) {
+  auto cl_func = [](uint32_t, hostrpc::page_t *page) {
     for (unsigned c = 0; c < 64; c++)
       {
         hostrpc::cacheline_t &line = page->cacheline[c];
@@ -117,10 +117,10 @@ uint32_t stress_pool_client::run(uint32_t state)
           &client_to_run[id], 1);
     }
 
-  auto fill = [&](hostrpc::page_t *page) {
+  auto fill = [&](uint32_t, hostrpc::page_t *page) {
     __builtin_memcpy(page, &scratch, sizeof(hostrpc::page_t));
   };
-  auto use = [&](hostrpc::page_t *page) {
+  auto use = [&](uint32_t, hostrpc::page_t *page) {
     __builtin_memcpy(&scratch, page, sizeof(hostrpc::page_t));
   };
 
