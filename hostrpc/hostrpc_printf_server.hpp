@@ -1,16 +1,10 @@
-// This includes platform which contains a stub for printf
-#include "x64_gcn_type.hpp"
-#undef printf
+#ifndef HOSTRPC_PRINTF_SERVER_HPP_INCLUDED
+#define HOSTRPC_PRINTF_SERVER_HPP_INCLUDED
 
 #include "hostrpc_printf.h"
 #include "hostrpc_printf_enable.h"
 
-#include "cxa_atexit.hpp"
-
 #if (HOSTRPC_AMDGCN)
-
-__attribute__((visibility("default")))
-hostrpc::x64_gcn_type<hostrpc::size_runtime>::client_type hostrpc_x64_gcn_debug_client[1];
 
 namespace
 {
@@ -45,9 +39,11 @@ struct recv_by_copy
 };
 }  // namespace
 
-__PRINTF_API_EXTERNAL uint32_t __printf_print_start(const char *fmt)
+
+template <typename T>
+__PRINTF_API_INTERNAL uint32_t __printf_print_start(T * client, const char *fmt)
 {
-  uint32_t port = hostrpc_x64_gcn_debug_client[0].rpc_open_port();
+    uint32_t port = client->rpc_open_port();
   if (port == UINT32_MAX)
     {
       // failure
@@ -57,7 +53,7 @@ __PRINTF_API_EXTERNAL uint32_t __printf_print_start(const char *fmt)
   {
     __printf_print_start_t inst;
     send_by_copy<__printf_print_start_t> f(&inst);
-    hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
+    client->rpc_port_send(port, f);
   }
 
   __printf_pass_element_cstr(port, fmt);
@@ -65,58 +61,43 @@ __PRINTF_API_EXTERNAL uint32_t __printf_print_start(const char *fmt)
   return port;
 }
 
-__PRINTF_API_EXTERNAL int __printf_print_end(uint32_t port)
+template <typename T>
+__PRINTF_API_INTERNAL int __printf_print_end(T * client, uint32_t port)
 {
   {
     __printf_print_end_t inst;
     send_by_copy<__printf_print_end_t> f(&inst);
-    hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
+    client->rpc_port_send(port, f);
   }
 
-  hostrpc_x64_gcn_debug_client[0].rpc_port_wait_for_result(port);
+  client->rpc_port_wait_for_result(port);
 
-  hostrpc_x64_gcn_debug_client[0].rpc_close_port(port);
+  client->rpc_close_port(port);
   return 0;  // should be return code from printf
 }
 
-// These may want to be their own functions, for now delegate to u64
 
-__PRINTF_API_EXTERNAL void __printf_pass_element_int32(uint32_t port, int32_t v)
-{
-  int64_t w = v;
-  return __printf_pass_element_int64(port, w);
-}
 
-__PRINTF_API_EXTERNAL void __printf_pass_element_uint32(uint32_t port,
-                                                        uint32_t v)
-{
-  uint64_t w = v;
-  return __printf_pass_element_uint64(port, w);
-}
-
-__PRINTF_API_EXTERNAL void __printf_pass_element_int64(uint32_t port, int64_t v)
-{
-  uint64_t c;
-  __builtin_memcpy(&c, &v, 8);
-  return __printf_pass_element_uint64(port, c);
-}
-
-__PRINTF_API_EXTERNAL void __printf_pass_element_uint64(uint32_t port,
+template <typename T>
+__PRINTF_API_INTERNAL void __printf_pass_element_uint64(T* client, uint32_t port,
                                                         uint64_t v)
 {
   __printf_pass_element_scalar_t inst(func___printf_pass_element_uint64, v);
   send_by_copy<__printf_pass_element_scalar_t> f(&inst);
-  hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
+  client->rpc_port_send(port, f);
 }
 
-__PRINTF_API_EXTERNAL void __printf_pass_element_double(uint32_t port, double v)
+template <typename T>
+__PRINTF_API_INTERNAL void __printf_pass_element_double(T* client,uint32_t port, double v)
 {
   __printf_pass_element_scalar_t inst(func___printf_pass_element_double, v);
   send_by_copy<__printf_pass_element_scalar_t> f(&inst);
-  hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
+  client->rpc_port_send(port, f);
 }
 
-__PRINTF_API_EXTERNAL void __printf_pass_element_void(uint32_t port,
+
+template <typename T>
+__PRINTF_API_INTERNAL void __printf_pass_element_void(T* client, uint32_t port,
                                                       const void *v)
 {
   _Static_assert(sizeof(const void *) == 8, "");
@@ -124,10 +105,12 @@ __PRINTF_API_EXTERNAL void __printf_pass_element_void(uint32_t port,
   __builtin_memcpy(&c, &v, 8);
   __printf_pass_element_scalar_t inst(func___printf_pass_element_uint64, c);
   send_by_copy<__printf_pass_element_scalar_t> f(&inst);
-  hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
+  client->rpc_port_send(port, f);
 }
 
-__PRINTF_API_EXTERNAL void __printf_pass_element_cstr(uint32_t port,
+
+template <typename T>
+__PRINTF_API_INTERNAL void __printf_pass_element_cstr(T* client, uint32_t port,
                                                       const char *str)
 {
   uint64_t L = __printf_strlen(str);
@@ -142,7 +125,7 @@ __PRINTF_API_EXTERNAL void __printf_pass_element_cstr(uint32_t port,
     {
       __printf_pass_element_cstr_t inst(&str[c * w], w);
       send_by_copy<__printf_pass_element_cstr_t> f(&inst);
-      hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
+      client->rpc_port_send(port, f);
     }
 
   // remainder < width, possibly zero. sending even when zero ensures null
@@ -150,22 +133,24 @@ __PRINTF_API_EXTERNAL void __printf_pass_element_cstr(uint32_t port,
   {
     __printf_pass_element_cstr_t inst(&str[chunks * w], remainder);
     send_by_copy<__printf_pass_element_cstr_t> f(&inst);
-    hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
+    client->rpc_port_send(port, f);
   }
 }
 
-__PRINTF_API_EXTERNAL void __printf_pass_element_write_int64(uint32_t port,
+template <typename T>
+__PRINTF_API_INTERNAL void __printf_pass_element_write_int64(T * client, uint32_t port,
                                                              int64_t *x)
 {
   __printf_pass_element_write_t inst;
   inst.payload = 42;
   send_by_copy<__printf_pass_element_write_t> f(&inst);
-  hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
+  client->rpc_port_send(port, f);
 
   // need to recv to get the result
   recv_by_copy<__printf_pass_element_write_t> r(&inst);
-  hostrpc_x64_gcn_debug_client[0].rpc_port_recv(port, r);
+  client->rpc_port_recv(port, r);
   *x = inst.payload;
 }
 
+#endif
 #endif

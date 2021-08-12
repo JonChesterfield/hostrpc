@@ -166,11 +166,6 @@ fi
 $CLANG $AMDGPU -O2 -emit-llvm -S conv.c -o obj/codegen_conv.ll
 $CLANG $AMDGPU -O2 -S conv.c -o obj/codegen_conv.s
 
-if (($have_amdgcn)); then
-    $CXX_GCN hostrpc_printf.cpp -O3 -c -o obj/hostrpc_printf.gcn.bc
-fi
-
-$CXX_X64 -I$HSAINC hostrpc_printf.cpp -O3 -c -o obj/hostrpc_printf.x64.bc
 $CXX_X64 -I$HSAINC incprintf.cpp -O3 -c -o obj/incprintf.x64.bc
 
 # host support library
@@ -184,7 +179,7 @@ if (($have_amdgcn)); then
 $CXX_X64 ../impl/msgpack.cpp -c -o obj/msgpack.x64.bc
 $CXX_X64 find_metadata.cpp -c -o obj/find_metadata.x64.bc
 $CXX_X64 -I$HSAINC allocator_hsa.cpp -c -o obj/allocator_hsa.x64.bc
-$LINK  obj/host_support.x64.bc obj/msgpack.x64.bc obj/find_metadata.x64.bc obj/allocator_hsa.x64.bc obj/hostrpc_printf.x64.bc obj/incprintf.x64.bc -o obj/hsa_support.x64.bc
+$LINK  obj/host_support.x64.bc obj/msgpack.x64.bc obj/find_metadata.x64.bc obj/allocator_hsa.x64.bc  obj/incprintf.x64.bc -o obj/hsa_support.x64.bc
 
 $CXX_X64 dump_kernels.cpp -I../impl -c -o obj/dump_kernels.x64.bc
 $CXX_X64_LD obj/msgpack.x64.bc obj/dump_kernels.x64.bc -lelf -o dump_kernels
@@ -205,6 +200,12 @@ $CXX_X64 openmp_plugins.cpp -c -o obj/openmp_plugins.x64.bc
 $LINK obj/allocator_openmp.x64.bc obj/openmp_plugins.x64.bc -o obj/openmp_support.x64.bc
 
 # currently standalone
+
+if (($have_amdgcn)); then
+    $CXX_GCN hostrpc_printf_enable.cpp -O3 -c -o obj/hostrpc_printf_enable.gcn.bc
+fi
+
+
 $CXX_X64 hostrpc_printf_enable.cpp -I$HSAINC -O3 -c -o obj/hostrpc_printf_enable.x64.bc
 
 if (($have_amdgcn)); then
@@ -215,7 +216,7 @@ if (($have_amdgcn)); then
     $CLANGXX $XOPENCL pool_example_amdgpu.cpp -O3 -emit-llvm -nogpulib -target amdgcn-amd-amdhsa -mcpu=$GCNGFX -c -o pool_example_amdgpu.ocl.gcn.bc
     $CXX_GCN pool_example_amdgpu.cpp -O3 -c -o pool_example_amdgpu.cpp.gcn.bc
 
-    $LINK threads.gcn.bc pool_example_amdgpu.ocl.gcn.bc pool_example_amdgpu.cpp.gcn.bc obj/hostrpc_printf.gcn.bc $EXTRABC | $OPT -O2 -o obj/merged_pool_example_amdgpu.gcn.bc 
+    $LINK threads.gcn.bc pool_example_amdgpu.ocl.gcn.bc pool_example_amdgpu.cpp.gcn.bc obj/hostrpc_printf_enable.gcn.bc $EXTRABC | $OPT -O2 -o obj/merged_pool_example_amdgpu.gcn.bc 
     $DIS obj/merged_pool_example_amdgpu.gcn.bc
 
     $CXX_GCN_LD obj/merged_pool_example_amdgpu.gcn.bc -o pool_example_amdgpu.gcn.so
@@ -235,7 +236,7 @@ $CXX_X64_LD obj/pool_example_host.x64.bc $LDFLAGS -o pool_example_host.x64.exe
 if (($have_amdgcn)); then
 $CXX_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.code.bc
 $CXXCL_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.kern.bc
-$LINK obj/x64_gcn_debug.gcn.code.bc obj/x64_gcn_debug.gcn.kern.bc obj/hostrpc_printf.gcn.bc -o obj/x64_gcn_debug.gcn.bc
+$LINK obj/x64_gcn_debug.gcn.code.bc obj/x64_gcn_debug.gcn.kern.bc obj/hostrpc_printf_enable.gcn.bc -o obj/x64_gcn_debug.gcn.bc
 $CXX_GCN_LD obj/x64_gcn_debug.gcn.bc -o x64_gcn_debug.gcn.so
 
 $CXX_X64 -I$HSAINC x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.x64.bc
@@ -296,21 +297,21 @@ fi
 
 if (($have_amdgcn)); then
 $CLANG -std=c11 $COMMONFLAGS $GCNFLAGS test_example.c -c -o obj/test_example.gcn.bc
-$LINK obj/test_example.gcn.bc obj/hostrpc_printf.gcn.bc amdgcn_loader_device.gcn.bc -o test_example.gcn.bc
+$LINK obj/test_example.gcn.bc obj/hostrpc_printf_enable.gcn.bc amdgcn_loader_device.gcn.bc -o test_example.gcn.bc
 $CXX_GCN_LD test_example.gcn.bc -o test_example.gcn
 fi
 
 $CLANG -std=c11 -I$HSAINC $COMMONFLAGS $X64FLAGS printf_test.c -c -o obj/printf_test.x64.bc
 if (($have_amdgcn)); then
     $CLANG -std=c11 $COMMONFLAGS $GCNFLAGS printf_test.c -c -o obj/printf_test.gcn.bc
-    $LINK obj/printf_test.gcn.bc obj/hostrpc_printf.gcn.bc amdgcn_loader_device.gcn.bc -o printf_test.gcn.bc
+    $LINK obj/printf_test.gcn.bc obj/hostrpc_printf_enable.gcn.bc amdgcn_loader_device.gcn.bc -o printf_test.gcn.bc
     $CXX_GCN_LD printf_test.gcn.bc -o printf_test.gcn
 fi
 
 if (($have_amdgcn)); then
     $CXX_GCN devicertl_pteam_mem_barrier.cpp -c -o obj/devicertl_pteam_mem_barrier.gcn.bc
     # todo: refer to lib from RDIR, once that lib has the function non-static    
-    $LINK obj/devicertl_pteam_mem_barrier.gcn.bc obj/hostrpc_printf.gcn.bc amdgcn_loader_device.gcn.bc -o devicertl_pteam_mem_barrier.gcn.bc $DEVICERTL
+    $LINK obj/devicertl_pteam_mem_barrier.gcn.bc obj/hostrpc_printf_enable.gcn.bc amdgcn_loader_device.gcn.bc -o devicertl_pteam_mem_barrier.gcn.bc $DEVICERTL
     $CXX_GCN_LD devicertl_pteam_mem_barrier.gcn.bc -o devicertl_pteam_mem_barrier.gcn
     set +e
     echo "This is failing at present, HSA doesn't think the binary is valid"
@@ -479,7 +480,7 @@ fi
 # Build the device library that calls into main()
 
 if (($have_amdgcn)); then
-$LINK amdgcn_main.gcn.bc amdgcn_loader_device.gcn.bc  hostcall.gcn.bc obj/hostrpc_printf.gcn.bc -o executable_device.gcn.bc
+$LINK amdgcn_main.gcn.bc amdgcn_loader_device.gcn.bc  hostcall.gcn.bc obj/hostrpc_printf_enable.gcn.bc -o executable_device.gcn.bc
 
 # Link the device image
 $CXX_GCN_LD executable_device.gcn.bc -o a.gcn.out

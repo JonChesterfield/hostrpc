@@ -46,12 +46,6 @@ struct use
   }
 };
 
-#pragma omp end declare target
-#endif
-
-#if HOSTRPC_AMDGCN
-#pragma omp declare target
-
 // overrides weak functions in target_impl.hip
 extern "C"
 {
@@ -93,12 +87,6 @@ void __kmpc_impl_free(void *x)
       success = c->rpc_invoke(f);  // async
     }
 }
-
-#pragma omp end declare target
-#endif
-
-#if HOSTRPC_AMDGCN
-#pragma omp declare target
 
 static client_type *get_client()
 {

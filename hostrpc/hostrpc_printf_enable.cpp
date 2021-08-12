@@ -1,7 +1,82 @@
 #include "hostrpc_printf_enable.h"
+#include "hostrpc_printf.h"
 
 #include "x64_gcn_type.hpp"
 #undef printf
+
+#include "cxa_atexit.hpp"
+
+#include "hostrpc_printf_server.hpp"
+
+#if (HOSTRPC_AMDGCN)
+
+__attribute__((visibility("default")))
+hostrpc::x64_gcn_type<hostrpc::size_runtime>::client_type
+    hostrpc_x64_gcn_debug_client[1];
+
+__PRINTF_API_EXTERNAL uint32_t __printf_print_start(const char *fmt)
+{
+  return __printf_print_start(&hostrpc_x64_gcn_debug_client[0], fmt);
+}
+
+__PRINTF_API_EXTERNAL int __printf_print_end(uint32_t port)
+{
+  return __printf_print_end(&hostrpc_x64_gcn_debug_client[0], port);
+}
+
+// These may want to be their own functions, for now delegate to u64
+__PRINTF_API_EXTERNAL void __printf_pass_element_int32(uint32_t port, int32_t v)
+{
+  int64_t w = v;
+  return __printf_pass_element_int64(port, w);
+}
+
+__PRINTF_API_EXTERNAL void __printf_pass_element_uint32(uint32_t port,
+                                                        uint32_t v)
+{
+  uint64_t w = v;
+  return __printf_pass_element_uint64(port, w);
+}
+
+__PRINTF_API_EXTERNAL void __printf_pass_element_int64(uint32_t port, int64_t v)
+{
+  uint64_t c;
+  __builtin_memcpy(&c, &v, 8);
+  return __printf_pass_element_uint64(port, c);
+}
+
+__PRINTF_API_EXTERNAL void __printf_pass_element_uint64(uint32_t port,
+                                                        uint64_t v)
+{
+  return __printf_pass_element_uint64(&hostrpc_x64_gcn_debug_client[0], port,
+                                      v);
+}
+
+__PRINTF_API_EXTERNAL void __printf_pass_element_double(uint32_t port, double v)
+{
+  return __printf_pass_element_double(&hostrpc_x64_gcn_debug_client[0], port,
+                                      v);
+}
+
+__PRINTF_API_EXTERNAL void __printf_pass_element_void(uint32_t port,
+                                                      const void *v)
+{
+  __printf_pass_element_void(&hostrpc_x64_gcn_debug_client[0], port, v);
+}
+
+__PRINTF_API_EXTERNAL void __printf_pass_element_cstr(uint32_t port,
+                                                      const char *str)
+{
+  __printf_pass_element_cstr(&hostrpc_x64_gcn_debug_client[0], port, str);
+}
+
+__PRINTF_API_EXTERNAL void __printf_pass_element_write_int64(uint32_t port,
+                                                             int64_t *x)
+{
+  __printf_pass_element_write_int64(&hostrpc_x64_gcn_debug_client[0], port, x);
+}
+
+#endif
 
 #if (HOSTRPC_HOST)
 
@@ -94,10 +169,9 @@ template <typename ServerType>
 struct operate
 {
   print_buffer_t *print_buffer = nullptr;
-  ServerType *ThisServer;
   hostrpc::page_t *start_local_buffer = nullptr;
   operate(print_buffer_t *print_buffer, ServerType *ThisServer)
-      : print_buffer(print_buffer), ThisServer(ThisServer)
+      : print_buffer(print_buffer)
   {
     start_local_buffer = ThisServer->shared_buffer;
   }
