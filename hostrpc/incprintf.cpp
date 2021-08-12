@@ -119,7 +119,7 @@ int bytes_for_arg(bool verbose, char *fmt, size_t next_start, size_t next_end,
 }  // namespace
 
 template <typename T>
-int incr::piecewise_pass_element_T(T value)
+int incr::__printf_pass_element_T(T value)
 {
   char *fmt = format.data();
   size_t len = format.size();
@@ -197,32 +197,32 @@ std::vector<char> incr::finalize()
   return output;
 }
 
-static int piecewise_pass_element_uint64(uint64_t value, incr &glob)
+static int __printf_pass_element_uint64(uint64_t value, incr &glob)
 {
-  return glob.piecewise_pass_element_T(value);
+  return glob.__printf_pass_element_T(value);
 }
 
 // TODO: Audit list
-template int incr::piecewise_pass_element_T(const char *);
-template int incr::piecewise_pass_element_T(const void *);
-template int incr::piecewise_pass_element_T(char);
-template int incr::piecewise_pass_element_T(signed char);
-template int incr::piecewise_pass_element_T(unsigned char);
+template int incr::__printf_pass_element_T(const char *);
+template int incr::__printf_pass_element_T(const void *);
+template int incr::__printf_pass_element_T(char);
+template int incr::__printf_pass_element_T(signed char);
+template int incr::__printf_pass_element_T(unsigned char);
 
-template int incr::piecewise_pass_element_T(short);
-template int incr::piecewise_pass_element_T(int);
-template int incr::piecewise_pass_element_T(long);
-template int incr::piecewise_pass_element_T(long long);
+template int incr::__printf_pass_element_T(short);
+template int incr::__printf_pass_element_T(int);
+template int incr::__printf_pass_element_T(long);
+template int incr::__printf_pass_element_T(long long);
 
-template int incr::piecewise_pass_element_T(unsigned short);
-template int incr::piecewise_pass_element_T(unsigned int);
-template int incr::piecewise_pass_element_T(unsigned long);
-template int incr::piecewise_pass_element_T(unsigned long long);
+template int incr::__printf_pass_element_T(unsigned short);
+template int incr::__printf_pass_element_T(unsigned int);
+template int incr::__printf_pass_element_T(unsigned long);
+template int incr::__printf_pass_element_T(unsigned long long);
 
-template int incr::piecewise_pass_element_T(double);
+template int incr::__printf_pass_element_T(double);
 
 // may want a different function name here for writing
-template int incr::piecewise_pass_element_T(int64_t *);
+template int incr::__printf_pass_element_T(int64_t *);
 
 #include "printf_specifier.data"
 
@@ -302,7 +302,7 @@ static MODULE(incr)
       {
         incr tmp;
         tmp.set_format(std::get<0>(cases[i]));
-        piecewise_pass_element_uint64(std::get<1>(cases[i]), tmp);
+        __printf_pass_element_uint64(std::get<1>(cases[i]), tmp);
         auto r = tmp.finalize();
         CHECK(r.size() == strlen(std::get<2>(cases[i])) + 1);
         CHECK(strcmp(r.data(), std::get<2>(cases[i])) == 0);
@@ -323,8 +323,8 @@ static MODULE(incr)
         incr tmp;
         tmp.set_format(std::get<0>(cases[i]));
 
-        piecewise_pass_element_uint64(std::get<1>(cases[i]), tmp);
-        piecewise_pass_element_uint64(std::get<2>(cases[i]), tmp);
+        __printf_pass_element_uint64(std::get<1>(cases[i]), tmp);
+        __printf_pass_element_uint64(std::get<2>(cases[i]), tmp);
         auto r = tmp.finalize();
         CHECK(r.size() == strlen(std::get<3>(cases[i])) + 1);
         CHECK(strcmp(r.data(), std::get<3>(cases[i])) == 0);
@@ -344,7 +344,7 @@ static MODULE(incr)
       {
         incr tmp;
         tmp.set_format(std::get<0>(cases[i]));
-        tmp.piecewise_pass_element_T(std::get<1>(cases[i]));
+        tmp.__printf_pass_element_T(std::get<1>(cases[i]));
         auto r = tmp.finalize();
         bool size = r.size() == strlen(std::get<2>(cases[i])) + 1;
         bool contents = strcmp(r.data(), std::get<2>(cases[i])) == 0;

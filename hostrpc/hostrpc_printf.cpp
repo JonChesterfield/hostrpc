@@ -45,7 +45,7 @@ struct recv_by_copy
 };
 }  // namespace
 
-__PRINTF_API_EXTERNAL uint32_t piecewise_print_start(const char *fmt)
+__PRINTF_API_EXTERNAL uint32_t __printf_print_start(const char *fmt)
 {
   uint32_t port = hostrpc_x64_gcn_debug_client[0].rpc_open_port();
   if (port == UINT32_MAX)
@@ -55,21 +55,21 @@ __PRINTF_API_EXTERNAL uint32_t piecewise_print_start(const char *fmt)
     }
 
   {
-    piecewise_print_start_t inst;
-    send_by_copy<piecewise_print_start_t> f(&inst);
+    __printf_print_start_t inst;
+    send_by_copy<__printf_print_start_t> f(&inst);
     hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
   }
 
-  piecewise_pass_element_cstr(port, fmt);
+  __printf_pass_element_cstr(port, fmt);
 
   return port;
 }
 
-__PRINTF_API_EXTERNAL int piecewise_print_end(uint32_t port)
+__PRINTF_API_EXTERNAL int __printf_print_end(uint32_t port)
 {
   {
-    piecewise_print_end_t inst;
-    send_by_copy<piecewise_print_end_t> f(&inst);
+    __printf_print_end_t inst;
+    send_by_copy<__printf_print_end_t> f(&inst);
     hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
   }
 
@@ -81,61 +81,58 @@ __PRINTF_API_EXTERNAL int piecewise_print_end(uint32_t port)
 
 // These may want to be their own functions, for now delegate to u64
 
-__PRINTF_API_EXTERNAL void piecewise_pass_element_int32(uint32_t port,
-                                                        int32_t v)
+__PRINTF_API_EXTERNAL void __printf_pass_element_int32(uint32_t port, int32_t v)
 {
   int64_t w = v;
-  return piecewise_pass_element_int64(port, w);
+  return __printf_pass_element_int64(port, w);
 }
 
-__PRINTF_API_EXTERNAL void piecewise_pass_element_uint32(uint32_t port,
-                                                         uint32_t v)
+__PRINTF_API_EXTERNAL void __printf_pass_element_uint32(uint32_t port,
+                                                        uint32_t v)
 {
   uint64_t w = v;
-  return piecewise_pass_element_uint64(port, w);
+  return __printf_pass_element_uint64(port, w);
 }
 
-__PRINTF_API_EXTERNAL void piecewise_pass_element_int64(uint32_t port,
-                                                        int64_t v)
+__PRINTF_API_EXTERNAL void __printf_pass_element_int64(uint32_t port, int64_t v)
 {
   uint64_t c;
   __builtin_memcpy(&c, &v, 8);
-  return piecewise_pass_element_uint64(port, c);
+  return __printf_pass_element_uint64(port, c);
 }
 
-__PRINTF_API_EXTERNAL void piecewise_pass_element_uint64(uint32_t port,
-                                                         uint64_t v)
+__PRINTF_API_EXTERNAL void __printf_pass_element_uint64(uint32_t port,
+                                                        uint64_t v)
 {
-  piecewise_pass_element_scalar_t inst(func_piecewise_pass_element_uint64, v);
-  send_by_copy<piecewise_pass_element_scalar_t> f(&inst);
+  __printf_pass_element_scalar_t inst(func___printf_pass_element_uint64, v);
+  send_by_copy<__printf_pass_element_scalar_t> f(&inst);
   hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
 }
 
-__PRINTF_API_EXTERNAL void piecewise_pass_element_double(uint32_t port,
-                                                         double v)
+__PRINTF_API_EXTERNAL void __printf_pass_element_double(uint32_t port, double v)
 {
-  piecewise_pass_element_scalar_t inst(func_piecewise_pass_element_double, v);
-  send_by_copy<piecewise_pass_element_scalar_t> f(&inst);
+  __printf_pass_element_scalar_t inst(func___printf_pass_element_double, v);
+  send_by_copy<__printf_pass_element_scalar_t> f(&inst);
   hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
 }
 
-__PRINTF_API_EXTERNAL void piecewise_pass_element_void(uint32_t port,
-                                                       const void *v)
+__PRINTF_API_EXTERNAL void __printf_pass_element_void(uint32_t port,
+                                                      const void *v)
 {
   _Static_assert(sizeof(const void *) == 8, "");
   uint64_t c;
   __builtin_memcpy(&c, &v, 8);
-  piecewise_pass_element_scalar_t inst(func_piecewise_pass_element_uint64, c);
-  send_by_copy<piecewise_pass_element_scalar_t> f(&inst);
+  __printf_pass_element_scalar_t inst(func___printf_pass_element_uint64, c);
+  send_by_copy<__printf_pass_element_scalar_t> f(&inst);
   hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
 }
 
-__PRINTF_API_EXTERNAL void piecewise_pass_element_cstr(uint32_t port,
-                                                       const char *str)
+__PRINTF_API_EXTERNAL void __printf_pass_element_cstr(uint32_t port,
+                                                      const char *str)
 {
   uint64_t L = __printf_strlen(str);
 
-  const constexpr size_t w = piecewise_pass_element_cstr_t::width;
+  const constexpr size_t w = __printf_pass_element_cstr_t::width;
 
   // this appears to behave poorly when different threads make different numbers
   // of calls
@@ -143,30 +140,30 @@ __PRINTF_API_EXTERNAL void piecewise_pass_element_cstr(uint32_t port,
   uint64_t remainder = L - (chunks * w);
   for (uint64_t c = 0; c < chunks; c++)
     {
-      piecewise_pass_element_cstr_t inst(&str[c * w], w);
-      send_by_copy<piecewise_pass_element_cstr_t> f(&inst);
+      __printf_pass_element_cstr_t inst(&str[c * w], w);
+      send_by_copy<__printf_pass_element_cstr_t> f(&inst);
       hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
     }
 
   // remainder < width, possibly zero. sending even when zero ensures null
   // terminated.
   {
-    piecewise_pass_element_cstr_t inst(&str[chunks * w], remainder);
-    send_by_copy<piecewise_pass_element_cstr_t> f(&inst);
+    __printf_pass_element_cstr_t inst(&str[chunks * w], remainder);
+    send_by_copy<__printf_pass_element_cstr_t> f(&inst);
     hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
   }
 }
 
-__PRINTF_API_EXTERNAL void piecewise_pass_element_write_int64(uint32_t port,
-                                                              int64_t *x)
+__PRINTF_API_EXTERNAL void __printf_pass_element_write_int64(uint32_t port,
+                                                             int64_t *x)
 {
-  piecewise_pass_element_write_t inst;
+  __printf_pass_element_write_t inst;
   inst.payload = 42;
-  send_by_copy<piecewise_pass_element_write_t> f(&inst);
+  send_by_copy<__printf_pass_element_write_t> f(&inst);
   hostrpc_x64_gcn_debug_client[0].rpc_port_send(port, f);
 
   // need to recv to get the result
-  recv_by_copy<piecewise_pass_element_write_t> r(&inst);
+  recv_by_copy<__printf_pass_element_write_t> r(&inst);
   hostrpc_x64_gcn_debug_client[0].rpc_port_recv(port, r);
   *x = inst.payload;
 }

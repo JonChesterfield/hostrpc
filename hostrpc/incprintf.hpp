@@ -18,7 +18,7 @@ struct incr
   std::vector<char> finalize();
 
   template <typename T>
-  int piecewise_pass_element_T(T value);
+  int __printf_pass_element_T(T value);
 
   std::vector<char> format;
   size_t loc = 0;

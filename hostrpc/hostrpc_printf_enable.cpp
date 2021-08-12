@@ -73,12 +73,12 @@ struct print_wip
   {
     field() = default;
 
-    uint64_t tag = func_piecewise_print_nop;
+    uint64_t tag = func___printf_print_nop;
 
     static field cstr()
     {
       field r;
-      r.tag = func_piecewise_pass_element_cstr;
+      r.tag = func___printf_pass_element_cstr;
       return r;
     }
   };
@@ -111,12 +111,12 @@ struct operate
     const bool prefix_thread_id = false;
     switch (ID)
       {
-        case func_piecewise_print_nop:
+        case func___printf_print_nop:
           {
             break;
           }
 
-        case func_piecewise_print_start:
+        case func___printf_print_start:
           {
             // fprintf(stderr, ".");
             thread_print.formatter = incr{};
@@ -124,39 +124,39 @@ struct operate
               thread_print.formatter.append_cstr_section<7>("[%.2u] ");
             thread_print.clear();
             thread_print.acc = print_wip::field::cstr();
-            thread_print.acc.tag = func_piecewise_pass_element_cstr;
+            thread_print.acc.tag = func___printf_pass_element_cstr;
             break;
           }
 
-        case func_piecewise_print_end:
+        case func___printf_print_end:
           {
             std::vector<char> r = thread_print.formatter.finalize();
             printf("%s", r.data());
-            thread_print.acc.tag = func_piecewise_print_nop;
+            thread_print.acc.tag = func___printf_print_nop;
             break;
           }
 
-        case func_piecewise_pass_element_cstr:
+        case func___printf_pass_element_cstr:
           {
-            piecewise_pass_element_cstr_t *p =
-                reinterpret_cast<piecewise_pass_element_cstr_t *>(
+            __printf_pass_element_cstr_t *p =
+                reinterpret_cast<__printf_pass_element_cstr_t *>(
                     &line->element[0]);
 
-            if (thread_print.acc.tag == func_piecewise_print_nop)
+            if (thread_print.acc.tag == func___printf_print_nop)
               {
                 // starting new cstr
                 thread_print.acc = print_wip::field::cstr();
                 thread_print.formatter.accumulator.clear();
               }
 
-            if (thread_print.acc.tag == func_piecewise_pass_element_cstr)
+            if (thread_print.acc.tag == func___printf_pass_element_cstr)
               {
                 thread_print.formatter
-                    .append_cstr_section<piecewise_pass_element_cstr_t::width>(
+                    .append_cstr_section<__printf_pass_element_cstr_t::width>(
                         p->payload);
 
                 if (fs_contains_nul(p->payload,
-                                    piecewise_pass_element_cstr_t::width))
+                                    __printf_pass_element_cstr_t::width))
                   {
                     thread_print.formatter.accumulator.push_back(
                         '\0');  // assumed by formatter
@@ -166,7 +166,7 @@ struct operate
                       {
                         thread_print.update_bytes_written(
                             thread_print.formatter
-                                .piecewise_pass_element_T<const char *>(s));
+                                .__printf_pass_element_T<const char *>(s));
                       }
                     else
                       {
@@ -174,13 +174,13 @@ struct operate
                         if (prefix_thread_id)
                           {
                             thread_print.formatter
-                                .piecewise_pass_element_T<unsigned>(c);
+                                .__printf_pass_element_T<unsigned>(c);
                           }
                       }
 
                     // end of string
 
-                    assert(thread_print.acc.tag != func_piecewise_print_nop);
+                    assert(thread_print.acc.tag != func___printf_print_nop);
                     thread_print.acc = {};
                   }
               }
@@ -192,25 +192,24 @@ struct operate
             break;
           }
 
-        case func_piecewise_pass_element_scalar:
+        case func___printf_pass_element_scalar:
           {
-            piecewise_pass_element_scalar_t *p =
-                reinterpret_cast<piecewise_pass_element_scalar_t *>(
+            __printf_pass_element_scalar_t *p =
+                reinterpret_cast<__printf_pass_element_scalar_t *>(
                     &line->element[0]);
 
             switch (p->Type)
               {
-                case func_piecewise_pass_element_uint64:
+                case func___printf_pass_element_uint64:
                   {
-                    if (thread_print.acc.tag == func_piecewise_print_nop)
+                    if (thread_print.acc.tag == func___printf_print_nop)
                       {
                         thread_print.update_bytes_written(
                             thread_print.formatter
-                                .piecewise_pass_element_T<uint64_t>(
-                                    p->payload));
+                                .__printf_pass_element_T<uint64_t>(p->payload));
 
                         thread_print.acc.tag =
-                            func_piecewise_pass_element_uint64;
+                            func___printf_pass_element_uint64;
                         thread_print.acc = {};
                       }
                     else
@@ -220,16 +219,16 @@ struct operate
                       }
                     break;
                   }
-                case func_piecewise_pass_element_double:
+                case func___printf_pass_element_double:
                   {
-                    if (thread_print.acc.tag == func_piecewise_print_nop)
+                    if (thread_print.acc.tag == func___printf_print_nop)
                       {
                         thread_print.update_bytes_written(
                             thread_print.formatter
-                                .piecewise_pass_element_T<double>(p->payload));
+                                .__printf_pass_element_T<double>(p->payload));
 
                         thread_print.acc.tag =
-                            func_piecewise_pass_element_double;
+                            func___printf_pass_element_double;
                         thread_print.acc = {};
                       }
                     else
@@ -248,26 +247,26 @@ struct operate
             break;
           }
 
-        case func_piecewise_pass_element_write_int64:
+        case func___printf_pass_element_write_int64:
           {
-            piecewise_pass_element_write_t *p =
-                reinterpret_cast<piecewise_pass_element_write_t *>(
+            __printf_pass_element_write_t *p =
+                reinterpret_cast<__printf_pass_element_write_t *>(
                     &line->element[0]);
 
-            if (thread_print.acc.tag == func_piecewise_print_nop)
+            if (thread_print.acc.tag == func___printf_print_nop)
               {
                 if (0)
                   printf(
                       "Got passed a write_int64, initial value %lu (acc %d)\n",
                       p->payload, thread_print.bytes_written);
                 thread_print.update_bytes_written(
-                    thread_print.formatter.piecewise_pass_element_T<int64_t *>(
+                    thread_print.formatter.__printf_pass_element_T<int64_t *>(
                         &p->payload));
                 p->payload = thread_print.bytes_written;
                 if (0)
                   printf("Got passed a write_int64, later value %lu (acc %d)\n",
                          p->payload, thread_print.bytes_written);
-                thread_print.acc.tag = func_piecewise_pass_element_write_int64;
+                thread_print.acc.tag = func___printf_pass_element_write_int64;
                 thread_print.acc = {};
               }
             else

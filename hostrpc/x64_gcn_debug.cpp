@@ -17,21 +17,21 @@ kernel void __device_example(void) { example(); }
 // redundant parts of API / convenience hacks
 static void print_string(const char *str)
 {
-  uint32_t port = piecewise_print_start("%s");
+  uint32_t port = __printf_print_start("%s");
   if (port == UINT32_MAX)
     {
       return;
     }
 
-  piecewise_pass_element_cstr(port, str);
-  piecewise_print_end(port);
+  __printf_pass_element_cstr(port, str);
+  __printf_print_end(port);
 }
 
 extern "C" void example(void)
 {
   unsigned id = platform::get_lane_id();
 
-  uint32_t port = piecewise_print_start(
+  uint32_t port = __printf_print_start(
       "some format %u too "
       "loffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
       "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
@@ -39,9 +39,9 @@ extern "C" void example(void)
       "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
       "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
       "ffffffffffffffffffffffffffffng with %s fields\n");
-  piecewise_pass_element_uint64(port, 42);
-  piecewise_pass_element_cstr(port, "stringy");
-  piecewise_print_end(port);
+  __printf_pass_element_uint64(port, 42);
+  __printf_pass_element_cstr(port, "stringy");
+  __printf_print_end(port);
 
   printf("printf a u64 %lu\n", UINT64_C(111));
 
