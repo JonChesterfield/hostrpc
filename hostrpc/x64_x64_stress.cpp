@@ -85,8 +85,7 @@ uint32_t stress_pool_server::run(uint32_t server_location)
       }
   };
 
-  bool did_work = p.server.rpc_handle<decltype(op_func), decltype(cl_func)>(
-      op_func, cl_func, &server_location);
+  bool did_work = p.server.rpc_handle(op_func, cl_func, &server_location);
   (void)did_work;
 
   if (did_work)
@@ -127,7 +126,7 @@ uint32_t stress_pool_client::run(uint32_t state)
   init_page(&scratch, id);
   init_page(&expect, id + 1);
 
-  if (p.client.rpc_invoke<decltype(fill), decltype(use)>(fill, use))
+  if (p.client.rpc_invoke(fill, use))
     {
       if (__builtin_memcmp(&scratch, &expect, sizeof(hostrpc::page_t)) != 0)
         {

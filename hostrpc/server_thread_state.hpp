@@ -32,7 +32,8 @@ struct server_thread_state
       bool r = true;
       while (r)
         {
-          r = server->template rpc_handle<Operate, Clear>(op, cl, &location);
+          r = server->template rpc_handle<Operate, Clear>(Operate{op},
+                                                          Clear{cl}, &location);
         }
     };
 

@@ -83,11 +83,11 @@ static void hostcall_impl(uint64_t data[8])
     {
       if (C)
         {
-          success = c->rpc_invoke<decltype(f), decltype(u)>(f, u);
+          success = c->rpc_invoke(f, u);
         }
       else
         {
-          success = c->rpc_invoke<decltype(f)>(f, u);
+          success = c->rpc_invoke(f);
         }
     }
 }
@@ -266,7 +266,7 @@ class hostcall_impl
         {
           hostrpc::x64_host_amdgcn_client::operate op;
           hostrpc::x64_host_amdgcn_client::clear cl;
-          while (server.rpc_handle<decltype(op), decltype(cl)>(op, cl, &ql))
+          while (server.rpc_handle(op, cl, &ql))
             {
             }
 

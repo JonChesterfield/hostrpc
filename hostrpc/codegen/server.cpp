@@ -44,6 +44,6 @@ extern "C" HOSTRPC_ANNOTATE void server_instance_direct(
 
   for (;;)
     {
-      s.rpc_handle<hostrpc::operate_direct, hostrpc::clear_direct>(op, cl);
+      s.rpc_handle(op, cl);
     }
 }

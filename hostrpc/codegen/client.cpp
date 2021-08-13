@@ -14,8 +14,8 @@ client_instance_direct(client_type& c)
     {
       hostrpc::fill_nop fill;
       hostrpc::use_nop use;
-      c.rpc_invoke<hostrpc::fill_nop, hostrpc::use_nop>(fill, use);
-      c.rpc_invoke<hostrpc::fill_nop>(fill);
+      c.rpc_invoke(fill, use);
+      c.rpc_invoke(fill);
     }
 }
 

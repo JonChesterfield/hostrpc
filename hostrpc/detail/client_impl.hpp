@@ -3,6 +3,7 @@
 
 #include "common.hpp"
 #include "counters.hpp"
+#include "cxx.hpp"
 #include "platform_detect.hpp"
 
 // Intend to have call and service working across gcn and x86
@@ -278,7 +279,7 @@ struct client_impl : public SZT, public Counter
   }
 
   template <typename Op>
-  HOSTRPC_ANNOTATE void rpc_port_send(uint32_t port, Op &op)
+  HOSTRPC_ANNOTATE void rpc_port_send(uint32_t port, Op &&op)
   {
     // If the port has just been opened, we know it is available to
     // submit work to. In general, send might be called while the
@@ -290,13 +291,13 @@ struct client_impl : public SZT, public Counter
     // as the callee could have used recv() explicitly instead of
     // dropping the result
     rpc_port_wait_until_available(port);  // expensive
-    rpc_port_send_given_available<Op>(port, op);
+    rpc_port_send_given_available<Op>(port, cxx::forward<Op>(op));
   }
 
   template <typename Op>
-  HOSTRPC_ANNOTATE void rpc_port_send_given_available(uint32_t port, Op &op)
+  HOSTRPC_ANNOTATE void rpc_port_send_given_available(uint32_t port, Op &&op)
   {
-    rpc_invoke_fill_given_slot<Op>(op, port);
+    rpc_invoke_fill_given_slot<Op>(cxx::forward<Op>(op), port);
   }
 
   HOSTRPC_ANNOTATE void rpc_port_wait_for_result(uint32_t port)
@@ -316,16 +317,16 @@ struct client_impl : public SZT, public Counter
   }
 
   template <typename Op>
-  HOSTRPC_ANNOTATE void rpc_port_recv(uint32_t port, Op &op)
+  HOSTRPC_ANNOTATE void rpc_port_recv(uint32_t port, Op &&op)
   {
     // wait for H1, result available
     // if outbox is clear, which is detectable, this will not terminate
     rpc_port_wait_for_result(port);
-    rpc_invoke_use_given_slot(op, port);
+    rpc_invoke_use_given_slot(cxx::forward<Op>(op), port);
   }
 
   template <typename Op>
-  HOSTRPC_ANNOTATE bool rpc_invoke_async(Op &op)
+  HOSTRPC_ANNOTATE bool rpc_invoke_async(Op &&op)
   {
     // get a port, send it, don't wait
     uint32_t port = rpc_open_port();
@@ -333,27 +334,27 @@ struct client_impl : public SZT, public Counter
       {
         return false;
       }
-    rpc_port_send(port, op);
+    rpc_port_send(port, cxx::forward<Op>(op));
     rpc_close_port(port);
     return true;
   }
 
   template <typename Op>
-  HOSTRPC_ANNOTATE bool rpc_port_invoke_async(Op &op)
+  HOSTRPC_ANNOTATE bool rpc_port_invoke_async(Op &&op)
   {
-    return rpc_invoke_async(op);
+    return rpc_invoke_async(cxx::forward<Op>(op));
   }
 
   template <typename Fill, typename Use>
-  HOSTRPC_ANNOTATE bool rpc_port_invoke(Fill &f, Use &u)
+  HOSTRPC_ANNOTATE bool rpc_port_invoke(Fill &&f, Use &&u)
   {
     uint32_t port = rpc_open_port();
     if (port == UINT32_MAX)
       {
         return false;
       }
-    rpc_port_send(port, f);
-    rpc_port_recv(port, u);  // implicit wait for result
+    rpc_port_send(port, cxx::forward<Fill>(f));
+    rpc_port_recv(port, cxx::forward<Use>(u));  // implicit wait for result
     rpc_close_port(port);
     return true;
   }
@@ -363,16 +364,16 @@ struct client_impl : public SZT, public Counter
 
   // Return after calling fill(), i.e. does not wait for server
   template <typename Fill>
-  HOSTRPC_ANNOTATE bool rpc_invoke(Fill &fill) noexcept
+  HOSTRPC_ANNOTATE bool rpc_invoke(Fill &&fill) noexcept
   {
-    return rpc_port_invoke_async(fill);
+    return rpc_port_invoke_async(cxx::forward<Fill>(fill));
   }
 
   // Return after calling use(), i.e. waits for server
   template <typename Fill, typename Use>
-  HOSTRPC_ANNOTATE bool rpc_invoke(Fill &fill, Use &use) noexcept
+  HOSTRPC_ANNOTATE bool rpc_invoke(Fill &&fill, Use &&use) noexcept
   {
-    return rpc_port_invoke(fill, use);
+    return rpc_port_invoke(cxx::forward<Fill>(fill), cxx::forward<Use>(use));
   }
 
  private:
@@ -479,7 +480,7 @@ struct client_impl : public SZT, public Counter
   }
 
   template <typename Fill>
-  HOSTRPC_ANNOTATE void rpc_invoke_fill_given_slot(Fill & fill,
+  HOSTRPC_ANNOTATE void rpc_invoke_fill_given_slot(Fill &&fill,
                                                    uint32_t slot) noexcept
   {
     assert(slot != UINT32_MAX);
@@ -540,7 +541,7 @@ struct client_impl : public SZT, public Counter
   }
 
   template <typename Use>
-  HOSTRPC_ANNOTATE void rpc_invoke_use_given_slot(Use &use,
+  HOSTRPC_ANNOTATE void rpc_invoke_use_given_slot(Use &&use,
                                                   uint32_t slot) noexcept
   {
     // call the continuation

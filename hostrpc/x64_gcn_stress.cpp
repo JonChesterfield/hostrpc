@@ -207,7 +207,7 @@ uint64_t gpu_call(hostrpc::x64_gcn_type<SZ>::client_type *client, uint32_t id,
       bool rb = false;
       do
         {
-          rb = client->rpc_invoke<fill, use>(f, u);
+          rb = client->rpc_invoke(f, u);
         }
       while (rb == false);
 
@@ -419,8 +419,7 @@ TEST_CASE("x64_gcn_stress")
               break;
             }
           bool did_work =
-              p.server.rpc_handle<decltype(op_func), decltype(cl_func)>(
-                  op_func, cl_func, &server_location);
+              p.server.rpc_handle(op_func, cl_func, &server_location);
           if (did_work)
             {
               count++;

@@ -25,6 +25,18 @@ struct remove_reference<T &&>
 };
 
 template <class T>
+constexpr T &&forward(typename remove_reference<T>::type &t) noexcept
+{
+  return static_cast<T &&>(t);
+}
+
+template <class T>
+constexpr T &&forward(typename remove_reference<T>::type &&t) noexcept
+{
+  return static_cast<T &&>(t);
+}
+
+template <class T>
 inline constexpr typename remove_reference<T>::type &&move(T &&x)
 {
   typedef typename remove_reference<T>::type U;
