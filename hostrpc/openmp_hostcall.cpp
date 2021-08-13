@@ -3,6 +3,9 @@
 #include "detail/platform_detect.hpp"
 #include "hostcall.hpp"
 #include "hostcall_hsa.hpp"
+#include "hostrpc_printf.h"
+#include "hostrpc_printf_enable.h"
+#include "hostrpc_printf_server.hpp"
 #include "x64_gcn_type.hpp"
 
 #include "detail/client_impl.hpp"
@@ -17,6 +20,69 @@ enum opcodes
 
 #if HOSTRPC_AMDGCN
 #pragma omp declare target
+
+using client_type = hostrpc::x64_gcn_type<hostrpc::size_runtime>::client_type;
+static client_type *get_client();
+
+__PRINTF_API_EXTERNAL uint32_t __printf_print_start(const char *fmt)
+{
+  return __printf_print_start(get_client(), fmt);
+}
+
+__PRINTF_API_EXTERNAL int __printf_print_end(uint32_t port)
+{
+  return __printf_print_end(get_client(), port);
+}
+
+// These may want to be their own functions, for now delegate to u64
+__PRINTF_API_EXTERNAL void __printf_pass_element_int32(uint32_t port, int32_t v)
+{
+  int64_t w = v;
+  return __printf_pass_element_int64(port, w);
+}
+
+__PRINTF_API_EXTERNAL void __printf_pass_element_uint32(uint32_t port,
+                                                        uint32_t v)
+{
+  uint64_t w = v;
+  return __printf_pass_element_uint64(port, w);
+}
+
+__PRINTF_API_EXTERNAL void __printf_pass_element_int64(uint32_t port, int64_t v)
+{
+  uint64_t c;
+  __builtin_memcpy(&c, &v, 8);
+  return __printf_pass_element_uint64(port, c);
+}
+
+__PRINTF_API_EXTERNAL void __printf_pass_element_uint64(uint32_t port,
+                                                        uint64_t v)
+{
+  return __printf_pass_element_uint64(get_client(), port, v);
+}
+
+__PRINTF_API_EXTERNAL void __printf_pass_element_double(uint32_t port, double v)
+{
+  return __printf_pass_element_double(get_client(), port, v);
+}
+
+__PRINTF_API_EXTERNAL void __printf_pass_element_void(uint32_t port,
+                                                      const void *v)
+{
+  __printf_pass_element_void(get_client(), port, v);
+}
+
+__PRINTF_API_EXTERNAL void __printf_pass_element_cstr(uint32_t port,
+                                                      const char *str)
+{
+  __printf_pass_element_cstr(get_client(), port, str);
+}
+
+__PRINTF_API_EXTERNAL void __printf_pass_element_write_int64(uint32_t port,
+                                                             int64_t *x)
+{
+  __printf_pass_element_write_int64(get_client(), port, x);
+}
 
 struct fill
 {
@@ -53,8 +119,6 @@ extern "C"
   void __kmpc_impl_free(void *);
 }
 
-using client_type = hostrpc::x64_gcn_type<hostrpc::size_runtime>::client_type;
-static client_type *get_client();
 
 void *__kmpc_impl_malloc(size_t x)
 {
@@ -130,10 +194,10 @@ extern "C"
   hsa_status_t hostrpc_terminate();
 }
 
-struct operate
+struct omp_operate
 {
   hsa_region_t coarse_region;
-  operate(hsa_region_t r) : coarse_region(r) {}
+  omp_operate(hsa_region_t r) : coarse_region(r) {}
   void op(hostrpc::cacheline_t *line);
 
   void operator()(uint32_t, hostrpc::page_t *page)
@@ -142,7 +206,7 @@ struct operate
   }
 };
 
-struct clear
+struct omp_clear
 {
   void operator()(uint32_t, hostrpc::page_t *page)
   {
@@ -154,7 +218,7 @@ struct clear
 // in a loop on a pthread,
 // server->rpc_handle<operate, clear>(op, clear);
 
-void operate::op(hostrpc::cacheline_t *line)
+void omp_operate::op(hostrpc::cacheline_t *line)
 {
   uint64_t op = line->element[0];
   switch (op)
@@ -198,7 +262,7 @@ struct storage_t
   std::vector<type::storage_type::AllocRemote::raw> client_pointers;
 
   using sts_ty =
-      hostrpc::server_thread_state<type::server_type, operate, clear>;
+      hostrpc::server_thread_state<type::server_type, omp_operate, omp_clear>;
 
   std::list<sts_ty> thread_state;
   std::vector<hostrpc::thread<sts_ty>> threads;
@@ -364,7 +428,7 @@ unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
   storage.thread_state.push_back(hostrpc::make_server_thread_state(
       reinterpret_cast<storage_t::type::server_type *>(
           (void *)storage.server_pointers[device_id].local_ptr()),
-      &storage.server_control, operate{coarse_grain}, clear{}));
+      &storage.server_control, omp_operate{coarse_grain}, omp_clear{}));
   storage.threads.push_back(hostrpc::make_thread(&storage.thread_state.back()));
 
   return as_ulong(device_id);

@@ -10,6 +10,9 @@ enum func_type : uint64_t
 {
   func___printf_print_nop = 0,
 
+  // malloc = 1
+  // free = 2,
+
   func___printf_print_start = 5,
   func___printf_print_end = 6,
   func___printf_pass_element_cstr = 7,
