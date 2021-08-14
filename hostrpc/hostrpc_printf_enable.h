@@ -8,24 +8,24 @@
 
 enum func_type : uint64_t
 {
-  func___printf_print_nop = 0,
+  hostrpc_printf_print_nop = 0,
 
   // malloc = 1
   // free = 2,
 
-  func___printf_print_start = 5,
-  func___printf_print_end = 6,
-  func___printf_pass_element_cstr = 7,
+  hostrpc_printf_print_start = 5,
+  hostrpc_printf_print_end = 6,
+  hostrpc_printf_pass_element_cstr = 7,
 
-  func___printf_pass_element_scalar = 8,
+  hostrpc_printf_pass_element_scalar = 8,
 
-  func___printf_pass_element_int32 = 9,
-  func___printf_pass_element_uint32 = 10,
-  func___printf_pass_element_int64 = 11,
-  func___printf_pass_element_uint64 = 12,
-  func___printf_pass_element_double = 13,
-  func___printf_pass_element_void = 14,
-  func___printf_pass_element_write_int64 = 16,
+  hostrpc_printf_pass_element_int32 = 9,
+  hostrpc_printf_pass_element_uint32 = 10,
+  hostrpc_printf_pass_element_int64 = 11,
+  hostrpc_printf_pass_element_uint64 = 12,
+  hostrpc_printf_pass_element_double = 13,
+  hostrpc_printf_pass_element_void = 14,
+  hostrpc_printf_pass_element_write_int64 = 16,
 
 };
 
@@ -33,21 +33,21 @@ namespace
 {
 struct __printf_print_start_t
 {
-  uint64_t ID = func___printf_print_start;
+  uint64_t ID = hostrpc_printf_print_start;
   char unused[56];
   HOSTRPC_ANNOTATE __printf_print_start_t() {}
 };
 
 struct __printf_print_end_t
 {
-  uint64_t ID = func___printf_print_end;
+  uint64_t ID = hostrpc_printf_print_end;
   char unused[56];
   HOSTRPC_ANNOTATE __printf_print_end_t() {}
 };
 
 struct __printf_pass_element_cstr_t
 {
-  uint64_t ID = func___printf_pass_element_cstr;
+  uint64_t ID = hostrpc_printf_pass_element_cstr;
   enum
   {
     width = 56
@@ -62,7 +62,7 @@ struct __printf_pass_element_cstr_t
 
 struct __printf_pass_element_scalar_t
 {
-  uint64_t ID = func___printf_pass_element_scalar;
+  uint64_t ID = hostrpc_printf_pass_element_scalar;
   uint64_t Type;
   uint64_t payload;
   char unused[40];
@@ -75,7 +75,7 @@ struct __printf_pass_element_scalar_t
 
 struct __printf_pass_element_write_t
 {
-  uint64_t ID = func___printf_pass_element_write_int64;
+  uint64_t ID = hostrpc_printf_pass_element_write_int64;
   int64_t payload = 0;
   enum
   {

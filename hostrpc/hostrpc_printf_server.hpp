@@ -69,12 +69,12 @@ struct print_wip
   {
     field() = default;
 
-    uint64_t tag = func___printf_print_nop;
+    uint64_t tag = hostrpc_printf_print_nop;
 
     static field cstr()
     {
       field r;
-      r.tag = func___printf_pass_element_cstr;
+      r.tag = hostrpc_printf_pass_element_cstr;
       return r;
     }
   };
@@ -86,6 +86,181 @@ struct print_wip
 
 using print_buffer_t = std::vector<std::array<print_wip, 64> >;
 
+// Return 'true' if it did work, 'false' if line->element[0] did not match
+bool operate_printf_handle(unsigned c, hostrpc::cacheline_t *line,
+                           print_wip &thread_print, bool verbose)
+{
+  (void)verbose;
+  uint64_t ID = line->element[0];
+  const bool prefix_thread_id = false;
+  switch (ID)
+    {
+      case hostrpc_printf_print_nop:
+        {
+          return true;
+        }
+
+      case hostrpc_printf_print_start:
+        {
+          // fprintf(stderr, ".");
+          thread_print.formatter = incr{};
+          if (prefix_thread_id)
+            thread_print.formatter.append_cstr_section<7>("[%.2u] ");
+          thread_print.clear();
+          thread_print.acc = print_wip::field::cstr();
+          thread_print.acc.tag = hostrpc_printf_pass_element_cstr;
+          return true;
+        }
+
+      case hostrpc_printf_print_end:
+        {
+          std::vector<char> r = thread_print.formatter.finalize();
+          printf("%s", r.data());
+          thread_print.acc.tag = hostrpc_printf_print_nop;
+          return true;
+        }
+
+      case hostrpc_printf_pass_element_cstr:
+        {
+          __printf_pass_element_cstr_t *p =
+              reinterpret_cast<__printf_pass_element_cstr_t *>(
+                  &line->element[0]);
+
+          if (thread_print.acc.tag == hostrpc_printf_print_nop)
+            {
+              // starting new cstr
+              thread_print.acc = print_wip::field::cstr();
+              thread_print.formatter.accumulator.clear();
+            }
+
+          if (thread_print.acc.tag == hostrpc_printf_pass_element_cstr)
+            {
+              thread_print.formatter
+                  .append_cstr_section<__printf_pass_element_cstr_t::width>(
+                      p->payload);
+
+              if (fs_contains_nul(p->payload,
+                                  __printf_pass_element_cstr_t::width))
+                {
+                  thread_print.formatter.accumulator.push_back(
+                      '\0');  // assumed by formatter
+
+                  const char *s = thread_print.formatter.accumulator.data();
+                  if (thread_print.formatter.have_format())
+                    {
+                      thread_print.update_bytes_written(
+                          thread_print.formatter
+                              .__printf_pass_element_T<const char *>(s));
+                    }
+                  else
+                    {
+                      thread_print.formatter.set_format(s);
+                      if (prefix_thread_id)
+                        {
+                          thread_print.formatter
+                              .__printf_pass_element_T<unsigned>(c);
+                        }
+                    }
+
+                  // end of string
+
+                  assert(thread_print.acc.tag != hostrpc_printf_print_nop);
+                  thread_print.acc = {};
+                }
+            }
+          else
+            {
+              printf("invalid print cstr\n");
+            }
+
+          return true;
+        }
+
+      case hostrpc_printf_pass_element_scalar:
+        {
+          __printf_pass_element_scalar_t *p =
+              reinterpret_cast<__printf_pass_element_scalar_t *>(
+                  &line->element[0]);
+
+          switch (p->Type)
+            {
+              case hostrpc_printf_pass_element_uint64:
+                {
+                  if (thread_print.acc.tag == hostrpc_printf_print_nop)
+                    {
+                      thread_print.update_bytes_written(
+                          thread_print.formatter
+                              .__printf_pass_element_T<uint64_t>(p->payload));
+
+                      thread_print.acc.tag = hostrpc_printf_pass_element_uint64;
+                      thread_print.acc = {};
+                    }
+                  else
+                    {
+                      printf("invalid pass u64\n");  // missing trailing null
+                                                     // on the cstr?
+                    }
+                  break;
+                }
+              case hostrpc_printf_pass_element_double:
+                {
+                  if (thread_print.acc.tag == hostrpc_printf_print_nop)
+                    {
+                      thread_print.update_bytes_written(
+                          thread_print.formatter
+                              .__printf_pass_element_T<double>(p->payload));
+
+                      thread_print.acc.tag = hostrpc_printf_pass_element_double;
+                      thread_print.acc = {};
+                    }
+                  else
+                    {
+                      printf("invalid pass double\n");
+                    }
+                  break;
+                }
+              default:
+                {
+                  printf("unimplemented scalar element: %lu\n", p->Type);
+                  break;
+                }
+            }
+
+          return true;
+        }
+
+      case hostrpc_printf_pass_element_write_int64:
+        {
+          __printf_pass_element_write_t *p =
+              reinterpret_cast<__printf_pass_element_write_t *>(
+                  &line->element[0]);
+
+          if (thread_print.acc.tag == hostrpc_printf_print_nop)
+            {
+              if (0)
+                printf("Got passed a write_int64, initial value %lu (acc %d)\n",
+                       p->payload, thread_print.bytes_written);
+              thread_print.update_bytes_written(
+                  thread_print.formatter.__printf_pass_element_T<int64_t *>(
+                      &p->payload));
+              p->payload = thread_print.bytes_written;
+              if (0)
+                printf("Got passed a write_int64, later value %lu (acc %d)\n",
+                       p->payload, thread_print.bytes_written);
+              thread_print.acc.tag = hostrpc_printf_pass_element_write_int64;
+              thread_print.acc = {};
+            }
+          else
+            {
+              printf("invalid pass write i64\n");
+            }
+          return true;
+        }
+    }
+
+  return false;
+}
+
 struct operate
 {
   print_buffer_t *print_buffer = nullptr;
@@ -95,179 +270,14 @@ struct operate
   void perthread(unsigned c, hostrpc::cacheline_t *line,
                  print_wip &thread_print, bool verbose)
   {
-    (void)verbose;
-    uint64_t ID = line->element[0];
-    const bool prefix_thread_id = false;
-    switch (ID)
+    if (operate_printf_handle(c, line, thread_print, verbose))
       {
-        case func___printf_print_nop:
-          {
-            break;
-          }
-
-        case func___printf_print_start:
-          {
-            // fprintf(stderr, ".");
-            thread_print.formatter = incr{};
-            if (prefix_thread_id)
-              thread_print.formatter.append_cstr_section<7>("[%.2u] ");
-            thread_print.clear();
-            thread_print.acc = print_wip::field::cstr();
-            thread_print.acc.tag = func___printf_pass_element_cstr;
-            break;
-          }
-
-        case func___printf_print_end:
-          {
-            std::vector<char> r = thread_print.formatter.finalize();
-            printf("%s", r.data());
-            thread_print.acc.tag = func___printf_print_nop;
-            break;
-          }
-
-        case func___printf_pass_element_cstr:
-          {
-            __printf_pass_element_cstr_t *p =
-                reinterpret_cast<__printf_pass_element_cstr_t *>(
-                    &line->element[0]);
-
-            if (thread_print.acc.tag == func___printf_print_nop)
-              {
-                // starting new cstr
-                thread_print.acc = print_wip::field::cstr();
-                thread_print.formatter.accumulator.clear();
-              }
-
-            if (thread_print.acc.tag == func___printf_pass_element_cstr)
-              {
-                thread_print.formatter
-                    .append_cstr_section<__printf_pass_element_cstr_t::width>(
-                        p->payload);
-
-                if (fs_contains_nul(p->payload,
-                                    __printf_pass_element_cstr_t::width))
-                  {
-                    thread_print.formatter.accumulator.push_back(
-                        '\0');  // assumed by formatter
-
-                    const char *s = thread_print.formatter.accumulator.data();
-                    if (thread_print.formatter.have_format())
-                      {
-                        thread_print.update_bytes_written(
-                            thread_print.formatter
-                                .__printf_pass_element_T<const char *>(s));
-                      }
-                    else
-                      {
-                        thread_print.formatter.set_format(s);
-                        if (prefix_thread_id)
-                          {
-                            thread_print.formatter
-                                .__printf_pass_element_T<unsigned>(c);
-                          }
-                      }
-
-                    // end of string
-
-                    assert(thread_print.acc.tag != func___printf_print_nop);
-                    thread_print.acc = {};
-                  }
-              }
-            else
-              {
-                printf("invalid print cstr\n");
-              }
-
-            break;
-          }
-
-        case func___printf_pass_element_scalar:
-          {
-            __printf_pass_element_scalar_t *p =
-                reinterpret_cast<__printf_pass_element_scalar_t *>(
-                    &line->element[0]);
-
-            switch (p->Type)
-              {
-                case func___printf_pass_element_uint64:
-                  {
-                    if (thread_print.acc.tag == func___printf_print_nop)
-                      {
-                        thread_print.update_bytes_written(
-                            thread_print.formatter
-                                .__printf_pass_element_T<uint64_t>(p->payload));
-
-                        thread_print.acc.tag =
-                            func___printf_pass_element_uint64;
-                        thread_print.acc = {};
-                      }
-                    else
-                      {
-                        printf("invalid pass u64\n");  // missing trailing null
-                                                       // on the cstr?
-                      }
-                    break;
-                  }
-                case func___printf_pass_element_double:
-                  {
-                    if (thread_print.acc.tag == func___printf_print_nop)
-                      {
-                        thread_print.update_bytes_written(
-                            thread_print.formatter
-                                .__printf_pass_element_T<double>(p->payload));
-
-                        thread_print.acc.tag =
-                            func___printf_pass_element_double;
-                        thread_print.acc = {};
-                      }
-                    else
-                      {
-                        printf("invalid pass double\n");
-                      }
-                    break;
-                  }
-                default:
-                  {
-                    printf("unimplemented scalar element: %lu\n", p->Type);
-                    break;
-                  }
-              }
-
-            break;
-          }
-
-        case func___printf_pass_element_write_int64:
-          {
-            __printf_pass_element_write_t *p =
-                reinterpret_cast<__printf_pass_element_write_t *>(
-                    &line->element[0]);
-
-            if (thread_print.acc.tag == func___printf_print_nop)
-              {
-                if (0)
-                  printf(
-                      "Got passed a write_int64, initial value %lu (acc %d)\n",
-                      p->payload, thread_print.bytes_written);
-                thread_print.update_bytes_written(
-                    thread_print.formatter.__printf_pass_element_T<int64_t *>(
-                        &p->payload));
-                p->payload = thread_print.bytes_written;
-                if (0)
-                  printf("Got passed a write_int64, later value %lu (acc %d)\n",
-                         p->payload, thread_print.bytes_written);
-                thread_print.acc.tag = func___printf_pass_element_write_int64;
-                thread_print.acc = {};
-              }
-            else
-              {
-                printf("invalid pass write i64\n");
-              }
-            break;
-          }
-        default:
-          {
-            printf("Unhandled op: %lu\n", ID);
-          }
+        return;
+      }
+    else
+      {
+        printf("Unhandled op: %lu\n", line->element[0]);
+        return;
       }
   }
 
@@ -385,7 +395,7 @@ template <typename T>
 __PRINTF_API_INTERNAL void __printf_pass_element_uint64(T* client, uint32_t port,
                                                         uint64_t v)
 {
-  __printf_pass_element_scalar_t inst(func___printf_pass_element_uint64, v);
+  __printf_pass_element_scalar_t inst(hostrpc_printf_pass_element_uint64, v);
   send_by_copy<__printf_pass_element_scalar_t> f(&inst);
   client->rpc_port_send(port, f);
 }
@@ -393,7 +403,7 @@ __PRINTF_API_INTERNAL void __printf_pass_element_uint64(T* client, uint32_t port
 template <typename T>
 __PRINTF_API_INTERNAL void __printf_pass_element_double(T* client,uint32_t port, double v)
 {
-  __printf_pass_element_scalar_t inst(func___printf_pass_element_double, v);
+  __printf_pass_element_scalar_t inst(hostrpc_printf_pass_element_double, v);
   send_by_copy<__printf_pass_element_scalar_t> f(&inst);
   client->rpc_port_send(port, f);
 }
@@ -406,7 +416,7 @@ __PRINTF_API_INTERNAL void __printf_pass_element_void(T* client, uint32_t port,
   _Static_assert(sizeof(const void *) == 8, "");
   uint64_t c;
   __builtin_memcpy(&c, &v, 8);
-  __printf_pass_element_scalar_t inst(func___printf_pass_element_uint64, c);
+  __printf_pass_element_scalar_t inst(hostrpc_printf_pass_element_uint64, c);
   send_by_copy<__printf_pass_element_scalar_t> f(&inst);
   client->rpc_port_send(port, f);
 }

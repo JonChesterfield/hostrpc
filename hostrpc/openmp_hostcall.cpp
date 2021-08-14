@@ -197,12 +197,19 @@ extern "C"
 struct omp_operate
 {
   hsa_region_t coarse_region;
-  omp_operate(hsa_region_t r) : coarse_region(r) {}
-  void op(hostrpc::cacheline_t *line);
-
-  void operator()(uint32_t, hostrpc::page_t *page)
+  print_buffer_t *print_buffer = nullptr;
+  omp_operate(hsa_region_t r, print_buffer_t *print_buffer)
+      : coarse_region(r), print_buffer(print_buffer)
   {
-    for (unsigned c = 0; c < 64; c++) op(&page->cacheline[c]);
+  }
+  void perthread(unsigned c, hostrpc::cacheline_t *line,
+                 print_wip &thread_print);
+
+  void operator()(uint32_t slot, hostrpc::page_t *page)
+  {
+    std::array<print_wip, 64> &print_slot_buffer = (*print_buffer)[slot];
+    for (unsigned c = 0; c < 64; c++)
+      perthread(c, &page->cacheline[c], print_slot_buffer[c]);
   }
 };
 
@@ -218,15 +225,31 @@ struct omp_clear
 // in a loop on a pthread,
 // server->rpc_handle<operate, clear>(op, clear);
 
-void omp_operate::op(hostrpc::cacheline_t *line)
+void omp_operate::perthread(unsigned c, hostrpc::cacheline_t *line,
+                            print_wip &thread_print)
 {
-  uint64_t op = line->element[0];
-  switch (op)
+  uint64_t ID = line->element[0];
+  static_assert(0 == opcodes_nop, "");
+  static_assert(0 == hostrpc_printf_print_nop, "");
+
+  bool verbose = false;
+
+  if (operate_printf_handle(c, line, thread_print, verbose))
     {
-      case opcodes_nop:
+      return;
+    }
+
+  switch (ID)
+    {
+      case 0:
         {
           break;
         }
+      default:
+        {
+          printf("Unhandled ID: %lu\n", ID);
+        }
+
       case opcodes_malloc:
         {
           uint64_t size;
@@ -242,6 +265,7 @@ void omp_operate::op(hostrpc::cacheline_t *line)
           memcpy(&line->element[0], &res, 8);
           break;
         }
+
       case opcodes_free:
         {
           void *ptr;
@@ -250,6 +274,7 @@ void omp_operate::op(hostrpc::cacheline_t *line)
           break;
         }
     }
+
   return;
 }
 
@@ -265,6 +290,7 @@ struct storage_t
       hostrpc::server_thread_state<type::server_type, omp_operate, omp_clear>;
 
   std::list<sts_ty> thread_state;
+  std::list<std::unique_ptr<print_buffer_t>> stash_print_buffer;
   std::vector<hostrpc::thread<sts_ty>> threads;
 
   HOSTRPC_ATOMIC(uint32_t) server_control;
@@ -423,12 +449,19 @@ unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
       }
   }
 
+  // set up the server side printf buffer state
+  storage.stash_print_buffer.emplace_back();
+  std::unique_ptr<print_buffer_t> &print_buffer =
+      storage.stash_print_buffer.back();
+  print_buffer->resize(size.N());
+
   // finally spawn a thread to run the server process, and handle book keeping
   // of it
   storage.thread_state.push_back(hostrpc::make_server_thread_state(
       reinterpret_cast<storage_t::type::server_type *>(
           (void *)storage.server_pointers[device_id].local_ptr()),
-      &storage.server_control, omp_operate{coarse_grain}, omp_clear{}));
+      &storage.server_control, omp_operate{coarse_grain, print_buffer.get()},
+      omp_clear{}));
   storage.threads.push_back(hostrpc::make_thread(&storage.thread_state.back()));
 
   return as_ulong(device_id);
