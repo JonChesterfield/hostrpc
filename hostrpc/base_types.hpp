@@ -61,17 +61,6 @@ struct page_t
 };
 static_assert(sizeof(page_t) == 4096, "");
 
-struct size_runtime
-{
-  HOSTRPC_ANNOTATE size_runtime(uint32_t N) : SZ(hostrpc::round64(N)) {}
-  using type = uint32_t;
-  HOSTRPC_ANNOTATE type N() const { return SZ; }
-  constexpr static uint32_t reserved() { return UINT32_MAX; }
-
- private:
-  uint32_t SZ;
-};
-
 namespace size_detail
 {
 template <uint64_t T>
@@ -81,38 +70,76 @@ struct bits
   {
     value = T <= UINT8_MAX    ? 8
             : T <= UINT16_MAX ? 16
-                              : 32
+            : T <= UINT32_MAX ? 32
+                              : 64,
   };
 };
 
 template <uint8_t bits>
-struct select
-{
-  using type = uint32_t;
-};
+struct dispatch;
+
 template <>
-struct select<8>
+struct dispatch<8>
 {
   using type = uint8_t;
 };
 template <>
-struct select<16>
+struct dispatch<16>
 {
   using type = uint16_t;
 };
 
+template <>
+struct dispatch<32>
+{
+  using type = uint32_t;
+};
+
+template <>
+struct dispatch<64>
+{
+  using type = uint64_t;
+};
+
+template <uint64_t V>
+struct sufficientType
+{
+  using type = typename dispatch<bits<V>::value>::type;
+};
+
 }  // namespace size_detail
 
-template <uint32_t SZ>
+template <typename T>
+struct size_runtime
+{
+ private:
+  uint32_t SZ;
+
+ public:
+  using type = T;
+  HOSTRPC_ANNOTATE size_runtime(type N) : SZ(hostrpc::round64(N)) {}
+
+  HOSTRPC_ANNOTATE size_runtime() : SZ(0) {}
+  HOSTRPC_ANNOTATE type N() const { return SZ; }
+  constexpr static type reserved() { return (type)UINT64_MAX; }
+};
+
+template <uint64_t SZ>
 struct size_compiletime
 {
-  HOSTRPC_ANNOTATE size_compiletime() {}
-  HOSTRPC_ANNOTATE size_compiletime(uint32_t) {}
-  using type = typename size_detail::select<
-      size_detail::bits<hostrpc::round64(SZ)>::value>::type;
+ private:
+  using sufficient = typename size_detail::sufficientType<hostrpc::round64(SZ)>;
+  enum : typename sufficient::type
+  {
+    value = hostrpc::round64(SZ)
+  };
 
-  HOSTRPC_ANNOTATE constexpr type N() const { return hostrpc::round64(SZ); }
-  constexpr static uint32_t reserved() { return UINT32_MAX; }
+ public:
+  using type = typename sufficient::type;
+  HOSTRPC_ANNOTATE size_compiletime() {}
+
+  HOSTRPC_ANNOTATE constexpr type N() const { return value; }
+  constexpr static type reserved() { return (type)UINT64_MAX; }
 };
 
 template <size_t Size, size_t Align>

@@ -18,10 +18,12 @@ enum opcodes
   opcodes_free = 2,
 };
 
+using sizeType = hostrpc::size_runtime<uint32_t>;
+
 #if HOSTRPC_AMDGCN
 #pragma omp declare target
 
-using client_type = hostrpc::x64_gcn_type<hostrpc::size_runtime>::client_type;
+using client_type = hostrpc::x64_gcn_type<sizeType>::client_type;
 static client_type *get_client();
 
 __PRINTF_API_EXTERNAL uint32_t __printf_print_start(const char *fmt)
@@ -280,7 +282,7 @@ namespace
 {
 struct storage_t
 {
-  using type = hostrpc::x64_gcn_type<hostrpc::size_runtime>;
+  using type = hostrpc::x64_gcn_type<sizeType>;
   std::vector<type> stash;
   std::vector<type::storage_type::AllocLocal::raw> server_pointers;
   std::vector<type::storage_type::AllocRemote::raw> client_pointers;
@@ -406,7 +408,7 @@ unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
       return 0;
     }
 
-  auto size = hostrpc::size_runtime(numCu * waverPerCu);
+  sizeType size = numCu * waverPerCu;
   hsa_region_t fine_grain = hsa::region_fine_grained(agent);
   hsa_region_t coarse_grain = hsa::region_coarse_grained(agent);
 

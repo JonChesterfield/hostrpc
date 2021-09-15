@@ -97,7 +97,7 @@ struct kernel_args
   _Atomic(uint64_t) *control;
 };
 
-using SZ = hostrpc::size_runtime;
+using SZ = hostrpc::size_runtime<uint32_t>;
 
 #if defined(__AMDGCN__)
 

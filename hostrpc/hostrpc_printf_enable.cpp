@@ -11,7 +11,7 @@
 #if (HOSTRPC_AMDGCN)
 
 __attribute__((visibility("default")))
-hostrpc::x64_gcn_type<hostrpc::size_runtime>::client_type
+hostrpc::x64_gcn_type<hostrpc::size_runtime<uint32_t>>::client_type
     hostrpc_x64_gcn_debug_client[1];
 
 __PRINTF_API_EXTERNAL uint32_t __printf_print_start(const char *fmt)
@@ -97,7 +97,7 @@ __PRINTF_API_EXTERNAL void __printf_pass_element_write_int64(uint32_t port,
 namespace
 {
 
-using SZ = hostrpc::size_runtime;
+using SZ = hostrpc::size_runtime<uint32_t>;
 
 struct global
 {
@@ -107,11 +107,11 @@ struct global
         hostrpc::server_thread_state<hostrpc::x64_gcn_type<SZ>::server_type,
                                      operate, clear>;
 
-    std::unique_ptr<hostrpc::x64_gcn_type<SZ> > p;
+    std::unique_ptr<hostrpc::x64_gcn_type<SZ>> p;
     HOSTRPC_ATOMIC(uint32_t) server_control;
 
     sts_ty server_state;
-    std::unique_ptr<hostrpc::thread<sts_ty> > thrd;
+    std::unique_ptr<hostrpc::thread<sts_ty>> thrd;
 
     std::unique_ptr<print_buffer_t> print_buffer;
 
@@ -143,7 +143,7 @@ struct global
 
       // having trouble getting clang to call the move constructor, work around
       // with heap
-      p = std::make_unique<hostrpc::x64_gcn_type<SZ> >(
+      p = std::make_unique<hostrpc::x64_gcn_type<SZ>>(
           N, fine_grained_region.handle, coarse_grained_region.handle);
       platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
                              __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
@@ -155,8 +155,8 @@ struct global
       operate op(print_buffer.get());
       server_state = sts_ty(&p->server, &server_control, op, clear{});
 
-      thrd = std::make_unique<hostrpc::thread<sts_ty> >(
-          make_thread(&server_state));
+      thrd =
+          std::make_unique<hostrpc::thread<sts_ty>>(make_thread(&server_state));
 
       if (!thrd->valid())
         {
@@ -176,7 +176,7 @@ struct global
   };
 
   hsa::init hsa_instance;
-  std::vector<std::unique_ptr<wrap_state> > state;
+  std::vector<std::unique_ptr<wrap_state>> state;
   static pthread_mutex_t mutex;
 
   global(const global &) = delete;

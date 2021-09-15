@@ -155,7 +155,8 @@ int init(void *image)
   t("cuModuleGetFunction",
     [&]() { return cuModuleGetFunction(&Func, Module, "__device_start"); });
 
-  hostrpc::x64_ptx_type x64_nvptx_state(128);
+  using SZ = hostrpc::size_runtime<uint32_t>;
+  hostrpc::x64_ptx_type<SZ> x64_nvptx_state(SZ{128});
 
   {
     error_tracker t;
@@ -171,12 +172,13 @@ int init(void *image)
 
         CUdeviceptr mem;
         t("alloc", [&]() {
-          return cuMemAlloc(&mem, sizeof(hostrpc::x64_ptx_type::client_type));
+          return cuMemAlloc(&mem,
+                            sizeof(hostrpc::x64_ptx_type<SZ>::client_type));
         });
 
         t("copy client", [&]() {
           return cuMemcpyHtoD(mem, &x64_nvptx_state,
-                              sizeof(hostrpc::x64_ptx_type::client_type));
+                              sizeof(hostrpc::x64_ptx_type<SZ>::client_type));
         });
 
         t("copy pointer", [&]() { return cuMemcpyHtoD(devPtr, &mem, 8); });

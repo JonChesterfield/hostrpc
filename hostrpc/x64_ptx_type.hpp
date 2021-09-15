@@ -12,18 +12,18 @@
 
 namespace hostrpc
 {
-using x64_ptx_type_base =
-    client_server_pair_t<hostrpc::size_runtime, uint32_t,
-                         hostrpc::allocator::cuda_shared<alignof(page_t)>,
-                         hostrpc::allocator::cuda_shared<64>,
-                         hostrpc::allocator::host_libc<64>,
-                         hostrpc::allocator::cuda_gpu<64>>;
+template <typename SZ>
+using x64_ptx_type_base = client_server_pair_t<
+    SZ, uint32_t, hostrpc::allocator::cuda_shared<alignof(page_t)>,
+    hostrpc::allocator::cuda_shared<64>, hostrpc::allocator::host_libc<64>,
+    hostrpc::allocator::cuda_gpu<64>>;
 
-struct x64_ptx_type : public x64_ptx_type_base
+template <typename SZ>
+struct x64_ptx_type : public x64_ptx_type_base<SZ>
 {
-  using base = x64_ptx_type_base;
-  HOSTRPC_ANNOTATE x64_ptx_type(size_t N)
-      : base(hostrpc::size_runtime(N), typename base::AllocBuffer(),
+  using base = x64_ptx_type_base<SZ>;
+  HOSTRPC_ANNOTATE x64_ptx_type(SZ sz)
+      : base(sz, typename base::AllocBuffer(),
              typename base::AllocInboxOutbox(), typename base::AllocLocal(),
              typename base::AllocRemote())
   {

@@ -17,7 +17,7 @@
 #include "hostrpc_thread.hpp"
 #include "server_thread_state.hpp"
 
-using SZ = hostrpc::size_runtime;
+using SZ = hostrpc::size_runtime<uint32_t>;
 
 __device__ extern "C" int printf(const char *format, ...);
 

@@ -32,7 +32,8 @@ void use_result(hostrpc::page_t *page, uint64_t d[8])
 // __attribute__((visibility("default")))
 // By value errors, 'Module has a nontrivial global ctor, which NVPTX does not
 // support.'
-hostrpc::x64_ptx_type::client_type *x64_nvptx_client_state = nullptr;
+hostrpc::x64_ptx_type<hostrpc::size_runtime<uint32_t>>::client_type
+    *x64_nvptx_client_state = nullptr;
 
 hostrpc::page_t scratch;
 extern "C" __attribute__((visibility("default"))) int main(int argc,

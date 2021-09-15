@@ -38,7 +38,7 @@ HOSTRPC_ATOMIC(uint64_t) *server_ran = nullptr;
 namespace hostrpc
 {
 using x64_x64_type_base =
-    client_server_pair_t<hostrpc::size_runtime, uint64_t,
+    client_server_pair_t<hostrpc::size_runtime<uint32_t>, uint64_t,
                          hostrpc::allocator::host_libc<alignof(page_t)>,
                          hostrpc::allocator::host_libc<64>,
                          hostrpc::allocator::host_libc<64>,
@@ -48,7 +48,7 @@ struct x64_x64_type : public x64_x64_type_base
 {
   using base = x64_x64_type_base;
   HOSTRPC_ANNOTATE x64_x64_type(size_t N)
-      : base(hostrpc::size_runtime(N), typename base::AllocBuffer(),
+      : base(hostrpc::size_runtime<uint32_t>(N), typename base::AllocBuffer(),
              typename base::AllocInboxOutbox(), typename base::AllocLocal(),
              typename base::AllocRemote())
   {

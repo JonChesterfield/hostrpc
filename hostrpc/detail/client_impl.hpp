@@ -74,7 +74,7 @@ struct client_impl : public SZT, public Counter
   staging_t staging;
 
   HOSTRPC_ANNOTATE client_impl()
-      : SZ{0},
+      : SZ{},
         Counter{},
         shared_buffer(nullptr),
         active{},

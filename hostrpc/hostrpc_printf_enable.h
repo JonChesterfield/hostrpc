@@ -85,8 +85,6 @@ struct __printf_pass_element_write_t
   HOSTRPC_ANNOTATE __printf_pass_element_write_t() {}
 };
 
-// using SZ = hostrpc::size_runtime;
-
 }  // namespace
 
 

@@ -70,7 +70,7 @@ static void gcn_server_callback(hostrpc::cacheline_t *line)
 
 struct gcn_x64_type
 {
-  using SZ = hostrpc::size_runtime;
+  using SZ = hostrpc::size_runtime<uint32_t>;
   using Word = uint64_t;
 
   using client_type = client_impl<Word, SZ>;
