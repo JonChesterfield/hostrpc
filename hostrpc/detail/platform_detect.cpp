@@ -49,7 +49,7 @@
 
 NOGPU='-nocudainc -nocudalib -nogpuinc -nogpulib -Wno-unused-command-line-argument -Wno-unknown-cuda-version'
 
-CLANG=$HOME/rocm/aomp/bin/clang++
+CLANG="$HOME/llvm-install/bin/clang++"
 
 echo '#warning "Ptx freestanding"'
 $CLANG -g -O2 -emit-llvm -ffreestanding -fno-exceptions -Wno-atomic-alignment --target=nvptx64-nvidia-cuda -march=sm_50 $NOGPU  platform_detect.cpp -c -o /dev/null

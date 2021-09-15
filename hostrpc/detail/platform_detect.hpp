@@ -129,7 +129,7 @@
 // clang -x cuda errors on __device__, __host__ but seems to do the right thing with __attribute__
 
 // openmp presently defines __HIP__
-// distinction between host/device is used in some coodegen tests, can be
+// distinction between host/device is used in some codegen tests, can be
 // removed before production
 #if (defined(__CUDA__) || defined (__HIP__)) && !defined(_OPENMP)
   #define HOSTRPC_ANNOTATE_HOST __attribute__((host))

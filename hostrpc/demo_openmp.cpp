@@ -132,15 +132,16 @@ int main()
       fprintf(stderr, "Failed to set device flags\n");
       exit(1);
     }
+  hostrpc::disable_amdgcn();
+#else
+  hostrpc::disable_nvptx();
 #endif
 
 #pragma omp target
   asm("// less lazy");
 
   hostrpc::plugins got = hostrpc::find_plugins();
-
-  fprintf(stderr, "amd: %u, ptx: %u. Found %u devices\n", got.amdgcn, got.nvptx,
-          omp_get_num_devices());
+  fprintf(stderr, "amd: %u, ptx: %u\n", got.amdgcn, got.nvptx);
 
   {
     SZ sz;
