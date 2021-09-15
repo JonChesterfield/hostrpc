@@ -1,8 +1,8 @@
 #ifndef SERVER_THREAD_STATE_HPP_INCLUDED
 #define SERVER_THREAD_STATE_HPP_INCLUDED
 
-#include "detail/platform.hpp"
 #include "detail/cxx.hpp"
+#include "detail/platform.hpp"
 
 namespace hostrpc
 {
@@ -14,14 +14,15 @@ struct server_thread_state
   HOSTRPC_ATOMIC(uint32_t) * control;
   Operate op;
   Clear cl;
-  
-  server_thread_state() = default;   
+
+  server_thread_state() = default;
 
   server_thread_state(Server* server, HOSTRPC_ATOMIC(uint32_t) * control,
                       Operate op, Clear cl)
       : server(server),
         control(control),
-        op(hostrpc::cxx::move(op)), cl(hostrpc::cxx::move(cl))
+        op(hostrpc::cxx::move(op)),
+        cl(hostrpc::cxx::move(cl))
   {
   }
 

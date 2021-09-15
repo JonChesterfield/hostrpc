@@ -6,8 +6,8 @@
 #include <stdint.h>
 
 // TODO: Put these somewhere else  or include <new> and restrict to HOST
-inline void* operator new(size_t, _Atomic(uint32_t) * p) { return p; }
-inline void* operator new(size_t, _Atomic(uint64_t) * p) { return p; }
+inline void* operator new(size_t, _Atomic(uint32_t)* p) { return p; }
+inline void* operator new(size_t, _Atomic(uint64_t)* p) { return p; }
 inline void* operator new(size_t, hostrpc::page_t* p) { return p; }
 
 namespace hostrpc

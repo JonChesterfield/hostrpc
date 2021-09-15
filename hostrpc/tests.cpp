@@ -59,8 +59,8 @@ TEST_CASE("set up single word system")
 
   struct fill
   {
-    fill(_Atomic(uint64_t) * s) : state(s) {}
-    _Atomic(uint64_t) * state;
+    fill(_Atomic(uint64_t) *s) : state(s) {}
+    _Atomic(uint64_t) *state;
     void operator()(uint32_t, page_t *p)
     {
       p->cacheline[0].element[0] = *state;

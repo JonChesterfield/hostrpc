@@ -1,7 +1,6 @@
 #ifndef ENQUEUE_DISPATCH_HPP_INCLUDED
 #define ENQUEUE_DISPATCH_HPP_INCLUDED
 
-
 #include "hsa_packet.hpp"
 
 #if defined(__AMDGCN__)
@@ -99,23 +98,30 @@ inline size_t hardware_doorbell()
 }
 }  // namespace offset
 
-enum {  offset_reserved2 = 384 / 8,};
-static constexpr inline uint32_t getlo(uint64_t x) { return static_cast<uint32_t>(x); }
+enum
+{
+  offset_reserved2 = 384 / 8,
+};
+static constexpr inline uint32_t getlo(uint64_t x)
+{
+  return static_cast<uint32_t>(x);
+}
 
 static constexpr inline uint32_t gethi(uint64_t x)
 {
   return static_cast<uint32_t>(x >> 32u);
 }
 
-
-typedef struct hsa_signal_s {
+typedef struct hsa_signal_s
+{
   /**
    * Opaque handle. The value 0 is reserved.
    */
   uint64_t handle;
 } hsa_signal_t;
- 
-typedef enum {
+
+typedef enum
+{
   /**
    * Queue supports multiple producers.
    */
@@ -126,15 +132,17 @@ typedef enum {
   HSA_QUEUE_TYPE_SINGLE = 1
 } hsa_queue_type_t;
 
-typedef enum __ockl_memory_order_e {
+typedef enum __ockl_memory_order_e
+{
   __ockl_memory_order_relaxed = __ATOMIC_RELAXED,
   __ockl_memory_order_acquire = __ATOMIC_ACQUIRE,
   __ockl_memory_order_release = __ATOMIC_RELEASE,
   __ockl_memory_order_acq_rel = __ATOMIC_ACQ_REL,
   __ockl_memory_order_seq_cst = __ATOMIC_SEQ_CST,
 } __ockl_memory_order;
- 
-typedef struct hsa_queue_s {
+
+typedef struct hsa_queue_s
+{
   /**
    * Queue type.
    */
@@ -146,7 +154,7 @@ typedef struct hsa_queue_s {
    */
   uint32_t features;
 
-#if 1 // def HSA_LARGE_MODEL
+#if 1  // def HSA_LARGE_MODEL
   void *base_address;
 #elif defined HSA_LITTLE_ENDIAN
   /**
@@ -192,15 +200,15 @@ typedef struct hsa_queue_s {
 
 } hsa_queue_t;
 
-        
 // AMD Queue Properties.
 typedef uint32_t amd_queue_properties32_t;
 
-#  define __ALIGNED__(x) __attribute__((aligned(x)))
+#define __ALIGNED__(x) __attribute__((aligned(x)))
 // AMD Queue.
 #define AMD_QUEUE_ALIGN_BYTES 64
 #define AMD_QUEUE_ALIGN __ALIGNED__(AMD_QUEUE_ALIGN_BYTES)
-typedef struct AMD_QUEUE_ALIGN amd_queue_s {
+typedef struct AMD_QUEUE_ALIGN amd_queue_s
+{
   hsa_queue_t hsa_queue;
   uint32_t reserved1[4];
   volatile uint64_t write_dispatch_id;
@@ -224,18 +232,14 @@ typedef struct AMD_QUEUE_ALIGN amd_queue_s {
   uint32_t reserved4[14];
 } amd_queue_t;
 
+#define _MANGLE3x(P, N, S) P##_##N##S
+#define MANGLE3x(P, N, S) _MANGLE3x(P, N, S)
+#define _MANGLE3(P, N, S) P##_##N##_##S
+#define MANGLE3(P, N, S) _MANGLE3(P, N, S)
+#define OCKL_MANGLE_T(N, T) MANGLE3(__ockl, N, T)
 
-
-#define _MANGLE3x(P,N,S) P##_##N##S
-#define MANGLE3x(P,N,S) _MANGLE3x(P,N,S)
-#define _MANGLE3(P,N,S) P##_##N##_##S
-#define MANGLE3(P,N,S) _MANGLE3(P,N,S)
-#define OCKL_MANGLE_T(N,T) MANGLE3(__ockl, N, T)
-
- extern "C"
-   void OCKL_MANGLE_T(hsa_signal,store)(hsa_signal_t sig, long value, __ockl_memory_order mem_order);
- 
- 
+extern "C" void OCKL_MANGLE_T(hsa_signal, store)(hsa_signal_t sig, long value,
+                                                 __ockl_memory_order mem_order);
 
 template <typename F>
 inline void enqueue_dispatch(F func, const unsigned char *src)
@@ -253,13 +257,13 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
 
   // Acquire an available packet id
   using global_atomic_uint32 =
-      __attribute__((address_space(1))) HOSTRPC_ATOMIC(uint32_t) ;
-  
+      __attribute__((address_space(1))) HOSTRPC_ATOMIC(uint32_t);
+
   using global_atomic_uint64 =
-      __attribute__((address_space(1))) HOSTRPC_ATOMIC(uint64_t) ;
-  auto write_dispatch_id = reinterpret_cast<global_atomic_uint64*>(
+      __attribute__((address_space(1))) HOSTRPC_ATOMIC(uint64_t);
+  auto write_dispatch_id = reinterpret_cast<global_atomic_uint64 *>(
       my_queue + offset::write_dispatch_id());
-  auto read_dispatch_id = reinterpret_cast<global_atomic_uint64*>(
+  auto read_dispatch_id = reinterpret_cast<global_atomic_uint64 *>(
       my_queue + offset::read_dispatch_id());
 
   // Need to get queue->size and queue->base_address to use the packet id
@@ -277,12 +281,13 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
   assert(size == my_amd_queue->hsa_queue.size);
 #endif
 
-  __attribute__((address_space(4))) const void* p = __builtin_amdgcn_dispatch_ptr();
+  __attribute__((address_space(4))) const void *p =
+      __builtin_amdgcn_dispatch_ptr();
   uint64_t user_sig;
-  __builtin_memcpy(&user_sig, (const unsigned char*)p + offset_reserved2, 8);
+  __builtin_memcpy(&user_sig, (const unsigned char *)p + offset_reserved2, 8);
   uint32_t uuid = getlo(user_sig);
   uint32_t state = gethi(user_sig);
-  
+
   if (platform::is_master_lane())
     {
       uint64_t packet_id =
@@ -290,8 +295,11 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
                                      __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
               write_dispatch_id, 1);
 
-      if (0) printf("Enqueue dispatch uuid %u w/ state %u enqueue-dispatch slot %lu\n", uuid, state, packet_id);
-      
+      if (0)
+        printf(
+            "Enqueue dispatch uuid %u w/ state %u enqueue-dispatch slot %lu\n",
+            uuid, state, packet_id);
+
       bool full = true;
       while (full)
         {
@@ -313,13 +321,10 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
 
       unsigned char *packet = (base_address) + packet_size * (packet_id & mask);
 
+      if (0)
+        printf("GPU: Using queue size %u at 0x%lx, writing to 0x%lx\n", size,
+               (uint64_t)base_address, (uint64_t)packet);
 
-      if (0) printf("GPU: Using queue size %u at 0x%lx, writing to 0x%lx\n",
-             size, (uint64_t)base_address,
-             (uint64_t)packet);
-               
-               
-      
 #if (__HAVE_ROCR_HEADERS)
       static_assert(packet_size == sizeof(hsa_kernel_dispatch_packet_t), "");
       assert(packet == (char *)((hsa_kernel_dispatch_packet_t *)
@@ -327,36 +332,36 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
                                 (packet_id & mask)));
 #endif
 
+      platform::fence_acquire();  // new
 
-      platform::fence_acquire(); // new
-      
-    
       {
-        const global_atomic_uint32* s = (const global_atomic_uint32*) (src);
-        global_atomic_uint32* d = (global_atomic_uint32*) (packet);
-        
-       for (unsigned i = 1; i < 16; i++)
-        {
-          // storing to first four bytes may be a bad move if CP is watching it
-          // if that is the problem, can still copy the rest 8bytes at a time
-          platform::atomic_store<uint32_t, __ATOMIC_RELAXED,
-                                 __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(&d[i],
-                                                        platform::atomic_load<uint32_t,
-                                                         __ATOMIC_RELAXED,
-                                                     __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(&s[i]));
-        }
+        const global_atomic_uint32 *s = (const global_atomic_uint32 *)(src);
+        global_atomic_uint32 *d = (global_atomic_uint32 *)(packet);
+
+        for (unsigned i = 1; i < 16; i++)
+          {
+            // storing to first four bytes may be a bad move if CP is watching
+            // it if that is the problem, can still copy the rest 8bytes at a
+            // time
+            platform::atomic_store<uint32_t, __ATOMIC_RELAXED,
+                                   __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+                &d[i],
+                platform::atomic_load<uint32_t, __ATOMIC_RELAXED,
+                                      __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+                    &s[i]));
+          }
       }
-      
+
       // __builtin_memcpy(packet, src, packet_size);
 
-      //printf("Kernel at %u\n",__LINE__);
-      //dump_kernel(packet);
+      // printf("Kernel at %u\n",__LINE__);
+      // dump_kernel(packet);
 
       func(packet);
 
-      //printf("Kernel at %u\n",__LINE__);
-      //dump_kernel(packet);
-      
+      // printf("Kernel at %u\n",__LINE__);
+      // dump_kernel(packet);
+
 #if 0
       printf("enqueue_dispatch written packet[%lu]\n",packet_id);
       hsa_packet::dump_kernel(packet);
@@ -375,20 +380,21 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
           platform::atomic_load<uint32_t, __ATOMIC_RELAXED,
                                 __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
               (const global_atomic_uint32 *)(src));
-          platform::atomic_load<uint32_t, __ATOMIC_RELAXED,
-                                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
-              (const global_atomic_uint32 *)(src));
-
+      platform::atomic_load<uint32_t, __ATOMIC_RELAXED,
+                            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+          (const global_atomic_uint32 *)(src));
 
       // platform::fence_release(); // new
 
-      if (0) printf("Respawn %u w/ state %u writing packet_id %lu\n", uuid, state, packet_id);
-          
+      if (0)
+        printf("Respawn %u w/ state %u writing packet_id %lu\n", uuid, state,
+               packet_id);
+
       platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
                              __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
           (global_atomic_uint32 *)packet, header);
 
-       platform::fence_release(); // old
+      platform::fence_release();  // old
 
       // storing is excitingly architecture specific. Implementing for gfx >=
       // 900 which can write directly to hardware_doorbell_ptr
@@ -413,9 +419,12 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
                          doorbell_handle + offset::hardware_doorbell(),
                          sizeof(HOSTRPC_ATOMIC(uint64_t *)));
 
-        if (0) printf("Doorbell: uuid %u, write %lu to address 0x%lx, handle at 0x%lx\n",
-               uuid, packet_id, (uint64_t)hardware_doorbell_ptr,(uint64_t)doorbell_handle);
-
+        if (0)
+          printf(
+              "Doorbell: uuid %u, write %lu to address 0x%lx, handle at "
+              "0x%lx\n",
+              uuid, packet_id, (uint64_t)hardware_doorbell_ptr,
+              (uint64_t)doorbell_handle);
 
         // hsa may be using release fence + relaxed store for this
         platform::atomic_store<uint64_t, __ATOMIC_RELEASE,

@@ -77,8 +77,6 @@ void assert_fail(const char *str, const char *file, unsigned int line,
 
 static DEVICE uint32_t get_master_lane_id(void)
 {
-  // TODO: openmp deviceRTL uses:
-  // return (blockDim.x - 1) & ~(WARPSIZE - 1);
   uint32_t activemask = detail::ballot();
   uint32_t lowest_active = __builtin_ffs(activemask) - 1;
   return lowest_active;
@@ -109,41 +107,40 @@ namespace detail
 // Might be able to use volatile _Atomic as the top level type if
 // opencl load/store is compiled correctly when called from cuda
 
-#define HOSTRPC_STAMP_MEMORY(TYPE)                                            \
-  DEVICE TYPE atomic_load_relaxed(volatile _Atomic(TYPE) const *addr)         \
-  {                                                                           \
-    return __opencl_atomic_load(addr, __ATOMIC_RELAXED,                       \
-                                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);       \
-  }                                                                           \
-                                                                              \
-  DEVICE void atomic_store_relaxed(volatile _Atomic(TYPE) * addr, TYPE value) \
-  {                                                                           \
-    return __opencl_atomic_store(addr, value, __ATOMIC_RELAXED,               \
-                                 __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);      \
+#define HOSTRPC_STAMP_MEMORY(TYPE)                                           \
+  DEVICE TYPE atomic_load_relaxed(volatile _Atomic(TYPE) const *addr)        \
+  {                                                                          \
+    return __opencl_atomic_load(addr, __ATOMIC_RELAXED,                      \
+                                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);      \
+  }                                                                          \
+                                                                             \
+  DEVICE void atomic_store_relaxed(volatile _Atomic(TYPE) *addr, TYPE value) \
+  {                                                                          \
+    return __opencl_atomic_store(addr, value, __ATOMIC_RELAXED,              \
+                                 __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);     \
   }
 
 #define HOSTRPC_STAMP_FETCH(TYPE, NAME)                                   \
-  DEVICE TYPE atomic_##NAME##_relaxed(volatile _Atomic(TYPE) * addr,      \
+  DEVICE TYPE atomic_##NAME##_relaxed(volatile _Atomic(TYPE) *addr,       \
                                       TYPE value)                         \
   {                                                                       \
     return __opencl_atomic_##NAME(addr, value, __ATOMIC_RELAXED,          \
                                   __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES); \
   }
 
-#define HOSTRPC_STAMP_FETCH_OPS(TYPE)                                 \
-  HOSTRPC_STAMP_FETCH(TYPE, fetch_add)                                \
-  HOSTRPC_STAMP_FETCH(TYPE, fetch_sub)                                \
-  HOSTRPC_STAMP_FETCH(TYPE, fetch_and)                                \
-  HOSTRPC_STAMP_FETCH(TYPE, fetch_or)                                 \
-  DEVICE bool atomic_compare_exchange_weak_relaxed(                   \
-      volatile _Atomic(TYPE) * addr, TYPE expected, TYPE desired,     \
-      TYPE * loaded)                                                  \
-  {                                                                   \
-    bool r = __opencl_atomic_compare_exchange_weak(                   \
-        addr, &expected, desired, __ATOMIC_RELAXED, __ATOMIC_RELAXED, \
-        __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);                       \
-    *loaded = expected;                                               \
-    return r;                                                         \
+#define HOSTRPC_STAMP_FETCH_OPS(TYPE)                                          \
+  HOSTRPC_STAMP_FETCH(TYPE, fetch_add)                                         \
+  HOSTRPC_STAMP_FETCH(TYPE, fetch_sub)                                         \
+  HOSTRPC_STAMP_FETCH(TYPE, fetch_and)                                         \
+  HOSTRPC_STAMP_FETCH(TYPE, fetch_or)                                          \
+  DEVICE bool atomic_compare_exchange_weak_relaxed(                            \
+      volatile _Atomic(TYPE) *addr, TYPE expected, TYPE desired, TYPE *loaded) \
+  {                                                                            \
+    bool r = __opencl_atomic_compare_exchange_weak(                            \
+        addr, &expected, desired, __ATOMIC_RELAXED, __ATOMIC_RELAXED,          \
+        __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES);                                \
+    *loaded = expected;                                                        \
+    return r;                                                                  \
   }
 
 // Cuda maps uint64_t onto unsigned long while mangling, but it seems

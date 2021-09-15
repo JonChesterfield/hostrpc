@@ -232,10 +232,10 @@ TEST_CASE("persistent_kernel")
 
     hsa_queue_t *queue = hsa::create_queue(kernel_agent);
     if (!queue)
-    {
-      fprintf(stderr, "Failed to create queue\n");
-      exit(1);
-    }
+      {
+        fprintf(stderr, "Failed to create queue\n");
+        exit(1);
+      }
 
     hsa_region_t kernarg_region = hsa::region_kernarg(kernel_agent);
     hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);

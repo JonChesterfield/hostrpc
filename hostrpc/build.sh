@@ -549,20 +549,19 @@ if (($have_amdgcn)); then
 fi
 
 # Not totally reliable, sometimes raises memory access errors
-if (($have_amdgcn)); then
-    ./pool_example_amdgpu.x64.exe
-fi
+# Hanging on gfx10 at present
+#if (($have_amdgcn)); then  
+#    ./pool_example_amdgpu.x64.exe
+#fi
 ./pool_example_host.x64.exe
 
 
-if (($have_amdgcn)); then
-$RDIR/bin/amdgpu-arch
-./pool_example_amdgpu.x64.exe #works
-./test_example.gcn
-
-./pool_example_amdgpu.x64.exe #hangs then persistent memory fault
-fi
-
+#if (($have_amdgcn)); then
+#$RDIR/bin/amdgpu-arch
+#./pool_example_amdgpu.x64.exe #works
+#./test_example.gcn
+#./pool_example_amdgpu.x64.exe #hangs then persistent memory fault
+#fi
 
 if (($have_nvptx)); then
 bash -c "$LOADPREFIX ./demo_openmp_ptx"

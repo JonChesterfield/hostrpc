@@ -414,7 +414,7 @@ static int main_with_hsa(int argc, char **argv)
     {
       fprintf(stderr, "Spawn queue\n");
     }
-  
+
   hsa_queue_t *queue;
   {
     hsa_status_t rc = hsa_queue_create(
@@ -507,7 +507,8 @@ static int main_with_hsa(int argc, char **argv)
     }
   else
     {
-      fprintf(stderr, "Error: get_kernel_info failed for kernel %s\n", kernel_entry);
+      fprintf(stderr, "Error: get_kernel_info failed for kernel %s\n",
+              kernel_entry);
       exit(1);
     }
 
@@ -556,10 +557,10 @@ static int main_with_hsa(int argc, char **argv)
     {
       fprintf(stderr, "Warning: Non-uniform return values\n");
 
-      fprintf(stderr,"Queue in x64: %lx\n", (uint64_t)queue);
+      fprintf(stderr, "Queue in x64: %lx\n", (uint64_t)queue);
       uint64_t v = ((uint64_t)result[0] & 0x00000000FFFFFFFFull) |
                    (((uint64_t)result[1] & 0x00000000FFFFFFFFull) << 32u);
-      fprintf(stderr,"Queue: %lx\n", v);
+      fprintf(stderr, "Queue: %lx\n", v);
       for (size_t i = 0; i < number_return_values; i++)
         {
           fprintf(stderr, "rc[%zu] = %x\n", i, result[i]);

@@ -134,7 +134,8 @@ enum
   offset_reserved2 = 384 / 8,
   offset_signal = 448 / 8,
 
-  offset_userdata = offset_reserved2, // want an 8 byte field that survives respawn
+  offset_userdata =
+      offset_reserved2,  // want an 8 byte field that survives respawn
 };
 
 template <typename Derived, template <typename, uint32_t> class Via,
@@ -168,10 +169,11 @@ struct threads_base
     uint32_t uuid = allocate();
     if (uuid < /*requested()*/ maximum())  // maximum should be correct too
       {
-        if (print_enabled()) {
-          printf("uuid %u: spawning %u\n", Implementation().get_current_uuid(),
-                 uuid);
-        }
+        if (print_enabled())
+          {
+            printf("uuid %u: spawning %u\n",
+                   Implementation().get_current_uuid(), uuid);
+          }
         if (Implementation().spawn_with_uuid(uuid) == 0)
           {
             return;
@@ -179,10 +181,11 @@ struct threads_base
       }
     else
       {
-        if (print_enabled()) {
-          printf("uuid %u: %u is over maximum %u, dealloc\n", Implementation().get_current_uuid(),
-                 uuid, maximum());
-        }
+        if (print_enabled())
+          {
+            printf("uuid %u: %u is over maximum %u, dealloc\n",
+                   Implementation().get_current_uuid(), uuid, maximum());
+          }
       }
     deallocate();
   }
@@ -215,12 +218,20 @@ struct threads_base
       }
 
     uint32_t nstate = Implementation().run(state);
-    if (0) if (print_enabled()) {printf("Respawn %u w/ state %u->%u\n", uuid, state,nstate);}
+    if (0)
+      if (print_enabled())
+        {
+          printf("Respawn %u w/ state %u->%u\n", uuid, state, nstate);
+        }
     state = nstate;
 
     if (Implementation().respawn_self(state))
       {
-        if (0) if (print_enabled()) {printf("Respawned %u w/ state %u\n", uuid, state);}        
+        if (0)
+          if (print_enabled())
+            {
+              printf("Respawned %u w/ state %u\n", uuid, state);
+            }
         return;
       }
     else
@@ -335,11 +346,12 @@ struct via_pthreads : public threads_base<Max, via_pthreads<Derived, Max>>
 
   void teardown()
   {
-    do 
+    do
       {
         base::set_requested(0);
         platform::sleep_briefly();
-      } while (base::alive() != 0);    
+      }
+    while (base::alive() != 0);
   }
 
  private:
@@ -458,8 +470,9 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
 
   void teardown()
   {
-    __attribute__((address_space(4))) const void* p = __builtin_amdgcn_dispatch_ptr();
-    
+    __attribute__((address_space(4))) const void* p =
+        __builtin_amdgcn_dispatch_ptr();
+
     uint64_t compl_sig;
     __builtin_memcpy(&compl_sig, (const unsigned char*)p + offset_signal, 8);
     uint64_t user_sig;
@@ -467,32 +480,38 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
     uint64_t kernarg_sig;
     __builtin_memcpy(&kernarg_sig, (const unsigned char*)p + offset_kernarg, 8);
 
-
-    if (print_enabled()) {
-      printf("Teardown %s L%u (a: %u, k: 0x%lx, u: 0x%lx, s: 0x%lx)\n", __func__, __LINE__,
-             base::alive(),kernarg_sig, user_sig, compl_sig);
-    }
+    if (print_enabled())
+      {
+        printf("Teardown %s L%u (a: %u, k: 0x%lx, u: 0x%lx, s: 0x%lx)\n",
+               __func__, __LINE__, base::alive(), kernarg_sig, user_sig,
+               compl_sig);
+      }
 
     base::set_requested(0);
     const uint32_t a = base::alive();
 
-    
     if (a != 0)
       {
         if (print_enabled())
-          printf("Teardown respawned on alive:%u, kill this instance (hope it had s: 0, was k: 0x%lx, u: 0x%lx, s: 0x%lx)\n",  a,   kernarg_sig,   user_sig, compl_sig);
+          printf(
+              "Teardown respawned on alive:%u, kill this instance (hope it had "
+              "s: 0, was k: 0x%lx, u: 0x%lx, s: 0x%lx)\n",
+              a, kernarg_sig, user_sig, compl_sig);
 
         enqueue_dispatch((const unsigned char*)p);
         return;
       }
 
-    if (print_enabled()) printf("Teardown did not spawn, continuing k: 0x%lx, u: 0x%lx, s: 0x%lx\n",kernarg_sig, user_sig, compl_sig);
-      
-    
-    if (print_enabled()) 
-      printf("Alive should be zero %s L%u (a: %u, k: 0x%lx, u: 0x%lx, s: 0x%lx)\n", __func__, __LINE__, a, kernarg_sig, user_sig, compl_sig);
-    
-    
+    if (print_enabled())
+      printf(
+          "Teardown did not spawn, continuing k: 0x%lx, u: 0x%lx, s: 0x%lx\n",
+          kernarg_sig, user_sig, compl_sig);
+
+    if (print_enabled())
+      printf(
+          "Alive should be zero %s L%u (a: %u, k: 0x%lx, u: 0x%lx, s: 0x%lx)\n",
+          __func__, __LINE__, a, kernarg_sig, user_sig, compl_sig);
+
     // Relaunched repeatedly until alive count hit zero. That means there are N
     // threads running, all moving towards exit, none of which will relaunch
     // themselves.
@@ -507,7 +526,8 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
     __builtin_memcpy(&tmp, (const unsigned char*)p + offset_signal, 8);
     if (tmp != 0)
       {
-       if (print_enabled())  printf("Signal 0x%lx in completion, returning\n", tmp);
+        if (print_enabled())
+          printf("Signal 0x%lx in completion, returning\n", tmp);
         return;
       }
 
@@ -515,43 +535,48 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
     if (print_enabled()) {  printf("Kernel self:\n");
       hsa_packet::dump_kernel((const unsigned char*)p); }
 #endif
-    
-    // If we don't have a signal, and there isn't one in userdata, we're polling
+
+      // If we don't have a signal, and there isn't one in userdata, we're
+      // polling
 #if 0
     uint64_t maybe_signal;
     __builtin_memcpy(&maybe_signal, (const unsigned char*)p + offset_userdata,
                      8);
 #else
-      using global_atomic_uint64 =
-        __attribute__((address_space(1))) HOSTRPC_ATOMIC(uint64_t) ;
+    using global_atomic_uint64 =
+        __attribute__((address_space(1))) HOSTRPC_ATOMIC(uint64_t);
 
-      // could atomic load be miscompiling here?
+    // could atomic load be miscompiling here?
     uint64_t maybe_signal =
-      platform::atomic_load<uint64_t, __ATOMIC_RELAXED,
-                                __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
-              (const global_atomic_uint64 *)((const unsigned char*)p + offset_userdata));
+        platform::atomic_load<uint64_t, __ATOMIC_RELAXED,
+                              __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(
+            (const global_atomic_uint64*)((const unsigned char*)p +
+                                          offset_userdata));
 #endif
-    
+
     if (maybe_signal == 0)
       {
-       if (print_enabled())  printf("No signal, none in userdata, return\n");
+        if (print_enabled()) printf("No signal, none in userdata, return\n");
         return;
-      } else {
-       if (print_enabled())  printf("Retrieved signal 0x%lx from userdata\n", maybe_signal);
-       
       }
-               
+    else
+      {
+        if (print_enabled())
+          printf("Retrieved signal 0x%lx from userdata\n", maybe_signal);
+      }
 
     // If there is one, retrieve it from userdata and relaunch
     auto func = [=](unsigned char* packet) {
       // write the non-zero signal to the completion slot
-      if (print_enabled())   printf("Write non-zero signal (0x%lx) to completion\n",maybe_signal);
+      if (print_enabled())
+        printf("Write non-zero signal (0x%lx) to completion\n", maybe_signal);
 
-
-      // platform::atomic_store<uint64_t, __ATOMIC_RELEASE,   __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(    (HOSTRPC_ATOMIC(uint64_t) *)(packet+offset_signal), maybe_signal);
+      // platform::atomic_store<uint64_t, __ATOMIC_RELEASE,
+      // __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(    (HOSTRPC_ATOMIC(uint64_t)
+      // *)(packet+offset_signal), maybe_signal);
 
       __builtin_memcpy(packet + offset_signal, &maybe_signal, 8);
-      //uint64_t zero = 0;
+      // uint64_t zero = 0;
       //__builtin_memcpy(packet + offset_userdata, &zero, 8);
     };
     enqueue_dispatch(func, (const unsigned char*)p);
@@ -619,8 +644,7 @@ struct api : private Via<Derived, Max>
     return static_cast<Base*>(instance())->bootstrap_target();
   }
 
-  static void teardown() {
-    return static_cast<Base*>(instance())->teardown(); }
+  static void teardown() { return static_cast<Base*>(instance())->teardown(); }
 };
 
 }  // namespace pool_interface
@@ -681,8 +705,9 @@ inline int initialize_kernel_info(hsa::executable& ex, std::string name,
   info->group_segment_fixed_size =
       (uint32_t)it->second.group_segment_fixed_size;
 
-  fprintf(stderr, "kernel_info %s => addr 0x%lx\n", name.c_str(), symbol_address);
-  
+  fprintf(stderr, "kernel_info %s => addr 0x%lx\n", name.c_str(),
+          symbol_address);
+
   return 0;
 }
 
@@ -697,39 +722,36 @@ inline void wait_for_signal_equal_zero(hsa_signal_t signal,
 }
 
 inline void invoke_teardown(gpu_kernel_info teardown,
-                            gpu_kernel_info set_requested,
-                            hsa_signal_t signal,
+                            gpu_kernel_info set_requested, hsa_signal_t signal,
                             hsa_queue_t* queue)
 {
   const hsa_signal_value_t init = 1;
   hsa_signal_store_screlease(signal, init);
 
-  if (0) fprintf(stderr, "Host: Call set req 0. Doorbell 0x%lx\n", queue->doorbell_signal.handle);
+  if (0)
+    fprintf(stderr, "Host: Call set req 0. Doorbell 0x%lx\n",
+            queue->doorbell_signal.handle);
 
   // teardown is a barrier packet, set to zero asynchronously first
   // for more predictable performance under load
 
-  if (0) hsa::launch_kernel(
-      set_requested.symbol_address,
-      set_requested.private_segment_fixed_size,
-      set_requested.group_segment_fixed_size,
-      queue,
-      0,
-      0,
-      {0});
+  if (0)
+    hsa::launch_kernel(
+        set_requested.symbol_address, set_requested.private_segment_fixed_size,
+        set_requested.group_segment_fixed_size, queue, 0, 0, {0});
 
-  fprintf(stderr, "Host: Invoke teardown from host set req 0, signal 0x%lx\n",signal.handle);
-  
+  fprintf(stderr, "Host: Invoke teardown from host set req 0, signal 0x%lx\n",
+          signal.handle);
+
   bool barrier = true;
   uint64_t userdata = signal.handle;
   using namespace pool_interface;
-  hsa::launch_kernel(
-      teardown.symbol_address, teardown.private_segment_fixed_size,
-      teardown.group_segment_fixed_size, queue,
-      (offset_userdata == offset_reserved2) ? userdata : 0,
-      (offset_userdata == offset_kernarg) ? userdata : 0,
-      {0}/*signal*/,
-      barrier);
+  hsa::launch_kernel(teardown.symbol_address,
+                     teardown.private_segment_fixed_size,
+                     teardown.group_segment_fixed_size, queue,
+                     (offset_userdata == offset_reserved2) ? userdata : 0,
+                     (offset_userdata == offset_kernarg) ? userdata : 0,
+                     {0} /*signal*/, barrier);
 
   wait_for_signal_equal_zero(signal, 50000 /*000000*/);
 
@@ -737,21 +759,15 @@ inline void invoke_teardown(gpu_kernel_info teardown,
 
   hsa_signal_store_screlease(signal, init);
   hsa::launch_kernel(
-      set_requested.symbol_address,
-      set_requested.private_segment_fixed_size,
-      set_requested.group_segment_fixed_size,
-      queue,
-      0,
-      0,
-      signal,
-      barrier);
+      set_requested.symbol_address, set_requested.private_segment_fixed_size,
+      set_requested.group_segment_fixed_size, queue, 0, 0, signal, barrier);
 
-  fprintf(stderr, "Host: Waiting for set_req to complete, signal 0x%lx\n",signal.handle);
+  fprintf(stderr, "Host: Waiting for set_req to complete, signal 0x%lx\n",
+          signal.handle);
 
   wait_for_signal_equal_zero(signal, 50000 /*000000*/);
 
   fprintf(stderr, "Host: Teardown returning\n");
-
 }
 }  // namespace
 #endif

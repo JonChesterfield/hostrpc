@@ -834,7 +834,7 @@ inline void packet_store_release(uint32_t* packet, uint16_t header,
 constexpr inline uint16_t header(hsa_packet_type_t type, bool barrier = false)
 {
   uint16_t header = type << HSA_PACKET_HEADER_TYPE;
-  header |= (barrier?1:0) << HSA_PACKET_HEADER_BARRIER;
+  header |= (barrier ? 1 : 0) << HSA_PACKET_HEADER_BARRIER;
   header |= HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_ACQUIRE_FENCE_SCOPE;
   header |= HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_RELEASE_FENCE_SCOPE;
   return header;
@@ -848,12 +848,9 @@ constexpr inline uint16_t kernel_dispatch_setup()
 // kernarg, signal may be zero
 inline void launch_kernel(uint64_t symbol_address,
                           uint32_t private_segment_fixed_size,
-                          uint32_t group_segment_fixed_size,
-                          hsa_queue_t* queue,
-                          uint64_t inline_argument,
-                          uint64_t kernarg_address,
-                          hsa_signal_t completion_signal,
-                          bool barrier = false)
+                          uint32_t group_segment_fixed_size, hsa_queue_t* queue,
+                          uint64_t inline_argument, uint64_t kernarg_address,
+                          hsa_signal_t completion_signal, bool barrier = false)
 {
   uint64_t packet_id = hsa::acquire_available_packet_id(queue);
   hsa_kernel_dispatch_packet_t* packet =
@@ -880,20 +877,20 @@ inline void launch_kernel(uint64_t symbol_address,
                        kernel_dispatch_setup());
 
 #if 1
-  char * doorbell_handle;
-  __builtin_memcpy(&doorbell_handle,
-                   &queue->doorbell_signal.handle,
-                   8);
+  char* doorbell_handle;
+  __builtin_memcpy(&doorbell_handle, &queue->doorbell_signal.handle, 8);
 
   HOSTRPC_ATOMIC(uint64_t) * hardware_doorbell_ptr;
-  __builtin_memcpy(&hardware_doorbell_ptr,
-                   doorbell_handle + 8,
-                   sizeof(HOSTRPC_ATOMIC(uint64_t *)));
+  __builtin_memcpy(&hardware_doorbell_ptr, doorbell_handle + 8,
+                   sizeof(HOSTRPC_ATOMIC(uint64_t*)));
 
-  if (0) printf("Host: Using queue size %u at 0x%lx, writing to 0x%lx\n", queue->size, (uint64_t)queue->base_address,
-         (uint64_t)packet);
-  printf("Launch kernel on packet_id %lu, db at 0x%lx, indir doorbell at 0x%lx\n", packet_id, (uint64_t)doorbell_handle, (uint64_t)hardware_doorbell_ptr);
-  
+  if (0)
+    printf("Host: Using queue size %u at 0x%lx, writing to 0x%lx\n",
+           queue->size, (uint64_t)queue->base_address, (uint64_t)packet);
+  printf(
+      "Launch kernel on packet_id %lu, db at 0x%lx, indir doorbell at 0x%lx\n",
+      packet_id, (uint64_t)doorbell_handle, (uint64_t)hardware_doorbell_ptr);
+
   hsa_packet::dump_kernel((unsigned char*)packet);
 #endif
 
@@ -915,10 +912,10 @@ inline int launch_kernel(hsa::executable& ex, hsa_queue_t* queue,
     }
   else
     {
-      launch_kernel(symbol_address,
-                    (uint32_t)it->second.private_segment_fixed_size,
-                    (uint32_t)it->second.group_segment_fixed_size, queue,
-                    inline_argument, kernarg_address, completion_signal, barrier);
+      launch_kernel(
+          symbol_address, (uint32_t)it->second.private_segment_fixed_size,
+          (uint32_t)it->second.group_segment_fixed_size, queue, inline_argument,
+          kernarg_address, completion_signal, barrier);
       return 0;
     }
 }

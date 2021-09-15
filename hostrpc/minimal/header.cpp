@@ -1,17 +1,22 @@
 
-struct process_t {
+struct process_t
+{
   const NS::atomic_bool *inbox;
   NS::atomic_bool *outbox;
   uint32_t *buffer;
 };
 
-struct client_t : public process_t {
-  template <typename F, typename U> void run(F fill, U use);
+struct client_t : public process_t
+{
+  template <typename F, typename U>
+  void run(F fill, U use);
 };
 
-struct server_t : public process_t {
+struct server_t : public process_t
+{
   // return true if a callback was invoked
-  template <typename W, typename C> bool run(W work, C clean);
+  template <typename W, typename C>
+  bool run(W work, C clean);
 };
 
 // Unimplemented here

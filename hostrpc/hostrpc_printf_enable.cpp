@@ -117,7 +117,7 @@ struct global
 
     wrap_state(wrap_state &&) = delete;
     wrap_state &operator=(wrap_state &&) = delete;
-    
+
     wrap_state(hsa_agent_t kernel_agent)
     {
       hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);

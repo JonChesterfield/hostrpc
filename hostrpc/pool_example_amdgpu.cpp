@@ -9,24 +9,25 @@ POOL_INTERFACE_BOILERPLATE_AMDGPU(example, 32);
 #if HOSTRPC_AMDGCN
 
 #define ENCODE_HWREG(WIDTH, OFF, REG) (REG | (OFF << 6) | ((WIDTH - 1) << 11))
-enum {
-  HW_ID = 4, // specify that the hardware register to read is HW_ID
-
+enum
+{
+  HW_ID = 4,  // specify that the hardware register to read is HW_ID
 
   HW_ID_WAVE_ID_SIZE = 4,
   HW_ID_WAVE_ID_OFFSET = 0,
 
   HW_ID_SIMD_ID_SIZE = 2,
   HW_ID_SIMD_ID_OFFSET = 4,
-  
-  HW_ID_CU_ID_SIZE = 4,   // size of CU_ID field in bits
-  HW_ID_CU_ID_OFFSET = 8, // offset of CU_ID from start of register
 
-  HW_ID_SE_ID_SIZE = 2,    // sizeof SE_ID field in bits
-  HW_ID_SE_ID_OFFSET = 13, // offset of SE_ID from start of register
+  HW_ID_CU_ID_SIZE = 4,    // size of CU_ID field in bits
+  HW_ID_CU_ID_OFFSET = 8,  // offset of CU_ID from start of register
+
+  HW_ID_SE_ID_SIZE = 2,     // sizeof SE_ID field in bits
+  HW_ID_SE_ID_OFFSET = 13,  // offset of SE_ID from start of register
 };
 
- uint32_t __kmpc_impl_smid() {
+uint32_t __kmpc_impl_smid()
+{
   uint32_t cu_id = __builtin_amdgcn_s_getreg(
       ENCODE_HWREG(HW_ID_CU_ID_SIZE, HW_ID_CU_ID_OFFSET, HW_ID));
   uint32_t se_id = __builtin_amdgcn_s_getreg(
@@ -34,23 +35,25 @@ enum {
   return (se_id << HW_ID_CU_ID_SIZE) + cu_id;
 }
 
- uint32_t __kmpc_impl_wave() {
+uint32_t __kmpc_impl_wave()
+{
   return __builtin_amdgcn_s_getreg(
       ENCODE_HWREG(HW_ID_WAVE_ID_SIZE, HW_ID_WAVE_ID_OFFSET, HW_ID));
 }
 
-uint32_t __kmpc_impl_simd() {
+uint32_t __kmpc_impl_simd()
+{
   return __builtin_amdgcn_s_getreg(
       ENCODE_HWREG(HW_ID_SIMD_ID_SIZE, HW_ID_SIMD_ID_OFFSET, HW_ID));
 }
-
 
 uint32_t example::run(uint32_t state)
 {
   if (1)
     if (platform::is_master_lane())
-      printf("[%u.%u.%u] run %u from %u (of %u/%u)\n", __kmpc_impl_wave(),__kmpc_impl_simd(),__kmpc_impl_smid(), state, get_current_uuid(), alive(),
-             requested());
+      printf("[%u.%u.%u] run %u from %u (of %u/%u)\n", __kmpc_impl_wave(),
+             __kmpc_impl_simd(), __kmpc_impl_smid(), state, get_current_uuid(),
+             alive(), requested());
 
   platform::sleep_briefly();
   return state + 1;
@@ -95,7 +98,7 @@ int main_with_hsa()
       exit(1);
     }
 #endif
-  
+
   hsa_queue_t *queue = hsa::create_queue(kernel_agent);
   if (!queue)
     {
@@ -118,8 +121,8 @@ int main_with_hsa()
 
   fprintf(stderr, "Call bootstrap\n");
   example::bootstrap_entry(1);
-    
-  // leave them running for a while 
+
+  // leave them running for a while
   usleep(50000000);
 
   fprintf(stderr, "Call teardown\n");
@@ -134,9 +137,11 @@ int main_with_hsa()
       {
         fprintf(stderr, "Failed to destroy queue: %s\n",
                 hsa::status_string(rc));
-      } else {
-      fprintf(stderr, "Queue destroyed\n");
-    }
+      }
+    else
+      {
+        fprintf(stderr, "Queue destroyed\n");
+      }
   }
 
   fprintf(stderr, "Finished\n");

@@ -1,8 +1,8 @@
 #ifndef ALLOCATOR_HPP_INCLUDED
 #define ALLOCATOR_HPP_INCLUDED
 
-#include "detail/platform_detect.hpp"
 #include "detail/cxx.hpp"
+#include "detail/platform_detect.hpp"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -58,13 +58,16 @@ struct interface
 
     // Move only makes it easier to avoid calling free twice on the same pointer
     HOSTRPC_ANNOTATE raw(const raw &) = delete;
-    HOSTRPC_ANNOTATE raw& operator=(raw&& other) noexcept
+    HOSTRPC_ANNOTATE raw &operator=(raw &&other) noexcept
     {
       ptr = other.ptr;
       other.ptr = nullptr;
       return *this;
     }
-    HOSTRPC_ANNOTATE raw(raw &&other) noexcept : ptr(other.ptr) { other.ptr = nullptr; }
+    HOSTRPC_ANNOTATE raw(raw &&other) noexcept : ptr(other.ptr)
+    {
+      other.ptr = nullptr;
+    }
     HOSTRPC_ANNOTATE bool valid() { return ptr != nullptr; }
     HOSTRPC_ANNOTATE status destroy()
     {
@@ -330,15 +333,15 @@ struct openmp_shared : public interface<Align, openmp_shared<Align>>
   }
 };
 
-template <typename AllocBufferT, typename AllocInboxOutboxT, typename AllocLocalT,
-          typename AllocRemoteT>
+template <typename AllocBufferT, typename AllocInboxOutboxT,
+          typename AllocLocalT, typename AllocRemoteT>
 struct store_impl
 {
   using AllocBuffer = AllocBufferT;
   using AllocInboxOutbox = AllocInboxOutboxT;
   using AllocLocal = AllocLocalT;
   using AllocRemote = AllocRemoteT;
-  
+
   typename AllocBuffer::raw buffer;
   typename AllocInboxOutbox::raw recv;
   typename AllocInboxOutbox::raw send;

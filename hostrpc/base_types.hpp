@@ -79,7 +79,9 @@ struct bits
 {
   enum : uint8_t
   {
-    value = T <= UINT8_MAX ? 8 : T <= UINT16_MAX ? 16 : 32
+    value = T <= UINT8_MAX    ? 8
+            : T <= UINT16_MAX ? 16
+                              : 32
   };
 };
 

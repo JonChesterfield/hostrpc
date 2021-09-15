@@ -106,7 +106,7 @@ struct server_impl : public SZT, public Counter
   // If passed location, will use it to round robin across slots
 
   template <typename Operate, typename Clear>
-  HOSTRPC_ANNOTATE bool rpc_handle(Operate &&op, Clear&& cl,
+  HOSTRPC_ANNOTATE bool rpc_handle(Operate&& op, Clear&& cl,
                                    uint32_t* location) noexcept
   {
     return rpc_handle_impl<Operate, Clear, true>(
@@ -187,7 +187,7 @@ struct server_impl : public SZT, public Counter
   }
 
   template <typename Clear>
-  void rpc_port_wait_until_available(uint32_t port, Clear &cl)
+  void rpc_port_wait_until_available(uint32_t port, Clear& cl)
   {
     rpc_port_wait_until_available_impl<Clear, true>(port, cl);
   }

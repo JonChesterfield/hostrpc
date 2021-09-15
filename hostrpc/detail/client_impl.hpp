@@ -15,18 +15,18 @@ namespace hostrpc
 {
 struct fill_nop
 {
-  HOSTRPC_ANNOTATE void operator()(uint32_t, page_t*) {}
+  HOSTRPC_ANNOTATE void operator()(uint32_t, page_t *) {}
   fill_nop() = default;
-  fill_nop(const fill_nop&) = delete;
-  fill_nop(fill_nop&&) = delete;
+  fill_nop(const fill_nop &) = delete;
+  fill_nop(fill_nop &&) = delete;
 };
 
 struct use_nop
 {
-  HOSTRPC_ANNOTATE void operator()(uint32_t, page_t*) {}
+  HOSTRPC_ANNOTATE void operator()(uint32_t, page_t *) {}
   use_nop() = default;
-  use_nop(const use_nop&) = delete;
-  use_nop(use_nop&&) = delete;
+  use_nop(const use_nop &) = delete;
+  use_nop(use_nop &&) = delete;
 };
 
 enum class client_state : uint8_t
@@ -66,7 +66,7 @@ struct client_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE slot_type size() const { return SZ::N(); }
   HOSTRPC_ANNOTATE slot_type words() const { return size() / wordBits(); }
 
-  page_t* shared_buffer;
+  page_t *shared_buffer;
   lock_t active;
 
   inbox_t inbox;
@@ -86,7 +86,7 @@ struct client_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE ~client_impl() {}
   HOSTRPC_ANNOTATE client_impl(SZ sz, lock_t active, inbox_t inbox,
                                outbox_t outbox, staging_t staging,
-                               page_t* shared_buffer)
+                               page_t *shared_buffer)
 
       : SZ{sz},
         Counter{},
@@ -131,7 +131,7 @@ struct client_impl : public SZT, public Counter
 #endif
   }
 
-  HOSTRPC_ANNOTATE static void* operator new(size_t, client_impl* p)
+  HOSTRPC_ANNOTATE static void *operator new(size_t, client_impl *p)
   {
     return p;
   }

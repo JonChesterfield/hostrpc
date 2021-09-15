@@ -352,11 +352,10 @@ struct recv_by_copy
 
 }  // namespace
 
-
 template <typename T>
-__PRINTF_API_INTERNAL uint32_t __printf_print_start(T * client, const char *fmt)
+__PRINTF_API_INTERNAL uint32_t __printf_print_start(T *client, const char *fmt)
 {
-    uint32_t port = client->rpc_open_port();
+  uint32_t port = client->rpc_open_port();
   if (port == UINT32_MAX)
     {
       // failure
@@ -375,7 +374,7 @@ __PRINTF_API_INTERNAL uint32_t __printf_print_start(T * client, const char *fmt)
 }
 
 template <typename T>
-__PRINTF_API_INTERNAL int __printf_print_end(T * client, uint32_t port)
+__PRINTF_API_INTERNAL int __printf_print_end(T *client, uint32_t port)
 {
   {
     __printf_print_end_t inst;
@@ -389,10 +388,9 @@ __PRINTF_API_INTERNAL int __printf_print_end(T * client, uint32_t port)
   return 0;  // should be return code from printf
 }
 
-
-
 template <typename T>
-__PRINTF_API_INTERNAL void __printf_pass_element_uint64(T* client, uint32_t port,
+__PRINTF_API_INTERNAL void __printf_pass_element_uint64(T *client,
+                                                        uint32_t port,
                                                         uint64_t v)
 {
   __printf_pass_element_scalar_t inst(hostrpc_printf_pass_element_uint64, v);
@@ -401,16 +399,16 @@ __PRINTF_API_INTERNAL void __printf_pass_element_uint64(T* client, uint32_t port
 }
 
 template <typename T>
-__PRINTF_API_INTERNAL void __printf_pass_element_double(T* client,uint32_t port, double v)
+__PRINTF_API_INTERNAL void __printf_pass_element_double(T *client,
+                                                        uint32_t port, double v)
 {
   __printf_pass_element_scalar_t inst(hostrpc_printf_pass_element_double, v);
   send_by_copy<__printf_pass_element_scalar_t> f(&inst);
   client->rpc_port_send(port, f);
 }
 
-
 template <typename T>
-__PRINTF_API_INTERNAL void __printf_pass_element_void(T* client, uint32_t port,
+__PRINTF_API_INTERNAL void __printf_pass_element_void(T *client, uint32_t port,
                                                       const void *v)
 {
   _Static_assert(sizeof(const void *) == 8, "");
@@ -421,9 +419,8 @@ __PRINTF_API_INTERNAL void __printf_pass_element_void(T* client, uint32_t port,
   client->rpc_port_send(port, f);
 }
 
-
 template <typename T>
-__PRINTF_API_INTERNAL void __printf_pass_element_cstr(T* client, uint32_t port,
+__PRINTF_API_INTERNAL void __printf_pass_element_cstr(T *client, uint32_t port,
                                                       const char *str)
 {
   uint64_t L = __printf_strlen(str);
@@ -451,7 +448,8 @@ __PRINTF_API_INTERNAL void __printf_pass_element_cstr(T* client, uint32_t port,
 }
 
 template <typename T>
-__PRINTF_API_INTERNAL void __printf_pass_element_write_int64(T * client, uint32_t port,
+__PRINTF_API_INTERNAL void __printf_pass_element_write_int64(T *client,
+                                                             uint32_t port,
                                                              int64_t *x)
 {
   __printf_pass_element_write_t inst;

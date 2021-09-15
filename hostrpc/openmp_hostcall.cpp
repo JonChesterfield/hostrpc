@@ -119,7 +119,6 @@ extern "C"
   void __kmpc_impl_free(void *);
 }
 
-
 void *__kmpc_impl_malloc(size_t x)
 {
   uint64_t data[8] = {0};
@@ -187,8 +186,7 @@ static client_type *get_client()
 // overrides weak functions in rtl.cpp
 extern "C"
 {
-  unsigned long hostrpc_assign_buffer(hsa_agent_t agent,
-                                      hsa_queue_t *this_Q,
+  unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
                                       uint32_t device_id);
   hsa_status_t hostrpc_init();
   hsa_status_t hostrpc_terminate();
@@ -278,7 +276,8 @@ void omp_operate::perthread(unsigned c, hostrpc::cacheline_t *line,
   return;
 }
 
-namespace {
+namespace
+{
 struct storage_t
 {
   using type = hostrpc::x64_gcn_type<hostrpc::size_runtime>;

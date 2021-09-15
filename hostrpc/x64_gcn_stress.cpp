@@ -94,7 +94,7 @@ struct kernel_args
   uint32_t id;
   uint32_t reps;
   uint64_t result[MAX_WAVES];
-  _Atomic(uint64_t) * control;
+  _Atomic(uint64_t) *control;
 };
 
 using SZ = hostrpc::size_runtime;
@@ -281,10 +281,10 @@ TEST_CASE("x64_gcn_stress")
 
     hsa_queue_t *queue = hsa::create_queue(kernel_agent);
     if (!queue)
-    {
-      fprintf(stderr, "Failed to create queue\n");
-      exit(1);
-    }
+      {
+        fprintf(stderr, "Failed to create queue\n");
+        exit(1);
+      }
 
     hsa_region_t kernarg_region = hsa::region_kernarg(kernel_agent);
     hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
