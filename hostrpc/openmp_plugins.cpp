@@ -1,5 +1,6 @@
 #include "openmp_plugins.hpp"
 
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -8,8 +9,31 @@
 #include <link.h>
 #include <memory>
 
+enum
+{
+  verbose = 0,
+};
+
+static std::atomic_bool g_disable_amdgcn{false};
+static std::atomic_bool g_disable_nvptx{false};
+
 namespace hostrpc
 {
+void disable_amdgcn() { g_disable_amdgcn = true; }
+void disable_nvptx() { g_disable_nvptx = true; }
+
+void print(const char *format, ...)
+{
+  if (verbose)
+    {
+      va_list args;
+      va_start(args, format);
+
+      vfprintf(stderr, format, args);
+      va_end(args);
+    }
+}
+
 namespace
 {
 struct call_free
@@ -48,8 +72,7 @@ std::unique_ptr<char, call_free> plugin_path()
               char *dir = dirname(real.get());  // mutates real
               if (dir)
                 {
-                  fprintf(stderr, "%s vs %s vs %s\n", map->l_name, real.get(),
-                          dir);
+                  print("%s vs %s vs %s\n", map->l_name, real.get(), dir);
                   res = std::unique_ptr<char, call_free>(strdup(dir));
                 }
             }
@@ -71,10 +94,11 @@ static bool find_plugin(const char *dir, const char *name)
       int rc = snprintf(buffer.get(), size, fmt, dir, name);
       if (rc > 0)
         {
-          fprintf(stderr, "Seek %s\n", buffer.get());
+          print("Seek %s\n", buffer.get());
           void *r = dlopen(buffer.get(), RTLD_NOW | RTLD_NOLOAD);
           if (r == nullptr)
             {
+              print("  can't dlopen %s\n", buffer.get());
               return false;
             }
           bool have_devices = false;
@@ -82,7 +106,13 @@ static bool find_plugin(const char *dir, const char *name)
           if (void *s = dlsym(r, "__tgt_rtl_number_of_devices"))
             {
               int (*num)(void) = reinterpret_cast<decltype(num)>(s);
-              have_devices = (num() > 0);
+              int n = num();
+              print("  plugin claims to have %d devices\n", n);
+              have_devices = (n > 0);
+            }
+          else
+            {
+              print("  can't call number_of_devices\n");
             }
 
           // both cuda and amdgpu plugins exist now, so what is actually of
@@ -106,9 +136,23 @@ plugins find_plugins_impl()
   auto dir = plugin_path();
   if (dir)
     {
-      fprintf(stderr, "path %s\n", dir.get());
+      auto s = [](bool x) { return x ? "true" : "false"; };
+      print("Find plugins on path %s\n", dir.get());
       res.amdgcn = find_plugin(dir.get(), "libomptarget.rtl.amdgpu.so");
       res.nvptx = find_plugin(dir.get(), "libomptarget.rtl.cuda.so");
+      print("  plugin amdgcn available: %s\n", s(res.amdgcn));
+      print("  plugin nvptx available: %s\n", s(res.nvptx));
+    }
+
+  if (res.amdgcn && g_disable_amdgcn)
+    {
+      print("  disable amdgcn plugin by global override\n");
+      res.amdgcn = false;
+    }
+  if (g_disable_nvptx)
+    {
+      print("  disable nvptx plugin by global override\n");
+      res.nvptx = false;
     }
 
   return res;

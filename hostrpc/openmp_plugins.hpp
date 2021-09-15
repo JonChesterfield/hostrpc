@@ -3,6 +3,9 @@
 
 namespace hostrpc
 {
+void disable_amdgcn();
+void disable_nvptx();
+
 struct plugins
 {
   bool amdgcn = false;
