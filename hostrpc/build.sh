@@ -28,28 +28,31 @@ PTXGFX=sm_50
 GCNGFX=gfx906
 
 
-
 if (($have_nvptx)); then
-    PTXGFX=sm_50 # todo    
-else
+    PTXGFX=`$RDIR/bin/llvm-omp-device-info | awk '/Compute Capabilities/{print "sm_"$3}'`
+fi
+
+if (($have_amdgcn)); then
     GCNGFX=`$RDIR/bin/amdgpu-arch | uniq`
 fi
+
+
 
 PTXGFXNUM=$(echo "$PTXGFX" | sed 's/sm_//')
 GCNGFXNUM=$(echo "$GCNGFX" | sed 's/gfx//')
 
+PTXDEVICERTL=""
+GCNDEVICERTL=""
+
 if (($have_nvptx)); then
-    DEVICERTL="$RDIR/lib/libomptarget-nvptx64-$PTXGFX.bc"
-else
-    DEVICERTL="$RDIR/lib/libomptarget-amdgcn-$GCNGFX.bc"
+    PTXDEVICERTL="$RDIR/lib/libomptarget-nvptx64-$PTXGFX.bc"
 fi
 
 if (($have_amdgcn)); then
-    $RDIR/bin/llvm-link $HOME/llvm-build/devlibs/ockl/hsaqs.bc "$RDIR/amdgcn/bitcode/oclc_isa_version_$GCNGFXNUM.bc" | $RDIR/bin/llvm-extract -func __ockl_hsa_signal_store -glob __oclc_ISA_version | $RDIR/bin/opt -O1 -o ockl_hack.bc
-    EXTRABC=ockl_hack.bc
-else
-    EXTRABC=
+    GCNDEVICERTL="$RDIR/lib/libomptarget-amdgcn-$GCNGFX.bc"
 fi
+
+EXTRABC=
 
 LOADPREFIX='LD_LIBRARY_PATH='$RDIR'/lib '
 
@@ -93,11 +96,7 @@ HSAINC="$RDIR/include/hsa/"
 DEVLIBINC="$HOME/aomp/rocm-device-libs/ockl/inc"
 OCKL_DIR="$RDIR/amdgcn/bitcode"
 
-if (($have_amdgcn)); then
-OCKL_LIBS="$OCKL_DIR/ockl.bc $OCKL_DIR/oclc_isa_version_$GCNGFXNUM.bc $OCKL_DIR/oclc_wavefrontsize64_on.bc"
-else
 OCKL_LIBS=""
-fi
 
 HSALIBDIR="$RDIR/lib"
 HSALIB="$HSALIBDIR/libhsa-runtime64.so" # $RDIR/lib/libomptarget.rtl.hsa.so"
@@ -311,7 +310,7 @@ fi
 if (($have_amdgcn)); then
     $CXX_GCN devicertl_pteam_mem_barrier.cpp -c -o obj/devicertl_pteam_mem_barrier.gcn.bc
     # todo: refer to lib from RDIR, once that lib has the function non-static    
-    $LINK obj/devicertl_pteam_mem_barrier.gcn.bc obj/hostrpc_printf_enable.gcn.bc amdgcn_loader_device.gcn.bc -o devicertl_pteam_mem_barrier.gcn.bc $DEVICERTL
+    $LINK obj/devicertl_pteam_mem_barrier.gcn.bc obj/hostrpc_printf_enable.gcn.bc amdgcn_loader_device.gcn.bc -o devicertl_pteam_mem_barrier.gcn.bc $GCNDEVICERTL
     $CXX_GCN_LD devicertl_pteam_mem_barrier.gcn.bc -o devicertl_pteam_mem_barrier.gcn
     set +e
     echo "This is failing at present, HSA doesn't think the binary is valid"
