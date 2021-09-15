@@ -454,7 +454,7 @@ unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
   storage.stash_print_buffer.emplace_back();
   std::unique_ptr<print_buffer_t> &print_buffer =
       storage.stash_print_buffer.back();
-  print_buffer->resize(size.N());
+  print_buffer->resize(size.value());
 
   // finally spawn a thread to run the server process, and handle book keeping
   // of it

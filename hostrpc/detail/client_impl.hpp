@@ -63,7 +63,7 @@ struct client_impl : public SZT, public Counter
   {
     return 8 * sizeof(Word);
   }
-  HOSTRPC_ANNOTATE slot_type size() const { return SZ::N(); }
+  HOSTRPC_ANNOTATE slot_type size() const { return SZ::value(); }
   HOSTRPC_ANNOTATE slot_type words() const { return size() / wordBits(); }
 
   page_t *shared_buffer;

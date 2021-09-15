@@ -62,7 +62,7 @@ host_client(AllocBuffer alloc_buffer, AllocInboxOutbox alloc_inbox_outbox,
   using res_ty = allocator::store_impl<AllocBuffer, AllocInboxOutbox,
                                        AllocLocal, AllocRemote>;
 #if (HOSTRPC_HOST)
-  size_t N = sz.N();
+  size_t N = sz.value();
   res_ty res = {
       alloc_buffer.allocate(sizeof(page_t) * N),
       alloc_inbox_outbox.allocate(

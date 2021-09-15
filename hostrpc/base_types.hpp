@@ -110,37 +110,108 @@ struct sufficientType
 }  // namespace size_detail
 
 template <typename T>
-struct size_runtime
+struct fastint_runtime
 {
  private:
-  uint32_t SZ;
+  T SZ;
 
  public:
   using type = T;
-  HOSTRPC_ANNOTATE size_runtime(type N) : SZ(hostrpc::round64(N)) {}
+  using selfType = fastint_runtime<type>;
+  HOSTRPC_ANNOTATE constexpr fastint_runtime(type N) : SZ(hostrpc::round64(N))
+  {
+  }
 
-  HOSTRPC_ANNOTATE size_runtime() : SZ(0) {}
-  HOSTRPC_ANNOTATE type N() const { return SZ; }
-  constexpr static type reserved() { return (type)UINT64_MAX; }
+  HOSTRPC_ANNOTATE constexpr fastint_runtime() : SZ(0) {}
+
+  HOSTRPC_ANNOTATE constexpr type value() const { return SZ; }
+
+  HOSTRPC_ANNOTATE constexpr operator type() const { return value(); }
+
+  HOSTRPC_ANNOTATE constexpr selfType popcount() const
+  {
+    return __builtin_popcountl(value());
+  }
+
+  HOSTRPC_ANNOTATE constexpr selfType findFirstSet() const
+  {
+    return __builtin_ffsl(value());
+  }
+
+  // implicit type narrowing hazards here, for now assert on mismatch
+  template <typename Y>
+  HOSTRPC_ANNOTATE constexpr selfType bitwiseOr(Y y)
+  {
+    static_assert(sizeof(Y) == sizeof(type), "TODO");
+    return value() | y;
+  }
+
+  template <typename Y>
+  HOSTRPC_ANNOTATE constexpr selfType bitwiseAnd(Y y)
+  {
+    static_assert(sizeof(Y) == sizeof(type), "TODO");
+    return value() & y;
+  }
 };
 
-template <uint64_t SZ>
-struct size_compiletime
+template <uint64_t V>
+struct fastint_compiletime
 {
+  using type = typename size_detail::sufficientType<V>::type;
+
  private:
-  using sufficient = typename size_detail::sufficientType<hostrpc::round64(SZ)>;
-  enum : typename sufficient::type
+  HOSTRPC_ANNOTATE constexpr static fastint_runtime<type> rt()
   {
-    value = hostrpc::round64(SZ)
-  };
+    return fastint_runtime<type>(value());
+  }
+
+  template <uint64_t Y>
+  HOSTRPC_ANNOTATE constexpr static
+      typename size_detail::sufficientType<Y>::type
+      retype()
+  {
+    static_assert(
+        sizeof(typename size_detail::sufficientType<Y>::type) == sizeof(type),
+        "TODO");
+    return Y;
+  }
 
  public:
-  using type = typename sufficient::type;
-  HOSTRPC_ANNOTATE size_compiletime() {}
+  HOSTRPC_ANNOTATE constexpr fastint_compiletime() {}
 
-  HOSTRPC_ANNOTATE constexpr type N() const { return value; }
-  constexpr static type reserved() { return (type)UINT64_MAX; }
+  HOSTRPC_ANNOTATE constexpr static type value() { return V; }
+
+  HOSTRPC_ANNOTATE constexpr auto popcount() const
+  {
+    return fastint_compiletime<rt().popcount()>();
+  }
+  HOSTRPC_ANNOTATE constexpr auto findFirstSet() const
+  {
+    return fastint_compiletime<rt().findFirstSet()>();
+  }
+
+  template <uint64_t Y>
+  HOSTRPC_ANNOTATE constexpr auto bitwiseOr() const
+  {
+    constexpr auto n = retype<Y>();
+    static_assert(sizeof(n) == sizeof(type), "TODO");
+    return fastint_compiletime<rt().bitwiseOr(n)>();
+  }
+
+  template <uint64_t Y>
+  HOSTRPC_ANNOTATE constexpr auto bitwiseAnd() const
+  {
+    constexpr auto n = retype<Y>();
+    static_assert(sizeof(n) == sizeof(type), "TODO");
+    return fastint_compiletime<rt().bitwiseAnd(n)>();
+  }
 };
+
+template <typename T>
+using size_runtime = fastint_runtime<T>;
+
+template <uint64_t S>
+using size_compiletime = fastint_compiletime<hostrpc::round64(S)>;
 
 template <size_t Size, size_t Align>
 struct storage

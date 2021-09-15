@@ -150,7 +150,7 @@ struct global
           &server_control, 1);
 
       print_buffer = std::make_unique<print_buffer_t>();
-      print_buffer->resize(N.N());
+      print_buffer->resize(N.value());
 
       operate op(print_buffer.get());
       server_state = sts_ty(&p->server, &server_control, op, clear{});

@@ -36,7 +36,7 @@ struct server_impl : public SZT, public Counter
     return 8 * sizeof(Word);
   }
   // may want to rename this, number-slots?
-  HOSTRPC_ANNOTATE uint32_t size() const { return SZ::N(); }
+  HOSTRPC_ANNOTATE uint32_t size() const { return SZ::value(); }
   HOSTRPC_ANNOTATE uint32_t words() const { return size() / wordBits(); }
 
   page_t* shared_buffer;
