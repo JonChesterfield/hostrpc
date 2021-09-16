@@ -12,31 +12,22 @@
 
 #define DEVICE __attribute__((device)) __attribute__((always_inline))
 
-#define WARPSIZE 32
-
 __attribute__((device)) extern "C" int printf(const char *format, ...);
 
 namespace platform
 {
 namespace nvptx
 {
-DEVICE uint32_t get_lane_id(void)
-{
-  return __nvvm_read_ptx_sreg_tid_x() /*threadIdx.x*/ & (WARPSIZE - 1);
-}
-
 // Something strange here. CUDA_VERSION picks activemask, but
 // sm_50 maps onto ptx 4.0 by default which doesn't support that
 // Compiling with cuda overrides to ptx 6.3, passing Xclang to match.
 
 namespace detail
 {
-static DEVICE uint32_t ballot()
+enum
 {
-  uint32_t mask;
-  asm volatile("activemask.b32 %0;" : "=r"(mask));
-  return mask;
-}
+  warpsize = 32,
+};
 
 // The __sync functions take a thread mask
 // It is UB to use UINT32_MAX if some threads are disabled
@@ -47,12 +38,11 @@ static DEVICE uint32_t ballot()
 // thread based on mask and activemask() instead of taking the lowest set bit
 // from activemask
 
-DEVICE int32_t __impl_shfl_down_sync(int32_t var, uint32_t laneDelta)
+DEVICE
+static uint32_t get_lane_id()
 {
-  // danger: Probably want something more like:
-  // return __nvvm_shfl_sync_down_i32(Mask, Var, Delta, (( WARPSIZE - Width) <<
-  // 8) | 0x1f);
-  return __nvvm_shfl_sync_down_i32(UINT32_MAX, var, laneDelta, WARPSIZE - 1);
+  // duplicated from platform.hpp
+  return __nvvm_read_ptx_sreg_tid_x() /*threadIdx.x*/ & (detail::warpsize - 1);
 }
 
 DEVICE
@@ -74,33 +64,6 @@ void assert_fail(const char *str, const char *file, unsigned int line,
 }
 
 }  // namespace detail
-
-static DEVICE uint32_t get_master_lane_id(void)
-{
-  uint32_t activemask = detail::ballot();
-  uint32_t lowest_active = __builtin_ffs(activemask) - 1;
-  return lowest_active;
-}
-
-DEVICE bool is_master_lane() { return get_lane_id() == get_master_lane_id(); }
-
-DEVICE uint32_t broadcast_master(uint32_t x)
-{
-  uint32_t master_id = get_master_lane_id();
-  return __nvvm_shfl_sync_idx_i32(UINT32_MAX, x, master_id, WARPSIZE - 1);
-}
-
-DEVICE uint32_t all_true(uint32_t x)
-{
-  return __nvvm_vote_all_sync(UINT32_MAX, x);
-}
-
-// TODO: Check the differences between threadfence, threadfence_block,
-// threadfence_system
-
-static DEVICE void fence_acquire_release() { __nvvm_membar_sys(); }
-DEVICE void fence_acquire() { fence_acquire_release(); }
-DEVICE void fence_release() { fence_acquire_release(); }
 
 namespace detail
 {

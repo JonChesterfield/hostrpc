@@ -386,7 +386,7 @@ $CLANGXX $XOPENCL -S -nogpulib -emit-llvm -target amdgcn-amd-amdhsa -mcpu=$GCNGF
 # recognises mcpu but warns that it is unused
 $CLANGXX $XOPENCL -S -nogpulib -emit-llvm -target nvptx64-nvidia-cuda codegen/foo_cxx.cpp -S -o codegen/foo.cl.ptx.ll
 
-$CLANGXX $XCUDA -std=c++14 --cuda-device-only -nocudainc -nocudalib codegen/client.cpp -emit-llvm -S -o codegen/client.cuda.ptx.ll
+$CLANGXX $XCUDA $PTX_VER -std=c++14 --cuda-device-only -nocudainc -nocudalib codegen/client.cpp -emit-llvm -S -o codegen/client.cuda.ptx.ll
 $CLANGXX $XCUDA -std=c++14 --cuda-host-only -nocudainc -nocudalib codegen/client.cpp -emit-llvm -S -o codegen/client.cuda.x64.ll
 
 

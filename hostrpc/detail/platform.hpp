@@ -488,28 +488,65 @@ namespace detail
 // intrinsics. Can't compile the majority of the code as cuda, so moving the
 // platform functions out of line.
 
+enum
+{
+  warpsize = 32,
+};
+
 HOSTRPC_ANNOTATE
-int32_t __impl_shfl_down_sync(int32_t var, uint32_t laneDelta);
+inline int32_t __impl_shfl_down_sync(int32_t var, uint32_t laneDelta)
+{
+  // danger: Probably want something more like:
+  // return __nvvm_shfl_sync_down_i32(Mask, Var, Delta, (( warpsize - Width) <<
+  // 8) | 0x1f);
+  return __nvvm_shfl_sync_down_i32(UINT32_MAX, var, laneDelta, warpsize - 1);
+}
+
+inline HOSTRPC_ANNOTATE uint32_t get_master_lane_id(void)
+{
+  uint32_t activemask;
+  asm volatile("activemask.b32 %0;" : "=r"(activemask));
+
+  uint32_t lowest_active = __builtin_ffs(activemask) - 1;
+  return lowest_active;
+}
+
+// TODO: Check the differences between threadfence, threadfence_block,
+// threadfence_system
+static HOSTRPC_ANNOTATE void fence_acquire_release() { __nvvm_membar_sys(); }
 
 }  // namespace detail
 
 HOSTRPC_ANNOTATE
-uint32_t get_lane_id();
+inline uint32_t get_lane_id()
+{
+  return __nvvm_read_ptx_sreg_tid_x() /*threadIdx.x*/ & (detail::warpsize - 1);
+}
 
 HOSTRPC_ANNOTATE
-bool is_master_lane();
+inline bool is_master_lane()
+{
+  return get_lane_id() == detail::get_master_lane_id();
+}
 
 HOSTRPC_ANNOTATE
-uint32_t broadcast_master(uint32_t x);
+inline uint32_t broadcast_master(uint32_t x)
+{
+  uint32_t master_id = detail::get_master_lane_id();
+  return __nvvm_shfl_sync_idx_i32(UINT32_MAX, x, master_id,
+                                  detail::warpsize - 1);
+}
 
 HOSTRPC_ANNOTATE inline uint32_t all_true(uint32_t x)
-{ /* todo */
-  return x;
+{
+  return __nvvm_vote_all_sync(UINT32_MAX, x);
 }
+
 HOSTRPC_ANNOTATE
-void fence_acquire();
+void fence_acquire() { detail::fence_acquire_release(); }
+
 HOSTRPC_ANNOTATE
-void fence_release();
+void fence_release() { detail::fence_acquire_release(); }
 
 // The cuda/ptx compiler lowers opencl intrinsics to IR atomics if compiling as
 // cuda. If compiling as C++, it leaves them as external function calls. As
@@ -684,6 +721,7 @@ HOSTRPC_ANNOTATE inline void sleep_briefly()
   HOSTRPC_IMPL_NS::sleep_briefly();
 }
 HOSTRPC_ANNOTATE inline void sleep() { HOSTRPC_IMPL_NS::sleep(); }
+
 HOSTRPC_ANNOTATE inline bool is_master_lane()
 {
   return HOSTRPC_IMPL_NS::is_master_lane();
