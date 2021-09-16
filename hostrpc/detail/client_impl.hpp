@@ -98,7 +98,7 @@ struct client_impl : public SZT, public Counter
   {
     constexpr size_t client_size = 40;
 
-    // SZ is expected to be zero bytes or a uint64_t
+    // SZ is expected to be zero bytes or a uint
     struct SZ_local : public SZ
     {
       float x;
@@ -138,242 +138,38 @@ struct client_impl : public SZT, public Counter
 
   HOSTRPC_ANNOTATE client_counters get_counters() { return Counter::get(); }
 
-  HOSTRPC_ANNOTATE uint32_t rpc_open_port()  // UINT32_MAX on failure
-  {
-    const slot_type size = this->size();
-    const slot_type words = this->words();
-    // 0b111 is posted request, waited for it, got it
-    // 0b110 is posted request, nothing waited, got one
-    // 0b101 is got a result, don't need it, only spun up a thread for cleanup
-    // 0b100 is got a result, don't need it
-
-    // tries each word in sequnce. A cas failing suggests contention, in which
-    // case try the next word instead of the next slot
-    // may be worth supporting non-zero starting word for cache locality effects
-
-    // the array is somewhat contended - attempt to spread out the load by
-    // starting clients off at different points in the array. Doesn't make an
-    // observable difference in the current benchmark.
-
-    // if the invoke call performed garbage collection, the word is not
-    // known to be contended so it may be worth trying a different slot
-    // before trying a different word
-    for (uint32_t w = 0; w < words; w++)
-      {
-        uint32_t slot = find_candidate_client_slot(w);
-        if (slot == UINT32_MAX)
-          {
-            // no slot
-            Counter::no_candidate_slot();
-          }
-        else
-          {
-            uint64_t cas_fail_count = 0;
-            if (active.try_claim_empty_slot(size, slot, &cas_fail_count))
-              {
-                // Success, got the lock.
-                Counter::cas_lock_fail(cas_fail_count);
-
-                // Test if it is available, e.g. isn't garbage
-                if (rpc_invoke_verify_slot_available(slot))
-                  {
-                    // Yep, got it and it's good to go
-                    return slot;
-                  }
-              }
-            else
-              {
-                Counter::missed_lock_on_candidate_slot();
-              }
-          }
-      }
-
-    // couldn't get a slot in any word
-    return UINT32_MAX;
-  }
+  HOSTRPC_ANNOTATE uint32_t rpc_open_port();  // UINT32_MAX on failure
 
   HOSTRPC_ANNOTATE void rpc_close_port(
-      uint32_t port)  // Require != UINT32_MAX, not already closed
-  {
-    const uint32_t size = this->size();
-    // something needs to release() the buffer element before
-    // dropping this lock
+      uint32_t port);  // Require != UINT32_MAX, not already closed
 
-    assert(port != UINT32_MAX);
-    assert(port < size);
-
-    if (platform::is_master_lane())
-      {
-        active.release_slot(size, port);
-      }
-  }
-
-  HOSTRPC_ANNOTATE void rpc_port_wait_until_available(uint32_t port)
-  {
-    const uint32_t size = this->size();
-    const uint32_t w = index_to_element<Word>(port);
-    const uint32_t subindex = index_to_subindex<Word>(port);
-
-    Word i = inbox.load_word(size, w);
-    Word o = staging.load_word(size, w);
-
-    // current thread assumed to hold lock, thus lock is held
-    assert(bits::nthbitset(active.load_word(size, w), subindex));
-
-    platform::fence_acquire();
-
-    bool out = bits::nthbitset(o, subindex);
-    bool in = bits::nthbitset(i, subindex);
-
-    // io io io io
-    // 00 01 10 11
-
-    if (!in & !out)
-      {
-        // idle client or active thread
-        return;  // ready
-      }
-    // io io io io
-    // -- 01 10 11
-
-    if (!in & out)
-      {
-        // need to wait for result to be available
-        while (!in)
-          {
-            Word i = inbox.load_word(size, w);
-            in = bits::nthbitset(i, subindex);
-          }
-        platform::fence_acquire();
-        assert(in);
-
-        // now in & out
-      }
-    // io io io io
-    // -- -- 10 11
-
-    if (in & out)
-      {
-        // garbage to do
-        release_slot(port);
-        out = false;  // would be false if reloaded
-      }
-    // io io io io
-    // -- -- 10 --
-
-    if (in & !out)  // always true
-      {
-        // need to to wait for in to clear
-        while (in)
-          {
-            Word i = inbox.load_word(size, w);
-            in = bits::nthbitset(i, subindex);
-          }
-        platform::fence_acquire();
-        return;  // ready
-      }
-    // io io io io
-    // -- -- -- --
-
-    __builtin_unreachable();
-  }
+  HOSTRPC_ANNOTATE void rpc_port_wait_until_available(uint32_t port);
 
   template <typename Op>
-  HOSTRPC_ANNOTATE void rpc_port_send(uint32_t port, Op &&op)
-  {
-    // If the port has just been opened, we know it is available to
-    // submit work to. In general, send might be called while the
-    // state machine is elsewhere, so conservatively progress it
-    // until the slot is empty.
-    // There is a potential bug here if 'use' is being used to
-    // reset the state, instead of the server clean, as 'use'
-    // is not being called, but that might be deemed a API misuse
-    // as the callee could have used recv() explicitly instead of
-    // dropping the result
-    rpc_port_wait_until_available(port);  // expensive
-    rpc_port_send_given_available<Op>(port, cxx::forward<Op>(op));
-  }
+  HOSTRPC_ANNOTATE void rpc_port_send(uint32_t port, Op &&op);
 
   template <typename Op>
-  HOSTRPC_ANNOTATE void rpc_port_send_given_available(uint32_t port, Op &&op)
-  {
-    rpc_invoke_fill_given_slot<Op>(cxx::forward<Op>(op), port);
-  }
+  HOSTRPC_ANNOTATE void rpc_port_send_given_available(uint32_t port, Op &&op);
 
-  HOSTRPC_ANNOTATE void rpc_port_wait_for_result(uint32_t port)
-  {
-    // assumes output live
-    assert(bits::nthbitset(
-        staging.load_word(this->size(), index_to_element<Word>(port)),
-        index_to_subindex<Word>(port)));
+  HOSTRPC_ANNOTATE void rpc_port_wait_for_result(uint32_t port);
 
-    while (!result_available(port))
-      {
-        // todo: useful work here?
-        Counter::waiting_for_result();
-        platform::sleep();
-      }
-    platform::fence_acquire();
-  }
-
-  template <typename Op>
-  HOSTRPC_ANNOTATE void rpc_port_recv(uint32_t port, Op &&op)
+  template <typename Use>
+  HOSTRPC_ANNOTATE void rpc_port_recv(uint32_t slot, Use &&use)
   {
     // wait for H1, result available
     // if outbox is clear, which is detectable, this will not terminate
-    rpc_port_wait_for_result(port);
-    rpc_invoke_use_given_slot(cxx::forward<Op>(op), port);
-  }
+    rpc_port_wait_for_result(slot);
 
-  template <typename Op>
-  HOSTRPC_ANNOTATE bool rpc_invoke_async(Op &&op)
-  {
-    // get a port, send it, don't wait
-    uint32_t port = rpc_open_port();
-    if (port == UINT32_MAX)
-      {
-        return false;
-      }
-    rpc_port_send(port, cxx::forward<Op>(op));
-    rpc_close_port(port);
-    return true;
-  }
-
-  template <typename Op>
-  HOSTRPC_ANNOTATE bool rpc_port_invoke_async(Op &&op)
-  {
-    return rpc_invoke_async(cxx::forward<Op>(op));
-  }
-
-  template <typename Fill, typename Use>
-  HOSTRPC_ANNOTATE bool rpc_port_invoke(Fill &&f, Use &&u)
-  {
-    uint32_t port = rpc_open_port();
-    if (port == UINT32_MAX)
-      {
-        return false;
-      }
-    rpc_port_send(port, cxx::forward<Fill>(f));
-    rpc_port_recv(port, cxx::forward<Use>(u));  // implicit wait for result
-    rpc_close_port(port);
-    return true;
-  }
-
-  // rpc_invoke returns true if it successfully launched the task
-  // returns false if no slot was available
-
-  // Return after calling fill(), i.e. does not wait for server
-  template <typename Fill>
-  HOSTRPC_ANNOTATE bool rpc_invoke(Fill &&fill) noexcept
-  {
-    return rpc_port_invoke_async(cxx::forward<Fill>(fill));
-  }
-
-  // Return after calling use(), i.e. waits for server
-  template <typename Fill, typename Use>
-  HOSTRPC_ANNOTATE bool rpc_invoke(Fill &&fill, Use &&use) noexcept
-  {
-    return rpc_port_invoke(cxx::forward<Fill>(fill), cxx::forward<Use>(use));
+    // call the continuation
+    use(slot, &shared_buffer[slot]);
+    platform::fence_release();
+    // mark the work as no longer in use
+    // todo: is it better to leave this for the GC?
+    // can free slots more lazily by updating the staging outbox and
+    // leaving the visible one. In that case the update may be transfered
+    // for free, or it may never become visible in which case the server
+    // won't realise the slot is no longer in use
+    release_slot(slot);
   }
 
  private:
@@ -436,124 +232,358 @@ struct client_impl : public SZT, public Counter
   // Series of functions called with lock[slot] held. Garbage collect if
   // necessary, use slot if possible, wait & call continuationo if necessary
 
-  HOSTRPC_ANNOTATE bool rpc_invoke_verify_slot_available(uint32_t slot) noexcept
+  HOSTRPC_ANNOTATE bool rpc_verify_port_available(uint32_t slot) noexcept;
+
+  HOSTRPC_ANNOTATE bool result_available(uint32_t slot);
+};
+
+template <typename WordT, typename SZT, typename Counter>
+HOSTRPC_ANNOTATE uint32_t client_impl<WordT, SZT, Counter>::rpc_open_port()
+{
+  const slot_type size = this->size();
+  const slot_type words = this->words();
+  // 0b111 is posted request, waited for it, got it
+  // 0b110 is posted request, nothing waited, got one
+  // 0b101 is got a result, don't need it, only spun up a thread for cleanup
+  // 0b100 is got a result, don't need it
+
+  // tries each word in sequnce. A cas failing suggests contention, in which
+  // case try the next word instead of the next slot
+  // may be worth supporting non-zero starting word for cache locality effects
+
+  // the array is somewhat contended - attempt to spread out the load by
+  // starting clients off at different points in the array. Doesn't make an
+  // observable difference in the current benchmark.
+
+  // if the invoke call performed garbage collection, the word is not
+  // known to be contended so it may be worth trying a different slot
+  // before trying a different word
+  for (uint32_t w = 0; w < words; w++)
+    {
+      uint32_t slot = find_candidate_client_slot(w);
+      if (slot == UINT32_MAX)
+        {
+          // no slot
+          Counter::no_candidate_slot();
+        }
+      else
+        {
+          uint64_t cas_fail_count = 0;
+          if (active.try_claim_empty_slot(size, slot, &cas_fail_count))
+            {
+              // Success, got the lock.
+              Counter::cas_lock_fail(cas_fail_count);
+
+              // Test if it is available, e.g. isn't garbage
+              if (rpc_verify_port_available(slot))
+                {
+                  // Yep, got it and it's good to go
+                  return slot;
+                }
+            }
+          else
+            {
+              Counter::missed_lock_on_candidate_slot();
+            }
+        }
+    }
+
+  // couldn't get a slot in any word
+  return UINT32_MAX;
+}
+
+template <typename WordT, typename SZT, typename Counter>
+HOSTRPC_ANNOTATE void client_impl<WordT, SZT, Counter>::rpc_close_port(
+    uint32_t port)
+{
+  const uint32_t size = this->size();
+  // something needs to release() the buffer element before
+  // dropping this lock
+
+  assert(port != UINT32_MAX);
+  assert(port < size);
+
+  if (platform::is_master_lane())
+    {
+      active.release_slot(size, port);
+    }
+}
+
+template <typename WordT, typename SZT, typename Counter>
+HOSTRPC_ANNOTATE void
+client_impl<WordT, SZT, Counter>::rpc_port_wait_until_available(uint32_t port)
+{
+  const uint32_t size = this->size();
+  const uint32_t w = index_to_element<Word>(port);
+  const uint32_t subindex = index_to_subindex<Word>(port);
+
+  Word i = inbox.load_word(size, w);
+  Word o = staging.load_word(size, w);
+
+  // current thread assumed to hold lock, thus lock is held
+  assert(bits::nthbitset(active.load_word(size, w), subindex));
+
+  platform::fence_acquire();
+
+  bool out = bits::nthbitset(o, subindex);
+  bool in = bits::nthbitset(i, subindex);
+
+  // io io io io
+  // 00 01 10 11
+
+  if (!in & !out)
+    {
+      // idle client or active thread
+      return;  // ready
+    }
+  // io io io io
+  // -- 01 10 11
+
+  if (!in & out)
+    {
+      // need to wait for result to be available
+      while (!in)
+        {
+          Word i = inbox.load_word(size, w);
+          in = bits::nthbitset(i, subindex);
+        }
+      platform::fence_acquire();
+      assert(in);
+
+      // now in & out
+    }
+  // io io io io
+  // -- -- 10 11
+
+  if (in & out)
+    {
+      // garbage to do
+      release_slot(port);
+      out = false;  // would be false if reloaded
+    }
+  // io io io io
+  // -- -- 10 --
+
+  if (in & !out)  // always true
+    {
+      // need to to wait for in to clear
+      while (in)
+        {
+          Word i = inbox.load_word(size, w);
+          in = bits::nthbitset(i, subindex);
+        }
+      platform::fence_acquire();
+      return;  // ready
+    }
+  // io io io io
+  // -- -- -- --
+
+  __builtin_unreachable();
+}
+
+template <typename WordT, typename SZT, typename Counter>
+template <typename Op>
+HOSTRPC_ANNOTATE void client_impl<WordT, SZT, Counter>::rpc_port_send(
+    uint32_t port, Op &&op)
+{
+  // If the port has just been opened, we know it is available to
+  // submit work to. In general, send might be called while the
+  // state machine is elsewhere, so conservatively progress it
+  // until the slot is empty.
+  // There is a potential bug here if 'use' is being used to
+  // reset the state, instead of the server clean, as 'use'
+  // is not being called, but that might be deemed a API misuse
+  // as the callee could have used recv() explicitly instead of
+  // dropping the result
+  rpc_port_wait_until_available(port);  // expensive
+  rpc_port_send_given_available<Op>(port, cxx::forward<Op>(op));
+}
+
+template <typename WordT, typename SZT, typename Counter>
+template <typename Fill>
+HOSTRPC_ANNOTATE void
+client_impl<WordT, SZT, Counter>::rpc_port_send_given_available(uint32_t port,
+                                                                Fill &&fill)
+{
+  assert(port != UINT32_MAX);
+  const uint32_t size = this->size();
+
+  // wave_populate
+  // Fill may have no precondition, in which case this doesn't need to run
+  fill(port, &shared_buffer[port]);
+
+  // wave_publish work
   {
-    assert(slot != UINT32_MAX);
-    const uint32_t element = index_to_element<Word>(slot);
-    const uint32_t subindex = index_to_subindex<Word>(slot);
-
-    const uint32_t size = this->size();
-    Word i = inbox.load_word(size, element);
-    Word o = staging.load_word(size, element);
-    platform::fence_acquire();
-
-    // Called with a lock. The corresponding slot can be:
-    //  inbox outbox    state  action outbox'
-    //      0      0    avail    work       1
-    //      0      1     done    none       -
-    //      1      0  garbage    none       -
-    //      1      1  garbage   clean       0
-    // Inbox true means the result has come back
-    // That this lock has been taken means no other thread is
-    // waiting for that result
-
-    Word this_slot = bits::setnthbit((Word)0, subindex);
-    Word garbage_todo = i & o & this_slot;
-    Word available = ~i & ~o & this_slot;
-
-    assert((garbage_todo & available) == 0);  // disjoint
-
-    if (garbage_todo)
+    platform::fence_release();
+    uint64_t cas_fail_count = 0;
+    uint64_t cas_help_count = 0;
+    if (platform::is_master_lane())
       {
-        release_slot(slot);
+        staged_claim_slot(size, port, &staging, &outbox, &cas_fail_count,
+                          &cas_help_count);
+      }
+    cas_fail_count = platform::broadcast_master(cas_fail_count);
+    cas_help_count = platform::broadcast_master(cas_help_count);
+    Counter::publish_cas_fail(cas_fail_count);
+    Counter::publish_cas_help(cas_help_count);
+  }
+
+  // current strategy is drop interest in the port, then wait for the
+  // server to confirm, then drop local thread
+
+  // with a continuation, outbox is cleared before this thread returns
+  // otherwise, garbage collection needed to clear that outbox
+
+  // if we don't have a continuation, would return on 0b010
+  // this wouldn't be considered garbage by client as inbox is clear
+  // the server gets 0b100, does the work, sets the result to 0b110
+  // that is then picked up by the client as 0b110
+
+  // wait for H0, result has been garbage collected by the host
+  // todo: want to get rid of this busy spin in favour of deferred collection
+  // I think that will need an extra client side bitmap
+
+  // We could wait for inbox[port] != 0 which indicates the result
+  // has been garbage collected, but that stalls the wave waiting for the host
+  // Instead, drop the warp and let the allocator skip occupied inbox ports
+}
+
+template <typename WordT, typename SZT, typename Counter>
+HOSTRPC_ANNOTATE void
+client_impl<WordT, SZT, Counter>::rpc_port_wait_for_result(uint32_t port)
+{
+  // assumes output live
+  assert(bits::nthbitset(
+      staging.load_word(this->size(), index_to_element<Word>(port)),
+      index_to_subindex<Word>(port)));
+
+  while (!result_available(port))
+    {
+      // todo: useful work here?
+      Counter::waiting_for_result();
+      platform::sleep();
+    }
+  platform::fence_acquire();
+}
+
+template <typename WordT, typename SZT, typename Counter>
+HOSTRPC_ANNOTATE bool
+client_impl<WordT, SZT, Counter>::rpc_verify_port_available(
+    uint32_t port) noexcept
+{
+  assert(port != UINT32_MAX);
+  const uint32_t element = index_to_element<Word>(port);
+  const uint32_t subindex = index_to_subindex<Word>(port);
+
+  const uint32_t size = this->size();
+  Word i = inbox.load_word(size, element);
+  Word o = staging.load_word(size, element);
+  platform::fence_acquire();
+
+  // Called with a lock. The corresponding port can be:
+  //  inbox outbox    state  action outbox'
+  //      0      0    avail    work       1
+  //      0      1     done    none       -
+  //      1      0  garbage    none       -
+  //      1      1  garbage   clean       0
+  // Inbox true means the result has come back
+  // That this lock has been taken means no other thread is
+  // waiting for that result
+
+  Word this_port = bits::setnthbit((Word)0, subindex);
+  Word garbage_todo = i & o & this_port;
+  Word available = ~i & ~o & this_port;
+
+  assert((garbage_todo & available) == 0);  // disjoint
+
+  if (garbage_todo)
+    {
+      release_slot(port);
+      return false;
+    }
+
+  if (!available)
+    {
+      Counter::got_lock_after_work_done();
+      return false;
+    }
+
+  // Port is available for use.
+  return true;
+}
+
+template <typename WordT, typename SZT, typename Counter>
+HOSTRPC_ANNOTATE bool client_impl<WordT, SZT, Counter>::result_available(
+    uint32_t slot)
+{
+  const uint32_t size = this->size();
+  Word loaded = 0;
+  uint32_t got = 0;
+  if (platform::is_master_lane())  // dead exec munging?
+    {
+      got = inbox(size, slot, &loaded);
+    }
+  got = platform::broadcast_master(got);
+
+  return (got == 1);
+}
+
+template <typename WordT, typename SZT, typename Counter = counters::client>
+struct client : public client_impl<WordT, SZT, Counter>
+{
+  using base = client_impl<WordT, SZT, Counter>;
+  using base::client_impl;
+
+  template <typename Op>
+  HOSTRPC_ANNOTATE bool rpc_invoke_async(Op &&op)
+  {
+    // get a port, send it, don't wait
+    uint32_t port = base::rpc_open_port();
+    if (port == UINT32_MAX)
+      {
         return false;
       }
-
-    if (!available)
-      {
-        Counter::got_lock_after_work_done();
-        return false;
-      }
-
-    // Slot is available for use.
+    base::rpc_port_send(port, cxx::forward<Op>(op));
+    base::rpc_close_port(port);
     return true;
   }
 
-  template <typename Fill>
-  HOSTRPC_ANNOTATE void rpc_invoke_fill_given_slot(Fill &&fill,
-                                                   uint32_t slot) noexcept
+  template <typename Fill, typename Use>
+  HOSTRPC_ANNOTATE bool rpc_port_invoke(Fill &&f, Use &&u)
   {
-    assert(slot != UINT32_MAX);
-    const uint32_t size = this->size();
-
-    // wave_populate
-    // Fill may have no precondition, in which case this doesn't need to run
-    fill(slot, &shared_buffer[slot]);
-
-    // wave_publish work
-    {
-      platform::fence_release();
-      uint64_t cas_fail_count = 0;
-      uint64_t cas_help_count = 0;
-      if (platform::is_master_lane())
-        {
-          staged_claim_slot(size, slot, &staging, &outbox, &cas_fail_count,
-                            &cas_help_count);
-        }
-      cas_fail_count = platform::broadcast_master(cas_fail_count);
-      cas_help_count = platform::broadcast_master(cas_help_count);
-      Counter::publish_cas_fail(cas_fail_count);
-      Counter::publish_cas_help(cas_help_count);
-    }
-
-    // current strategy is drop interest in the slot, then wait for the
-    // server to confirm, then drop local thread
-
-    // with a continuation, outbox is cleared before this thread returns
-    // otherwise, garbage collection needed to clear that outbox
-
-    // if we don't have a continuation, would return on 0b010
-    // this wouldn't be considered garbage by client as inbox is clear
-    // the server gets 0b100, does the work, sets the result to 0b110
-    // that is then picked up by the client as 0b110
-
-    // wait for H0, result has been garbage collected by the host
-    // todo: want to get rid of this busy spin in favour of deferred collection
-    // I think that will need an extra client side bitmap
-
-    // We could wait for inbox[slot] != 0 which indicates the result
-    // has been garbage collected, but that stalls the wave waiting for the host
-    // Instead, drop the warp and let the allocator skip occupied inbox slots
-  }
-
-  HOSTRPC_ANNOTATE bool result_available(uint32_t slot)
-  {
-    const uint32_t size = this->size();
-    Word loaded = 0;
-    uint32_t got = 0;
-    if (platform::is_master_lane())  // dead exec munging?
+    uint32_t port = base::rpc_open_port();
+    if (port == UINT32_MAX)
       {
-        got = inbox(size, slot, &loaded);
+        return false;
       }
-    got = platform::broadcast_master(got);
-
-    return (got == 1);
+    base::rpc_port_send(port, cxx::forward<Fill>(f));
+    base::rpc_port_recv(port,
+                        cxx::forward<Use>(u));  // implicit wait for result
+    base::rpc_close_port(port);
+    return true;
   }
 
-  template <typename Use>
-  HOSTRPC_ANNOTATE void rpc_invoke_use_given_slot(Use &&use,
-                                                  uint32_t slot) noexcept
+  // rpc_invoke returns true if it successfully launched the task
+  // returns false if no slot was available
+
+  // Return after calling fill(), i.e. does not wait for server
+  template <typename Fill>
+  HOSTRPC_ANNOTATE bool rpc_invoke(Fill &&fill) noexcept
   {
-    // call the continuation
-    use(slot, &shared_buffer[slot]);
-    platform::fence_release();
-    // mark the work as no longer in use
-    // todo: is it better to leave this for the GC?
-    // can free slots more lazily by updating the staging outbox and
-    // leaving the visible one. In that case the update may be transfered
-    // for free, or it may never become visible in which case the server
-    // won't realise the slot is no longer in use
-    release_slot(slot);
+    return rpc_port_invoke_async(cxx::forward<Fill>(fill));
+  }
+
+  template <typename Op>
+  HOSTRPC_ANNOTATE bool rpc_port_invoke_async(Op &&op)
+  {
+    return rpc_invoke_async(cxx::forward<Op>(op));
+  }
+
+  // Return after calling use(), i.e. waits for server
+  template <typename Fill, typename Use>
+  HOSTRPC_ANNOTATE bool rpc_invoke(Fill &&fill, Use &&use) noexcept
+  {
+    return rpc_port_invoke(cxx::forward<Fill>(fill), cxx::forward<Use>(use));
   }
 };
 

@@ -12,13 +12,13 @@ namespace counters
 namespace detail
 {
 template <typename B>
-struct client_impl : public B
+struct client : public B
 {
   // Probably want this in the interface, partly to keep size
   // lined up (this will be multiple words)
-  HOSTRPC_ANNOTATE client_impl() = default;
-  HOSTRPC_ANNOTATE client_impl(const client_impl& o) = default;
-  HOSTRPC_ANNOTATE client_impl& operator=(const client_impl& o) = default;
+  HOSTRPC_ANNOTATE client() = default;
+  HOSTRPC_ANNOTATE client(const client& o) = default;
+  HOSTRPC_ANNOTATE client& operator=(const client& o) = default;
   HOSTRPC_ANNOTATE void add(unsigned c, uint64_t v) { B::add(c, v); }
 
   HOSTRPC_ANNOTATE void no_candidate_slot()
@@ -90,13 +90,13 @@ struct client_impl : public B
 };
 
 template <typename B>
-struct server_impl : public B
+struct server : public B
 {
   // Probably want this in the interface, partly to keep size
   // lined up (this will be multiple words)
-  HOSTRPC_ANNOTATE server_impl() = default;
-  HOSTRPC_ANNOTATE server_impl(const server_impl& o) = default;
-  HOSTRPC_ANNOTATE server_impl& operator=(const server_impl& o) = default;
+  HOSTRPC_ANNOTATE server() = default;
+  HOSTRPC_ANNOTATE server(const server& o) = default;
+  HOSTRPC_ANNOTATE server& operator=(const server& o) = default;
   HOSTRPC_ANNOTATE void add(unsigned c, uint64_t v) { B::add(c, v); }
 
   HOSTRPC_ANNOTATE void no_candidate_bitmap()
@@ -189,12 +189,12 @@ struct stateless
 }  // namespace detail
 
 using client =
-    detail::client_impl<detail::stateful<client_counters::cc_total_count>>;
-using client_nop = detail::client_impl<detail::stateless>;
+    detail::client<detail::stateful<client_counters::cc_total_count>>;
+using client_nop = detail::client<detail::stateless>;
 
 using server =
-    detail::server_impl<detail::stateful<server_counters::sc_total_count>>;
-using server_nop = detail::server_impl<detail::stateless>;
+    detail::server<detail::stateful<server_counters::sc_total_count>>;
+using server_nop = detail::server<detail::stateless>;
 
 }  // namespace counters
 }  // namespace hostrpc

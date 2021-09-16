@@ -24,8 +24,8 @@ struct client_server_pair_t
   using AllocLocal = AllocLocal_;
   using AllocRemote = AllocRemote_;
 
-  using client_type = client_impl<Word, SZ, client_counter>;
-  using server_type = server_impl<Word, SZ, server_counter>;
+  using client_type = client<Word, SZ, client_counter>;
+  using server_type = server<Word, SZ, server_counter>;
 
   using storage_type = allocator::store_impl<AllocBuffer, AllocInboxOutbox,
                                              AllocLocal, AllocRemote>;

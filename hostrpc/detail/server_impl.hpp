@@ -99,47 +99,6 @@ struct server_impl : public SZT, public Counter
 #endif
   }
 
-  // rpc_handle return true if it handled one task, does not attempt multiple.
-
-  // Requires Operate argument.
-  // If passed Clear, will call it on garbage collection
-  // If passed location, will use it to round robin across slots
-
-  template <typename Operate, typename Clear>
-  HOSTRPC_ANNOTATE bool rpc_handle(Operate&& op, Clear&& cl,
-                                   uint32_t* location) noexcept
-  {
-    return rpc_handle_impl<Operate, Clear, true>(
-        cxx::forward<Operate>(op), cxx::forward<Clear>(cl), location);
-  }
-
-  template <typename Operate>
-  HOSTRPC_ANNOTATE bool rpc_handle(Operate&& op, uint32_t* location) noexcept
-  {
-    struct Clear
-    {
-      HOSTRPC_ANNOTATE void operator()(uint32_t, hostrpc::page_t*){};
-    };
-    return rpc_handle_impl<Operate, Clear, false>(cxx::forward<Operate>(op),
-                                                  Clear{}, location);
-  }
-
-  // Default location to always start from zero
-  template <typename Operate, typename Clear>
-  HOSTRPC_ANNOTATE bool rpc_handle(Operate&& op, Clear&& cl) noexcept
-  {
-    uint32_t location = 0;
-    return rpc_handle<Operate, Clear>(cxx::forward<Operate>(op),
-                                      cxx::forward<Clear>(cl), &location);
-  }
-
-  template <typename Operate>
-  HOSTRPC_ANNOTATE bool rpc_handle(Operate&& op) noexcept
-  {
-    uint32_t location = 0;
-    return rpc_handle<Operate>(cxx::forward<Operate>(op), &location);
-  }
-
   template <typename Clear>
   HOSTRPC_ANNOTATE uint32_t rpc_open_port(Clear&& cl, uint32_t* location_arg)
   {
@@ -306,6 +265,7 @@ struct server_impl : public SZT, public Counter
     Counter::garbage_cas_help(cas_help_count);
   }
 
+ protected:
   template <typename Clear, bool have_precondition>
   HOSTRPC_ANNOTATE uint32_t rpc_open_port_impl(Clear&& cl,
                                                uint32_t* location_arg)
@@ -354,7 +314,7 @@ struct server_impl : public SZT, public Counter
                 // Can't forward cl here as the call is made repeatedly
                 // Will need to refactor verify_slot_available to avoid passing
                 // it Until then, force a copy to catch non-copyable clear
-                if (rpc_handle_verify_slot_available<Clear, have_precondition>(
+                if (rpc_verify_slot_available<Clear, have_precondition>(
                         Clear{cl}, slot))
                   {
                     // Success. Got a port and work to do. Aim location_arg at
@@ -388,6 +348,7 @@ struct server_impl : public SZT, public Counter
     return UINT32_MAX;
   }
 
+ private:
   template <typename Clear, bool have_precondition>
   void rpc_port_wait_until_available_impl(uint32_t port, Clear&& cl)
   {
@@ -466,23 +427,6 @@ struct server_impl : public SZT, public Counter
     __builtin_unreachable();
   }
 
-  template <typename Operate, typename Clear, bool have_precondition>
-  HOSTRPC_ANNOTATE bool rpc_handle_impl(Operate&& op, Clear&& cl,
-                                        uint32_t* location_arg) noexcept
-  {
-    const uint32_t port = rpc_open_port_impl<Clear, have_precondition>(
-        cxx::forward<Clear>(cl), location_arg);
-    if (port == UINT32_MAX)
-      {
-        return false;
-      }
-
-    rpc_port_operate_given_available<Operate>(cxx::forward<Operate>(op), port);
-
-    rpc_close_port(port);
-    return true;
-  }
-
   HOSTRPC_ANNOTATE bool lock_held(uint32_t slot)
   {
     const uint32_t element = index_to_element<Word>(slot);
@@ -491,8 +435,7 @@ struct server_impl : public SZT, public Counter
   }
 
   template <typename Clear, bool have_precondition>
-  HOSTRPC_ANNOTATE bool rpc_handle_verify_slot_available(Clear&& cl,
-                                                         uint32_t slot)
+  HOSTRPC_ANNOTATE bool rpc_verify_slot_available(Clear&& cl, uint32_t slot)
   {
     assert(slot != UINT32_MAX);
 
@@ -534,6 +477,73 @@ struct server_impl : public SZT, public Counter
         return false;
       }
 
+    return true;
+  }
+};
+
+template <typename WordT, typename SZT, typename Counter = counters::server>
+struct server : public server_impl<WordT, SZT, Counter>
+{
+  using base = server_impl<WordT, SZT, Counter>;
+  using base::server_impl;
+
+  // rpc_handle return true if it handled one task, does not attempt multiple.
+
+  // Requires Operate argument.
+  // If passed Clear, will call it on garbage collection
+  // If passed location, will use it to round robin across slots
+
+  template <typename Operate, typename Clear>
+  HOSTRPC_ANNOTATE bool rpc_handle(Operate&& op, Clear&& cl,
+                                   uint32_t* location) noexcept
+  {
+    return rpc_handle_impl<Operate, Clear, true>(
+        cxx::forward<Operate>(op), cxx::forward<Clear>(cl), location);
+  }
+
+  template <typename Operate>
+  HOSTRPC_ANNOTATE bool rpc_handle(Operate&& op, uint32_t* location) noexcept
+  {
+    struct Clear
+    {
+      HOSTRPC_ANNOTATE void operator()(uint32_t, hostrpc::page_t*){};
+    };
+    return rpc_handle_impl<Operate, Clear, false>(cxx::forward<Operate>(op),
+                                                  Clear{}, location);
+  }
+
+  // Default location to always start from zero
+  template <typename Operate, typename Clear>
+  HOSTRPC_ANNOTATE bool rpc_handle(Operate&& op, Clear&& cl) noexcept
+  {
+    uint32_t location = 0;
+    return rpc_handle<Operate, Clear>(cxx::forward<Operate>(op),
+                                      cxx::forward<Clear>(cl), &location);
+  }
+
+  template <typename Operate>
+  HOSTRPC_ANNOTATE bool rpc_handle(Operate&& op) noexcept
+  {
+    uint32_t location = 0;
+    return rpc_handle<Operate>(cxx::forward<Operate>(op), &location);
+  }
+
+  template <typename Operate, typename Clear, bool have_precondition>
+  HOSTRPC_ANNOTATE bool rpc_handle_impl(Operate&& op, Clear&& cl,
+                                        uint32_t* location_arg) noexcept
+  {
+    const uint32_t port =
+        base::template rpc_open_port_impl<Clear, have_precondition>(
+            cxx::forward<Clear>(cl), location_arg);
+    if (port == UINT32_MAX)
+      {
+        return false;
+      }
+
+    base::template rpc_port_operate_given_available<Operate>(
+        cxx::forward<Operate>(op), port);
+
+    base::rpc_close_port(port);
     return true;
   }
 };
