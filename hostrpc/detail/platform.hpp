@@ -55,23 +55,52 @@ extern "C" int printf(const char *format, ...);
 
 namespace platform
 {
-// Functions implemented for each platform
-HOSTRPC_ANNOTATE void sleep_briefly();
-HOSTRPC_ANNOTATE void sleep();
-HOSTRPC_ANNOTATE bool is_master_lane();
-HOSTRPC_ANNOTATE uint32_t get_lane_id();
-HOSTRPC_ANNOTATE uint32_t broadcast_master(uint32_t);
+// Functions implemented for each platform in platform_arch.hpp
+inline HOSTRPC_ANNOTATE void sleep_briefly();
+inline HOSTRPC_ANNOTATE void sleep();
+
+inline HOSTRPC_ANNOTATE uint32_t get_lane_id();
+inline HOSTRPC_ANNOTATE bool is_master_lane();
+inline HOSTRPC_ANNOTATE uint32_t broadcast_master(uint32_t);
+
+inline HOSTRPC_ANNOTATE uint32_t client_start_slot();
+
+inline HOSTRPC_ANNOTATE void fence_acquire();
+inline HOSTRPC_ANNOTATE void fence_release();
+
+// all true is used by assert
+// there's a problem related to convergent modelling here so there's a risk
+// 'assert' introduces miscompilation
 HOSTRPC_ANNOTATE uint32_t all_true(uint32_t);
-HOSTRPC_ANNOTATE uint32_t reduction_sum(uint32_t);
-HOSTRPC_ANNOTATE uint32_t client_start_slot();
-HOSTRPC_ANNOTATE void fence_acquire();
-HOSTRPC_ANNOTATE void fence_release();
+
+// related functions derived from the above
+HOSTRPC_ANNOTATE __attribute__((always_inline)) inline uint64_t
+broadcast_master(uint64_t x)
+{
+  uint32_t lo = x;
+  uint32_t hi = x >> 32u;
+  lo = broadcast_master(lo);
+  hi = broadcast_master(hi);
+  return ((uint64_t)hi << 32u) | lo;
+}
+
+template <typename U, typename F>
+HOSTRPC_ANNOTATE U critical(F f)
+{
+  U res = {};
+  if (is_master_lane())
+    {
+      res = f();
+    }
+  res = broadcast_master(res);
+  return res;
+}
 
 #define debug(X) platform::detail::debug_func(__FILE__, __LINE__, __func__, X)
 
-// atomics are also be overloaded on different address spaces for some platforms
+// atomics may also be overloaded on different address spaces for some platforms
 // implemented for a slight superset of the subset of T that are presently in
-// use
+// use. Probably clearer to implement on specific integer types.
 
 template <typename T, size_t memorder, size_t scope>
 HOSTRPC_ANNOTATE T atomic_load(HOSTRPC_ATOMIC(T) const *);
@@ -100,29 +129,9 @@ HOSTRPC_ANNOTATE bool atomic_compare_exchange_weak(HOSTRPC_ATOMIC(T) *,
 }  // namespace platform
 
 // This is exciting. Nvptx doesn't implement atomic, so one must use volatile +
-// fences C++ doesn't let one write operator new() for a volatile pointer Net
+// fences. C++ doesn't let one write operator new() for a volatile pointer Net
 // effect is that we can't have code that conforms to the C++ object model and
 // volatile qualifies the underlying object
-
-namespace platform
-{
-// related functions derived from the above
-HOSTRPC_ANNOTATE uint32_t reduction_sum(uint32_t);
-HOSTRPC_ANNOTATE uint64_t broadcast_master(uint64_t);
-
-template <typename U, typename F>
-HOSTRPC_ANNOTATE U critical(F f)
-{
-  U res = {};
-  if (is_master_lane())
-    {
-      res = f();
-    }
-  res = broadcast_master(res);
-  return res;
-}
-
-}  // namespace platform
 
 namespace platform
 {
@@ -198,6 +207,8 @@ hostrpc_inline_printf()
 // Testing (x) || assert_fail with potentially non-uniform x leads to a
 // complicated CFG, as some lanes trap and some lanes don't. Explictly failing
 // the assert when any lane is false avoids this.
+// May be better to write assert to disguise the branching so that it does not
+// change the CFG
 #define assert_str(x) assert_str_1(x)
 #define assert_str_1(x) #x
 
@@ -274,46 +285,14 @@ HOSTRPC_ANNOTATE void assert_fail(const char *str, const char *,
 // should probably implement this in platform::host_libc source
 extern "C" int usleep(unsigned);  // #include <unistd.h>
 
+#include "platform_host.hpp"
+
 namespace platform
 {
 namespace host
 {
-// local toolchain thinks usleep might throw. That induces a bunch of exception
-// control flow where there otherwise wouldn't be any. Will fix by calling into
-// std::chrono, bodge for now
-HOSTRPC_ANNOTATE static __attribute__((noinline)) void sleep_noexcept(
-    unsigned int t) noexcept
-{
-#if !defined(__OPENCL_C_VERSION__)
-  usleep(t);
-#else
-  (void)t;
-#endif
-}
 
-HOSTRPC_ANNOTATE inline void sleep_briefly()
-{
-  // <thread> conflicts with <stdatomic.h>
-  // stdatomic is no longer in use so may be able to use <thread> again
-  // std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  sleep_noexcept(10);
-}
-HOSTRPC_ANNOTATE inline void sleep() { sleep_noexcept(1000); }
-
-HOSTRPC_ANNOTATE inline bool is_master_lane() { return true; }
-HOSTRPC_ANNOTATE inline uint32_t get_lane_id() { return 0; }
-HOSTRPC_ANNOTATE inline uint32_t broadcast_master(uint32_t x) { return x; }
 HOSTRPC_ANNOTATE inline uint32_t all_true(uint32_t x) { return x; }
-HOSTRPC_ANNOTATE inline uint32_t reduction_sum(uint32_t x) { return x; }
-HOSTRPC_ANNOTATE inline uint32_t client_start_slot() { return 0; }
-HOSTRPC_ANNOTATE inline void fence_acquire()
-{
-  __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
-}
-HOSTRPC_ANNOTATE inline void fence_release()
-{
-  __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-}
 
 namespace detail
 {
@@ -348,50 +327,12 @@ HOSTRPC_ANNOTATE __attribute__((always_inline)) inline void assert_fail(
 
 #if HOSTRPC_AMDGCN
 
+#include "platform_amdgcn.hpp"
+
 namespace platform
 {
 namespace amdgcn
 {
-namespace detail
-{
-HOSTRPC_ANNOTATE __attribute__((always_inline)) inline int32_t
-__impl_shfl_down_sync(int32_t var, uint32_t laneDelta)
-{
-  // derived from openmp runtime
-  int32_t width = 64;
-  int self = get_lane_id();
-  int index = self + laneDelta;
-  index = (int)(laneDelta + (self & (width - 1))) >= width ? self : index;
-  return __builtin_amdgcn_ds_bpermute(index << 2, var);
-}
-}  // namespace detail
-
-HOSTRPC_ANNOTATE inline void sleep_briefly() { __builtin_amdgcn_s_sleep(0); }
-HOSTRPC_ANNOTATE inline void sleep() { __builtin_amdgcn_s_sleep(100); }
-
-HOSTRPC_ANNOTATE __attribute__((always_inline)) inline uint32_t get_lane_id()
-{
-  return __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
-}
-HOSTRPC_ANNOTATE __attribute__((always_inline)) inline bool is_master_lane()
-{
-  // TODO: 32 wide wavefront, consider not using raw intrinsics here
-  uint64_t activemask = __builtin_amdgcn_read_exec();
-
-  // TODO: check codegen for trunc lowest_active vs expanding lane_id
-  // TODO: ffs is lifted from openmp runtime, looks like it should be ctz
-  uint32_t lowest_active = __builtin_ffsl(activemask) - 1;
-  uint32_t lane_id = get_lane_id();
-
-  // TODO: readfirstlane(lane_id) == lowest_active?
-  return lane_id == lowest_active;
-}
-
-HOSTRPC_ANNOTATE __attribute__((always_inline)) inline uint32_t
-broadcast_master(uint32_t x)
-{
-  return __builtin_amdgcn_readfirstlane(x);
-}
 
 HOSTRPC_ANNOTATE static int optimizationBarrierHack(int in_val)
 {
@@ -420,15 +361,6 @@ HOSTRPC_ANNOTATE __attribute__((always_inline)) inline uint32_t all_true(
   return __builtin_amdgcn_uicmp((int)x, 0, 33) == __builtin_amdgcn_read_exec();
 }
 
-HOSTRPC_ANNOTATE __attribute__((always_inline)) inline void fence_acquire()
-{
-  __c11_atomic_thread_fence(__ATOMIC_ACQUIRE);
-}
-HOSTRPC_ANNOTATE __attribute__((always_inline)) inline void fence_release()
-{
-  __c11_atomic_thread_fence(__ATOMIC_RELEASE);
-}
-
 #define HOSTRPC_PLATFORM_ATOMIC_ADDRSPACE_ATTRIBUTE
 #include "platform_atomic.inc"
 
@@ -440,47 +372,17 @@ HOSTRPC_ANNOTATE __attribute__((always_inline)) inline void fence_release()
   __attribute__((address_space(1)))
 #include "platform_atomic.inc"
 
-namespace amdgcn
-{
-HOSTRPC_ANNOTATE inline uint32_t client_start_slot()
-{
-  // Ideally would return something < size
-  // Attempt to distibute clients roughly across the array
-  // compute unit currently executing the wave is a version of that
-
-  // hip's runtime has macros that collide with these. That should be fixed in
-  // hip, as 'HW_' is not a reserved namespace. Until then, bodge it here.
-  enum
-  {
-    HRPC_HW_ID = 4,  // specify that the hardware register to read is HW_ID
-
-    HRPC_HW_ID_CU_ID_SIZE = 4,    // size of CU_ID field in bits
-    HRPC_HW_ID_CU_ID_OFFSET = 8,  // offset of CU_ID from start of register
-
-    HRPC_HW_ID_SE_ID_SIZE = 2,     // sizeof SE_ID field in bits
-    HRPC_HW_ID_SE_ID_OFFSET = 13,  // offset of SE_ID from start of register
-  };
-#define ENCODE_HWREG(WIDTH, OFF, REG) (REG | (OFF << 6) | ((WIDTH - 1) << 11))
-  uint32_t cu_id = __builtin_amdgcn_s_getreg(
-      ENCODE_HWREG(HRPC_HW_ID_CU_ID_SIZE, HRPC_HW_ID_CU_ID_OFFSET, HRPC_HW_ID));
-  uint32_t se_id = __builtin_amdgcn_s_getreg(
-      ENCODE_HWREG(HRPC_HW_ID_SE_ID_SIZE, HRPC_HW_ID_SE_ID_OFFSET, HRPC_HW_ID));
-  return (se_id << HRPC_HW_ID_CU_ID_SIZE) + cu_id;
-#undef ENCODE_HWREG
-}
-}  // namespace amdgcn
 }  // namespace platform
 #endif  // defined(__AMDGCN__)
 
 #if (HOSTRPC_NVPTX)
+
+#include "platform_nvptx.hpp"
+
 namespace platform
 {
 namespace nvptx
 {
-HOSTRPC_ANNOTATE
-inline void sleep_briefly() {}
-HOSTRPC_ANNOTATE
-inline void sleep() {}
 
 namespace detail
 {
@@ -488,65 +390,12 @@ namespace detail
 // intrinsics. Can't compile the majority of the code as cuda, so moving the
 // platform functions out of line.
 
-enum
-{
-  warpsize = 32,
-};
-
-HOSTRPC_ANNOTATE
-inline int32_t __impl_shfl_down_sync(int32_t var, uint32_t laneDelta)
-{
-  // danger: Probably want something more like:
-  // return __nvvm_shfl_sync_down_i32(Mask, Var, Delta, (( warpsize - Width) <<
-  // 8) | 0x1f);
-  return __nvvm_shfl_sync_down_i32(UINT32_MAX, var, laneDelta, warpsize - 1);
-}
-
-inline HOSTRPC_ANNOTATE uint32_t get_master_lane_id(void)
-{
-  uint32_t activemask;
-  asm volatile("activemask.b32 %0;" : "=r"(activemask));
-
-  uint32_t lowest_active = __builtin_ffs(activemask) - 1;
-  return lowest_active;
-}
-
-// TODO: Check the differences between threadfence, threadfence_block,
-// threadfence_system
-static HOSTRPC_ANNOTATE void fence_acquire_release() { __nvvm_membar_sys(); }
-
 }  // namespace detail
-
-HOSTRPC_ANNOTATE
-inline uint32_t get_lane_id()
-{
-  return __nvvm_read_ptx_sreg_tid_x() /*threadIdx.x*/ & (detail::warpsize - 1);
-}
-
-HOSTRPC_ANNOTATE
-inline bool is_master_lane()
-{
-  return get_lane_id() == detail::get_master_lane_id();
-}
-
-HOSTRPC_ANNOTATE
-inline uint32_t broadcast_master(uint32_t x)
-{
-  uint32_t master_id = detail::get_master_lane_id();
-  return __nvvm_shfl_sync_idx_i32(UINT32_MAX, x, master_id,
-                                  detail::warpsize - 1);
-}
 
 HOSTRPC_ANNOTATE inline uint32_t all_true(uint32_t x)
 {
   return __nvvm_vote_all_sync(UINT32_MAX, x);
 }
-
-HOSTRPC_ANNOTATE
-void fence_acquire() { detail::fence_acquire_release(); }
-
-HOSTRPC_ANNOTATE
-void fence_release() { detail::fence_acquire_release(); }
 
 // The cuda/ptx compiler lowers opencl intrinsics to IR atomics if compiling as
 // cuda. If compiling as C++, it leaves them as external function calls. As
@@ -696,7 +545,6 @@ HOSTRPC_ANNOTATE bool atomic_compare_exchange_weak(HOSTRPC_ATOMIC(T) * addr,
   return res;
 }
 
-HOSTRPC_ANNOTATE inline uint32_t client_start_slot() { return 0; }
 }  // namespace nvptx
 }  // namespace platform
 #endif  // HOSTRPC_NVPTX
@@ -716,40 +564,10 @@ HOSTRPC_ANNOTATE inline uint32_t client_start_slot() { return 0; }
 namespace platform
 {
 // Functions implemented for each platform
-HOSTRPC_ANNOTATE inline void sleep_briefly()
-{
-  HOSTRPC_IMPL_NS::sleep_briefly();
-}
-HOSTRPC_ANNOTATE inline void sleep() { HOSTRPC_IMPL_NS::sleep(); }
 
-HOSTRPC_ANNOTATE inline bool is_master_lane()
-{
-  return HOSTRPC_IMPL_NS::is_master_lane();
-}
-HOSTRPC_ANNOTATE inline uint32_t get_lane_id()
-{
-  return HOSTRPC_IMPL_NS::get_lane_id();
-}
-HOSTRPC_ANNOTATE inline uint32_t broadcast_master(uint32_t x)
-{
-  return HOSTRPC_IMPL_NS::broadcast_master(x);
-}
 HOSTRPC_ANNOTATE inline uint32_t all_true(uint32_t x)
 {
   return HOSTRPC_IMPL_NS::all_true(x);
-}
-
-HOSTRPC_ANNOTATE inline uint32_t client_start_slot()
-{
-  return HOSTRPC_IMPL_NS::client_start_slot();
-}
-HOSTRPC_ANNOTATE inline void fence_acquire()
-{
-  HOSTRPC_IMPL_NS::fence_acquire();
-}
-HOSTRPC_ANNOTATE inline void fence_release()
-{
-  HOSTRPC_IMPL_NS::fence_release();
 }
 
 namespace detail
@@ -817,37 +635,6 @@ HOSTRPC_ANNOTATE inline bool atomic_compare_exchange_weak(HOSTRPC_ATOMIC(T) * a,
 {
   return HOSTRPC_IMPL_NS::atomic_compare_exchange_weak<T, memorder, scope>(
       a, expected, desired, loaded);
-}
-
-}  // namespace platform
-
-namespace platform
-{
-// Related functions derived from the platform specific ones
-
-#if (HOSTRPC_AMDGCN || HOSTRPC_NVPTX)
-HOSTRPC_ANNOTATE
-__attribute__((always_inline)) inline uint32_t reduction_sum(uint32_t x)
-{
-  // could implement shfl_down for x64 and drop the macro
-  x += HOSTRPC_IMPL_NS::detail::__impl_shfl_down_sync(x, 32);
-  x += HOSTRPC_IMPL_NS::detail::__impl_shfl_down_sync(x, 16);
-  x += HOSTRPC_IMPL_NS::detail::__impl_shfl_down_sync(x, 8);
-  x += HOSTRPC_IMPL_NS::detail::__impl_shfl_down_sync(x, 4);
-  x += HOSTRPC_IMPL_NS::detail::__impl_shfl_down_sync(x, 2);
-  x += HOSTRPC_IMPL_NS::detail::__impl_shfl_down_sync(x, 1);
-  return x;
-}
-#endif
-
-HOSTRPC_ANNOTATE __attribute__((always_inline)) inline uint64_t
-broadcast_master(uint64_t x)
-{
-  uint32_t lo = x;
-  uint32_t hi = x >> 32u;
-  lo = broadcast_master(lo);
-  hi = broadcast_master(hi);
-  return ((uint64_t)hi << 32u) | lo;
 }
 
 }  // namespace platform
