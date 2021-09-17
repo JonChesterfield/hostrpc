@@ -224,8 +224,8 @@ struct client_impl : public SZT, public Counter
       }
     cas_fail_count = platform::broadcast_master(cas_fail_count);
     cas_help_count = platform::broadcast_master(cas_help_count);
-    Counter::garbage_cas_fail(cas_fail_count);
-    Counter::garbage_cas_help(cas_help_count);
+    Counter::garbage_cas_fail(active_threads, cas_fail_count);
+    Counter::garbage_cas_help(active_threads, cas_help_count);
   }
 
   HOSTRPC_ANNOTATE void dump_word(uint32_t size, Word word)
@@ -280,7 +280,7 @@ client_impl<WordT, SZT, Counter>::rpc_open_port(T active_threads)
       if (slot == UINT32_MAX)
         {
           // no slot
-          Counter::no_candidate_slot();
+          Counter::no_candidate_slot(active_threads);
         }
       else
         {
@@ -289,7 +289,7 @@ client_impl<WordT, SZT, Counter>::rpc_open_port(T active_threads)
                                           &cas_fail_count))
             {
               // Success, got the lock.
-              Counter::cas_lock_fail(cas_fail_count);
+              Counter::cas_lock_fail(active_threads, cas_fail_count);
 
               // Test if it is available, e.g. isn't garbage
               if (rpc_verify_port_available(active_threads, slot))
@@ -300,7 +300,7 @@ client_impl<WordT, SZT, Counter>::rpc_open_port(T active_threads)
             }
           else
             {
-              Counter::missed_lock_on_candidate_slot();
+              Counter::missed_lock_on_candidate_slot(active_threads);
             }
         }
     }
@@ -444,8 +444,8 @@ client_impl<WordT, SZT, Counter>::rpc_port_send_given_available(
       }
     cas_fail_count = platform::broadcast_master(cas_fail_count);
     cas_help_count = platform::broadcast_master(cas_help_count);
-    Counter::publish_cas_fail(cas_fail_count);
-    Counter::publish_cas_help(cas_help_count);
+    Counter::publish_cas_fail(active_threads, cas_fail_count);
+    Counter::publish_cas_help(active_threads, cas_help_count);
   }
 
   // current strategy is drop interest in the port, then wait for the
@@ -482,7 +482,7 @@ client_impl<WordT, SZT, Counter>::rpc_port_wait_for_result(T active_threads,
   while (!result_available(active_threads, port))
     {
       // todo: useful work here?
-      Counter::waiting_for_result();
+      Counter::waiting_for_result(active_threads);
       platform::sleep();
     }
   platform::fence_acquire();
@@ -527,7 +527,7 @@ client_impl<WordT, SZT, Counter>::rpc_verify_port_available(
 
   if (!available)
     {
-      Counter::got_lock_after_work_done();
+      Counter::got_lock_after_work_done(active_threads);
       return false;
     }
 

@@ -110,7 +110,6 @@ inline HOSTRPC_ANNOTATE bool is_master_lane(T active_threads)
 {
   return get_lane_id() == get_master_lane_id(active_threads);
 }
-
 inline HOSTRPC_ANNOTATE bool is_master_lane()
 {
   auto t = active_threads();

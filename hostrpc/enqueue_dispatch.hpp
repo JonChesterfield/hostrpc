@@ -288,7 +288,7 @@ inline void enqueue_dispatch(F func, const unsigned char *src)
   uint32_t uuid = getlo(user_sig);
   uint32_t state = gethi(user_sig);
 
-  if (platform::is_master_lane())
+  if (platform::is_master_lane(platform::active_threads()))
     {
       uint64_t packet_id =
           platform::atomic_fetch_add<uint64_t, __ATOMIC_RELAXED,

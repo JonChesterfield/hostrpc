@@ -210,8 +210,8 @@ struct server_impl : public SZT, public Counter
       }
     cas_fail_count = platform::broadcast_master(cas_fail_count);
     cas_help_count = platform::broadcast_master(cas_help_count);
-    Counter::publish_cas_fail(cas_fail_count);
-    Counter::publish_cas_help(cas_help_count);
+    Counter::publish_cas_fail(active_threads, cas_fail_count);
+    Counter::publish_cas_help(active_threads, cas_help_count);
   }
 
   template <typename Operate, typename T>
@@ -282,8 +282,8 @@ struct server_impl : public SZT, public Counter
       }
     cas_fail_count = platform::broadcast_master(cas_fail_count);
     cas_help_count = platform::broadcast_master(cas_help_count);
-    Counter::garbage_cas_fail(cas_fail_count);
-    Counter::garbage_cas_help(cas_help_count);
+    Counter::garbage_cas_fail(active_threads, cas_fail_count);
+    Counter::garbage_cas_help(active_threads, cas_help_count);
   }
 
  protected:
@@ -319,7 +319,7 @@ struct server_impl : public SZT, public Counter
         Word available = find_candidate_server_available_bitmap(w, mask);
         if (available == 0)
           {
-            Counter::no_candidate_bitmap();
+            Counter::no_candidate_bitmap(active_threads);
           }
         while (available != 0)
           {
@@ -330,7 +330,7 @@ struct server_impl : public SZT, public Counter
             if (active.try_claim_empty_slot(active_threads, size, slot,
                                             &cas_fail_count))
               {
-                Counter::cas_lock_fail(cas_fail_count);
+                Counter::cas_lock_fail(active_threads, cas_fail_count);
 
                 // Got the lock. Is there work to do?
                 // Can't forward cl here as the call is made repeatedly
@@ -355,7 +355,7 @@ struct server_impl : public SZT, public Counter
               }
             else
               {
-                Counter::missed_lock_on_candidate_bitmap();
+                Counter::missed_lock_on_candidate_bitmap(active_threads);
               }
 
             // don't try the same slot repeatedly
@@ -363,7 +363,7 @@ struct server_impl : public SZT, public Counter
           }
 
         mask = ~((Word)0);
-        Counter::missed_lock_on_word();
+        Counter::missed_lock_on_word(active_threads);
       }
 
     // Nothing hit, may as well go from the same location on the next call
@@ -496,7 +496,7 @@ struct server_impl : public SZT, public Counter
 
     if (!work_todo)
       {
-        Counter::got_lock_after_work_done();
+        Counter::got_lock_after_work_done(active_threads);
         assert(lock_held(slot));
         return false;
       }

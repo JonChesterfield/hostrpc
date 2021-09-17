@@ -77,8 +77,9 @@ struct ty
 
   uint32_t allocate()
   {
+    auto t = platform::active_threads();
     uint32_t r = {};
-    if (platform::is_master_lane())
+    if (platform::is_master_lane(t))
       {
         r = platform::atomic_fetch_add<uint32_t, __ATOMIC_ACQ_REL,
                                        __OPENCL_MEMORY_SCOPE_DEVICE>(&live, 1);
@@ -89,7 +90,8 @@ struct ty
 
   void deallocate()
   {
-    if (platform::is_master_lane())
+    auto t = platform::active_threads();
+    if (platform::is_master_lane(t))
       {
         platform::atomic_fetch_sub<uint32_t, __ATOMIC_RELAXED,
                                    __OPENCL_MEMORY_SCOPE_DEVICE>(&live, 1);
