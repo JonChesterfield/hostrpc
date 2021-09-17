@@ -9,9 +9,16 @@
 #error "Expected HOSTRPC_HOST"
 #endif
 
+// should probably implement this in platform::host_libc source
+extern "C" int usleep(unsigned);  // #include <unistd.h>
+
 namespace platform
 {
-HOSTRPC_ANNOTATE constexpr uint32_t desc::native_width() { return 1; }
+namespace
+{
+HOSTRPC_ANNOTATE constexpr uint64_t desc::native_width() { return 1; }
+
+HOSTRPC_ANNOTATE uint64_t desc::active_threads() { return 0x1; }
 
 // local toolchain thinks usleep might throw. That induces a bunch of exception
 // control flow where there otherwise wouldn't be any. Will fix by calling into
@@ -40,7 +47,8 @@ HOSTRPC_ANNOTATE inline void sleep_briefly()
 HOSTRPC_ANNOTATE inline void sleep() { detail::sleep_noexcept(1000); }
 
 HOSTRPC_ANNOTATE inline uint32_t get_lane_id() { return 0; }
-HOSTRPC_ANNOTATE inline bool is_master_lane() { return true; }
+HOSTRPC_ANNOTATE inline uint32_t get_master_lane_id() { return 0; }
+
 HOSTRPC_ANNOTATE inline uint32_t broadcast_master(uint32_t x) { return x; }
 
 HOSTRPC_ANNOTATE inline uint32_t client_start_slot() { return 0; }
@@ -54,6 +62,7 @@ HOSTRPC_ANNOTATE inline void fence_release()
   __c11_atomic_thread_fence(__ATOMIC_RELEASE);
 }
 
+}  // namespace
 }  // namespace platform
 
 #endif

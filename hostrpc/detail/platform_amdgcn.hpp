@@ -11,41 +11,44 @@
 
 namespace platform
 {
-HOSTRPC_ANNOTATE constexpr uint32_t desc::native_width()
+namespace
+{
+HOSTRPC_ANNOTATE constexpr uint64_t desc::native_width()
 {
 #ifndef __AMDGCN_WAVEFRONT_SIZE
 #error "Expected __AMDGCN_WAVEFRONT_SIZE definition"
 #endif
   return __AMDGCN_WAVEFRONT_SIZE;
 }
-
 static_assert(desc::native_width() == 32 || desc::native_width() == 64, "");
 
-HOSTRPC_ANNOTATE inline void sleep_briefly() { __builtin_amdgcn_s_sleep(0); }
-HOSTRPC_ANNOTATE inline void sleep() { __builtin_amdgcn_s_sleep(100); }
+HOSTRPC_ANNOTATE uint64_t desc::active_threads()
+{
+  return (desc::native_width() == 64) ? __builtin_amdgcn_read_exec()
+                                      : __builtin_amdgcn_read_exec_lo();
+}
+
+inline HOSTRPC_ANNOTATE void sleep_briefly() { __builtin_amdgcn_s_sleep(0); }
+inline HOSTRPC_ANNOTATE void sleep() { __builtin_amdgcn_s_sleep(100); }
 
 HOSTRPC_ANNOTATE __attribute__((always_inline)) inline uint32_t get_lane_id()
 {
   return __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
 }
 
-HOSTRPC_ANNOTATE __attribute__((always_inline)) inline bool is_master_lane()
+inline HOSTRPC_ANNOTATE uint32_t get_master_lane_id(void)
 {
-  // TODO: 32 wide wavefront, consider not using raw intrinsics here
-  uint64_t activemask = __builtin_amdgcn_read_exec();
-
-  // TODO: check codegen for trunc lowest_active vs expanding lane_id
+  uint64_t activemask = static_cast<uint64_t>(desc::active_threads());
   // TODO: ffs is lifted from openmp runtime, looks like it should be ctz
-  uint32_t lowest_active = __builtin_ffsl(activemask) - 1;
-  uint32_t lane_id = get_lane_id();
-
-  // TODO: readfirstlane(lane_id) == lowest_active?
-  return lane_id == lowest_active;
+  uint32_t lowest_active =
+      __builtin_ffsl(activemask) - 1;  // faster on 32 bit w/ ffs?
+  return lowest_active;
 }
 
 HOSTRPC_ANNOTATE __attribute__((always_inline)) inline uint32_t
 broadcast_master(uint32_t x)
 {
+  // reads from lowest set bit in exec mask
   return __builtin_amdgcn_readfirstlane(x);
 }
 
@@ -85,6 +88,7 @@ HOSTRPC_ANNOTATE __attribute__((always_inline)) inline void fence_release()
   __c11_atomic_thread_fence(__ATOMIC_RELEASE);
 }
 
+}  // namespace
 }  // namespace platform
 
 #endif

@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "detail/fastint.hpp"
 #include "detail/platform_detect.hpp"
 
 #if HOSTRPC_HAVE_STDIO
@@ -61,54 +62,6 @@ struct page_t
 };
 static_assert(sizeof(page_t) == 4096, "");
 
-namespace size_detail
-{
-template <uint64_t T>
-struct bits
-{
-  enum : uint8_t
-  {
-    value = T <= UINT8_MAX    ? 8
-            : T <= UINT16_MAX ? 16
-            : T <= UINT32_MAX ? 32
-                              : 64,
-  };
-};
-
-template <uint8_t bits>
-struct dispatch;
-
-template <>
-struct dispatch<8>
-{
-  using type = uint8_t;
-};
-template <>
-struct dispatch<16>
-{
-  using type = uint16_t;
-};
-
-template <>
-struct dispatch<32>
-{
-  using type = uint32_t;
-};
-
-template <>
-struct dispatch<64>
-{
-  using type = uint64_t;
-};
-
-template <uint64_t V>
-struct sufficientType
-{
-  using type = typename dispatch<bits<V>::value>::type;
-};
-
-}  // namespace size_detail
-
 template <typename T>
 struct fastint_runtime
 {
@@ -157,7 +110,7 @@ struct fastint_runtime
 template <uint64_t V>
 struct fastint_compiletime
 {
-  using type = typename size_detail::sufficientType<V>::type;
+  using type = typename fastint::sufficientType<V>::type;
 
  private:
   HOSTRPC_ANNOTATE constexpr static fastint_runtime<type> rt()
@@ -166,12 +119,11 @@ struct fastint_compiletime
   }
 
   template <uint64_t Y>
-  HOSTRPC_ANNOTATE constexpr static
-      typename size_detail::sufficientType<Y>::type
-      retype()
+  HOSTRPC_ANNOTATE constexpr static typename fastint::sufficientType<Y>::type
+  retype()
   {
     static_assert(
-        sizeof(typename size_detail::sufficientType<Y>::type) == sizeof(type),
+        sizeof(typename fastint::sufficientType<Y>::type) == sizeof(type),
         "TODO");
     return Y;
   }

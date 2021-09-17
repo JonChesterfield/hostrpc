@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "../base_types.hpp"  // page_t
+#include "fastint.hpp"
 #include "platform_detect.hpp"
 
 // todo: this should all be under namespace hostrpc
@@ -55,18 +56,28 @@ extern "C" int printf(const char *format, ...);
 
 namespace platform
 {
+
+// Functions implemented for each platform in platform_arch.hpp
+namespace
+{
 struct desc
 {
   // warp/wavefront width
-  HOSTRPC_ANNOTATE constexpr static uint32_t native_width();
+  HOSTRPC_ANNOTATE constexpr static uint64_t native_width();
+
+  // active threads mask, zero extended from native_width size integer
+  HOSTRPC_ANNOTATE static uint64_t active_threads();
 };
 
-// Functions implemented for each platform in platform_arch.hpp
 inline HOSTRPC_ANNOTATE void sleep_briefly();
 inline HOSTRPC_ANNOTATE void sleep();
 
 inline HOSTRPC_ANNOTATE uint32_t get_lane_id();
-inline HOSTRPC_ANNOTATE bool is_master_lane();
+inline HOSTRPC_ANNOTATE uint32_t get_master_lane_id();
+inline HOSTRPC_ANNOTATE bool is_master_lane()
+{
+  return get_lane_id() == get_master_lane_id();
+}
 inline HOSTRPC_ANNOTATE uint32_t broadcast_master(uint32_t);
 
 inline HOSTRPC_ANNOTATE uint32_t client_start_slot();
@@ -74,12 +85,45 @@ inline HOSTRPC_ANNOTATE uint32_t client_start_slot();
 inline HOSTRPC_ANNOTATE void fence_acquire();
 inline HOSTRPC_ANNOTATE void fence_release();
 
+}  // namespace
+}  // namespace platform
+
+#if HOSTRPC_HOST
+#include "platform_host.hpp"
+#endif
+
+#if HOSTRPC_AMDGCN
+#include "platform_amdgcn.hpp"
+#endif
+
+#if HOSTRPC_NVPTX
+#include "platform_nvptx.hpp"
+#endif
+
+namespace platform
+{
+namespace
+{
+HOSTRPC_ANNOTATE
+inline constexpr uint64_t native_width() { return desc::native_width(); }
+
+inline HOSTRPC_ANNOTATE hostrpc::fastint_runtime<
+    hostrpc::fastint::sufficientType<native_width()>::type>
+active_threads()
+{
+  using T = hostrpc::fastint::sufficientType<desc::native_width()>::type;
+  return static_cast<T>(platform::desc::active_threads());
+}
+}  // namespace
+
 // all true is used by assert
 // there's a problem related to convergent modelling here so there's a risk
 // 'assert' introduces miscompilation
 HOSTRPC_ANNOTATE uint32_t all_true(uint32_t);
 
 // related functions derived from the above
+namespace
+{
 HOSTRPC_ANNOTATE __attribute__((always_inline)) inline uint64_t
 broadcast_master(uint64_t x)
 {
@@ -101,6 +145,7 @@ HOSTRPC_ANNOTATE U critical(F f)
   res = broadcast_master(res);
   return res;
 }
+}  // namespace
 
 #define debug(X) platform::detail::debug_func(__FILE__, __LINE__, __func__, X)
 
@@ -288,11 +333,6 @@ HOSTRPC_ANNOTATE void assert_fail(const char *str, const char *,
 #include <cassert>
 #endif
 
-// should probably implement this in platform::host_libc source
-extern "C" int usleep(unsigned);  // #include <unistd.h>
-
-#include "platform_host.hpp"
-
 namespace platform
 {
 namespace host
@@ -332,8 +372,6 @@ HOSTRPC_ANNOTATE __attribute__((always_inline)) inline void assert_fail(
 // Cuda does not appear to require this. TODO: See if openmp does
 
 #if HOSTRPC_AMDGCN
-
-#include "platform_amdgcn.hpp"
 
 namespace platform
 {
@@ -381,9 +419,7 @@ HOSTRPC_ANNOTATE __attribute__((always_inline)) inline uint32_t all_true(
 }  // namespace platform
 #endif  // defined(__AMDGCN__)
 
-#if (HOSTRPC_NVPTX)
-
-#include "platform_nvptx.hpp"
+#if HOSTRPC_NVPTX
 
 namespace platform
 {

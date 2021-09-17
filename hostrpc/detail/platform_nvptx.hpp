@@ -11,19 +11,19 @@
 
 namespace platform
 {
-HOSTRPC_ANNOTATE constexpr uint32_t desc::native_width() { return 32; }
-
-namespace detail
+namespace
 {
-inline HOSTRPC_ANNOTATE uint32_t get_master_lane_id(void)
+HOSTRPC_ANNOTATE constexpr uint64_t desc::native_width() { return 32; }
+
+HOSTRPC_ANNOTATE uint64_t desc::active_threads()
 {
   uint32_t activemask;
   asm volatile("activemask.b32 %0;" : "=r"(activemask));
-
-  uint32_t lowest_active = __builtin_ffs(activemask) - 1;
-  return lowest_active;
+  return activemask;
 }
 
+namespace detail
+{
 // TODO: Check the differences between threadfence, threadfence_block,
 // threadfence_system
 static HOSTRPC_ANNOTATE void fence_acquire_release() { __nvvm_membar_sys(); }
@@ -43,16 +43,17 @@ inline uint32_t get_lane_id()
          (desc::native_width() - 1);
 }
 
-HOSTRPC_ANNOTATE
-inline bool is_master_lane()
+inline HOSTRPC_ANNOTATE uint32_t get_master_lane_id(void)
 {
-  return get_lane_id() == detail::get_master_lane_id();
+  uint32_t activemask = static_cast<uint32_t>(desc::active_threads());
+  uint32_t lowest_active = __builtin_ffs(activemask) - 1;
+  return lowest_active;
 }
 
 HOSTRPC_ANNOTATE
 inline uint32_t broadcast_master(uint32_t x)
 {
-  uint32_t master_id = detail::get_master_lane_id();
+  uint32_t master_id = get_master_lane_id();
   return __nvvm_shfl_sync_idx_i32(UINT32_MAX, x, master_id,
                                   desc::native_width() - 1);
 }
@@ -66,6 +67,7 @@ void fence_acquire() { detail::fence_acquire_release(); }
 HOSTRPC_ANNOTATE
 void fence_release() { detail::fence_acquire_release(); }
 
+}  // namespace
 }  // namespace platform
 
 #endif
