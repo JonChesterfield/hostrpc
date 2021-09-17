@@ -47,9 +47,18 @@ HOSTRPC_ANNOTATE inline void sleep_briefly()
 HOSTRPC_ANNOTATE inline void sleep() { detail::sleep_noexcept(1000); }
 
 HOSTRPC_ANNOTATE inline uint32_t get_lane_id() { return 0; }
-HOSTRPC_ANNOTATE inline uint32_t get_master_lane_id() { return 0; }
 
-HOSTRPC_ANNOTATE inline uint32_t broadcast_master(uint32_t x) { return x; }
+template <typename T>
+HOSTRPC_ANNOTATE inline uint32_t get_master_lane_id(T)
+{
+  return 0;
+}
+
+template <typename T>
+HOSTRPC_ANNOTATE inline uint32_t broadcast_master(T, uint32_t x)
+{
+  return x;
+}
 
 HOSTRPC_ANNOTATE inline uint32_t client_start_slot() { return 0; }
 

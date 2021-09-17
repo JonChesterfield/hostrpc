@@ -36,17 +36,16 @@ HOSTRPC_ANNOTATE __attribute__((always_inline)) inline uint32_t get_lane_id()
   return __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
 }
 
-inline HOSTRPC_ANNOTATE uint32_t get_master_lane_id(void)
+template <typename T>
+inline HOSTRPC_ANNOTATE uint32_t get_master_lane_id(T active_threads)
 {
-  uint64_t activemask = static_cast<uint64_t>(desc::active_threads());
-  // TODO: ffs is lifted from openmp runtime, looks like it should be ctz
-  uint32_t lowest_active =
-      __builtin_ffsl(activemask) - 1;  // faster on 32 bit w/ ffs?
-  return lowest_active;
+  auto f = active_threads.findFirstSet();
+  return f.template subtract<1>();
 }
 
+template <typename T>
 HOSTRPC_ANNOTATE __attribute__((always_inline)) inline uint32_t
-broadcast_master(uint32_t x)
+broadcast_master(T, uint32_t x)
 {
   // reads from lowest set bit in exec mask
   return __builtin_amdgcn_readfirstlane(x);

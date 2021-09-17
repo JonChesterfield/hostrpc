@@ -73,12 +73,12 @@ inline HOSTRPC_ANNOTATE void sleep_briefly();
 inline HOSTRPC_ANNOTATE void sleep();
 
 inline HOSTRPC_ANNOTATE uint32_t get_lane_id();
-inline HOSTRPC_ANNOTATE uint32_t get_master_lane_id();
-inline HOSTRPC_ANNOTATE bool is_master_lane()
-{
-  return get_lane_id() == get_master_lane_id();
-}
-inline HOSTRPC_ANNOTATE uint32_t broadcast_master(uint32_t);
+
+template <typename T>
+inline HOSTRPC_ANNOTATE uint32_t get_master_lane_id(T active_threads);
+
+template <typename T>
+inline HOSTRPC_ANNOTATE uint32_t broadcast_master(T active_threads, uint32_t);
 
 inline HOSTRPC_ANNOTATE uint32_t client_start_slot();
 
@@ -107,6 +107,13 @@ namespace
 HOSTRPC_ANNOTATE
 inline constexpr uint64_t native_width() { return desc::native_width(); }
 
+#if HOSTRPC_HOST
+//  __attribute__((always_inline))
+inline HOSTRPC_ANNOTATE hostrpc::fastint_compiletime<1> active_threads()
+{
+  return hostrpc::fastint_compiletime<1>();
+}
+#else
 inline HOSTRPC_ANNOTATE hostrpc::fastint_runtime<
     hostrpc::fastint::sufficientType<native_width()>::type>
 active_threads()
@@ -114,6 +121,23 @@ active_threads()
   using T = hostrpc::fastint::sufficientType<desc::native_width()>::type;
   return static_cast<T>(platform::desc::active_threads());
 }
+#endif
+
+inline HOSTRPC_ANNOTATE bool is_master_lane()
+{
+  auto t = active_threads();
+  return get_lane_id() == get_master_lane_id(t);
+}
+
+__attribute__((used)) inline uint32_t check_master_lane()
+{
+  auto t = active_threads();
+  auto f = t.findFirstSet();
+  uint32_t r = f.subtract<1>();
+
+  return r;
+}
+
 }  // namespace
 
 // all true is used by assert
@@ -124,6 +148,14 @@ HOSTRPC_ANNOTATE uint32_t all_true(uint32_t);
 // related functions derived from the above
 namespace
 {
+
+HOSTRPC_ANNOTATE __attribute__((always_inline)) inline uint32_t
+broadcast_master(uint32_t x)
+{
+  auto t = active_threads();
+  return broadcast_master(t, x);
+}
+
 HOSTRPC_ANNOTATE __attribute__((always_inline)) inline uint64_t
 broadcast_master(uint64_t x)
 {

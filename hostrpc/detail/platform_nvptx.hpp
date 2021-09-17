@@ -43,17 +43,17 @@ inline uint32_t get_lane_id()
          (desc::native_width() - 1);
 }
 
-inline HOSTRPC_ANNOTATE uint32_t get_master_lane_id(void)
+template <typename T>
+inline HOSTRPC_ANNOTATE uint32_t get_master_lane_id(T active_threads)
 {
-  uint32_t activemask = static_cast<uint32_t>(desc::active_threads());
-  uint32_t lowest_active = __builtin_ffs(activemask) - 1;
-  return lowest_active;
+  auto f = active_threads.findFirstSet();
+  return f.template subtract<1>();
 }
 
-HOSTRPC_ANNOTATE
-inline uint32_t broadcast_master(uint32_t x)
+template <typename T>
+HOSTRPC_ANNOTATE inline uint32_t broadcast_master(T active_threads, uint32_t x)
 {
-  uint32_t master_id = get_master_lane_id();
+  uint32_t master_id = get_master_lane_id(active_threads);
   return __nvvm_shfl_sync_idx_i32(UINT32_MAX, x, master_id,
                                   desc::native_width() - 1);
 }

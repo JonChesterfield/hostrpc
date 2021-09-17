@@ -65,20 +65,29 @@ static_assert(sizeof(page_t) == 4096, "");
 template <typename T>
 struct fastint_runtime
 {
+  using type = T;
+  using selfType = fastint_runtime<type>;
+
  private:
   T SZ;
 
- public:
-  using type = T;
-  using selfType = fastint_runtime<type>;
-  HOSTRPC_ANNOTATE constexpr fastint_runtime(type N) : SZ(hostrpc::round64(N))
+  template <uint64_t Y>
+  HOSTRPC_ANNOTATE constexpr static typename fastint::sufficientType<Y>::type
+  retype()
   {
+    static_assert(
+        static_equal<sizeof(typename fastint::sufficientType<Y>::type),
+                     sizeof(type)>(),
+        "TODO");
+    return Y;
   }
+
+ public:
+  HOSTRPC_ANNOTATE constexpr fastint_runtime(type N) : SZ(N) {}
 
   HOSTRPC_ANNOTATE constexpr fastint_runtime() : SZ(0) {}
 
   HOSTRPC_ANNOTATE constexpr type value() const { return SZ; }
-
   HOSTRPC_ANNOTATE constexpr operator type() const { return value(); }
 
   HOSTRPC_ANNOTATE constexpr selfType popcount() const
@@ -92,18 +101,27 @@ struct fastint_runtime
   }
 
   // implicit type narrowing hazards here, for now assert on mismatch
-  template <typename Y>
-  HOSTRPC_ANNOTATE constexpr selfType bitwiseOr(Y y)
+  template <uint64_t Y>
+  HOSTRPC_ANNOTATE constexpr selfType bitwiseOr()
   {
-    static_assert(sizeof(Y) == sizeof(type), "TODO");
-    return value() | y;
+    constexpr auto n = retype<Y>();
+    static_assert(static_equal<sizeof(n), sizeof(type)>(), "");
+    return value() | n;
   }
 
-  template <typename Y>
-  HOSTRPC_ANNOTATE constexpr selfType bitwiseAnd(Y y)
+  template <uint64_t Y>
+  HOSTRPC_ANNOTATE constexpr selfType bitwiseAnd()
   {
-    static_assert(sizeof(Y) == sizeof(type), "TODO");
-    return value() & y;
+    constexpr auto n = retype<Y>();
+    static_assert(static_equal<sizeof(n), sizeof(type)>(), "");
+    return value() & n;
+  }
+  template <uint64_t Y>
+  HOSTRPC_ANNOTATE constexpr selfType subtract()
+  {
+    constexpr auto n = retype<Y>();
+    static_assert(static_equal<sizeof(n), sizeof(type)>(), "");
+    return value() - n;
   }
 };
 
@@ -123,7 +141,8 @@ struct fastint_compiletime
   retype()
   {
     static_assert(
-        sizeof(typename fastint::sufficientType<Y>::type) == sizeof(type),
+        static_equal<sizeof(typename fastint::sufficientType<Y>::type),
+                     sizeof(type)>(),
         "TODO");
     return Y;
   }
@@ -132,6 +151,7 @@ struct fastint_compiletime
   HOSTRPC_ANNOTATE constexpr fastint_compiletime() {}
 
   HOSTRPC_ANNOTATE constexpr static type value() { return V; }
+  HOSTRPC_ANNOTATE constexpr operator type() const { return value(); }
 
   HOSTRPC_ANNOTATE constexpr auto popcount() const
   {
@@ -157,13 +177,30 @@ struct fastint_compiletime
     static_assert(sizeof(n) == sizeof(type), "TODO");
     return fastint_compiletime<rt().bitwiseAnd(n)>();
   }
+
+  template <uint64_t Y>
+  HOSTRPC_ANNOTATE constexpr auto subtract() const
+  {
+    constexpr auto n = retype<Y>();
+    static_assert(sizeof(n) == sizeof(type), "TODO");
+    return fastint_compiletime<rt().template subtract<n>()>();
+  }
 };
 
 template <typename T>
-using size_runtime = fastint_runtime<T>;
+struct size_runtime : public fastint_runtime<T>
+{
+  using base = fastint_runtime<T>;
+  size_runtime() : base() {}
+  size_runtime(T x) : base(hostrpc::round64(x)) {}
+};
 
 template <uint64_t S>
-using size_compiletime = fastint_compiletime<hostrpc::round64(S)>;
+struct size_compiletime : public fastint_compiletime<hostrpc::round64(S)>
+{
+  using base = fastint_compiletime<hostrpc::round64(S)>;
+  using typename base::fastint_compiletime;
+};
 
 template <size_t Size, size_t Align>
 struct storage
