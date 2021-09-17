@@ -355,7 +355,8 @@ struct recv_by_copy
 template <typename T>
 __PRINTF_API_INTERNAL uint32_t __printf_print_start(T *client, const char *fmt)
 {
-  uint32_t port = client->rpc_open_port();
+  auto active_threads = platform::active_threads();
+  uint32_t port = client->rpc_open_port(active_threads);
   if (port == UINT32_MAX)
     {
       // failure
@@ -365,7 +366,7 @@ __PRINTF_API_INTERNAL uint32_t __printf_print_start(T *client, const char *fmt)
   {
     __printf_print_start_t inst;
     send_by_copy<__printf_print_start_t> f(&inst);
-    client->rpc_port_send(port, f);
+    client->rpc_port_send(active_threads, port, f);
   }
 
   __printf_pass_element_cstr(port, fmt);
@@ -376,15 +377,16 @@ __PRINTF_API_INTERNAL uint32_t __printf_print_start(T *client, const char *fmt)
 template <typename T>
 __PRINTF_API_INTERNAL int __printf_print_end(T *client, uint32_t port)
 {
+  auto active_threads = platform::active_threads();
   {
     __printf_print_end_t inst;
     send_by_copy<__printf_print_end_t> f(&inst);
-    client->rpc_port_send(port, f);
+    client->rpc_port_send(active_threads, port, f);
   }
 
-  client->rpc_port_wait_for_result(port);
+  client->rpc_port_wait_for_result(active_threads, port);
 
-  client->rpc_close_port(port);
+  client->rpc_close_port(active_threads, port);
   return 0;  // should be return code from printf
 }
 
@@ -393,18 +395,20 @@ __PRINTF_API_INTERNAL void __printf_pass_element_uint64(T *client,
                                                         uint32_t port,
                                                         uint64_t v)
 {
+  auto active_threads = platform::active_threads();
   __printf_pass_element_scalar_t inst(hostrpc_printf_pass_element_uint64, v);
   send_by_copy<__printf_pass_element_scalar_t> f(&inst);
-  client->rpc_port_send(port, f);
+  client->rpc_port_send(active_threads, port, f);
 }
 
 template <typename T>
 __PRINTF_API_INTERNAL void __printf_pass_element_double(T *client,
                                                         uint32_t port, double v)
 {
+  auto active_threads = platform::active_threads();
   __printf_pass_element_scalar_t inst(hostrpc_printf_pass_element_double, v);
   send_by_copy<__printf_pass_element_scalar_t> f(&inst);
-  client->rpc_port_send(port, f);
+  client->rpc_port_send(active_threads, port, f);
 }
 
 template <typename T>
@@ -412,17 +416,19 @@ __PRINTF_API_INTERNAL void __printf_pass_element_void(T *client, uint32_t port,
                                                       const void *v)
 {
   _Static_assert(sizeof(const void *) == 8, "");
+  auto active_threads = platform::active_threads();
   uint64_t c;
   __builtin_memcpy(&c, &v, 8);
   __printf_pass_element_scalar_t inst(hostrpc_printf_pass_element_uint64, c);
   send_by_copy<__printf_pass_element_scalar_t> f(&inst);
-  client->rpc_port_send(port, f);
+  client->rpc_port_send(active_threads, port, f);
 }
 
 template <typename T>
 __PRINTF_API_INTERNAL void __printf_pass_element_cstr(T *client, uint32_t port,
                                                       const char *str)
 {
+  auto active_threads = platform::active_threads();
   uint64_t L = __printf_strlen(str);
 
   const constexpr size_t w = __printf_pass_element_cstr_t::width;
@@ -435,7 +441,7 @@ __PRINTF_API_INTERNAL void __printf_pass_element_cstr(T *client, uint32_t port,
     {
       __printf_pass_element_cstr_t inst(&str[c * w], w);
       send_by_copy<__printf_pass_element_cstr_t> f(&inst);
-      client->rpc_port_send(port, f);
+      client->rpc_port_send(active_threads, port, f);
     }
 
   // remainder < width, possibly zero. sending even when zero ensures null
@@ -443,7 +449,7 @@ __PRINTF_API_INTERNAL void __printf_pass_element_cstr(T *client, uint32_t port,
   {
     __printf_pass_element_cstr_t inst(&str[chunks * w], remainder);
     send_by_copy<__printf_pass_element_cstr_t> f(&inst);
-    client->rpc_port_send(port, f);
+    client->rpc_port_send(active_threads, port, f);
   }
 }
 
@@ -452,14 +458,15 @@ __PRINTF_API_INTERNAL void __printf_pass_element_write_int64(T *client,
                                                              uint32_t port,
                                                              int64_t *x)
 {
+  auto active_threads = platform::active_threads();
   __printf_pass_element_write_t inst;
   inst.payload = 42;
   send_by_copy<__printf_pass_element_write_t> f(&inst);
-  client->rpc_port_send(port, f);
+  client->rpc_port_send(active_threads, port, f);
 
   // need to recv to get the result
   recv_by_copy<__printf_pass_element_write_t> r(&inst);
-  client->rpc_port_recv(port, r);
+  client->rpc_port_recv(active_threads, port, r);
   *x = inst.payload;
 }
 

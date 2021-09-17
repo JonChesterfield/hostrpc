@@ -475,7 +475,9 @@ struct lock_bitmap
 
   // cas, true on success
   // on return true, loaded contains active[w]
-  HOSTRPC_ANNOTATE bool try_claim_empty_slot(uint32_t size, uint32_t slot,
+  template <typename T>
+  HOSTRPC_ANNOTATE bool try_claim_empty_slot(T active_threads, uint32_t size,
+                                             uint32_t slot,
                                              uint64_t *cas_fail_count)
   {
     assert(slot < size);
@@ -503,7 +505,7 @@ struct lock_bitmap
 
         Word unexpected_contents = 0;
         uint32_t r = 0;
-        if (platform::is_master_lane())
+        if (platform::is_master_lane(active_threads))
           {
             r = cas(w, d, proposed, &unexpected_contents);
           }

@@ -99,37 +99,45 @@ struct server_impl : public SZT, public Counter
 #endif
   }
 
-  template <typename Clear>
-  HOSTRPC_ANNOTATE uint32_t rpc_open_port(Clear&& cl, uint32_t* location_arg)
+  template <typename Clear, typename T>
+  HOSTRPC_ANNOTATE uint32_t rpc_open_port(T active_threads, Clear&& cl,
+                                          uint32_t* location_arg)
   {
-    return rpc_open_port_impl<Clear, true>(cxx::forward<Clear>(cl),
-                                           location_arg);
+    return rpc_open_port_impl<Clear, true>(
+        active_threads, cxx::forward<Clear>(cl), location_arg);
   }
 
-  HOSTRPC_ANNOTATE uint32_t rpc_open_port(uint32_t* location_arg)
+  template <typename T>
+  HOSTRPC_ANNOTATE uint32_t rpc_open_port(T active_threads,
+                                          uint32_t* location_arg)
   {
     struct Clear
     {
       HOSTRPC_ANNOTATE void operator()(uint32_t, hostrpc::page_t*){};
     };
-    return rpc_open_port_impl<Clear, false>(Clear{}, location_arg);
+    return rpc_open_port_impl<Clear, false>(active_threads, Clear{},
+                                            location_arg);
   }
 
   // default location_arg to zero and discard returned hint
-  template <typename Clear>
-  HOSTRPC_ANNOTATE uint32_t rpc_open_port(Clear&& cl)
+  template <typename Clear, typename T>
+  HOSTRPC_ANNOTATE uint32_t rpc_open_port(T active_threads, Clear&& cl)
   {
     uint32_t location_arg = 0;
-    return rpc_open_port<Clear>(cxx::forward<Clear>(cl), &location_arg);
+    return rpc_open_port<Clear>(active_threads, cxx::forward<Clear>(cl),
+                                &location_arg);
   }
 
-  HOSTRPC_ANNOTATE uint32_t rpc_open_port()
+  template <typename T>
+  HOSTRPC_ANNOTATE uint32_t rpc_open_port(T active_threads)
   {
     uint32_t location_arg = 0;
-    return rpc_open_port(&location_arg);
+    return rpc_open_port(active_threads, &location_arg);
   }
 
+  template <typename T>
   HOSTRPC_ANNOTATE void rpc_close_port(
+      T active_threads,
       uint32_t port)  // Require != UINT32_MAX, not already closed
   {
     const uint32_t size = this->size();
@@ -139,54 +147,63 @@ struct server_impl : public SZT, public Counter
     assert(port != UINT32_MAX);
     assert(port < size);
 
-    if (platform::is_master_lane())
+    if (platform::is_master_lane(active_threads))
       {
         active.release_slot(size, port);
       }
   }
 
-  template <typename Clear>
-  void rpc_port_wait_until_available(uint32_t port, Clear& cl)
+  template <typename Clear, typename T>
+  void rpc_port_wait_until_available(T active_threads, uint32_t port, Clear& cl)
   {
-    rpc_port_wait_until_available_impl<Clear, true>(port, cl);
+    rpc_port_wait_until_available_impl<Clear, true>(active_threads, port, cl);
   }
-  void rpc_port_wait_until_available(uint32_t port)
+
+  template <typename T>
+  void rpc_port_wait_until_available(T active_threads, uint32_t port)
   {
     struct Clear
     {
       HOSTRPC_ANNOTATE void operator()(uint32_t, hostrpc::page_t*){};
     };
-    rpc_port_wait_until_available_impl<Clear, false>(port, Clear{});
+    rpc_port_wait_until_available_impl<Clear, false>(active_threads, port,
+                                                     Clear{});
   }
 
-  template <typename Operate, typename Clear>
-  HOSTRPC_ANNOTATE void rpc_port_operate(Operate&& op, Clear&& cl,
+  template <typename Operate, typename Clear, typename T>
+  HOSTRPC_ANNOTATE void rpc_port_operate(T active_threads, Operate&& op,
+                                         Clear&& cl, uint32_t slot)
+  {
+#if HOSTRPC_HAVE_STDIO
+    // printf("rpc port operate slot %u, L%u\n", slot,__LINE__);
+#endif
+    rpc_port_wait_until_available<Clear>(active_threads, slot,
+                                         cxx::forward<Clear>(cl));
+    rpc_port_operate_given_available(active_threads, cxx::forward<Operate>(op),
+                                     slot);
+  }
+
+  template <typename Operate, typename T>
+  HOSTRPC_ANNOTATE void rpc_port_operate(T active_threads, Operate&& op,
                                          uint32_t slot)
   {
 #if HOSTRPC_HAVE_STDIO
     // printf("rpc port operate slot %u, L%u\n", slot,__LINE__);
 #endif
-    rpc_port_wait_until_available<Clear>(slot, cxx::forward<Clear>(cl));
-    rpc_port_operate_given_available(cxx::forward<Operate>(op), slot);
+    rpc_port_wait_until_available(active_threads, slot);
+    rpc_port_operate_given_available(active_threads, cxx::forward<Operate>(op),
+                                     slot);
   }
 
-  template <typename Operate>
-  HOSTRPC_ANNOTATE void rpc_port_operate(Operate&& op, uint32_t slot)
-  {
-#if HOSTRPC_HAVE_STDIO
-    // printf("rpc port operate slot %u, L%u\n", slot,__LINE__);
-#endif
-    rpc_port_wait_until_available(slot);
-    rpc_port_operate_given_available(cxx::forward<Operate>(op), slot);
-  }
-
-  HOSTRPC_ANNOTATE void rpc_port_operate_publish_operate_done(uint32_t slot)
+  template <typename T>
+  HOSTRPC_ANNOTATE void rpc_port_operate_publish_operate_done(T active_threads,
+                                                              uint32_t slot)
   {
     const uint32_t size = this->size();
     platform::fence_release();
     uint64_t cas_fail_count = 0;
     uint64_t cas_help_count = 0;
-    if (platform::is_master_lane())
+    if (platform::is_master_lane(active_threads))
       {
         staged_claim_slot(size, slot, &staging, &outbox, &cas_fail_count,
                           &cas_help_count);
@@ -197,10 +214,11 @@ struct server_impl : public SZT, public Counter
     Counter::publish_cas_help(cas_help_count);
   }
 
-  template <typename Operate>
+  template <typename Operate, typename T>
   HOSTRPC_ANNOTATE void rpc_port_operate_given_available_nopublish(
-      Operate&& op, uint32_t slot)
+      T active_threads, Operate&& op, uint32_t slot)
   {
+    (void)active_threads;
     assert(slot != UINT32_MAX);
 #if HOSTRPC_HAVE_STDIO
     // printf("rpc port operate_given_available slot %u, L%u\n", slot,__LINE__);
@@ -210,13 +228,15 @@ struct server_impl : public SZT, public Counter
     op(slot, &shared_buffer[slot]);
   }
 
-  template <typename Operate>
-  HOSTRPC_ANNOTATE void rpc_port_operate_given_available(Operate&& op,
+  template <typename Operate, typename T>
+  HOSTRPC_ANNOTATE void rpc_port_operate_given_available(T active_threads,
+                                                         Operate&& op,
                                                          uint32_t slot)
   {
-    rpc_port_operate_given_available_nopublish(cxx::forward<Operate>(op), slot);
+    rpc_port_operate_given_available_nopublish(active_threads,
+                                               cxx::forward<Operate>(op), slot);
     // publish result
-    rpc_port_operate_publish_operate_done(slot);
+    rpc_port_operate_publish_operate_done(active_threads, slot);
 
     // leaves outbox live
     assert(lock_held(slot));
@@ -239,8 +259,9 @@ struct server_impl : public SZT, public Counter
     return available;
   }
 
-  template <typename Clear, bool have_precondition>
-  HOSTRPC_ANNOTATE void garbage_collect(uint32_t slot, Clear cl)
+  template <typename Clear, bool have_precondition, typename T>
+  HOSTRPC_ANNOTATE void garbage_collect(T active_threads, uint32_t slot,
+                                        Clear cl)
   {
 #if HOSTRPC_HAVE_STDIO
     // printf("gc slot %u\n", slot);
@@ -254,7 +275,7 @@ struct server_impl : public SZT, public Counter
     platform::fence_release();
     uint64_t cas_fail_count = 0;
     uint64_t cas_help_count = 0;
-    if (platform::is_master_lane())
+    if (platform::is_master_lane(active_threads))
       {
         staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
                             &cas_help_count);
@@ -266,8 +287,8 @@ struct server_impl : public SZT, public Counter
   }
 
  protected:
-  template <typename Clear, bool have_precondition>
-  HOSTRPC_ANNOTATE uint32_t rpc_open_port_impl(Clear&& cl,
+  template <typename Clear, bool have_precondition, typename T>
+  HOSTRPC_ANNOTATE uint32_t rpc_open_port_impl(T active_threads, Clear&& cl,
                                                uint32_t* location_arg)
   {
     // if an opened port needs garbage collection, does the gc here and
@@ -306,7 +327,8 @@ struct server_impl : public SZT, public Counter
             assert(bits::nthbitset(available, idx));
             uint32_t slot = wordBits() * w + idx;
             uint64_t cas_fail_count = 0;
-            if (active.try_claim_empty_slot(size, slot, &cas_fail_count))
+            if (active.try_claim_empty_slot(active_threads, size, slot,
+                                            &cas_fail_count))
               {
                 Counter::cas_lock_fail(cas_fail_count);
 
@@ -315,7 +337,7 @@ struct server_impl : public SZT, public Counter
                 // Will need to refactor verify_slot_available to avoid passing
                 // it Until then, force a copy to catch non-copyable clear
                 if (rpc_verify_slot_available<Clear, have_precondition>(
-                        Clear{cl}, slot))
+                        active_threads, Clear{cl}, slot))
                   {
                     // Success. Got a port and work to do. Aim location_arg at
                     // next slot
@@ -325,7 +347,7 @@ struct server_impl : public SZT, public Counter
                 else
                   {
                     // Failed, drop the lock before continuing to search
-                    if (platform::is_master_lane())
+                    if (platform::is_master_lane(active_threads))
                       {
                         active.release_slot(size, slot);
                       }
@@ -349,8 +371,9 @@ struct server_impl : public SZT, public Counter
   }
 
  private:
-  template <typename Clear, bool have_precondition>
-  void rpc_port_wait_until_available_impl(uint32_t port, Clear&& cl)
+  template <typename Clear, bool have_precondition, typename T>
+  void rpc_port_wait_until_available_impl(T active_threads, uint32_t port,
+                                          Clear&& cl)
   {
     // port may be:
     // work available
@@ -397,7 +420,7 @@ struct server_impl : public SZT, public Counter
     if (!in & out)
       {
         // garbage to do
-        garbage_collect<Clear, have_precondition>(port, cl);
+        garbage_collect<Clear, have_precondition>(active_threads, port, cl);
         out = false;  // would be false if reloaded
       }
     // io io io io
@@ -434,8 +457,9 @@ struct server_impl : public SZT, public Counter
     return bits::nthbitset(active.load_word(size(), element), subindex);
   }
 
-  template <typename Clear, bool have_precondition>
-  HOSTRPC_ANNOTATE bool rpc_verify_slot_available(Clear&& cl, uint32_t slot)
+  template <typename Clear, bool have_precondition, typename T>
+  HOSTRPC_ANNOTATE bool rpc_verify_slot_available(T active_threads, Clear&& cl,
+                                                  uint32_t slot)
   {
     assert(slot != UINT32_MAX);
 
@@ -465,7 +489,7 @@ struct server_impl : public SZT, public Counter
     if (garbage_todo)
       {
         assert((o & this_slot) != 0);
-        garbage_collect<Clear, have_precondition>(slot, cl);
+        garbage_collect<Clear, have_precondition>(active_threads, slot, cl);
         assert(lock_held(slot));
         return false;
       }
@@ -497,19 +521,22 @@ struct server : public server_impl<WordT, SZT, Counter>
   HOSTRPC_ANNOTATE bool rpc_handle(Operate&& op, Clear&& cl,
                                    uint32_t* location) noexcept
   {
+    auto active_threads = platform::active_threads();
     return rpc_handle_impl<Operate, Clear, true>(
-        cxx::forward<Operate>(op), cxx::forward<Clear>(cl), location);
+        active_threads, cxx::forward<Operate>(op), cxx::forward<Clear>(cl),
+        location);
   }
 
   template <typename Operate>
   HOSTRPC_ANNOTATE bool rpc_handle(Operate&& op, uint32_t* location) noexcept
   {
+    auto active_threads = platform::active_threads();
     struct Clear
     {
       HOSTRPC_ANNOTATE void operator()(uint32_t, hostrpc::page_t*){};
     };
-    return rpc_handle_impl<Operate, Clear, false>(cxx::forward<Operate>(op),
-                                                  Clear{}, location);
+    return rpc_handle_impl<Operate, Clear, false>(
+        active_threads, cxx::forward<Operate>(op), Clear{}, location);
   }
 
   // Default location to always start from zero
@@ -528,22 +555,24 @@ struct server : public server_impl<WordT, SZT, Counter>
     return rpc_handle<Operate>(cxx::forward<Operate>(op), &location);
   }
 
-  template <typename Operate, typename Clear, bool have_precondition>
-  HOSTRPC_ANNOTATE bool rpc_handle_impl(Operate&& op, Clear&& cl,
+  template <typename Operate, typename Clear, bool have_precondition,
+            typename T>
+  HOSTRPC_ANNOTATE bool rpc_handle_impl(T active_threads, Operate&& op,
+                                        Clear&& cl,
                                         uint32_t* location_arg) noexcept
   {
     const uint32_t port =
         base::template rpc_open_port_impl<Clear, have_precondition>(
-            cxx::forward<Clear>(cl), location_arg);
+            active_threads, cxx::forward<Clear>(cl), location_arg);
     if (port == UINT32_MAX)
       {
         return false;
       }
 
     base::template rpc_port_operate_given_available<Operate>(
-        cxx::forward<Operate>(op), port);
+        active_threads, cxx::forward<Operate>(op), port);
 
-    base::rpc_close_port(port);
+    base::rpc_close_port(active_threads, port);
     return true;
   }
 };

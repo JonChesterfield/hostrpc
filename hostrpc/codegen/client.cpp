@@ -23,11 +23,12 @@ client_instance_invoke_direct(client_type& c)
 extern "C" __attribute__((always_inline)) HOSTRPC_ANNOTATE void
 client_instance_invoke_via_port(client_type& c)
 {
-  uint32_t p = c.rpc_open_port();
-  c.rpc_port_send(p, hostrpc::fill_nop{});
-  c.rpc_port_wait_for_result(p);
-  c.rpc_port_recv(p, hostrpc::use_nop{});
-  c.rpc_close_port(p);
+  auto active_threads = platform::active_threads();
+  uint32_t p = c.rpc_open_port(active_threads);
+  c.rpc_port_send(active_threads, p, hostrpc::fill_nop{});
+  c.rpc_port_wait_for_result(active_threads, p);
+  c.rpc_port_recv(active_threads, p, hostrpc::use_nop{});
+  c.rpc_close_port(active_threads, p);
 }
 
 extern "C" __attribute__((noinline)) HOSTRPC_ANNOTATE void
