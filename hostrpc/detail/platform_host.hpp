@@ -11,6 +11,8 @@
 
 namespace platform
 {
+HOSTRPC_ANNOTATE constexpr uint32_t desc::native_width() { return 1; }
+
 // local toolchain thinks usleep might throw. That induces a bunch of exception
 // control flow where there otherwise wouldn't be any. Will fix by calling into
 // std::chrono, bodge for now

@@ -32,15 +32,8 @@ __impl_shfl_down_sync(int32_t var, uint32_t laneDelta)
 HOSTRPC_ANNOTATE
 inline int32_t __impl_shfl_down_sync(int32_t var, uint32_t laneDelta)
 {
-  enum
-  {
-    warpsize = 32,
-  };
-
-  // danger: Probably want something more like:
-  // return __nvvm_shfl_sync_down_i32(Mask, Var, Delta, (( warpsize - Width) <<
-  // 8) | 0x1f);
-  return __nvvm_shfl_sync_down_i32(UINT32_MAX, var, laneDelta, warpsize - 1);
+  return __nvvm_shfl_sync_down_i32(UINT32_MAX, var, laneDelta,
+                                   desc::native_width() - 1);
 }
 #endif
 }  // namespace detail

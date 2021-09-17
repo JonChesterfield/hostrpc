@@ -55,6 +55,12 @@ extern "C" int printf(const char *format, ...);
 
 namespace platform
 {
+struct desc
+{
+  // warp/wavefront width
+  HOSTRPC_ANNOTATE constexpr static uint32_t native_width();
+};
+
 // Functions implemented for each platform in platform_arch.hpp
 inline HOSTRPC_ANNOTATE void sleep_briefly();
 inline HOSTRPC_ANNOTATE void sleep();
@@ -636,6 +642,9 @@ HOSTRPC_ANNOTATE inline bool atomic_compare_exchange_weak(HOSTRPC_ATOMIC(T) * a,
   return HOSTRPC_IMPL_NS::atomic_compare_exchange_weak<T, memorder, scope>(
       a, expected, desired, loaded);
 }
+
+static_assert(desc::native_width() > 0, "");
+static_assert(desc::native_width() <= 64, "");
 
 }  // namespace platform
 

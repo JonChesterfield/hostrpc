@@ -11,6 +11,16 @@
 
 namespace platform
 {
+HOSTRPC_ANNOTATE constexpr uint32_t desc::native_width()
+{
+#ifndef __AMDGCN_WAVEFRONT_SIZE
+#error "Expected __AMDGCN_WAVEFRONT_SIZE definition"
+#endif
+  return __AMDGCN_WAVEFRONT_SIZE;
+}
+
+static_assert(desc::native_width() == 32 || desc::native_width() == 64, "");
+
 HOSTRPC_ANNOTATE inline void sleep_briefly() { __builtin_amdgcn_s_sleep(0); }
 HOSTRPC_ANNOTATE inline void sleep() { __builtin_amdgcn_s_sleep(100); }
 

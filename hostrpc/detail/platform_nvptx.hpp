@@ -11,13 +11,10 @@
 
 namespace platform
 {
+HOSTRPC_ANNOTATE constexpr uint32_t desc::native_width() { return 32; }
+
 namespace detail
 {
-enum
-{
-  warpsize = 32,
-};
-
 inline HOSTRPC_ANNOTATE uint32_t get_master_lane_id(void)
 {
   uint32_t activemask;
@@ -42,7 +39,8 @@ inline void sleep() { sleep_briefly(); }
 HOSTRPC_ANNOTATE
 inline uint32_t get_lane_id()
 {
-  return __nvvm_read_ptx_sreg_tid_x() /*threadIdx.x*/ & (detail::warpsize - 1);
+  return __nvvm_read_ptx_sreg_tid_x() /*threadIdx.x*/ &
+         (desc::native_width() - 1);
 }
 
 HOSTRPC_ANNOTATE
@@ -56,7 +54,7 @@ inline uint32_t broadcast_master(uint32_t x)
 {
   uint32_t master_id = detail::get_master_lane_id();
   return __nvvm_shfl_sync_idx_i32(UINT32_MAX, x, master_id,
-                                  detail::warpsize - 1);
+                                  desc::native_width() - 1);
 }
 
 // todo: smid based
