@@ -13,31 +13,42 @@ namespace platform
 {
 namespace
 {
-HOSTRPC_ANNOTATE constexpr uint64_t desc::native_width()
+inline HOSTRPC_ANNOTATE constexpr uint64_t native_width()
 {
 #ifndef __AMDGCN_WAVEFRONT_SIZE
 #error "Expected __AMDGCN_WAVEFRONT_SIZE definition"
 #endif
   return __AMDGCN_WAVEFRONT_SIZE;
 }
-static_assert(desc::native_width() == 32 || desc::native_width() == 64, "");
-
-HOSTRPC_ANNOTATE uint64_t desc::active_threads()
-{
-  return (desc::native_width() == 64) ? __builtin_amdgcn_read_exec()
-                                      : __builtin_amdgcn_read_exec_lo();
-}
+static_assert(native_width() == 32 || native_width() == 64, "");
 
 inline HOSTRPC_ANNOTATE void sleep_briefly() { __builtin_amdgcn_s_sleep(0); }
 inline HOSTRPC_ANNOTATE void sleep() { __builtin_amdgcn_s_sleep(100); }
 
-HOSTRPC_ANNOTATE __attribute__((always_inline)) inline uint32_t get_lane_id()
+inline HOSTRPC_ANNOTATE auto active_threads()
 {
-  return __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
+#if __AMDGCN_WAVEFRONT_SIZE == 64
+  hostrpc::fastint_runtime<uint64_t> r = __builtin_amdgcn_read_exec();
+  ;
+#elif __AMDGCN_WAVEFRONT_SIZE == 32
+  hostrpc::fastint_runtime<uint32_t> r = __builtin_amdgcn_read_exec_lo();
+#else
+#error ""
+#endif
+  return r;
+}
+
+inline HOSTRPC_ANNOTATE auto get_lane_id()
+{
+  hostrpc::fastint_runtime<uint32_t> r =
+
+      __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
+
+  return r;
 }
 
 template <typename T>
-inline HOSTRPC_ANNOTATE uint32_t get_master_lane_id(T active_threads)
+inline HOSTRPC_ANNOTATE auto get_master_lane_id(T active_threads)
 {
   auto f = active_threads.findFirstSet();
   return f.template subtract<1>();

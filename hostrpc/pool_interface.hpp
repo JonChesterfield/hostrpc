@@ -285,19 +285,23 @@ struct threads_base
 
   uint32_t allocate()
   {
-    uint32_t r = platform::critical<uint32_t>([&]() {
-      return platform::atomic_fetch_add<uint32_t, __ATOMIC_ACQ_REL,
-                                        __OPENCL_MEMORY_SCOPE_DEVICE>(&live, 1);
-    });
+    uint32_t r = {};
+    if (platform::is_master_lane())
+      {
+        r = platform::atomic_fetch_add<uint32_t, __ATOMIC_ACQ_REL,
+                                       __OPENCL_MEMORY_SCOPE_DEVICE>(&live, 1);
+      }
+    r = platform::broadcast_master(r);
     return r;
   }
 
   void deallocate()
   {
-    platform::critical<uint32_t>([&]() {
-      return platform::atomic_fetch_sub<uint32_t, __ATOMIC_RELAXED,
-                                        __OPENCL_MEMORY_SCOPE_DEVICE>(&live, 1);
-    });
+    if (platform::is_master_lane())
+      {
+        platform::atomic_fetch_sub<uint32_t, __ATOMIC_RELAXED,
+                                   __OPENCL_MEMORY_SCOPE_DEVICE>(&live, 1);
+      }
   }
 };
 

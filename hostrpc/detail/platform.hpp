@@ -60,22 +60,18 @@ namespace platform
 // Functions implemented for each platform in platform_arch.hpp
 namespace
 {
-struct desc
-{
-  // warp/wavefront width
-  HOSTRPC_ANNOTATE constexpr static uint64_t native_width();
-
-  // active threads mask, zero extended from native_width size integer
-  HOSTRPC_ANNOTATE static uint64_t active_threads();
-};
+// warp/wavefront width
+inline HOSTRPC_ANNOTATE constexpr uint64_t native_width();
 
 inline HOSTRPC_ANNOTATE void sleep_briefly();
 inline HOSTRPC_ANNOTATE void sleep();
 
-inline HOSTRPC_ANNOTATE uint32_t get_lane_id();
+inline HOSTRPC_ANNOTATE auto active_threads();
+
+inline HOSTRPC_ANNOTATE auto get_lane_id();
 
 template <typename T>
-inline HOSTRPC_ANNOTATE uint32_t get_master_lane_id(T active_threads);
+inline HOSTRPC_ANNOTATE auto get_master_lane_id(T active_threads);
 
 template <typename T>
 inline HOSTRPC_ANNOTATE uint32_t broadcast_master(T active_threads, uint32_t);
@@ -102,40 +98,23 @@ inline HOSTRPC_ANNOTATE void fence_release();
 
 namespace platform
 {
+
+static_assert(native_width() > 0, "");
+static_assert(native_width() <= 64, "");
+
 namespace
 {
-HOSTRPC_ANNOTATE
-inline constexpr uint64_t native_width() { return desc::native_width(); }
 
-#if HOSTRPC_HOST
-//  __attribute__((always_inline))
-inline HOSTRPC_ANNOTATE hostrpc::fastint_compiletime<1> active_threads()
+template <typename T>
+inline HOSTRPC_ANNOTATE bool is_master_lane(T active_threads)
 {
-  return hostrpc::fastint_compiletime<1>();
+  return get_lane_id() == get_master_lane_id(active_threads);
 }
-#else
-inline HOSTRPC_ANNOTATE hostrpc::fastint_runtime<
-    hostrpc::fastint::sufficientType<native_width()>::type>
-active_threads()
-{
-  using T = hostrpc::fastint::sufficientType<desc::native_width()>::type;
-  return static_cast<T>(platform::desc::active_threads());
-}
-#endif
 
 inline HOSTRPC_ANNOTATE bool is_master_lane()
 {
   auto t = active_threads();
-  return get_lane_id() == get_master_lane_id(t);
-}
-
-__attribute__((used)) inline uint32_t check_master_lane()
-{
-  auto t = active_threads();
-  auto f = t.findFirstSet();
-  uint32_t r = f.subtract<1>();
-
-  return r;
+  return is_master_lane(t);
 }
 
 }  // namespace
@@ -166,17 +145,6 @@ broadcast_master(uint64_t x)
   return ((uint64_t)hi << 32u) | lo;
 }
 
-template <typename U, typename F>
-HOSTRPC_ANNOTATE U critical(F f)
-{
-  U res = {};
-  if (is_master_lane())
-    {
-      res = f();
-    }
-  res = broadcast_master(res);
-  return res;
-}
 }  // namespace
 
 #define debug(X) platform::detail::debug_func(__FILE__, __LINE__, __func__, X)
@@ -710,9 +678,6 @@ HOSTRPC_ANNOTATE inline bool atomic_compare_exchange_weak(HOSTRPC_ATOMIC(T) * a,
   return HOSTRPC_IMPL_NS::atomic_compare_exchange_weak<T, memorder, scope>(
       a, expected, desired, loaded);
 }
-
-static_assert(desc::native_width() > 0, "");
-static_assert(desc::native_width() <= 64, "");
 
 }  // namespace platform
 

@@ -13,14 +13,7 @@ namespace platform
 {
 namespace
 {
-HOSTRPC_ANNOTATE constexpr uint64_t desc::native_width() { return 32; }
-
-HOSTRPC_ANNOTATE uint64_t desc::active_threads()
-{
-  uint32_t activemask;
-  asm volatile("activemask.b32 %0;" : "=r"(activemask));
-  return activemask;
-}
+inline HOSTRPC_ANNOTATE constexpr uint64_t native_width() { return 32; }
 
 namespace detail
 {
@@ -36,15 +29,23 @@ inline void sleep_briefly() {}
 HOSTRPC_ANNOTATE
 inline void sleep() { sleep_briefly(); }
 
-HOSTRPC_ANNOTATE
-inline uint32_t get_lane_id()
+inline HOSTRPC_ANNOTATE auto get_lane_id()
 {
-  return __nvvm_read_ptx_sreg_tid_x() /*threadIdx.x*/ &
-         (desc::native_width() - 1);
+  hostrpc::fastint_runtime<uint32_t> r =
+      __nvvm_read_ptx_sreg_tid_x() /*threadIdx.x*/ & (native_width() - 1);
+  return r;
+}
+
+inline HOSTRPC_ANNOTATE auto active_threads()
+{
+  uint32_t activemask;
+  asm volatile("activemask.b32 %0;" : "=r"(activemask));
+  hostrpc::fastint_runtime<uint32_t> r = activemask;
+  return r;
 }
 
 template <typename T>
-inline HOSTRPC_ANNOTATE uint32_t get_master_lane_id(T active_threads)
+inline HOSTRPC_ANNOTATE auto get_master_lane_id(T active_threads)
 {
   auto f = active_threads.findFirstSet();
   return f.template subtract<1>();
@@ -54,8 +55,7 @@ template <typename T>
 HOSTRPC_ANNOTATE inline uint32_t broadcast_master(T active_threads, uint32_t x)
 {
   uint32_t master_id = get_master_lane_id(active_threads);
-  return __nvvm_shfl_sync_idx_i32(UINT32_MAX, x, master_id,
-                                  desc::native_width() - 1);
+  return __nvvm_shfl_sync_idx_i32(UINT32_MAX, x, master_id, native_width() - 1);
 }
 
 // todo: smid based

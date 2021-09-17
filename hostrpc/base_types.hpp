@@ -37,11 +37,18 @@ _Static_assert(128 == round64(128), "");
 _Static_assert(192 == round64(129), "");
 }  // namespace hostrpc
 
-template <size_t lhs, size_t rhs>
+template <uint64_t lhs, uint64_t rhs>
 HOSTRPC_ANNOTATE constexpr bool static_equal()
 {
   static_assert(lhs == rhs, "");
   return lhs == rhs;
+}
+
+template <uint64_t lhs, uint64_t rhs>
+HOSTRPC_ANNOTATE constexpr bool static_lessthan_equal()
+{
+  static_assert(lhs <= rhs, "");
+  return lhs <= rhs;
 }
 
 namespace hostrpc
@@ -75,9 +82,11 @@ struct fastint_runtime
   HOSTRPC_ANNOTATE constexpr static typename fastint::sufficientType<Y>::type
   retype()
   {
+    // Reduce uint64_t to the smallest type that can hold it
+    // static error if the value would not fit in the runtime instance
     static_assert(
-        static_equal<sizeof(typename fastint::sufficientType<Y>::type),
-                     sizeof(type)>(),
+        static_lessthan_equal<sizeof(typename fastint::sufficientType<Y>::type),
+                              sizeof(type)>(),
         "TODO");
     return Y;
   }
@@ -105,7 +114,7 @@ struct fastint_runtime
   HOSTRPC_ANNOTATE constexpr selfType bitwiseOr()
   {
     constexpr auto n = retype<Y>();
-    static_assert(static_equal<sizeof(n), sizeof(type)>(), "");
+    static_assert(static_lessthan_equal<sizeof(n), sizeof(type)>(), "");
     return value() | n;
   }
 
@@ -113,14 +122,14 @@ struct fastint_runtime
   HOSTRPC_ANNOTATE constexpr selfType bitwiseAnd()
   {
     constexpr auto n = retype<Y>();
-    static_assert(static_equal<sizeof(n), sizeof(type)>(), "");
+    static_assert(static_lessthan_equal<sizeof(n), sizeof(type)>(), "");
     return value() & n;
   }
   template <uint64_t Y>
   HOSTRPC_ANNOTATE constexpr selfType subtract()
   {
     constexpr auto n = retype<Y>();
-    static_assert(static_equal<sizeof(n), sizeof(type)>(), "");
+    static_assert(static_lessthan_equal<sizeof(n), sizeof(type)>(), "");
     return value() - n;
   }
 };

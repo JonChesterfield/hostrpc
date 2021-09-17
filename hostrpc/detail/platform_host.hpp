@@ -16,9 +16,7 @@ namespace platform
 {
 namespace
 {
-HOSTRPC_ANNOTATE constexpr uint64_t desc::native_width() { return 1; }
-
-HOSTRPC_ANNOTATE uint64_t desc::active_threads() { return 0x1; }
+inline HOSTRPC_ANNOTATE constexpr uint64_t native_width() { return 1; }
 
 // local toolchain thinks usleep might throw. That induces a bunch of exception
 // control flow where there otherwise wouldn't be any. Will fix by calling into
@@ -46,12 +44,20 @@ HOSTRPC_ANNOTATE inline void sleep_briefly()
 
 HOSTRPC_ANNOTATE inline void sleep() { detail::sleep_noexcept(1000); }
 
-HOSTRPC_ANNOTATE inline uint32_t get_lane_id() { return 0; }
+inline HOSTRPC_ANNOTATE auto active_threads()
+{
+  return hostrpc::fastint_compiletime<1>();
+}
+
+inline HOSTRPC_ANNOTATE auto get_lane_id()
+{
+  return hostrpc::fastint_compiletime<0>();
+}
 
 template <typename T>
-HOSTRPC_ANNOTATE inline uint32_t get_master_lane_id(T)
+HOSTRPC_ANNOTATE inline auto get_master_lane_id(T)
 {
-  return 0;
+  return hostrpc::fastint_compiletime<0>();
 }
 
 template <typename T>
