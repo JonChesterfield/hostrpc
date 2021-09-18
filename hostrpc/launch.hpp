@@ -125,6 +125,11 @@ struct launch_t
     packet->private_segment_size = private_segment_fixed_size;
     packet->group_segment_size = group_segment_fixed_size;
 
+    // If / when changing this to 32, need to check device_start_main uses
+    // the right active_threads value (i.e. is is consistent with wavefront_size
+    // macro)
+    assert(packet->workgroup_size_x == 64);
+
     packet->grid_size_x = packet->workgroup_size_x * number_waves;
 
     memcpy(&packet->completion_signal, &completion, sizeof(hsa_signal_t));

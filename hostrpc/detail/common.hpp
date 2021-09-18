@@ -294,13 +294,18 @@ struct slot_bitmap
   HOSTRPC_ANNOTATE ~slot_bitmap() {}
   HOSTRPC_ANNOTATE Ty *data() { return a; }
 
-  HOSTRPC_ANNOTATE bool operator()(uint32_t size, uint32_t i,
-                                   Word *loaded) const
+  HOSTRPC_ANNOTATE bool read_bit(uint32_t size, uint32_t i, Word *loaded) const
   {
     uint32_t w = index_to_element<Word>(i);
     Word d = load_word(size, w);
     *loaded = d;
     return bits::nthbitset(d, index_to_subindex<Word>(i));
+  }
+
+  HOSTRPC_ANNOTATE bool read_bit(uint32_t size, uint32_t i) const
+  {
+    Word loaded;
+    return read_bit(size, i, &loaded);
   }
 
   HOSTRPC_ANNOTATE void dump(uint32_t size) const
@@ -509,9 +514,9 @@ struct lock_bitmap
           {
             r = cas(w, d, proposed, &unexpected_contents);
           }
-        r = platform::broadcast_master(r);
-
-        unexpected_contents = platform::broadcast_master(unexpected_contents);
+        r = platform::broadcast_master(active_threads, r);
+        unexpected_contents =
+            platform::broadcast_master(active_threads, unexpected_contents);
 
         if (r)
           {

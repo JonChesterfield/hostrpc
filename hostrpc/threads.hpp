@@ -77,21 +77,21 @@ struct ty
 
   uint32_t allocate()
   {
-    auto t = platform::active_threads();
+    auto active_threads = platform::active_threads();
     uint32_t r = {};
-    if (platform::is_master_lane(t))
+    if (platform::is_master_lane(active_threads))
       {
         r = platform::atomic_fetch_add<uint32_t, __ATOMIC_ACQ_REL,
                                        __OPENCL_MEMORY_SCOPE_DEVICE>(&live, 1);
       }
-    r = platform::broadcast_master(r);
+    r = platform::broadcast_master(active_threads, r);
     return r;
   }
 
   void deallocate()
   {
-    auto t = platform::active_threads();
-    if (platform::is_master_lane(t))
+    auto active_threads = platform::active_threads();
+    if (platform::is_master_lane(active_threads))
       {
         platform::atomic_fetch_sub<uint32_t, __ATOMIC_RELAXED,
                                    __OPENCL_MEMORY_SCOPE_DEVICE>(&live, 1);

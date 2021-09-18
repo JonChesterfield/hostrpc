@@ -50,7 +50,7 @@ uint32_t __kmpc_impl_simd()
 uint32_t example::run(uint32_t state)
 {
   if (1)
-    if (platform::is_master_lane())
+    if (platform::is_master_lane(platform::active_threads()))
       printf("[%u.%u.%u] run %u from %u (of %u/%u)\n", __kmpc_impl_wave(),
              __kmpc_impl_simd(), __kmpc_impl_smid(), state, get_current_uuid(),
              alive(), requested());

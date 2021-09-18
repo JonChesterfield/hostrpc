@@ -338,12 +338,12 @@ fi
 if true; then
 # Sanity checks that the client and server compile successfully
 # and provide an example of the generated IR
-$CXX_X64 codegen/client.cpp -S -o codegen/client.x64.ll
-$CXX_X64 codegen/server.cpp -S -o codegen/server.x64.ll
-$CXX_GCN codegen/client.cpp -S -o codegen/client.gcn.ll
-$CXX_GCN codegen/server.cpp -S -o codegen/server.gcn.ll
-$CXX_PTX codegen/client.cpp -S -o codegen/client.ptx.ll
-$CXX_PTX codegen/server.cpp -S -o codegen/server.ptx.ll
+$CXX_X64 -DNDEBUG codegen/client.cpp -S -o codegen/client.x64.ll
+$CXX_X64 -DNDEBUG codegen/server.cpp -S -o codegen/server.x64.ll
+$CXX_GCN -DNDEBUG codegen/client.cpp -S -o codegen/client.gcn.ll
+$CXX_GCN -DNDEBUG codegen/server.cpp -S -o codegen/server.gcn.ll
+$CXX_PTX -DNDEBUG codegen/client.cpp -S -o codegen/client.ptx.ll
+$CXX_PTX -DNDEBUG codegen/server.cpp -S -o codegen/server.ptx.ll
 
 $CXX_X64 codegen/foo_cxx.cpp -S -o codegen/foo_cxx.x64.ll
 $CXX_GCN codegen/foo_cxx.cpp -S -o codegen/foo_cxx.gcn.ll
@@ -500,20 +500,8 @@ fi
 
 
 # llc seems to need to be told what architecture it's disassembling
+# $LLC --mcpu=$GCNGFX $ll
 
-# for bc in `find . -type f -iname '*.x64.bc'` ; do
-#     ll=`echo $bc | sed 's_.bc_.ll_g'`
-#     $OPT -strip-debug $bc -S -o $ll
-#     $LLC $ll
-# done
-# 
-# for bc in `find . -type f -iname '*.gcn.bc'` ; do
-#     ll=`echo $bc | sed 's_.bc_.ll_g'`
-#     obj=`echo $bc | sed 's_.bc_.obj_g'`
-#     $OPT -strip-debug $bc -S -o $ll
-#     $LLC --mcpu=$GFX -amdgpu-fixed-function-abi $ll
-#     $CXX_GCN_LD -c $ll -o $obj
-# done
 
 # $CXX_X64_LD tests.x64.bc prototype/states.x64.bc obj/catch.o obj/allocator_host_libc.x64.bc $LDFLAGS -o prototype/states.exe
 

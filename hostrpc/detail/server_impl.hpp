@@ -208,8 +208,8 @@ struct server_impl : public SZT, public Counter
         staged_claim_slot(size, slot, &staging, &outbox, &cas_fail_count,
                           &cas_help_count);
       }
-    cas_fail_count = platform::broadcast_master(cas_fail_count);
-    cas_help_count = platform::broadcast_master(cas_help_count);
+    cas_fail_count = platform::broadcast_master(active_threads, cas_fail_count);
+    cas_help_count = platform::broadcast_master(active_threads, cas_help_count);
     Counter::publish_cas_fail(active_threads, cas_fail_count);
     Counter::publish_cas_help(active_threads, cas_help_count);
   }
@@ -280,8 +280,8 @@ struct server_impl : public SZT, public Counter
         staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
                             &cas_help_count);
       }
-    cas_fail_count = platform::broadcast_master(cas_fail_count);
-    cas_help_count = platform::broadcast_master(cas_help_count);
+    cas_fail_count = platform::broadcast_master(active_threads, cas_fail_count);
+    cas_help_count = platform::broadcast_master(active_threads, cas_help_count);
     Counter::garbage_cas_fail(active_threads, cas_fail_count);
     Counter::garbage_cas_help(active_threads, cas_help_count);
   }

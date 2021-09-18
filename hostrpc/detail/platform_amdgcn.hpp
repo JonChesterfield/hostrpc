@@ -29,7 +29,6 @@ inline HOSTRPC_ANNOTATE auto active_threads()
 {
 #if __AMDGCN_WAVEFRONT_SIZE == 64
   hostrpc::fastint_runtime<uint64_t> r = __builtin_amdgcn_read_exec();
-  ;
 #elif __AMDGCN_WAVEFRONT_SIZE == 32
   hostrpc::fastint_runtime<uint32_t> r = __builtin_amdgcn_read_exec_lo();
 #else
@@ -96,6 +95,17 @@ HOSTRPC_ANNOTATE __attribute__((always_inline)) inline void fence_acquire()
 HOSTRPC_ANNOTATE __attribute__((always_inline)) inline void fence_release()
 {
   __c11_atomic_thread_fence(__ATOMIC_RELEASE);
+}
+
+inline HOSTRPC_ANNOTATE auto all_threads_active_constant()
+{
+#if __AMDGCN_WAVEFRONT_SIZE == 64
+  return hostrpc::fastint_compiletime<UINT64_MAX>();
+#elif __AMDGCN_WAVEFRONT_SIZE == 32
+  return hostrpc::fastint_compiletime<UINT32_MAX>();
+#else
+#error ""
+#endif
 }
 
 }  // namespace

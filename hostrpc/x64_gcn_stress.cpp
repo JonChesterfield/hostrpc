@@ -106,19 +106,24 @@ using SZ = hostrpc::size_runtime<uint32_t>;
 VISIBLE
 hostrpc::x64_gcn_type<SZ>::client_type hostrpc_pair_client[1];
 
-static uint64_t gpu_call(hostrpc::x64_gcn_type<SZ>::client_type *client,
+template <typename T>
+static uint64_t gpu_call(T active_threads,
+                         hostrpc::x64_gcn_type<SZ>::client_type *client,
                          uint32_t id, uint32_t reps);
 extern "C" void __device_start_main(kernel_args *args)
 {
+  auto active_threads = platform::all_threads_active_constant();
+
   while (platform::atomic_load<uint64_t, __ATOMIC_ACQUIRE,
                                __OPENCL_MEMORY_SCOPE_DEVICE>(args->control) ==
          0)
     {
     }
   uint64_t wg = __builtin_amdgcn_workgroup_id_x();
-  uint64_t r = gpu_call(hostrpc_pair_client, args->id + wg, args->reps);
+  uint64_t r =
+      gpu_call(active_threads, hostrpc_pair_client, args->id + wg, args->reps);
 
-  if (platform::is_master_lane())
+  if (platform::is_master_lane(active_threads))
     {
       args->result[wg] = r;
     }
@@ -140,8 +145,11 @@ static void init_page(hostrpc::page_t *page, uint64_t v)
     }
 }
 
-static bool equal_page(hostrpc::page_t *lhs, hostrpc::page_t *rhs)
+template <typename T>
+static bool equal_page(T active_threads, hostrpc::page_t *lhs,
+                       hostrpc::page_t *rhs)
 {
+  // equal_page only defined for all lanes active
   // Would like to only check live lanes
   // TODO: Work out how reduction ops work on amdgcn
   unsigned id = platform::get_lane_id();
@@ -156,8 +164,8 @@ static bool equal_page(hostrpc::page_t *lhs, hostrpc::page_t *rhs)
 
   // TODO: Don't think this sort of reduction is defined on nvptx
   // amdgcn treats inactive lanes as containing zero
-  diff = platform::reduction_sum(diff);
-  diff = platform::broadcast_master(diff);
+  diff = platform::reduction_sum(active_threads, diff);
+  diff = platform::broadcast_master(active_threads, diff);
 
   return diff == 0;
 }
@@ -169,11 +177,13 @@ hostrpc::page_t scratch_store[MAXCLIENT];
 VISIBLE
 hostrpc::page_t expect_store[MAXCLIENT];
 
-uint64_t gpu_call(hostrpc::x64_gcn_type<SZ>::client_type *client, uint32_t id,
+template <typename T>
+uint64_t gpu_call(T active_threads,
+                  hostrpc::x64_gcn_type<SZ>::client_type *client, uint32_t id,
                   uint32_t reps)
 {
   const bool check_result = true;
-  id = platform::broadcast_master(id);
+  id = platform::broadcast_master(active_threads, id);
 #if 1
   hostrpc::page_t *scratch = &scratch_store[id];
   hostrpc::page_t *expect = &expect_store[id];
@@ -214,15 +224,15 @@ uint64_t gpu_call(hostrpc::x64_gcn_type<SZ>::client_type *client, uint32_t id,
 
       if (check_result)
         {
-          if (!equal_page(scratch, expect))
+          if (!equal_page(active_threads, scratch, expect))
             {
               failures++;
             }
         }
     }
 
-  failures = platform::reduction_sum(failures);
-  failures = platform::broadcast_master(failures);
+  failures = platform::reduction_sum(active_threads, failures);
+  failures = platform::broadcast_master(active_threads, failures);
 
   return failures;
 }

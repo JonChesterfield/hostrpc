@@ -55,7 +55,8 @@ template <typename T>
 HOSTRPC_ANNOTATE inline uint32_t broadcast_master(T active_threads, uint32_t x)
 {
   uint32_t master_id = get_master_lane_id(active_threads);
-  return __nvvm_shfl_sync_idx_i32(UINT32_MAX, x, master_id, native_width() - 1);
+  return __nvvm_shfl_sync_idx_i32(active_threads, x, master_id,
+                                  native_width() - 1);
 }
 
 // todo: smid based
@@ -66,6 +67,11 @@ void fence_acquire() { detail::fence_acquire_release(); }
 
 HOSTRPC_ANNOTATE
 void fence_release() { detail::fence_acquire_release(); }
+
+inline HOSTRPC_ANNOTATE auto all_threads_active_constant()
+{
+  return hostrpc::fastint_compiletime<UINT32_MAX>();
+}
 
 }  // namespace
 }  // namespace platform

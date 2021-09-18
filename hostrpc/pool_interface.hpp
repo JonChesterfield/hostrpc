@@ -142,9 +142,10 @@ template <typename Derived, template <typename, uint32_t> class Via,
           uint32_t Max>
 struct api;
 
-static inline bool print_enabled()
+template <typename T>
+static inline bool print_enabled(T active_threads)
 {
-  return true && platform::is_master_lane();
+  return true && platform::is_master_lane(active_threads);
 }
 
 template <uint32_t Max, typename Implementation>
@@ -166,10 +167,11 @@ struct threads_base
 
   void spawn()
   {
-    uint32_t uuid = allocate();
+    auto active_threads = platform::active_threads();
+    uint32_t uuid = allocate(active_threads);
     if (uuid < /*requested()*/ maximum())  // maximum should be correct too
       {
-        if (print_enabled())
+        if (print_enabled(active_threads))
           {
             printf("uuid %u: spawning %u\n",
                    Implementation().get_current_uuid(), uuid);
@@ -181,13 +183,13 @@ struct threads_base
       }
     else
       {
-        if (print_enabled())
+        if (print_enabled(active_threads))
           {
             printf("uuid %u: %u is over maximum %u, dealloc\n",
                    Implementation().get_current_uuid(), uuid, maximum());
           }
       }
-    deallocate();
+    deallocate(active_threads);
   }
 
  private:
@@ -195,6 +197,7 @@ struct threads_base
 
   void loop()
   {
+    auto active_threads = platform::active_threads();
     uint32_t state = Implementation().get_stored_state();
   start:;
     uint32_t uuid = Implementation().get_current_uuid();
@@ -202,8 +205,8 @@ struct threads_base
 
     if (uuid >= req)
       {
-        deallocate();
-        if (print_enabled())
+        deallocate(active_threads);
+        if (print_enabled(active_threads))
           printf("uuid %u >= %u, deallocate (live %u)\n", uuid, req, alive());
         return;
       }
@@ -211,7 +214,7 @@ struct threads_base
     const uint32_t a = alive();
     if (a < req)
       {
-        if (print_enabled())
+        if (print_enabled(active_threads))
           printf("uuid %u: alive %u < req %u, spawn\n", uuid, a, req);
         // spawn extra. could spawn multiple extra.
         spawn();
@@ -219,7 +222,7 @@ struct threads_base
 
     uint32_t nstate = Implementation().run(state);
     if (0)
-      if (print_enabled())
+      if (print_enabled(active_threads))
         {
           printf("Respawn %u w/ state %u->%u\n", uuid, state, nstate);
         }
@@ -228,7 +231,7 @@ struct threads_base
     if (Implementation().respawn_self(state))
       {
         if (0)
-          if (print_enabled())
+          if (print_enabled(active_threads))
             {
               printf("Respawned %u w/ state %u\n", uuid, state);
             }
@@ -240,10 +243,11 @@ struct threads_base
       }
   }
 
-  bool bootstrap_work_already_done(uint32_t req)
+  template <typename T>
+  bool bootstrap_work_already_done(T active_threads, uint32_t req)
   {
     // This thread was created by a kernel launch, account for it
-    uint32_t uuid = allocate();
+    uint32_t uuid = allocate(active_threads);
 
     // bootstrap uses inline argument to set requested as a convenience
     set_requested(req);
@@ -251,7 +255,7 @@ struct threads_base
     if ((uuid != 0)     // already a thread running
         || (req == 0))  // changing count to zero
       {
-        deallocate();
+        deallocate(active_threads);
         return true;
       }
 
@@ -283,21 +287,23 @@ struct threads_base
                                  __OPENCL_MEMORY_SCOPE_DEVICE>(&req);
   }
 
-  uint32_t allocate()
+  template <typename T>
+  uint32_t allocate(T active_threads)
   {
     uint32_t r = {};
-    if (platform::is_master_lane())
+    if (platform::is_master_lane(active_threads))
       {
         r = platform::atomic_fetch_add<uint32_t, __ATOMIC_ACQ_REL,
                                        __OPENCL_MEMORY_SCOPE_DEVICE>(&live, 1);
       }
-    r = platform::broadcast_master(r);
+    r = platform::broadcast_master(active_threads, r);
     return r;
   }
 
-  void deallocate()
+  template <typename T>
+  void deallocate(T active_threads)
   {
-    if (platform::is_master_lane())
+    if (platform::is_master_lane(active_threads))
       {
         platform::atomic_fetch_sub<uint32_t, __ATOMIC_RELAXED,
                                    __OPENCL_MEMORY_SCOPE_DEVICE>(&live, 1);
@@ -332,7 +338,8 @@ struct via_pthreads : public threads_base<Max, via_pthreads<Derived, Max>>
 
   void bootstrap(uint32_t req, const unsigned char*)
   {
-    if (base::bootstrap_work_already_done(req))
+    auto active_threads = platform::active_threads();
+    if (base::bootstrap_work_already_done(active_threads, req))
       {
         return;
       }
@@ -344,7 +351,7 @@ struct via_pthreads : public threads_base<Max, via_pthreads<Derived, Max>>
     else
       {
         // currently can't report failure to bootstrap
-        base::deallocate();
+        base::deallocate(active_threads);
       }
   }
 
@@ -451,7 +458,8 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
 
   void bootstrap(uint32_t req, const unsigned char* descriptor)
   {
-    if (base::bootstrap_work_already_done(req))
+    auto active_threads = platform::active_threads();
+    if (base::bootstrap_work_already_done(active_threads, req))
       {
         return;
       }
@@ -474,6 +482,7 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
 
   void teardown()
   {
+    auto active_threads = platform::active_threads();
     __attribute__((address_space(4))) const void* p =
         __builtin_amdgcn_dispatch_ptr();
 
@@ -484,7 +493,7 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
     uint64_t kernarg_sig;
     __builtin_memcpy(&kernarg_sig, (const unsigned char*)p + offset_kernarg, 8);
 
-    if (print_enabled())
+    if (print_enabled(active_threads))
       {
         printf("Teardown %s L%u (a: %u, k: 0x%lx, u: 0x%lx, s: 0x%lx)\n",
                __func__, __LINE__, base::alive(), kernarg_sig, user_sig,
@@ -496,7 +505,7 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
 
     if (a != 0)
       {
-        if (print_enabled())
+        if (print_enabled(active_threads))
           printf(
               "Teardown respawned on alive:%u, kill this instance (hope it had "
               "s: 0, was k: 0x%lx, u: 0x%lx, s: 0x%lx)\n",
@@ -506,12 +515,12 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
         return;
       }
 
-    if (print_enabled())
+    if (print_enabled(active_threads))
       printf(
           "Teardown did not spawn, continuing k: 0x%lx, u: 0x%lx, s: 0x%lx\n",
           kernarg_sig, user_sig, compl_sig);
 
-    if (print_enabled())
+    if (print_enabled(active_threads))
       printf(
           "Alive should be zero %s L%u (a: %u, k: 0x%lx, u: 0x%lx, s: 0x%lx)\n",
           __func__, __LINE__, a, kernarg_sig, user_sig, compl_sig);
@@ -530,13 +539,13 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
     __builtin_memcpy(&tmp, (const unsigned char*)p + offset_signal, 8);
     if (tmp != 0)
       {
-        if (print_enabled())
+        if (print_enabled(active_threads))
           printf("Signal 0x%lx in completion, returning\n", tmp);
         return;
       }
 
 #if 0
-    if (print_enabled()) {  printf("Kernel self:\n");
+    if (print_enabled(active_threads)) {  printf("Kernel self:\n");
       hsa_packet::dump_kernel((const unsigned char*)p); }
 #endif
 
@@ -560,19 +569,20 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
 
     if (maybe_signal == 0)
       {
-        if (print_enabled()) printf("No signal, none in userdata, return\n");
+        if (print_enabled(active_threads))
+          printf("No signal, none in userdata, return\n");
         return;
       }
     else
       {
-        if (print_enabled())
+        if (print_enabled(active_threads))
           printf("Retrieved signal 0x%lx from userdata\n", maybe_signal);
       }
 
     // If there is one, retrieve it from userdata and relaunch
     auto func = [=](unsigned char* packet) {
       // write the non-zero signal to the completion slot
-      if (print_enabled())
+      if (print_enabled(active_threads))
         printf("Write non-zero signal (0x%lx) to completion\n", maybe_signal);
 
       // platform::atomic_store<uint64_t, __ATOMIC_RELEASE,

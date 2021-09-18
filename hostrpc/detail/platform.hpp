@@ -67,7 +67,6 @@ inline HOSTRPC_ANNOTATE void sleep_briefly();
 inline HOSTRPC_ANNOTATE void sleep();
 
 inline HOSTRPC_ANNOTATE auto active_threads();
-
 inline HOSTRPC_ANNOTATE auto get_lane_id();
 
 template <typename T>
@@ -80,6 +79,9 @@ inline HOSTRPC_ANNOTATE uint32_t client_start_slot();
 
 inline HOSTRPC_ANNOTATE void fence_acquire();
 inline HOSTRPC_ANNOTATE void fence_release();
+
+// TODO: Move to utils?
+inline HOSTRPC_ANNOTATE auto all_threads_active_constant();
 
 }  // namespace
 }  // namespace platform
@@ -104,18 +106,11 @@ static_assert(native_width() <= 64, "");
 
 namespace
 {
-
 template <typename T>
 inline HOSTRPC_ANNOTATE bool is_master_lane(T active_threads)
 {
   return get_lane_id() == get_master_lane_id(active_threads);
 }
-inline HOSTRPC_ANNOTATE bool is_master_lane()
-{
-  auto t = active_threads();
-  return is_master_lane(t);
-}
-
 }  // namespace
 
 // all true is used by assert
@@ -127,20 +122,14 @@ HOSTRPC_ANNOTATE uint32_t all_true(uint32_t);
 namespace
 {
 
-HOSTRPC_ANNOTATE __attribute__((always_inline)) inline uint32_t
-broadcast_master(uint32_t x)
-{
-  auto t = active_threads();
-  return broadcast_master(t, x);
-}
-
+template <typename T>
 HOSTRPC_ANNOTATE __attribute__((always_inline)) inline uint64_t
-broadcast_master(uint64_t x)
+broadcast_master(T active_threads, uint64_t x)
 {
   uint32_t lo = x;
   uint32_t hi = x >> 32u;
-  lo = broadcast_master(lo);
-  hi = broadcast_master(hi);
+  lo = broadcast_master(active_threads, lo);
+  hi = broadcast_master(active_threads, hi);
   return ((uint64_t)hi << 32u) | lo;
 }
 

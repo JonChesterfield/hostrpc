@@ -222,8 +222,8 @@ struct client_impl : public SZT, public Counter
         staged_release_slot(size, slot, &staging, &outbox, &cas_fail_count,
                             &cas_help_count);
       }
-    cas_fail_count = platform::broadcast_master(cas_fail_count);
-    cas_help_count = platform::broadcast_master(cas_help_count);
+    cas_fail_count = platform::broadcast_master(active_threads, cas_fail_count);
+    cas_help_count = platform::broadcast_master(active_threads, cas_help_count);
     Counter::garbage_cas_fail(active_threads, cas_fail_count);
     Counter::garbage_cas_help(active_threads, cas_help_count);
   }
@@ -442,8 +442,8 @@ client_impl<WordT, SZT, Counter>::rpc_port_send_given_available(
         staged_claim_slot(size, port, &staging, &outbox, &cas_fail_count,
                           &cas_help_count);
       }
-    cas_fail_count = platform::broadcast_master(cas_fail_count);
-    cas_help_count = platform::broadcast_master(cas_help_count);
+    cas_fail_count = platform::broadcast_master(active_threads, cas_fail_count);
+    cas_help_count = platform::broadcast_master(active_threads, cas_help_count);
     Counter::publish_cas_fail(active_threads, cas_fail_count);
     Counter::publish_cas_help(active_threads, cas_help_count);
   }
@@ -541,13 +541,13 @@ HOSTRPC_ANNOTATE bool client_impl<WordT, SZT, Counter>::result_available(
     T active_threads, uint32_t slot)
 {
   const uint32_t size = this->size();
-  Word loaded = 0;
   uint32_t got = 0;
-  if (platform::is_master_lane(active_threads))  // dead exec munging?
+  if (platform::is_master_lane(
+          active_threads))  // TODO: Probably do this on all lanes instead
     {
-      got = inbox(size, slot, &loaded);
+      got = inbox.read_bit(size, slot);
     }
-  got = platform::broadcast_master(got);
+  got = platform::broadcast_master(active_threads, got);
 
   return (got == 1);
 }

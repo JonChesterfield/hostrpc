@@ -77,6 +77,11 @@ HOSTRPC_ANNOTATE inline void fence_release()
   __c11_atomic_thread_fence(__ATOMIC_RELEASE);
 }
 
+inline HOSTRPC_ANNOTATE auto all_threads_active_constant()
+{
+  return active_threads();
+}
+
 }  // namespace
 }  // namespace platform
 

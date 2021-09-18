@@ -13,6 +13,8 @@ objdump -D x64.text.o &> x64.text.s
 
 exit
 
+# rough sketch of looking for a x64/gfx9 polyglot
+
 	s_waitcnt vmcnt(1) // jno 13 bytes past the end of this
         // three instructions available for gcn to branch somewhere
         s_setpc_b64 s[30:31]
