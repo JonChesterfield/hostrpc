@@ -218,7 +218,7 @@ uint64_t gpu_call(T active_threads,
       bool rb = false;
       do
         {
-          rb = client->rpc_invoke(f, u);
+          rb = client->rpc_invoke(active_threads, f, u);
         }
       while (rb == false);
 

@@ -558,10 +558,9 @@ struct client : public client_impl<WordT, SZT, Counter>
   using base = client_impl<WordT, SZT, Counter>;
   using base::client_impl;
 
-  template <typename Op>
-  HOSTRPC_ANNOTATE bool rpc_invoke_async(Op &&op) noexcept
+  template <typename T, typename Op>
+  HOSTRPC_ANNOTATE bool rpc_invoke_async(T active_threads, Op &&op) noexcept
   {
-    auto active_threads = platform::active_threads();
     // get a port, send it, don't wait
     uint32_t port = base::rpc_open_port(active_threads);
     if (port == UINT32_MAX)
@@ -573,10 +572,13 @@ struct client : public client_impl<WordT, SZT, Counter>
     return true;
   }
 
-  template <typename Fill, typename Use>
-  HOSTRPC_ANNOTATE bool rpc_port_invoke(Fill &&f, Use &&u) noexcept
+  // rpc_invoke returns true if it successfully launched the task
+  // returns false if no slot was available
+
+  // Return after calling use(), i.e. waits for server
+  template <typename T, typename Fill, typename Use>
+  HOSTRPC_ANNOTATE bool rpc_invoke(T active_threads, Fill &&f, Use &&u) noexcept
   {
-    auto active_threads = platform::active_threads();
     uint32_t port = base::rpc_open_port(active_threads);
     if (port == UINT32_MAX)
       {
@@ -584,32 +586,28 @@ struct client : public client_impl<WordT, SZT, Counter>
       }
     base::rpc_port_send(active_threads, port, cxx::forward<Fill>(f));
     base::rpc_port_recv(active_threads, port,
-                        cxx::forward<Use>(u));  // implicit wait for result
+                        cxx::forward<Use>(u));  // wait for result
     base::rpc_close_port(active_threads, port);
     return true;
   }
 
-  // rpc_invoke returns true if it successfully launched the task
-  // returns false if no slot was available
+  // TODO: Probably want one of these convenience functions for each rpc_invoke,
+  // but perhaps not on volta
 
   // Return after calling fill(), i.e. does not wait for server
   template <typename Fill>
   HOSTRPC_ANNOTATE bool rpc_invoke(Fill &&fill) noexcept
   {
-    return rpc_port_invoke_async(cxx::forward<Fill>(fill));
+    auto active_threads = platform::active_threads();
+    return rpc_invoke_async(active_threads, cxx::forward<Fill>(fill));
   }
 
-  template <typename Op>
-  HOSTRPC_ANNOTATE bool rpc_port_invoke_async(Op &&op) noexcept
-  {
-    return rpc_invoke_async(cxx::forward<Op>(op));
-  }
-
-  // Return after calling use(), i.e. waits for server
   template <typename Fill, typename Use>
-  HOSTRPC_ANNOTATE bool rpc_invoke(Fill &&fill, Use &&use) noexcept
+  HOSTRPC_ANNOTATE bool rpc_invoke(Fill &&f, Use &&u) noexcept
   {
-    return rpc_port_invoke(cxx::forward<Fill>(fill), cxx::forward<Use>(use));
+    auto active_threads = platform::active_threads();
+    return rpc_invoke(active_threads, cxx::forward<Fill>(f),
+                      cxx::forward<Use>(u));
   }
 };
 

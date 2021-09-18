@@ -555,6 +555,7 @@ struct server : public server_impl<WordT, SZT, Counter>
     return rpc_handle<Operate>(cxx::forward<Operate>(op), &location);
   }
 
+ private:
   template <typename Operate, typename Clear, bool have_precondition,
             typename T>
   HOSTRPC_ANNOTATE bool rpc_handle_impl(T active_threads, Operate&& op,
