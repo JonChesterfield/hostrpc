@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <string.h>
+#include <utility>
 
 #include "msgpack.h"
 #include "raiifile.hpp"

@@ -1,5 +1,5 @@
 #include "base_types.hpp"
-#include "catch.hpp"
+#include "thirdparty/catch.hpp"
 #include "detail/platform_detect.hpp"
 #include "pool_interface.hpp"
 

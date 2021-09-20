@@ -1,4 +1,4 @@
-#include "../cxa_atexit.hpp"
+#include "../../cxa_atexit.hpp"
 
 extern "C" __attribute__((visibility("default"))) int main(int argc,
                                                            char** argv);

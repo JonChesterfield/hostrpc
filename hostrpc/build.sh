@@ -58,6 +58,8 @@ LOADPREFIX='LD_LIBRARY_PATH='$RDIR'/lib '
 
 mkdir -p obj
 mkdir -p lib
+mkdir -p obj/tools
+mkdir -p thirdparty
 
 if [[ -d "$HOME/relacy" ]]
 then
@@ -66,8 +68,16 @@ else
     echo "Cloning relacy"
     git clone https://github.com/dvyukov/relacy.git $HOME/relacy
 fi
-    
-    
+
+MSGPACKINCLUDE="thirdparty/msgpack"
+if [[ -d $MSGPACKINCLUDE ]]
+then
+    echo "Using existing msgpack"
+else
+    echo "Cloning msgpack"
+    git clone https://github.com/jonchesterfield/msgpack.git $MSGPACKINCLUDE
+fi
+
 clang++ -W -Wno-deprecated-copy -Wno-missing-field-initializers -Wno-inline-new-delete -Wno-unused-parameter -std=c++14 -ffreestanding -I $HOME/relacy/ minimal.cpp -stdlib=libc++ -o minimal.out
 
 echo "Using toolchain at $RDIR, GCNGFX=$GCNGFX, PTXGFX=$PTXGFX"
@@ -126,6 +136,8 @@ AMDGPU="--target=amdgcn-amd-amdhsa -march=$GCNGFX -mcpu=$GCNGFX -Xclang -fconver
 PTX_VER="-Xclang -target-feature -Xclang +ptx63"
 NVGPU="--target=nvptx64-nvidia-cuda -march=$PTXGFX $PTX_VER -Xclang -fconvergent-functions"
 
+CUDALINK="--cuda-path=/usr/local/cuda  -L/usr/local/cuda/lib64/ -lcuda -lcudart_static -ldl -lrt -pthread"
+
 COMMONFLAGS="-Wall -Wextra -emit-llvm " # -DNDEBUG -Wno-type-limits "
 # cuda/openmp pass the host O flag through to ptxas, which crashes on debug info if > 0
 # there's a failure mode in trunk clang - 'remaining virtual register operands' - but it
@@ -156,7 +168,7 @@ CXX_X64_LD="$CXX"
 CXX_GCN_LD="$CXX $GCNFLAGS"
 
 if [ ! -f obj/catch.o ]; then
-    time $CXX -O3 catch.cpp -c -o obj/catch.o
+    time $CXX -O3 thirdparty/catch.cpp -c -o obj/catch.o
 fi
 
 # Code running on the host can link in host, hsa or cuda support library.
@@ -175,16 +187,16 @@ $LINK obj/allocator_host_libc.x64.bc obj/hostrpc_thread.x64.bc -o obj/host_suppo
 
 # hsa support library
 if (($have_amdgcn)); then
-$CXX_X64 ../impl/msgpack.cpp -c -o obj/msgpack.x64.bc
+$CXX_X64 $MSGPACKINCLUDE/msgpack.cpp -c -o obj/msgpack.x64.bc
 $CXX_X64 find_metadata.cpp -c -o obj/find_metadata.x64.bc
 $CXX_X64 -I$HSAINC allocator_hsa.cpp -c -o obj/allocator_hsa.x64.bc
 $LINK  obj/host_support.x64.bc obj/msgpack.x64.bc obj/find_metadata.x64.bc obj/allocator_hsa.x64.bc  obj/incprintf.x64.bc -o obj/hsa_support.x64.bc
 
-$CXX_X64 dump_kernels.cpp -I../impl -c -o obj/dump_kernels.x64.bc
-$CXX_X64_LD obj/msgpack.x64.bc obj/dump_kernels.x64.bc -lelf -o dump_kernels
+$CXX_X64 tools/dump_kernels.cpp -I../impl -I. -I$MSGPACKINCLUDE -c -o obj/tools/dump_kernels.x64.bc
+$CXX_X64_LD obj/msgpack.x64.bc obj/tools/dump_kernels.x64.bc -lelf -o ../dump_kernels.exe
 
-$CXX_X64 -I$HSAINC query_system.cpp -c -o obj/query_system.x64.bc
-$CXX_X64_LD obj/query_system.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o query_system
+$CXX_X64 -I$HSAINC tools/query_system.cpp -c -o obj/tools/query_system.x64.bc
+$CXX_X64_LD obj/tools/query_system.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o ../query_system.exe
 fi
 
 # cuda support library
@@ -269,29 +281,30 @@ fi
 
 # Register amdhsa elf magic with kernel
 # One off
-# cd /proc/sys/fs/binfmt_misc/ && echo ':amdgcn:M:0:\x7f\x45\x4c\x46\x02\x01\x01\x40\x01\x00\x00\x00\x00\x00\x00\x00::/home/amd/hostrpc/amdgcn_loader.exe:' > register
-# cd /proc/sys/fs/binfmt_misc/ && echo ':amdgcn:M:0:\x7f\x45\x4c\x46\x02\x01\x01\x40\x02\x00\x00\x00\x00\x00\x00\x00::/home/amd/hostrpc/amdgcn_loader.exe:' > register
+# cd /proc/sys/fs/binfmt_misc/ && echo ':amdgcn:M:0:\x7f\x45\x4c\x46\x02\x01\x01\x40\x01\x00\x00\x00\x00\x00\x00\x00::$HOME/hostrpc/amdgcn_loader.exe:' > register
+# cd /proc/sys/fs/binfmt_misc/ && echo ':amdgcn:M:0:\x7f\x45\x4c\x46\x02\x01\x01\x40\x02\x00\x00\x00\x00\x00\x00\x00::$HOME/hostrpc/amdgcn_loader.exe:' > register
 
 # Persistent
-# echo ':amdgcn:M:0:\x7f\x45\x4c\x46\x02\x01\x01\x40\x01\x00\x00\x00\x00\x00\x00\x00::/home/amd/hostrpc/amdgcn_loader.exe:' >> /etc/binfmt.d/amdgcn.conf
-# echo ':amdgcn:M:0:\x7f\x45\x4c\x46\x02\x01\x01\x40\x02\x00\x00\x00\x00\x00\x00\x00::/home/amd/hostrpc/amdgcn_loader.exe:' >> /etc/binfmt.d/amdgcn.conf
+# echo ':amdgcn:M:0:\x7f\x45\x4c\x46\x02\x01\x01\x40\x01\x00\x00\x00\x00\x00\x00\x00::$HOME/hostrpc/amdgcn_loader.exe:' >> /etc/binfmt.d/amdgcn.conf
+# echo ':amdgcn:M:0:\x7f\x45\x4c\x46\x02\x01\x01\x40\x02\x00\x00\x00\x00\x00\x00\x00::$HOME/hostrpc/amdgcn_loader.exe:' >> /etc/binfmt.d/amdgcn.conf
 
 if (($have_amdgcn)); then
-  $CXXCL_GCN loader/amdgcn_loader_entry.cl -c -o loader/amdgcn_loader_entry.gcn.bc
-  $CXX_GCN loader/opencl_loader_cast.cpp -c -o loader/opencl_loader_cast.gcn.bc
-  $LINK loader/amdgcn_loader_entry.gcn.bc loader/opencl_loader_cast.gcn.bc | $OPT -O2 -o amdgcn_loader_device.gcn.bc
+  $CXXCL_GCN tools/loader/amdgcn_loader_entry.cl -c -o tools/loader/amdgcn_loader_entry.gcn.bc
+  $CXX_GCN tools/loader/opencl_loader_cast.cpp -c -o tools/loader/opencl_loader_cast.gcn.bc
+  $LINK tools/loader/amdgcn_loader_entry.gcn.bc tools/loader/opencl_loader_cast.gcn.bc | $OPT -O2 -o amdgcn_loader_device.gcn.bc
 
-  $CXX_X64 -I$HSAINC amdgcn_loader.cpp -c -o loader/amdgcn_loader.x64.bc
-  $CXX_X64_LD $LDFLAGS loader/amdgcn_loader.x64.bc obj/hsa_support.x64.bc obj/hostrpc_printf_enable.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o ../amdgcn_loader.exe
+  $CXX_X64 -I$HSAINC -I. tools/amdgcn_loader.cpp -c -o tools/loader/amdgcn_loader.x64.bc
+  $CXX_X64_LD $LDFLAGS tools/loader/amdgcn_loader.x64.bc obj/hsa_support.x64.bc obj/hostrpc_printf_enable.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o ../amdgcn_loader.exe
 fi
 
 if (($have_nvptx)); then
  # presently using the cuda entry point but may want the opencl one later
- $CXX_CUDA -std=c++14 --cuda-device-only loader/nvptx_loader_entry.cu -c -emit-llvm -o loader/nvptx_loader_entry.cu.ptx.bc   
- $CXXCL_PTX loader/nvptx_loader_entry.cl -c -o loader/nvptx_loader_entry.cl.ptx.bc
- $CXX_PTX loader/opencl_loader_cast.cpp -c -o loader/opencl_loader_cast.ptx.bc
+ $CXX_CUDA -std=c++14 --cuda-device-only tools/loader/nvptx_loader_entry.cu -c -emit-llvm -o tools/loader/nvptx_loader_entry.cu.ptx.bc   
+ $CXXCL_PTX tools/loader/nvptx_loader_entry.cl -c -o tools/loader/nvptx_loader_entry.cl.ptx.bc
+ $CXX_PTX tools/loader/opencl_loader_cast.cpp -c -o tools/loader/opencl_loader_cast.ptx.bc
 
- $CLANGXX nvptx_loader.cpp obj/cuda_support.x64.bc --cuda-path=/usr/local/cuda -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -lcudart -pthread -o ../nvptx_loader.exe
+ $CXX_X64 -I/usr/local/cuda/include -I. tools/nvptx_loader.cpp -c -o tools/loader/nvptx_loader.x64.bc
+ $CXX_X64_LD tools/loader/nvptx_loader.x64.bc obj/cuda_support.x64.bc $CUDALINK -o ../nvptx_loader.exe
 fi
 
 if (($have_amdgcn)); then
@@ -470,9 +483,9 @@ fi
 
 if (($have_nvptx)); then
     $LINK obj/openmp_support.x64.bc obj/cuda_support.x64.bc obj/syscall.x64.bc -o demo_bitcode_ptx.omp.bc
-    
+
     $CLANGXX -I$HSAINC -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=$PTXGFX -I/usr/local/cuda/include -DDEMO_NVPTX=1 demo_openmp.cpp \
-             -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode_ptx.omp.bc -Xclang -mlink-builtin-bitcode -Xclang detail/platform.ptx.bc -o demo_openmp_ptx -L/usr/local/cuda/lib64/ -lcuda -lcudart_static -ldl -lrt -pthread -Wl,-rpath=$RDIR/lib
+             -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode_ptx.omp.bc -Xclang -mlink-builtin-bitcode -Xclang detail/platform.ptx.bc -o demo_openmp_ptx $CUDALINK -Wl,-rpath=$RDIR/lib
 fi
 
 
@@ -487,9 +500,9 @@ fi
 
 if (($have_nvptx)); then
 
-$LINK nvptx_main.ptx.bc loader/nvptx_loader_entry.cu.ptx.bc detail/platform.ptx.bc -o executable_device.ptx.bc
+$LINK nvptx_main.ptx.bc tools/loader/nvptx_loader_entry.cu.ptx.bc detail/platform.ptx.bc -o executable_device.ptx.bc
 
-$LINK nvptx_main.ptx.bc loader/nvptx_loader_entry.cu.ptx.bc detail/platform.ptx.bc -o executable_device.ptx.bc
+$LINK nvptx_main.ptx.bc tools/loader/nvptx_loader_entry.cu.ptx.bc detail/platform.ptx.bc -o executable_device.ptx.bc
 
 
 $CLANGXX --target=nvptx64-nvidia-cuda -march=$PTXGFX $PTX_VER executable_device.ptx.bc -S -o executable_device.ptx.s

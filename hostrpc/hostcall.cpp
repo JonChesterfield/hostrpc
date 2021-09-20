@@ -19,7 +19,6 @@
 
 // trying to get something running on gfx8
 #if HOSTRPC_HOST
-#include "../impl/data.h"
 #include "hsa.hpp"
 #include <array>
 #include <cassert>

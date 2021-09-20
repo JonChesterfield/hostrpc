@@ -1,4 +1,4 @@
-#include "../catch.hpp"
+#include "../thirdparty/catch.hpp"
 #include <cstdio>
 #include <random>
 

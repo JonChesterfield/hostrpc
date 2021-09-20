@@ -6,10 +6,8 @@
 
 #include <unistd.h>
 
-#include <elf.h>
 #include <libelf.h>
 
-#include "hostcall.hpp"
 #include "hostcall_hsa.hpp"
 #include "raiifile.hpp"
 

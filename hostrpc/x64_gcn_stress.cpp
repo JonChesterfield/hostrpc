@@ -239,7 +239,7 @@ uint64_t gpu_call(T active_threads,
 
 #else
 
-#include "catch.hpp"
+#include "thirdparty/catch.hpp"
 #include "hsa.hpp"
 #include <cstring>
 #include <thread>

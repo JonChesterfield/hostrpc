@@ -27,7 +27,7 @@ hostrpc::threads::ty<16> instance;
 
 #if HOSTRPC_HOST
 
-#include "catch.hpp"
+#include "thirdparty/catch.hpp"
 #include <pthread.h>
 
 static int pthread_create_detached(void* (*start_routine)(void*), void* arg)

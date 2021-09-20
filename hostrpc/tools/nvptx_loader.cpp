@@ -7,7 +7,6 @@
 #include <memory>
 #include <stdio.h>
 
-#include "hostcall.hpp"
 #include "x64_ptx_type.hpp"
 
 #define DEBUGP(prefix, ...)             \
@@ -43,18 +42,6 @@ static int DebugLevel = 1;
         }                                                                      \
     }                                                                          \
   while (false)
-
-namespace
-{
-bool checkResult(CUresult Err, const char *ErrMsg)
-{
-  if (Err == CUDA_SUCCESS) return true;
-
-  DP("%s", ErrMsg);
-  CUDA_ERR_STRING(Err);
-  return false;
-}
-}  // namespace
 
 struct error_tracker
 {

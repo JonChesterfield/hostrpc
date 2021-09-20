@@ -20,10 +20,40 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "../impl/data.h"  // TODO: Drop this
-#include "../impl/msgpack.h"
+#include "thirdparty/msgpack/msgpack.h"
 #include "find_metadata.hpp"
 #include "hsa_packet.hpp"
+
+
+// derived from llvm openmp runtime
+namespace core {
+static hsa_status_t invoke_hsa_copy(hsa_signal_t sig, void *dest,
+                                    const void *src, size_t size,
+                                    hsa_agent_t agent) {
+  const hsa_signal_value_t init = 1;
+  const hsa_signal_value_t success = 0;
+  hsa_signal_store_screlease(sig, init);
+
+  hsa_status_t err =
+      hsa_amd_memory_async_copy(dest, agent, src, agent, size, 0, NULL, sig);
+  if (err != HSA_STATUS_SUCCESS) {
+    return err;
+  }
+
+  // async_copy reports success by decrementing and failure by setting to < 0
+  hsa_signal_value_t got = init;
+  while (got == init) {
+    got = hsa_signal_wait_scacquire(sig, HSA_SIGNAL_CONDITION_NE, init,
+                                    UINT64_MAX, HSA_WAIT_STATE_BLOCKED);
+  }
+
+  if (got != success) {
+    return HSA_STATUS_ERROR;
+  }
+
+  return err;
+}
+} // namespace core
 
 namespace hsa
 {

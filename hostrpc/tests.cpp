@@ -1,4 +1,4 @@
-#include "catch.hpp"
+#include "thirdparty/catch.hpp"
 
 #include "detail/client_impl.hpp"
 #include "detail/server_impl.hpp"

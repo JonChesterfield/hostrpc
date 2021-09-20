@@ -187,7 +187,7 @@ extern "C" void __device_persistent_kernel_cast(
 #endif
 
 #if HOSTRPC_HOST
-#include "catch.hpp"
+#include "thirdparty/catch.hpp"
 #include "incbin.h"
 #include "launch.hpp"
 
