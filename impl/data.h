@@ -7,11 +7,7 @@
 #include "hsa_ext_amd.h"
 
 namespace core {
-
-
-// TODO: Drop this
-#define ATMI_WAIT_STATE HSA_WAIT_STATE_BLOCKED
-  
+ 
 inline hsa_status_t invoke_hsa_copy(hsa_signal_t sig, void *dest,
                                     const void *src, size_t size,
                                     hsa_agent_t agent) {
@@ -29,7 +25,7 @@ inline hsa_status_t invoke_hsa_copy(hsa_signal_t sig, void *dest,
   hsa_signal_value_t got = init;
   while (got == init) {
     got = hsa_signal_wait_scacquire(sig, HSA_SIGNAL_CONDITION_NE, init,
-                                    UINT64_MAX, ATMI_WAIT_STATE);
+                                    UINT64_MAX, HSA_WAIT_STATE_BLOCKED);
   }
 
   if (got != success) {

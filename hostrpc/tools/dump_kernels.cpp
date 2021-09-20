@@ -1,4 +1,4 @@
-#include <gelf.h>
+#include <libelf.h>
 
 #include <assert.h>
 #include <string.h>
@@ -54,13 +54,11 @@ static std::pair<unsigned char *, unsigned char *> find_metadata(void *binary,
       return failure;
     }
 
+  Elf64_Phdr *pHdrs = elf64_getphdr(e);
   for (size_t i = 0; i < numpHdrs; ++i)
     {
-      GElf_Phdr pHdr;
-      if (gelf_getphdr(e, i, &pHdr) != &pHdr)
-        {
-          continue;
-        }
+      Elf64_Phdr pHdr = pHdrs[i];
+
       // Look for the runtime metadata note
       if (pHdr.p_type == PT_NOTE && pHdr.p_align >= sizeof(int))
         {
