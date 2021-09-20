@@ -16,16 +16,22 @@
 // creates implementations for host functions that use the hsa api to call
 // those kernels
 
-#if HOSTRPC_AMDGCN && defined(__OPENCL_C_VERSION__)
 #ifdef __cplusplus
-#define POOL_INTERFACE_WRAP_VOID_IN_OPENCL_KERNEL(NAME) \
-  extern "C" void NAME(void);                           \
-  extern "C" kernel void __device_##NAME(void) { NAME(); }
+#define POOL_INTERFACE_EXTERN_C() extern "C"
 #else
-#define POOL_INTERFACE_WRAP_VOID_IN_OPENCL_KERNEL(NAME) \
-  void NAME(void);                                      \
-  kernel void __device_##NAME(void) { NAME(); }
+#define POOL_INTERFACE_EXTERN_C()
 #endif
+
+#if HOSTRPC_HOST
+#define POOL_INTERFACE_GPU_WRAPPERS(SYMBOL)
+#endif
+
+#if HOSTRPC_AMDGCN
+
+#if defined(__OPENCL_C_VERSION__)
+#define POOL_INTERFACE_WRAP_VOID_IN_OPENCL_KERNEL(NAME) \
+  POOL_INTERFACE_EXTERN_C() void NAME(void);            \
+  POOL_INTERFACE_EXTERN_C() kernel void __device_##NAME(void) { NAME(); }
 #else
 #define POOL_INTERFACE_WRAP_VOID_IN_OPENCL_KERNEL(NAME)
 #endif
@@ -40,7 +46,10 @@
   POOL_INTERFACE_WRAP_VOID_IN_OPENCL_KERNEL(pool_interface_##SYMBOL##_teardown)
 
 // extern C functions that call into the type with run() implemented
-#if HOSTRPC_AMDGCN && !defined(__OPENCL_C_VERSION__)
+
+#if defined(__OPENCL_C_VERSION__)
+#define POOL_INTERFACE_GPU_C_WRAPPERS(SYMBOL)
+#else
 #define POOL_INTERFACE_GPU_C_WRAPPERS(SYMBOL)                                \
   extern "C"                                                                 \
   {                                                                          \
@@ -54,22 +63,22 @@
       SYMBOL::expose_loop_for_bootstrap_implementation();                    \
     }                                                                        \
     void pool_interface_##SYMBOL##_teardown(void) { SYMBOL::teardown(); }    \
-                                                                             \
     void pool_interface_##SYMBOL##_bootstrap_entry(void)                     \
     {                                                                        \
-      __attribute__((                                                        \
-          visibility("default"))) extern hsa_packet::kernel_descriptor       \
-          pool_interface_##SYMBOL##_bootstrap_kernel_target_desc asm(        \
-              "__device_pool_interface_" #SYMBOL                             \
-              "_bootstrap_kernel_target.kd");                                \
       SYMBOL::bootstrap(                                                     \
-          pool_interface::getlo(pool_interface::load_from_reserved_addr()),  \
-          (const unsigned char                                               \
-               *)&pool_interface_##SYMBOL##_bootstrap_kernel_target_desc);   \
+          pool_interface::getlo(pool_interface::load_from_reserved_addr())); \
     }                                                                        \
   }
-#else
-#define POOL_INTERFACE_GPU_C_WRAPPERS(SYMBOL)
+#endif
+
+#define POOL_INTERFACE_GPU_WRAPPERS(SYMBOL)  \
+  POOL_INTERFACE_GPU_OPENCL_WRAPPERS(SYMBOL) \
+  POOL_INTERFACE_GPU_C_WRAPPERS(SYMBOL)
+
+#endif
+
+#ifndef POOL_INTERFACE_GPU_WRAPPERS
+#error "Missing defn of POOL_INTERFACE_GPU_WRAPPERS"
 #endif
 
 #endif

@@ -5,6 +5,7 @@
 
 #if defined(__AMDGCN__)
 
+#include <stddef.h>
 #include <stdint.h>
 
 inline void enqueue_dispatch(const unsigned char *src);

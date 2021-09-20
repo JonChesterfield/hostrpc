@@ -12,18 +12,77 @@
 // as opencl (todo: maybe not for nvptx)
 
 #define POOL_INTERFACE_BOILERPLATE_HOST(SYMBOL, MAXIMUM) \
-  POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_HOST(SYMBOL, MAXIMUM);
+  POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_HOST(SYMBOL, MAXIMUM)
 
-#define POOL_INTERFACE_BOILERPLATE_AMDGPU(SYMBOL, MAXIMUM)             \
-  POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM); \
-  POOL_INTERFACE_GPU_OPENCL_WRAPPERS(SYMBOL);                          \
-  POOL_INTERFACE_GPU_C_WRAPPERS(SYMBOL);
+#define POOL_INTERFACE_BOILERPLATE_AMDGPU(SYMBOL, MAXIMUM)            \
+  POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM) \
+  POOL_INTERFACE_GPU_WRAPPERS(SYMBOL)
+
+#if !defined(__OPENCL_C_VERSION__)
+#include "hsa_packet.hpp"
+#include <stdint.h>
+
+namespace pool_interface
+{
+template <typename Derived, uint32_t Max, typename Via>
+struct api : private Via
+{
+ private:
+  friend Derived;
+  friend Via;
+  using Base = Via;
+  static Base* instance()
+  {
+    // will not fare well on gcn if Derived needs a lock around construction
+    static Derived e;
+    return static_cast<Base*>(&e);
+  }
+
+ public:
+  static uint32_t get_current_uuid() { return instance()->get_current_uuid(); }
+  static void set_requested(uint32_t x) { instance()->set_requested(x); }
+  static uint32_t requested() { return instance()->requested(); }
+  static uint32_t alive() { return instance()->alive(); }
+  static void spawn() { return instance()->spawn(); }
+  static uint32_t run(uint32_t x) { instance()->run(x); }
+  static void bootstrap(uint32_t req) { return instance()->bootstrap(req); }
+  static void teardown() { return instance()->teardown(); }
+};
+
+#if HOSTRPC_HOST
+namespace impl
+{
+template <typename Derived, uint32_t Max>
+struct via_pthreads;
+}
+
+template <typename Derived, uint32_t Max>
+using pthread_pool = api<Derived, Max, impl::via_pthreads<Derived, Max>>;
+
+#endif
+
+#if HOSTRPC_AMDGCN
+
+namespace impl
+{
+template <typename Derived, uint32_t Max,
+          hsa_packet::kernel_descriptor* BootstrapKernelDesc>
+struct via_hsa;
+}
+
+template <typename Derived, uint32_t Max,
+          hsa_packet::kernel_descriptor* BootstrapKernelDesc>
+using hsa_pool =
+    api<Derived, Max, impl::via_hsa<Derived, Max, BootstrapKernelDesc>>;
+
+#endif
+}  // namespace pool_interface
+#endif  // __OPENCL_C_VERSION__)
 
 #include "pool_interface_macros.hpp"
 
 // The host thread pool has run and the initialize / finalize etc both
 // defined as functions that can be called from the host
-
 #if defined(__OPENCL_C_VERSION__)
 #define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_HOST(SYMBOL, MAXIMUM)
 #else
@@ -41,35 +100,42 @@
     uint32_t run(uint32_t);                                               \
     static int initialize() { return 0; }                                 \
     static int finalize() { return 0; }                                   \
-    static void bootstrap_entry(uint32_t N) { Base::bootstrap(N, 0); };   \
+    static void bootstrap_entry(uint32_t N) { Base::bootstrap(N); };      \
   };
-#endif
-#endif
+#endif  // HOSTRPC_HOST
+#endif  // __OPENCL_C_VERSION__
 
 // The amdgpu thread pool currently has run, todo is adding the others
 // The symbol defined on the host contains all methods except for run
 #if defined(__OPENCL_C_VERSION__)
 #define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM)
 #else
+
 #if HOSTRPC_AMDGCN
-#define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM) \
-  extern "C" void pool_interface_##SYMBOL##_bootstrap_kernel_target(void);  \
-  struct SYMBOL : public pool_interface::hsa_pool<SYMBOL, MAXIMUM>          \
-  {                                                                         \
-   private:                                                                 \
-    using Base = pool_interface::hsa_pool<SYMBOL, MAXIMUM>;                 \
-                                                                            \
-   public:                                                                  \
-    uint32_t run(uint32_t);                                                 \
-                                                                            \
-   private:                                                                 \
-    friend void pool_interface_##SYMBOL##_bootstrap_kernel_target();        \
-    static void expose_loop_for_bootstrap_implementation()                  \
-    {                                                                       \
-      instance()->expose_loop_for_bootstrap_implementation();               \
-    }                                                                       \
+#define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM)    \
+  /* Declare bootstrap kernel machinery */                                     \
+  extern "C" void pool_interface_##SYMBOL##_bootstrap_kernel_target(void);     \
+  extern "C" __attribute__((visibility("default")))                            \
+  hsa_packet::kernel_descriptor                                                \
+      pool_interface_##SYMBOL##_bootstrap_kernel_target_desc asm(              \
+          "__device_pool_interface_" #SYMBOL "_bootstrap_kernel_target.kd");   \
+                                                                               \
+  struct SYMBOL : public pool_interface::hsa_pool<                             \
+                      SYMBOL, MAXIMUM,                                         \
+                      &pool_interface_##SYMBOL##_bootstrap_kernel_target_desc> \
+  {                                                                            \
+   public:                                                                     \
+    uint32_t run(uint32_t);                                                    \
+                                                                               \
+   private:                                                                    \
+    friend void pool_interface_##SYMBOL##_bootstrap_kernel_target();           \
+    static void expose_loop_for_bootstrap_implementation()                     \
+    {                                                                          \
+      instance()->expose_loop_for_bootstrap_implementation();                  \
+    }                                                                          \
   };
-#endif
+#endif  // HOSTRPC_AMDGCN
+
 #if HOSTRPC_HOST
 #define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM) \
   struct SYMBOL                                                             \
@@ -157,8 +223,8 @@
     invoke_teardown(teardown_, set_requested_, signal_, queue_);            \
   }
 
-#endif
-#endif
+#endif  // HOSTRPC_HOST
+#endif  // __OPENCL_C_VERSION__
 
 #if !defined(__OPENCL_C_VERSION__)
 // none of this works under opencl at present
@@ -186,6 +252,7 @@
 
 namespace pool_interface
 {
+
 constexpr inline uint64_t pack(uint32_t lo, uint32_t hi)
 {
   return static_cast<uint64_t>(lo) | (static_cast<uint64_t>(hi) << 32u);
@@ -226,9 +293,6 @@ enum
       offset_reserved2,  // want an 8 byte field that survives respawn
 };
 
-template <typename Derived, uint32_t Max, typename Via>
-struct api;
-
 template <typename T>
 static inline bool print_enabled(T active_threads)
 {
@@ -247,7 +311,7 @@ struct threads_base
   // bool respawn_self(uint32_t /* current state */);
   // int spawn_with_uuid(uint32_t uuid);
   // uint32_t run(uint32_t); // uint32_t threaded through the calls
-  // void bootstrap(uint32_t req, const unsigned char* descriptor);
+  // void bootstrap(uint32_t req);
   // void teardown();
   //
   Implementation& implementation()
@@ -403,6 +467,8 @@ struct threads_base
 };
 
 #if HOSTRPC_HOST
+namespace impl
+{
 template <typename Derived, uint32_t Max>
 struct via_pthreads : public threads_base<Max, via_pthreads<Derived, Max>>
 {
@@ -425,7 +491,7 @@ struct via_pthreads : public threads_base<Max, via_pthreads<Derived, Max>>
 
   uint32_t run(uint32_t x) { return static_cast<Derived*>(this)->run(x); }
 
-  void bootstrap(uint32_t req, const unsigned char*)
+  void bootstrap(uint32_t req)
   {
     auto active_threads = platform::active_threads();
     if (base::bootstrap_work_already_done(active_threads, req))
@@ -493,9 +559,7 @@ struct via_pthreads : public threads_base<Max, via_pthreads<Derived, Max>>
 };
 template <typename Derived, uint32_t Max>
 thread_local uint32_t via_pthreads<Derived, Max>::current_uuid;
-
-template <typename Derived, uint32_t Max>
-using pthread_pool = api<Derived, Max, via_pthreads<Derived, Max>>;
+}  // namespace impl
 
 #endif
 
@@ -514,11 +578,15 @@ static uint64_t load_from_reserved_addr()
   return tmp;
 }
 
-template <typename Derived, uint32_t Max>
-struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
+namespace impl
+{
+template <typename Derived, uint32_t Max,
+          hsa_packet::kernel_descriptor* BootstrapKernelDesc>
+struct via_hsa
+    : public threads_base<Max, via_hsa<Derived, Max, BootstrapKernelDesc>>
 {
  public:
-  using base = threads_base<Max, via_hsa<Derived, Max>>;
+  using base = threads_base<Max, via_hsa<Derived, Max, BootstrapKernelDesc>>;
   friend base;
 
   uint32_t get_current_uuid() { return getlo(load_from_reserved_addr()); }
@@ -542,8 +610,9 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
 
   uint32_t run(uint32_t x) { return static_cast<Derived*>(this)->run(x); }
 
-  void bootstrap(uint32_t req, const unsigned char* descriptor)
+  void bootstrap(uint32_t req)
   {
+    const unsigned char* descriptor = (const unsigned char*)BootstrapKernelDesc;
     auto active_threads = platform::active_threads();
     if (base::bootstrap_work_already_done(active_threads, req))
       {
@@ -698,46 +767,9 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
     enqueue_dispatch(func, (const unsigned char*)p);
   }
 };
-
-template <typename Derived, uint32_t Max>
-using hsa_pool = api<Derived, Max, via_hsa<Derived, Max>>;
+}  // namespace impl
 
 #endif
-
-template <typename Derived, uint32_t Max, typename Via>
-struct api : private Via
-{
- private:
-  friend Derived;
-  friend Via;
-  using Base = Via;
-  static Base* instance()
-  {
-    // will not fare well on gcn if Derived needs a lock around construction
-    static Derived e;
-    return static_cast<Base*>(&e);
-  }
-
- public:
-  static uint32_t get_current_uuid() { return instance()->get_current_uuid(); }
-
-  static void set_requested(uint32_t x) { instance()->set_requested(x); }
-
-  static uint32_t requested() { return instance()->requested(); }
-
-  static uint32_t alive() { return instance()->alive(); }
-
-  static void spawn() { return instance()->spawn(); }
-
-  static uint32_t run(uint32_t x) { instance()->run(x); }
-
-  static void bootstrap(uint32_t req, const unsigned char* d)
-  {
-    return instance()->bootstrap(req, d);
-  }
-
-  static void teardown() { return instance()->teardown(); }
-};
 
 }  // namespace pool_interface
 
