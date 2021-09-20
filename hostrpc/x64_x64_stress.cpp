@@ -1,7 +1,7 @@
 #include "base_types.hpp"
-#include "thirdparty/catch.hpp"
 #include "detail/platform_detect.hpp"
 #include "pool_interface.hpp"
+#include "thirdparty/catch.hpp"
 
 #include <array>
 #include <cstring>

@@ -1,4 +1,3 @@
-#include "detail/platform_detect.hpp"
 #include "pool_interface.hpp"
 
 POOL_INTERFACE_BOILERPLATE_HOST(example, 32);
@@ -21,6 +20,9 @@ int main()
   example::bootstrap_entry(8);
 
   // leave them running for a brief while
+  usleep(10000);
+
+  example::set_requested(4);
   usleep(10000);
 
   fprintf(stderr, "Start to wind down\n");

@@ -187,9 +187,9 @@ extern "C" void __device_persistent_kernel_cast(
 #endif
 
 #if HOSTRPC_HOST
-#include "thirdparty/catch.hpp"
 #include "incbin.h"
 #include "launch.hpp"
+#include "thirdparty/catch.hpp"
 
 INCBIN(persistent_kernel_so, "persistent_kernel.gcn.so");
 

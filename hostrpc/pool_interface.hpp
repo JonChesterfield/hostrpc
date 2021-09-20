@@ -3,24 +3,71 @@
 
 #include "detail/platform_detect.hpp"
 
-#if !defined(__OPENCL_C_VERSION__)
-#if HOSTRPC_AMDGCN
-#undef printf
-#include "hostrpc_printf.h"
-#define printf(...) __hostrpc_printf(__VA_ARGS__)
-#endif
-#endif
+// Instantiate one of the boilerplate macros with a symbol and a compile time
+// integer for the maximum number of threads that can be managed by the pool.
+// This will define a class named SYMBOL. Then define:
+// uint32_t SYMBOL::run(uint32_t state);
+// on the corresponding architecture
+// Compile the code containing the boilerplate macro as each target and
+// as opencl (todo: maybe not for nvptx)
+
+#define POOL_INTERFACE_BOILERPLATE_HOST(SYMBOL, MAXIMUM) \
+  POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_HOST(SYMBOL, MAXIMUM);
+
+#define POOL_INTERFACE_BOILERPLATE_AMDGPU(SYMBOL, MAXIMUM)             \
+  POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM); \
+  POOL_INTERFACE_GPU_OPENCL_WRAPPERS(SYMBOL);                          \
+  POOL_INTERFACE_GPU_C_WRAPPERS(SYMBOL);
 
 #include "pool_interface_macros.hpp"
 
+// The host thread pool has run and the initialize / finalize etc both
+// defined as functions that can be called from the host
+
+#if defined(__OPENCL_C_VERSION__)
+#define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_HOST(SYMBOL, MAXIMUM)
+#else
+#if HOSTRPC_AMDGCN
+#define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_HOST(SYMBOL, MAXIMUM)
+#endif
+#if HOSTRPC_HOST
+#define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_HOST(SYMBOL, MAXIMUM) \
+  struct SYMBOL : public pool_interface::pthread_pool<SYMBOL, MAXIMUM>    \
+  {                                                                       \
+   private:                                                               \
+    using Base = pool_interface::pthread_pool<SYMBOL, MAXIMUM>;           \
+                                                                          \
+   public:                                                                \
+    uint32_t run(uint32_t);                                               \
+    static int initialize() { return 0; }                                 \
+    static int finalize() { return 0; }                                   \
+    static void bootstrap_entry(uint32_t N) { Base::bootstrap(N, 0); };   \
+  };
+#endif
+#endif
+
+// The amdgpu thread pool currently has run, todo is adding the others
+// The symbol defined on the host contains all methods except for run
 #if defined(__OPENCL_C_VERSION__)
 #define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM)
 #else
 #if HOSTRPC_AMDGCN
 #define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM) \
+  extern "C" void pool_interface_##SYMBOL##_bootstrap_kernel_target(void);  \
   struct SYMBOL : public pool_interface::hsa_pool<SYMBOL, MAXIMUM>          \
   {                                                                         \
+   private:                                                                 \
+    using Base = pool_interface::hsa_pool<SYMBOL, MAXIMUM>;                 \
+                                                                            \
+   public:                                                                  \
     uint32_t run(uint32_t);                                                 \
+                                                                            \
+   private:                                                                 \
+    friend void pool_interface_##SYMBOL##_bootstrap_kernel_target();        \
+    static void expose_loop_for_bootstrap_implementation()                  \
+    {                                                                       \
+      instance()->expose_loop_for_bootstrap_implementation();               \
+    }                                                                       \
   };
 #endif
 #if HOSTRPC_HOST
@@ -29,8 +76,8 @@
   {                                                                         \
     static int initialize(hsa::executable& ex, hsa_queue_t* queue);         \
     static int finalize();                                                  \
-    static void bootstrap_entry(uint32_t N);                                \
-    static void set_requested(uint32_t N);                                  \
+    static void bootstrap_entry(uint32_t requested);                        \
+    static void set_requested(uint32_t requested);                          \
     static void teardown();                                                 \
                                                                             \
    private:                                                                 \
@@ -44,46 +91,87 @@
   gpu_kernel_info SYMBOL::bootstrap_entry_;                                 \
   gpu_kernel_info SYMBOL::teardown_;                                        \
   hsa_signal_t SYMBOL::signal_ = {0};                                       \
-  hsa_queue_t* SYMBOL::queue_ = nullptr;
+  hsa_queue_t* SYMBOL::queue_ = nullptr;                                    \
+  int SYMBOL::initialize(hsa::executable& ex, hsa_queue_t* queue)           \
+  {                                                                         \
+    struct                                                                  \
+    {                                                                       \
+      const char* name;                                                     \
+      gpu_kernel_info* field;                                               \
+    } const data[] = {                                                      \
+        {                                                                   \
+            "__device_pool_interface_" #SYMBOL "_set_requested.kd",         \
+            &set_requested_,                                                \
+        },                                                                  \
+        {                                                                   \
+            "__device_pool_interface_" #SYMBOL "_bootstrap_entry.kd",       \
+            &bootstrap_entry_,                                              \
+        },                                                                  \
+        {                                                                   \
+            "__device_pool_interface_" #SYMBOL "_teardown.kd",              \
+            &teardown_,                                                     \
+        },                                                                  \
+    };                                                                      \
+    int rc = 0;                                                             \
+    for (unsigned i = 0; i < sizeof(data) / sizeof(data[0]); i++)           \
+      {                                                                     \
+        rc += initialize_kernel_info(ex, data[i].name, data[i].field);      \
+      }                                                                     \
+                                                                            \
+    if (rc != 0)                                                            \
+      {                                                                     \
+        return 1;                                                           \
+      }                                                                     \
+                                                                            \
+    queue_ = queue;                                                         \
+    if (hsa_signal_create(1, 0, NULL, &signal_) != HSA_STATUS_SUCCESS)      \
+      {                                                                     \
+        return 1;                                                           \
+      }                                                                     \
+    return 0;                                                               \
+  }                                                                         \
+  int SYMBOL::finalize()                                                    \
+  {                                                                         \
+    if (signal_.handle)                                                     \
+      {                                                                     \
+        hsa_signal_destroy(signal_);                                        \
+      }                                                                     \
+    return 0;                                                               \
+  }                                                                         \
+  void SYMBOL::bootstrap_entry(uint32_t requested)                          \
+  {                                                                         \
+    gpu_kernel_info& req = bootstrap_entry_;                                \
+    hsa::launch_kernel(req.symbol_address, req.private_segment_fixed_size,  \
+                       req.group_segment_fixed_size, queue_, requested,     \
+                       requested, {0});                                     \
+  }                                                                         \
+  void SYMBOL::set_requested(uint32_t requested)                            \
+  {                                                                         \
+    gpu_kernel_info& req = set_requested_;                                  \
+    hsa::launch_kernel(req.symbol_address, req.private_segment_fixed_size,  \
+                       req.group_segment_fixed_size, queue_, requested,     \
+                       requested, {0});                                     \
+  }                                                                         \
+  void SYMBOL::teardown()                                                   \
+  {                                                                         \
+    invoke_teardown(teardown_, set_requested_, signal_, queue_);            \
+  }
 
 #endif
 #endif
-
-#if defined(__OPENCL_C_VERSION__)
-#define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_HOST(SYMBOL, MAXIMUM)
-#else
-#if HOSTRPC_AMDGCN
-#define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_HOST(SYMBOL, MAXIMUM)
-#endif
-#if HOSTRPC_HOST
-#define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_HOST(SYMBOL, MAXIMUM) \
-  struct SYMBOL : public pool_interface::pthread_pool<SYMBOL, MAXIMUM>    \
-  {                                                                       \
-    using Base = pool_interface::pthread_pool<SYMBOL, MAXIMUM>;           \
-    uint32_t run(uint32_t);                                               \
-    static int initialize() { return 0; }                                 \
-    static int finalize() { return 0; }                                   \
-    static void bootstrap_entry(uint32_t N) { Base::bootstrap(N, 0); };   \
-    static void set_requested(uint32_t N) { Base::set_requested(N); }     \
-    static void teardown() { Base::teardown(); };                         \
-  };
-#endif
-#endif
-
-#define POOL_INTERFACE_BOILERPLATE_AMDGPU(SYMBOL, MAXIMUM)             \
-  POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM); \
-  POOL_INTERFACE_STATICS_VIA_HSA(SYMBOL);                              \
-  POOL_INTERFACE_GPU_OPENCL_WRAPPERS(SYMBOL);                          \
-  POOL_INTERFACE_GPU_C_WRAPPERS(SYMBOL);
-
-#define POOL_INTERFACE_BOILERPLATE_HOST(SYMBOL, MAXIMUM)             \
-  POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_HOST(SYMBOL, MAXIMUM); \
-  POOL_INTERFACE_STATICS_VIA_PTHREAD(SYMBOL);
 
 #if !defined(__OPENCL_C_VERSION__)
 // none of this works under opencl at present
 
 #include <stdint.h>
+
+#if !defined(__OPENCL_C_VERSION__)
+#if HOSTRPC_AMDGCN
+#undef printf
+#include "hostrpc_printf.h"
+#define printf(...) __hostrpc_printf(__VA_ARGS__)
+#endif
+#endif
 
 #include "detail/platform.hpp"
 
@@ -148,16 +236,21 @@ static inline bool print_enabled(T active_threads)
   return true && platform::is_master_lane(active_threads);
 }
 
+// Common implementation for thread pools
+// pthread, hsa implement
 template <uint32_t Max, typename Implementation>
 struct threads_base
 {
   friend Implementation;
   // Implementation to implement
   // uint32_t get_current_uuid();
+  // uint32_t get_stored_state();
   // bool respawn_self(uint32_t /* current state */);
   // int spawn_with_uuid(uint32_t uuid);
   // uint32_t run(uint32_t); // uint32_t threaded through the calls
-
+  // void bootstrap(uint32_t req, const unsigned char* descriptor);
+  // void teardown();
+  //
   Implementation& implementation()
   {
     return *static_cast<Implementation*>(this);
@@ -194,7 +287,6 @@ struct threads_base
 
  private:
   // This is not safe to run from outside of the pool
-
   void loop()
   {
     auto active_threads = platform::active_threads();
@@ -334,8 +426,6 @@ struct via_pthreads : public threads_base<Max, via_pthreads<Derived, Max>>
 
   uint32_t run(uint32_t x) { return static_cast<Derived*>(this)->run(x); }
 
-  static void bootstrap_target() { Derived::instance()->loop(); }
-
   void bootstrap(uint32_t req, const unsigned char*)
   {
     auto active_threads = platform::active_threads();
@@ -373,8 +463,7 @@ struct via_pthreads : public threads_base<Max, via_pthreads<Derived, Max>>
     uint64_t u64;
     __builtin_memcpy(&u64, &p, 8);
     current_uuid = getlo(u64);
-    bootstrap_target();
-
+    Derived::instance()->loop();
     return NULL;
   }
 
@@ -453,8 +542,6 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
   }
 
   uint32_t run(uint32_t x) { return static_cast<Derived*>(this)->run(x); }
-
-  static void bootstrap_target() { Derived::instance()->loop(); }
 
   void bootstrap(uint32_t req, const unsigned char* descriptor)
   {
@@ -596,6 +683,11 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
     enqueue_dispatch(func, (const unsigned char*)p);
   }
 
+  static void expose_loop_for_bootstrap_implementation()
+  {
+    Derived::instance()->loop();
+  }
+
  private:
   void enqueue_helper(uint32_t uuid, uint32_t state)
   {
@@ -617,48 +709,36 @@ template <typename Derived, template <typename, uint32_t> class Via,
           uint32_t Max>
 struct api : private Via<Derived, Max>
 {
+ private:
+  friend Derived;
   friend Via<Derived, Max>;
   using Base = Via<Derived, Max>;
-
-  static Derived* instance()
+  static Base* instance()
   {
     // will not fare well on gcn if Derived needs a lock around construction
     static Derived e;
-    return &e;
+    return static_cast<Base*>(&e);
   }
 
-  static uint32_t get_current_uuid()
-  {
-    return static_cast<Base*>(instance())->get_current_uuid();
-  }
+ public:
+  static uint32_t get_current_uuid() { return instance()->get_current_uuid(); }
 
-  static void set_requested(uint32_t x)
-  {
-    static_cast<Base*>(instance())->set_requested(x);
-  }
+  static void set_requested(uint32_t x) { instance()->set_requested(x); }
 
-  static uint32_t requested()
-  {
-    return static_cast<Base*>(instance())->requested();
-  }
+  static uint32_t requested() { return instance()->requested(); }
 
-  static uint32_t alive() { return static_cast<Base*>(instance())->alive(); }
+  static uint32_t alive() { return instance()->alive(); }
 
-  static void spawn() { return static_cast<Base*>(instance())->spawn(); }
+  static void spawn() { return instance()->spawn(); }
 
-  static uint32_t run(uint32_t x) { static_cast<Base*>(instance())->run(x); }
+  static uint32_t run(uint32_t x) { instance()->run(x); }
 
   static void bootstrap(uint32_t req, const unsigned char* d)
   {
-    return static_cast<Base*>(instance())->bootstrap(req, d);
+    return instance()->bootstrap(req, d);
   }
 
-  static void bootstrap_target()
-  {
-    return static_cast<Base*>(instance())->bootstrap_target();
-  }
-
-  static void teardown() { return static_cast<Base*>(instance())->teardown(); }
+  static void teardown() { return instance()->teardown(); }
 };
 
 }  // namespace pool_interface
@@ -697,10 +777,11 @@ struct hsa_host_pool_state
 
 namespace
 {
-inline int initialize_kernel_info(hsa::executable& ex, std::string name,
+
+inline int initialize_kernel_info(hsa::executable& ex, const char* name,
                                   gpu_kernel_info* info)
 {
-  uint64_t symbol_address = ex.get_symbol_address_by_name(name.c_str());
+  uint64_t symbol_address = ex.get_symbol_address_by_name(name);
   auto m = ex.get_kernel_info();
   auto it = m.find(name);
   if (it == m.end() || symbol_address == 0)
@@ -719,8 +800,7 @@ inline int initialize_kernel_info(hsa::executable& ex, std::string name,
   info->group_segment_fixed_size =
       (uint32_t)it->second.group_segment_fixed_size;
 
-  fprintf(stderr, "kernel_info %s => addr 0x%lx\n", name.c_str(),
-          symbol_address);
+  fprintf(stderr, "kernel_info %s => addr 0x%lx\n", name, symbol_address);
 
   return 0;
 }
