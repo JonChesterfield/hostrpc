@@ -226,8 +226,7 @@ enum
       offset_reserved2,  // want an 8 byte field that survives respawn
 };
 
-template <typename Derived, template <typename, uint32_t> class Via,
-          uint32_t Max>
+template <typename Derived, uint32_t Max, typename Via>
 struct api;
 
 template <typename T>
@@ -496,7 +495,7 @@ template <typename Derived, uint32_t Max>
 thread_local uint32_t via_pthreads<Derived, Max>::current_uuid;
 
 template <typename Derived, uint32_t Max>
-using pthread_pool = api<Derived, via_pthreads, Max>;
+using pthread_pool = api<Derived, Max, via_pthreads<Derived, Max>>;
 
 #endif
 
@@ -701,18 +700,17 @@ struct via_hsa : public threads_base<Max, via_hsa<Derived, Max>>
 };
 
 template <typename Derived, uint32_t Max>
-using hsa_pool = api<Derived, via_hsa, Max>;
+using hsa_pool = api<Derived, Max, via_hsa<Derived, Max>>;
 
 #endif
 
-template <typename Derived, template <typename, uint32_t> class Via,
-          uint32_t Max>
-struct api : private Via<Derived, Max>
+template <typename Derived, uint32_t Max, typename Via>
+struct api : private Via
 {
  private:
   friend Derived;
-  friend Via<Derived, Max>;
-  using Base = Via<Derived, Max>;
+  friend Via;
+  using Base = Via;
   static Base* instance()
   {
     // will not fare well on gcn if Derived needs a lock around construction
