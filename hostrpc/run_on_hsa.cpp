@@ -17,7 +17,8 @@ uint32_t run_on_hsa_errcount(hsa_executable_t ex, hsa_agent_t agent,
       (hsa_kernel_dispatch_packet_t *)queue->base_address +
       (packet_id & (queue->size - 1));
 
-  hsa::initialize_packet_defaults(packet);
+  uint32_t wavefront_size = hsa::agent_get_info_wavefront_size(agent);
+  hsa::initialize_packet_defaults(wavefront_size, packet);
 
   hsa_executable_symbol_t symbol;
   hsa_status_t rc =

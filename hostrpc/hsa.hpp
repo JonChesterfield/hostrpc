@@ -196,6 +196,11 @@ inline uint16_t agent_get_info_version_minor(hsa_agent_t agent)
   return agent_get_info<uint16_t, HSA_AGENT_INFO_VERSION_MINOR>::call(agent);
 }
 
+inline uint32_t agent_get_info_wavefront_size(hsa_agent_t agent)
+{
+  return agent_get_info<uint32_t, HSA_AGENT_INFO_WAVEFRONT_SIZE>::call(agent);
+}
+
 inline uint32_t agent_get_info_compute_unit_count(hsa_agent_t agent)
 {
   return agent_get_info<
@@ -829,9 +834,11 @@ inline uint64_t acquire_available_packet_id(hsa_queue_t* queue)
   return packet_id;
 }
 
-inline void initialize_packet_defaults(hsa_kernel_dispatch_packet_t* packet)
+inline void initialize_packet_defaults(uint32_t wavefront_size,
+                                       hsa_kernel_dispatch_packet_t* packet)
 {
-  hsa_packet::initialize_packet_defaults((unsigned char*)packet);
+  hsa_packet::initialize_packet_defaults(wavefront_size,
+                                         (unsigned char*)packet);
 }
 
 inline hsa_queue_t* create_queue(hsa_agent_t kernel_agent)
@@ -880,7 +887,7 @@ constexpr inline uint16_t kernel_dispatch_setup()
 }
 
 // kernarg, signal may be zero
-inline void launch_kernel(uint64_t symbol_address,
+inline void launch_kernel(uint32_t wavefront_size, uint64_t symbol_address,
                           uint32_t private_segment_fixed_size,
                           uint32_t group_segment_fixed_size, hsa_queue_t* queue,
                           uint64_t inline_argument, uint64_t kernarg_address,
@@ -890,7 +897,7 @@ inline void launch_kernel(uint64_t symbol_address,
   hsa_kernel_dispatch_packet_t* packet =
       (hsa_kernel_dispatch_packet_t*)queue->base_address +
       (packet_id & (queue->size - 1));
-  hsa::initialize_packet_defaults(packet);
+  hsa::initialize_packet_defaults(wavefront_size, packet);
 
   packet->kernel_object = symbol_address;
   packet->private_segment_size = private_segment_fixed_size;
@@ -946,10 +953,12 @@ inline int launch_kernel(hsa::executable& ex, hsa_queue_t* queue,
     }
   else
     {
-      launch_kernel(
-          symbol_address, (uint32_t)it->second.private_segment_fixed_size,
-          (uint32_t)it->second.group_segment_fixed_size, queue, inline_argument,
-          kernarg_address, completion_signal, barrier);
+      hsa_agent_t agent = ex;
+      launch_kernel(hsa::agent_get_info_wavefront_size(agent), symbol_address,
+                    (uint32_t)it->second.private_segment_fixed_size,
+                    (uint32_t)it->second.group_segment_fixed_size, queue,
+                    inline_argument, kernarg_address, completion_signal,
+                    barrier);
       return 0;
     }
 }

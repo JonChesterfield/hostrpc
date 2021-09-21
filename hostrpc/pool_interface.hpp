@@ -137,90 +137,94 @@ using hsa_pool =
 #endif  // HOSTRPC_AMDGCN
 
 #if HOSTRPC_HOST
-#define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM) \
-  struct SYMBOL                                                             \
-  {                                                                         \
-    static int initialize(hsa::executable& ex, hsa_queue_t* queue);         \
-    static int finalize();                                                  \
-    static void bootstrap_entry(uint32_t requested);                        \
-    static void set_requested(uint32_t requested);                          \
-    static void teardown();                                                 \
-                                                                            \
-   private:                                                                 \
-    static gpu_kernel_info set_requested_;                                  \
-    static gpu_kernel_info bootstrap_entry_;                                \
-    static gpu_kernel_info teardown_;                                       \
-    static hsa_signal_t signal_;                                            \
-    static hsa_queue_t* queue_;                                             \
-  };                                                                        \
-  gpu_kernel_info SYMBOL::set_requested_;                                   \
-  gpu_kernel_info SYMBOL::bootstrap_entry_;                                 \
-  gpu_kernel_info SYMBOL::teardown_;                                        \
-  hsa_signal_t SYMBOL::signal_ = {0};                                       \
-  hsa_queue_t* SYMBOL::queue_ = nullptr;                                    \
-  int SYMBOL::initialize(hsa::executable& ex, hsa_queue_t* queue)           \
-  {                                                                         \
-    struct                                                                  \
-    {                                                                       \
-      const char* name;                                                     \
-      gpu_kernel_info* field;                                               \
-    } const data[] = {                                                      \
-        {                                                                   \
-            "__device_pool_interface_" #SYMBOL "_set_requested.kd",         \
-            &set_requested_,                                                \
-        },                                                                  \
-        {                                                                   \
-            "__device_pool_interface_" #SYMBOL "_bootstrap_entry.kd",       \
-            &bootstrap_entry_,                                              \
-        },                                                                  \
-        {                                                                   \
-            "__device_pool_interface_" #SYMBOL "_teardown.kd",              \
-            &teardown_,                                                     \
-        },                                                                  \
-    };                                                                      \
-    int rc = 0;                                                             \
-    for (unsigned i = 0; i < sizeof(data) / sizeof(data[0]); i++)           \
-      {                                                                     \
-        rc += initialize_kernel_info(ex, data[i].name, data[i].field);      \
-      }                                                                     \
-                                                                            \
-    if (rc != 0)                                                            \
-      {                                                                     \
-        return 1;                                                           \
-      }                                                                     \
-                                                                            \
-    queue_ = queue;                                                         \
-    if (hsa_signal_create(1, 0, NULL, &signal_) != HSA_STATUS_SUCCESS)      \
-      {                                                                     \
-        return 1;                                                           \
-      }                                                                     \
-    return 0;                                                               \
-  }                                                                         \
-  int SYMBOL::finalize()                                                    \
-  {                                                                         \
-    if (signal_.handle)                                                     \
-      {                                                                     \
-        hsa_signal_destroy(signal_);                                        \
-      }                                                                     \
-    return 0;                                                               \
-  }                                                                         \
-  void SYMBOL::bootstrap_entry(uint32_t requested)                          \
-  {                                                                         \
-    gpu_kernel_info& req = bootstrap_entry_;                                \
-    hsa::launch_kernel(req.symbol_address, req.private_segment_fixed_size,  \
-                       req.group_segment_fixed_size, queue_, requested,     \
-                       requested, {0});                                     \
-  }                                                                         \
-  void SYMBOL::set_requested(uint32_t requested)                            \
-  {                                                                         \
-    gpu_kernel_info& req = set_requested_;                                  \
-    hsa::launch_kernel(req.symbol_address, req.private_segment_fixed_size,  \
-                       req.group_segment_fixed_size, queue_, requested,     \
-                       requested, {0});                                     \
-  }                                                                         \
-  void SYMBOL::teardown()                                                   \
-  {                                                                         \
-    invoke_teardown(teardown_, set_requested_, signal_, queue_);            \
+#define POOL_INTERFACE_THREAD_POOL_TYPE_DECLARATION_AMDGPU(SYMBOL, MAXIMUM)  \
+  struct SYMBOL                                                              \
+  {                                                                          \
+    static int initialize(hsa::executable& ex, hsa_queue_t* queue);          \
+    static int finalize();                                                   \
+    static void bootstrap_entry(uint32_t requested);                         \
+    static void set_requested(uint32_t requested);                           \
+    static void teardown();                                                  \
+                                                                             \
+   private:                                                                  \
+    static gpu_kernel_info set_requested_;                                   \
+    static gpu_kernel_info bootstrap_entry_;                                 \
+    static gpu_kernel_info teardown_;                                        \
+    static hsa_signal_t signal_;                                             \
+    static hsa_queue_t* queue_;                                              \
+    static uint32_t wavefront_size_;                                         \
+  };                                                                         \
+  gpu_kernel_info SYMBOL::set_requested_;                                    \
+  gpu_kernel_info SYMBOL::bootstrap_entry_;                                  \
+  gpu_kernel_info SYMBOL::teardown_;                                         \
+  hsa_signal_t SYMBOL::signal_ = {0};                                        \
+  hsa_queue_t* SYMBOL::queue_ = nullptr;                                     \
+  uint32_t SYMBOL::wavefront_size_ = 0;                                      \
+  int SYMBOL::initialize(hsa::executable& ex, hsa_queue_t* queue)            \
+  {                                                                          \
+    struct                                                                   \
+    {                                                                        \
+      const char* name;                                                      \
+      gpu_kernel_info* field;                                                \
+    } const data[] = {                                                       \
+        {                                                                    \
+            "__device_pool_interface_" #SYMBOL "_set_requested.kd",          \
+            &set_requested_,                                                 \
+        },                                                                   \
+        {                                                                    \
+            "__device_pool_interface_" #SYMBOL "_bootstrap_entry.kd",        \
+            &bootstrap_entry_,                                               \
+        },                                                                   \
+        {                                                                    \
+            "__device_pool_interface_" #SYMBOL "_teardown.kd",               \
+            &teardown_,                                                      \
+        },                                                                   \
+    };                                                                       \
+    int rc = 0;                                                              \
+    for (unsigned i = 0; i < sizeof(data) / sizeof(data[0]); i++)            \
+      {                                                                      \
+        rc += initialize_kernel_info(ex, data[i].name, data[i].field);       \
+      }                                                                      \
+                                                                             \
+    if (rc != 0)                                                             \
+      {                                                                      \
+        return 1;                                                            \
+      }                                                                      \
+                                                                             \
+    queue_ = queue;                                                          \
+    if (hsa_signal_create(1, 0, NULL, &signal_) != HSA_STATUS_SUCCESS)       \
+      {                                                                      \
+        return 1;                                                            \
+      }                                                                      \
+    wavefront_size_ = hsa::agent_get_info_wavefront_size(ex);                \
+    return 0;                                                                \
+  }                                                                          \
+  int SYMBOL::finalize()                                                     \
+  {                                                                          \
+    if (signal_.handle)                                                      \
+      {                                                                      \
+        hsa_signal_destroy(signal_);                                         \
+      }                                                                      \
+    return 0;                                                                \
+  }                                                                          \
+  void SYMBOL::bootstrap_entry(uint32_t requested)                           \
+  {                                                                          \
+    gpu_kernel_info& req = bootstrap_entry_;                                 \
+    hsa::launch_kernel(                                                      \
+        wavefront_size_, req.symbol_address, req.private_segment_fixed_size, \
+        req.group_segment_fixed_size, queue_, requested, requested, {0});    \
+  }                                                                          \
+  void SYMBOL::set_requested(uint32_t requested)                             \
+  {                                                                          \
+    gpu_kernel_info& req = set_requested_;                                   \
+    hsa::launch_kernel(                                                      \
+        wavefront_size_, req.symbol_address, req.private_segment_fixed_size, \
+        req.group_segment_fixed_size, queue_, requested, requested, {0});    \
+  }                                                                          \
+  void SYMBOL::teardown()                                                    \
+  {                                                                          \
+    invoke_teardown(wavefront_size_, teardown_, set_requested_, signal_,     \
+                    queue_);                                                 \
   }
 
 #endif  // HOSTRPC_HOST
@@ -296,7 +300,7 @@ enum
 template <typename T>
 static inline bool print_enabled(T active_threads)
 {
-  return true && platform::is_master_lane(active_threads);
+  return false && platform::is_master_lane(active_threads);
 }
 
 // Common implementation for thread pools
@@ -325,7 +329,9 @@ struct threads_base
   {
     auto active_threads = platform::active_threads();
     uint32_t uuid = allocate(active_threads);
-    if (uuid < /*requested()*/ maximum())  // maximum should be correct too
+    uint32_t req = requested();
+    if (uuid <
+        req)  // maximum should be correct too, different overshoot properties
       {
         if (print_enabled(active_threads))
           {
@@ -341,8 +347,8 @@ struct threads_base
       {
         if (print_enabled(active_threads))
           {
-            printf("uuid %u: %u is over maximum %u, dealloc\n",
-                   Implementation().get_current_uuid(), uuid, maximum());
+            printf("uuid %u: %u is over requested %u (maximum %u), dealloc\n",
+                   Implementation().get_current_uuid(), uuid, req, maximum());
           }
       }
     deallocate(active_threads);
@@ -353,10 +359,14 @@ struct threads_base
   void loop()
   {
     auto active_threads = platform::active_threads();
+    const uint32_t uuid = Implementation().get_current_uuid();
     uint32_t state = Implementation().get_stored_state();
+
   start:;
-    uint32_t uuid = Implementation().get_current_uuid();
-    uint32_t req = requested();
+    const uint32_t req = requested();
+
+    if (print_enabled(active_threads))
+      printf("Call run from uuid %u w/ state %u\n", uuid, state);
 
     if (uuid >= req)
       {
@@ -376,20 +386,14 @@ struct threads_base
       }
 
     uint32_t nstate = Implementation().run(state);
-    if (0)
-      if (print_enabled(active_threads))
-        {
-          printf("Respawn %u w/ state %u->%u\n", uuid, state, nstate);
-        }
+    if (print_enabled(active_threads))
+      {
+        printf("Respawn uuid %u w/ state %u->%u\n", uuid, state, nstate);
+      }
     state = nstate;
 
     if (Implementation().respawn_self(state))
       {
-        if (0)
-          if (print_enabled(active_threads))
-            {
-              printf("Respawned %u w/ state %u\n", uuid, state);
-            }
         return;
       }
     else
@@ -450,6 +454,9 @@ struct threads_base
       {
         r = platform::atomic_fetch_add<uint32_t, __ATOMIC_ACQ_REL,
                                        __OPENCL_MEMORY_SCOPE_DEVICE>(&live, 1);
+        printf("Allocate by uuid %u / lane %u, was %u\n",
+               Implementation().get_current_uuid(),
+               platform::get_lane_id().value(), r);
       }
     r = platform::broadcast_master(active_threads, r);
     return r;
@@ -460,8 +467,11 @@ struct threads_base
   {
     if (platform::is_master_lane(active_threads))
       {
-        platform::atomic_fetch_sub<uint32_t, __ATOMIC_RELAXED,
-                                   __OPENCL_MEMORY_SCOPE_DEVICE>(&live, 1);
+        uint32_t r =
+            platform::atomic_fetch_sub<uint32_t, __ATOMIC_RELAXED,
+                                       __OPENCL_MEMORY_SCOPE_DEVICE>(&live, 1);
+        printf("Deallocate by uuid %u, was %u\n",
+               Implementation().get_current_uuid(), r);
       }
   }
 };
@@ -627,7 +637,8 @@ struct via_hsa
     hsa_packet::hsa_kernel_dispatch_packet alternative;
     uint32_t header = hsa_packet::default_header;
     __builtin_memcpy(&alternative, &header, 4);
-    hsa_packet::initialize_packet_defaults((unsigned char*)&alternative);
+    hsa_packet::initialize_packet_defaults(platform::native_width(),
+                                           (unsigned char*)&alternative);
     hsa_packet::write_from_kd_into_hsa(descriptor,
                                        (unsigned char*)&alternative);
 
@@ -650,9 +661,11 @@ struct via_hsa
 
     if (print_enabled(active_threads))
       {
-        printf("Teardown %s L%u (a: %u, k: 0x%lx, u: 0x%lx, s: 0x%lx)\n",
-               __func__, __LINE__, base::alive(), kernarg_sig, user_sig,
-               compl_sig);
+        printf(
+            "Teardown %s L%u (a: %u, k: 0x%lx, u: 0x%lx, s: 0x%lx, lane_id "
+            "%u)\n",
+            __func__, __LINE__, base::alive(), kernarg_sig, user_sig, compl_sig,
+            platform::get_lane_id());
       }
 
     base::set_requested(0);
@@ -662,7 +675,8 @@ struct via_hsa
       {
         if (print_enabled(active_threads))
           printf(
-              "Teardown respawned on alive:%u, kill this instance (hope it had "
+              "Teardown enqueue self with alive:%u, kill this instance (hope "
+              "it had "
               "s: 0, was k: 0x%lx, u: 0x%lx, s: 0x%lx)\n",
               a, kernarg_sig, user_sig, compl_sig);
 
@@ -845,7 +859,7 @@ inline void wait_for_signal_equal_zero(hsa_signal_t signal,
                                  timeout_hint, HSA_WAIT_STATE_ACTIVE) != 0);
 }
 
-inline void invoke_teardown(gpu_kernel_info teardown,
+inline void invoke_teardown(uint32_t wavefront_size, gpu_kernel_info teardown,
                             gpu_kernel_info set_requested, hsa_signal_t signal,
                             hsa_queue_t* queue)
 {
@@ -860,9 +874,10 @@ inline void invoke_teardown(gpu_kernel_info teardown,
   // for more predictable performance under load
 
   if (0)
-    hsa::launch_kernel(
-        set_requested.symbol_address, set_requested.private_segment_fixed_size,
-        set_requested.group_segment_fixed_size, queue, 0, 0, {0});
+    hsa::launch_kernel(wavefront_size, set_requested.symbol_address,
+                       set_requested.private_segment_fixed_size,
+                       set_requested.group_segment_fixed_size, queue, 0, 0,
+                       {0});
 
   fprintf(stderr, "Host: Invoke teardown from host set req 0, signal 0x%lx\n",
           signal.handle);
@@ -870,21 +885,24 @@ inline void invoke_teardown(gpu_kernel_info teardown,
   bool barrier = true;
   uint64_t userdata = signal.handle;
   using namespace pool_interface;
-  hsa::launch_kernel(teardown.symbol_address,
+  hsa::launch_kernel(wavefront_size, teardown.symbol_address,
                      teardown.private_segment_fixed_size,
                      teardown.group_segment_fixed_size, queue,
                      (offset_userdata == offset_reserved2) ? userdata : 0,
                      (offset_userdata == offset_kernarg) ? userdata : 0,
                      {0} /*signal*/, barrier);
 
+  fprintf(stderr, "Host: Teardown waiting for signal\n");
+
   wait_for_signal_equal_zero(signal, 50000 /*000000*/);
 
   fprintf(stderr, "Host: Teardown signal reached zero\n");
 
   hsa_signal_store_screlease(signal, init);
-  hsa::launch_kernel(
-      set_requested.symbol_address, set_requested.private_segment_fixed_size,
-      set_requested.group_segment_fixed_size, queue, 0, 0, signal, barrier);
+  hsa::launch_kernel(wavefront_size, set_requested.symbol_address,
+                     set_requested.private_segment_fixed_size,
+                     set_requested.group_segment_fixed_size, queue, 0, 0,
+                     signal, barrier);
 
   fprintf(stderr, "Host: Waiting for set_req to complete, signal 0x%lx\n",
           signal.handle);

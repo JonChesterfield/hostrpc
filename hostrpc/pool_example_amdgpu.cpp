@@ -55,6 +55,7 @@ uint32_t example::run(uint32_t state)
              __kmpc_impl_simd(), __kmpc_impl_smid(), state, get_current_uuid(),
              alive(), requested());
 
+  // for (unsigned i = 0; i < 128; i++)
   platform::sleep_briefly();
   return state + 1;
 }
@@ -116,18 +117,32 @@ int main_with_hsa()
             size);
   }
 
+  auto pause = []() { usleep(50000); };
+
   fprintf(stderr, "Call initialize\n");
   example::initialize(ex, queue);
 
   fprintf(stderr, "Call bootstrap\n");
-  example::bootstrap_entry(1);
+  example::bootstrap_entry(4);
 
   // leave them running for a while
-  usleep(50000000);
+  pause();
+
+  fprintf(stderr, "Set req 16\n");
+  example::set_requested(16);
+
+  pause();
+
+  fprintf(stderr, "Set req 8\n");
+  example::set_requested(8);
+
+  pause();
 
   fprintf(stderr, "Call teardown\n");
 
   example::teardown();
+
+  fprintf(stderr, "Call finalize\n");
 
   example::finalize();
 

@@ -117,7 +117,8 @@ struct launch_t
 
     // This leaves private and group segment size at zero
     // That may be bad, could be the root cause of some crashes
-    hsa::initialize_packet_defaults(packet);
+    uint32_t wavefront_size = hsa::agent_get_info_wavefront_size(kernel_agent);
+    hsa::initialize_packet_defaults(wavefront_size, packet);
 
     packet->kernel_object = kernel_address;
     memcpy(&packet->kernarg_address, &state, 8);
@@ -125,10 +126,7 @@ struct launch_t
     packet->private_segment_size = private_segment_fixed_size;
     packet->group_segment_size = group_segment_fixed_size;
 
-    // If / when changing this to 32, need to check device_start_main uses
-    // the right active_threads value (i.e. is is consistent with wavefront_size
-    // macro)
-    assert(packet->workgroup_size_x == 64);
+    assert(packet->workgroup_size_x == wavefront_size);
 
     packet->grid_size_x = packet->workgroup_size_x * number_waves;
 

@@ -472,7 +472,8 @@ static int main_with_hsa(int argc, char **argv)
   hsa_kernel_dispatch_packet_t *packet =
       (hsa_kernel_dispatch_packet_t *)queue->base_address + (packet_id & mask);
 
-  hsa::initialize_packet_defaults(packet);
+  uint32_t wavefront_size = hsa::agent_get_info_wavefront_size(kernel_agent);
+  hsa::initialize_packet_defaults(wavefront_size, packet);
 
   packet->workgroup_size_x =
       read_symbol(&file, "main_workgroup_size_x", packet->workgroup_size_x);

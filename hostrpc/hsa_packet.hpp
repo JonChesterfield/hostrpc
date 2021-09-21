@@ -58,7 +58,7 @@ struct kernel_descriptor
 };
 static_assert(sizeof(kernel_descriptor) == 64, "");
 
-inline void initialize_packet_defaults(unsigned char* out)
+inline void initialize_packet_defaults(uint32_t wavesize, unsigned char* out)
 {
   hsa_kernel_dispatch_packet packet;
   // Reserved fields, private and group memory, and completion signal are all
@@ -68,10 +68,10 @@ inline void initialize_packet_defaults(unsigned char* out)
   // These values should probably be read from the kernel
   // Currently they're copied from documentation
   // Launching a single wavefront makes for easier debugging
-  packet.workgroup_size_x = 64;
+  packet.workgroup_size_x = wavesize;
   packet.workgroup_size_y = 1;
   packet.workgroup_size_z = 1;
-  packet.grid_size_x = 64;
+  packet.grid_size_x = wavesize;
   packet.grid_size_y = 1;
   packet.grid_size_z = 1;
   __builtin_memcpy(out, &packet, sizeof(packet));

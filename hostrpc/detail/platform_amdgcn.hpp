@@ -22,7 +22,7 @@ inline HOSTRPC_ANNOTATE constexpr uint64_t native_width()
 }
 static_assert(native_width() == 32 || native_width() == 64, "");
 
-inline HOSTRPC_ANNOTATE void sleep_briefly() { __builtin_amdgcn_s_sleep(0); }
+inline HOSTRPC_ANNOTATE void sleep_briefly() { __builtin_amdgcn_s_sleep(1); }
 inline HOSTRPC_ANNOTATE void sleep() { __builtin_amdgcn_s_sleep(100); }
 
 inline HOSTRPC_ANNOTATE auto active_threads()
@@ -39,10 +39,14 @@ inline HOSTRPC_ANNOTATE auto active_threads()
 
 inline HOSTRPC_ANNOTATE auto get_lane_id()
 {
+#if __AMDGCN_WAVEFRONT_SIZE == 64
   hostrpc::fastint_runtime<uint32_t> r =
-
       __builtin_amdgcn_mbcnt_hi(~0u, __builtin_amdgcn_mbcnt_lo(~0u, 0u));
-
+#elif __AMDGCN_WAVEFRONT_SIZE == 32
+  hostrpc::fastint_runtime<uint32_t> r = __builtin_amdgcn_mbcnt_lo(~0u, 0u);
+#else
+#error ""
+#endif
   return r;
 }
 
