@@ -340,16 +340,16 @@ if (($have_amdgcn)); then
 fi
 
 
-if (($have_amdgcn)); then
-    $CXX_GCN devicertl_pteam_mem_barrier.cpp -c -o obj/devicertl_pteam_mem_barrier.gcn.bc
-    # todo: refer to lib from RDIR, once that lib has the function non-static    
-    $LINK obj/devicertl_pteam_mem_barrier.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc amdgcn_loader_device.gcn.bc -o devicertl_pteam_mem_barrier.gcn.bc $GCNDEVICERTL
-    $CXX_GCN_LD devicertl_pteam_mem_barrier.gcn.bc -o devicertl_pteam_mem_barrier.gcn
-    set +e
-    echo "This is failing at present, HSA doesn't think the binary is valid"
-    # ./devicertl_pteam_mem_barrier.gcn
-    set -e
-fi
+#if (($have_amdgcn)); then
+#    $CXX_GCN devicertl_pteam_mem_barrier.cpp -c -o obj/devicertl_pteam_mem_barrier.gcn.bc
+#    # todo: refer to lib from RDIR, once that lib has the function non-static    
+#    $LINK obj/devicertl_pteam_mem_barrier.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc amdgcn_loader_device.gcn.bc -o devicertl_pteam_mem_barrier.gcn.bc $GCNDEVICERTL
+#    $CXX_GCN_LD devicertl_pteam_mem_barrier.gcn.bc -o devicertl_pteam_mem_barrier.gcn
+#    set +e
+#    echo "This is failing at present, HSA doesn't think the binary is valid"
+#    # ./devicertl_pteam_mem_barrier.gcn
+#    set -e
+#fi
 
 $CXX_X64 prototype/states.cpp -c -o prototype/states.x64.bc
 
