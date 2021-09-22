@@ -78,6 +78,16 @@ else
     git clone https://github.com/jonchesterfield/msgpack.git $MSGPACKINCLUDE
 fi
 
+EVILUNITINCLUDE="thirdparty/EvilUnit"
+if [[ -d $EVILUNITINCLUDE ]]
+then
+    echo "Using existing evilunit"
+else
+    echo "Cloning evilunit"
+    git clone https://github.com/jonchesterfield/evilunit.git $EVILUNITINCLUDE
+fi
+
+
 clang++ -W -Wno-deprecated-copy -Wno-missing-field-initializers -Wno-inline-new-delete -Wno-unused-parameter -std=c++14 -ffreestanding -I $HOME/relacy/ minimal.cpp -stdlib=libc++ -o minimal.out
 
 echo "Using toolchain at $RDIR, GCNGFX=$GCNGFX, PTXGFX=$PTXGFX"

@@ -8,4 +8,4 @@
 #define EVILUNIT_USE_STDIO 1
 #endif
 #endif
-#include "../../EvilUnit/EvilUnit.h"
+#include "thirdparty/EvilUnit/EvilUnit.h"
