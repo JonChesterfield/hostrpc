@@ -166,8 +166,10 @@ HOSTRPC_ANNOTATE inline uint32_t clz(uint64_t value)
 }
 
 }  // namespace bits
-
+}  // namespace
 namespace detail
+{
+namespace
 {
 HOSTRPC_ANNOTATE inline bool multiple_of_64(uint64_t x)
 {
@@ -198,9 +200,8 @@ HOSTRPC_ANNOTATE inline uint64_t setbitsrange64(uint32_t l, uint32_t h)
   base <<= (UINT64_C(63) & l);
   return base;
 }
-
-}  // namespace detail
 }  // namespace
+}  // namespace detail
 
 namespace properties
 {

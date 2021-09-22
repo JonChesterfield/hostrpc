@@ -189,4 +189,69 @@ __PRINTF_API_INTERNAL void __printf_pass_element_write_int64(T *client,
   *x = inst.payload;
 }
 
+#define HOSTRPC_PRINTF_INSTANTIATE_CLIENT(EXPR)                               \
+                                                                              \
+  __PRINTF_API_EXTERNAL uint32_t __printf_print_start(const char *fmt)        \
+  {                                                                           \
+    return __printf_print_start(EXPR, fmt);                                   \
+  }                                                                           \
+                                                                              \
+  __PRINTF_API_EXTERNAL int __printf_print_end(uint32_t port)                 \
+  {                                                                           \
+    return __printf_print_end(EXPR, port);                                    \
+  }                                                                           \
+                                                                              \
+  /* These may want to be their own functions, for now delegate to u64 */     \
+  __PRINTF_API_EXTERNAL void __printf_pass_element_int32(uint32_t port,       \
+                                                         int32_t v)           \
+  {                                                                           \
+    int64_t w = v;                                                            \
+    return __printf_pass_element_int64(port, w);                              \
+  }                                                                           \
+                                                                              \
+  __PRINTF_API_EXTERNAL void __printf_pass_element_uint32(uint32_t port,      \
+                                                          uint32_t v)         \
+  {                                                                           \
+    uint64_t w = v;                                                           \
+    return __printf_pass_element_uint64(port, w);                             \
+  }                                                                           \
+                                                                              \
+  __PRINTF_API_EXTERNAL void __printf_pass_element_int64(uint32_t port,       \
+                                                         int64_t v)           \
+  {                                                                           \
+    uint64_t c;                                                               \
+    __builtin_memcpy(&c, &v, 8);                                              \
+    return __printf_pass_element_uint64(port, c);                             \
+  }                                                                           \
+                                                                              \
+  __PRINTF_API_EXTERNAL void __printf_pass_element_uint64(uint32_t port,      \
+                                                          uint64_t v)         \
+  {                                                                           \
+    return __printf_pass_element_uint64(EXPR, port, v);                       \
+  }                                                                           \
+                                                                              \
+  __PRINTF_API_EXTERNAL void __printf_pass_element_double(uint32_t port,      \
+                                                          double v)           \
+  {                                                                           \
+    return __printf_pass_element_double(EXPR, port, v);                       \
+  }                                                                           \
+                                                                              \
+  __PRINTF_API_EXTERNAL void __printf_pass_element_void(uint32_t port,        \
+                                                        const void *v)        \
+  {                                                                           \
+    __printf_pass_element_void(EXPR, port, v);                                \
+  }                                                                           \
+                                                                              \
+  __PRINTF_API_EXTERNAL void __printf_pass_element_cstr(uint32_t port,        \
+                                                        const char *str)      \
+  {                                                                           \
+    __printf_pass_element_cstr(EXPR, port, str);                              \
+  }                                                                           \
+                                                                              \
+  __PRINTF_API_EXTERNAL void __printf_pass_element_write_int64(uint32_t port, \
+                                                               int64_t *x)    \
+  {                                                                           \
+    __printf_pass_element_write_int64(EXPR, port, x);                         \
+  }
+
 #endif

@@ -12,7 +12,7 @@
 #include "raiifile.hpp"
 
 #include "hostrpc_printf.h"
-#include "hostrpc_printf_enable.h"
+#include "hostrpc_printf_enable.hpp"
 #include "launch.hpp"
 
 // written for rtl.cpp

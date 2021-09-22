@@ -4,7 +4,7 @@
 #include "hostcall.hpp"
 #include "hostcall_hsa.hpp"
 #include "hostrpc_printf.h"
-#include "hostrpc_printf_enable.h"
+#include "hostrpc_printf_enable.hpp"
 #include "hostrpc_printf_server.hpp"
 #include "x64_gcn_type.hpp"
 
