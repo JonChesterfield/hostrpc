@@ -474,5 +474,5 @@ unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
 #include "allocator_host_libc.cpp"
 #include "allocator_hsa.cpp"
 #include "hostrpc_thread.cpp"
-
+#include "incprintf.cpp"
 #endif
