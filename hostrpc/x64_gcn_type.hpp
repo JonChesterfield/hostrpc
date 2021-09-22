@@ -16,7 +16,8 @@ template <typename SZ>
 using x64_gcn_type_base =
     client_server_pair_t<SZ, uint64_t, allocator::hsa<alignof(page_t)>,
                          allocator::hsa<64>, allocator::host_libc<64>,
-                         allocator::hsa<64>>;
+                         allocator::hsa<64>, counters::client_nop,
+                         counters::server_nop>;
 
 template <typename SZ>
 struct x64_gcn_type : public x64_gcn_type_base<SZ>

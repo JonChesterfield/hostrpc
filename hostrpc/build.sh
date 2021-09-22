@@ -142,7 +142,7 @@ COMMONFLAGS="-Wall -Wextra -emit-llvm " # -DNDEBUG -Wno-type-limits "
 # cuda/openmp pass the host O flag through to ptxas, which crashes on debug info if > 0
 # there's a failure mode in trunk clang - 'remaining virtual register operands' - but it
 # resists changing the pipeline to llvm-link + llc, will have to debug it later
-X64FLAGS=" -O2 -pthread " # nvptx can't handle debug info on x64 for O>0
+X64FLAGS=" -O2 -g -pthread " # nvptx can't handle debug info on x64 for O>0
 GCNFLAGS=" -O2 -ffreestanding -fno-exceptions $AMDGPU"
 # atomic alignment objection seems reasonable - may want 32 wide atomics on nvptx
 # clang/ptx back end is crashing in llvm::DwarfDebug::constructCallSiteEntryDIEs
@@ -213,11 +213,15 @@ $LINK obj/allocator_openmp.x64.bc obj/openmp_plugins.x64.bc -o obj/openmp_suppor
 # currently standalone
 
 if (($have_amdgcn)); then
-    $CXX_GCN hostrpc_printf_enable.cpp -O3 -c -o obj/hostrpc_printf_enable.gcn.bc
+    $CXX_GCN hostrpc_printf_enable_amdgpu.cpp -O3 -c -o obj/hostrpc_printf_enable_amdgpu.gcn.bc
 fi
 
 
-$CXX_X64 hostrpc_printf_enable.cpp -I$HSAINC -O3 -c -o obj/hostrpc_printf_enable.x64.bc
+
+$CXX_X64 hostrpc_printf_enable_amdgpu.cpp -I$HSAINC -O3 -c -o obj/hostrpc_printf_enable_amdgpu.x64.bc
+
+$CXX_X64 hostrpc_printf_enable_host.cpp -I$HSAINC -O3 -c -o obj/hostrpc_printf_enable_host.x64.bc
+
 
 if (($have_amdgcn)); then
     $CXX_GCN threads.cpp -O3 -c -o threads.gcn.bc
@@ -227,7 +231,7 @@ if (($have_amdgcn)); then
     $CLANGXX $XOPENCL pool_example_amdgpu.cpp -O3 -emit-llvm -nogpulib -target amdgcn-amd-amdhsa -mcpu=$GCNGFX -c -o pool_example_amdgpu.ocl.gcn.bc
     $CXX_GCN pool_example_amdgpu.cpp -O3 -c -o pool_example_amdgpu.cpp.gcn.bc
 
-    $LINK threads.gcn.bc pool_example_amdgpu.ocl.gcn.bc pool_example_amdgpu.cpp.gcn.bc obj/hostrpc_printf_enable.gcn.bc $EXTRABC | $OPT -O2 -o obj/merged_pool_example_amdgpu.gcn.bc 
+    $LINK threads.gcn.bc pool_example_amdgpu.ocl.gcn.bc pool_example_amdgpu.cpp.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc $EXTRABC | $OPT -O2 -o obj/merged_pool_example_amdgpu.gcn.bc 
     $DIS obj/merged_pool_example_amdgpu.gcn.bc
 
     $CXX_GCN_LD obj/merged_pool_example_amdgpu.gcn.bc -o pool_example_amdgpu.gcn.so
@@ -237,7 +241,7 @@ if (($have_amdgcn)); then
     
     $CXX_X64_LD threads.x64.bc obj/hsa_support.x64.bc obj/catch.o $LDFLAGS -o threads.x64.exe
 
-    $CXX_X64_LD obj/pool_example_amdgpu.x64.bc obj/hostrpc_printf_enable.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o pool_example_amdgpu.x64.exe
+    $CXX_X64_LD obj/pool_example_amdgpu.x64.bc obj/hostrpc_printf_enable_amdgpu.x64.bc obj/hsa_support.x64.bc $LDFLAGS -o pool_example_amdgpu.x64.exe
 fi
 
 
@@ -247,12 +251,12 @@ $CXX_X64_LD obj/pool_example_host.x64.bc $LDFLAGS -o pool_example_host.x64.exe
 if (($have_amdgcn)); then
 $CXX_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.code.bc
 $CXXCL_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.kern.bc
-$LINK obj/x64_gcn_debug.gcn.code.bc obj/x64_gcn_debug.gcn.kern.bc obj/hostrpc_printf_enable.gcn.bc -o obj/x64_gcn_debug.gcn.bc
+$LINK obj/x64_gcn_debug.gcn.code.bc obj/x64_gcn_debug.gcn.kern.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc -o obj/x64_gcn_debug.gcn.bc
 $CXX_GCN_LD obj/x64_gcn_debug.gcn.bc -o x64_gcn_debug.gcn.so
 
 $CXX_X64 -I$HSAINC x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.x64.bc
 
-$CXX obj/x64_gcn_debug.x64.bc obj/hsa_support.x64.bc obj/hostrpc_printf_enable.x64.bc $LDFLAGS -o x64_gcn_debug.exe
+$CXX obj/x64_gcn_debug.x64.bc obj/hsa_support.x64.bc obj/hostrpc_printf_enable_amdgpu.x64.bc $LDFLAGS -o x64_gcn_debug.exe
 
 # Ideally would have a test case that links the x64 and gcn bitcode, but can't work out
 # how to do that. I think mlink-builtin-bitcode used to be architecture aware, but
@@ -294,7 +298,7 @@ if (($have_amdgcn)); then
   $LINK tools/loader/amdgcn_loader_entry.gcn.bc tools/loader/opencl_loader_cast.gcn.bc | $OPT -O2 -o amdgcn_loader_device.gcn.bc
 
   $CXX_X64 -I$HSAINC -I. tools/amdgcn_loader.cpp -c -o tools/loader/amdgcn_loader.x64.bc
-  $CXX_X64_LD $LDFLAGS tools/loader/amdgcn_loader.x64.bc obj/hsa_support.x64.bc obj/hostrpc_printf_enable.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o ../amdgcn_loader.exe
+  $CXX_X64_LD $LDFLAGS tools/loader/amdgcn_loader.x64.bc obj/hsa_support.x64.bc obj/hostrpc_printf_enable_amdgpu.x64.bc hostcall.x64.bc amdgcn_main.x64.bc -o ../amdgcn_loader.exe
 fi
 
 if (($have_nvptx)); then
@@ -309,21 +313,27 @@ fi
 
 if (($have_amdgcn)); then
 $CLANG -std=c11 $COMMONFLAGS $GCNFLAGS test_example.c -c -o obj/test_example.gcn.bc
-$LINK obj/test_example.gcn.bc obj/hostrpc_printf_enable.gcn.bc amdgcn_loader_device.gcn.bc -o test_example.gcn.bc
+$LINK obj/test_example.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc amdgcn_loader_device.gcn.bc -o test_example.gcn.bc
 $CXX_GCN_LD test_example.gcn.bc -o test_example.gcn
 fi
 
 $CLANG -std=c11 -I$HSAINC $COMMONFLAGS $X64FLAGS printf_test.c -c -o obj/printf_test.x64.bc
+
+
+$CXX_X64_LD obj/host_support.x64.bc obj/hostrpc_printf_enable_host.x64.bc obj/printf_test.x64.bc obj/incprintf.x64.bc -o printf_test.x64.exe -pthread
+
+
 if (($have_amdgcn)); then
     $CLANG -std=c11 $COMMONFLAGS $GCNFLAGS printf_test.c -c -o obj/printf_test.gcn.bc
-    $LINK obj/printf_test.gcn.bc obj/hostrpc_printf_enable.gcn.bc amdgcn_loader_device.gcn.bc -o printf_test.gcn.bc
+    $LINK obj/printf_test.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc amdgcn_loader_device.gcn.bc -o printf_test.gcn.bc
     $CXX_GCN_LD printf_test.gcn.bc -o printf_test.gcn
 fi
+
 
 if (($have_amdgcn)); then
     $CXX_GCN devicertl_pteam_mem_barrier.cpp -c -o obj/devicertl_pteam_mem_barrier.gcn.bc
     # todo: refer to lib from RDIR, once that lib has the function non-static    
-    $LINK obj/devicertl_pteam_mem_barrier.gcn.bc obj/hostrpc_printf_enable.gcn.bc amdgcn_loader_device.gcn.bc -o devicertl_pteam_mem_barrier.gcn.bc $GCNDEVICERTL
+    $LINK obj/devicertl_pteam_mem_barrier.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc amdgcn_loader_device.gcn.bc -o devicertl_pteam_mem_barrier.gcn.bc $GCNDEVICERTL
     $CXX_GCN_LD devicertl_pteam_mem_barrier.gcn.bc -o devicertl_pteam_mem_barrier.gcn
     set +e
     echo "This is failing at present, HSA doesn't think the binary is valid"
@@ -492,7 +502,7 @@ fi
 # Build the device library that calls into main()
 
 if (($have_amdgcn)); then
-$LINK amdgcn_main.gcn.bc amdgcn_loader_device.gcn.bc  hostcall.gcn.bc obj/hostrpc_printf_enable.gcn.bc -o executable_device.gcn.bc
+$LINK amdgcn_main.gcn.bc amdgcn_loader_device.gcn.bc  hostcall.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc -o executable_device.gcn.bc
 
 # Link the device image
 $CXX_GCN_LD executable_device.gcn.bc -o a.gcn.out
@@ -508,7 +518,6 @@ $LINK nvptx_main.ptx.bc tools/loader/nvptx_loader_entry.cu.ptx.bc detail/platfor
 $CLANGXX --target=nvptx64-nvidia-cuda -march=$PTXGFX $PTX_VER executable_device.ptx.bc -S -o executable_device.ptx.s
 
 /usr/local/cuda/bin/ptxas -m64 -O0 --gpu-name $PTXGFX executable_device.ptx.s -o a.ptx.out
-./../nvptx_loader.exe a.ptx.out
 fi
 
 
@@ -534,10 +543,17 @@ set +e
 $CXX_X64_LD persistent_kernel.x64.bc obj/catch.o obj/hsa_support.x64.bc $LDFLAGS -o persistent_kernel.exe
 set -e
 
+./pool_example_amdgpu.x64.exe
+exit
+
 time valgrind --leak-check=full --fair-sched=yes ./prototype/states.exe
 
+if (($have_nvptx)); then
+./../nvptx_loader.exe a.ptx.out
+fi
 
-
+# ./printf_test.x64.exe
+# ./printf_test.gcn
 
 set +e # Keep running tests after one fails
 

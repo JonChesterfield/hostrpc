@@ -1,5 +1,5 @@
-#include "hostrpc_printf_enable.hpp"
 #include "hostrpc_printf.h"
+#include "hostrpc_printf_enable.hpp"
 
 #include "x64_gcn_type.hpp"
 #undef printf

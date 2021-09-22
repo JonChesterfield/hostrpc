@@ -24,11 +24,11 @@
     const size_t __strlen = __printf_strlen(__fmt);      \
     (void)__strlen;                                      \
     uint32_t __port = __printf_print_start(__fmt);       \
-    size_t __spec_loc = 0;                               \
+    size_t __spec_loc = 0;      \
     (void)__spec_loc;                                    \
     __PRINTF_DISPATCH_ARGS(__fmt, UNUSED, ##__VA_ARGS__) \
     __printf_print_end(__port);                          \
-  }
+    }
 
 // Functions implemented out of C header. printf resolves to multiple calls to
 // these. Some implemented on gcn. All should probably be implemented on

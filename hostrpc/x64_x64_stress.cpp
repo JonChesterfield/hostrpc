@@ -35,29 +35,9 @@ POOL_INTERFACE_BOILERPLATE_HOST(stress_pool_client, maximum_threads);
 HOSTRPC_ATOMIC(uint64_t) *client_to_run = nullptr;
 HOSTRPC_ATOMIC(uint64_t) *server_ran = nullptr;
 
-namespace hostrpc
-{
-using x64_x64_type_base =
-    client_server_pair_t<hostrpc::size_runtime<uint32_t>, uint64_t,
-                         hostrpc::allocator::host_libc<alignof(page_t)>,
-                         hostrpc::allocator::host_libc<64>,
-                         hostrpc::allocator::host_libc<64>,
-                         hostrpc::allocator::host_libc<64> >;
+#include "x64_x64_type.hpp"
 
-struct x64_x64_type : public x64_x64_type_base
-{
-  using base = x64_x64_type_base;
-  HOSTRPC_ANNOTATE x64_x64_type(size_t N)
-      : base(hostrpc::size_runtime<uint32_t>(N), typename base::AllocBuffer(),
-             typename base::AllocInboxOutbox(), typename base::AllocLocal(),
-             typename base::AllocRemote())
-  {
-  }
-};
-
-}  // namespace hostrpc
-
-using type_under_test = hostrpc::x64_x64_type;
+using type_under_test = hostrpc::x64_x64_type<hostrpc::size_runtime<uint32_t>>;
 
 type_under_test p(100);
 

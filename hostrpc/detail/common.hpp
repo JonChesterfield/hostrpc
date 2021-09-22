@@ -313,22 +313,18 @@ struct slot_bitmap
   {
     (void)size;
 #if HOSTRPC_HAVE_STDIO
-    Word loaded = 0;
-    (void)loaded;
     uint32_t w = size / wordBits();
-    printf("Size %lu / words %lu\n", size, w);
+    // printf("Size %u / words %u\n", size, w);
     for (uint32_t i = 0; i < w; i++)
       {
-        printf("[%2lu]:", i);
+        printf("[%2u]:", i);
         for (uint32_t j = 0; j < wordBits(); j++)
           {
             if (j % 8 == 0)
               {
                 printf(" ");
               }
-            printf("%c", this->operator()(size, wordBits() * i + j, &loaded)
-                             ? '1'
-                             : '0');
+            printf("%c", read_bit(size, wordBits() * i + j) ? '1' : '0');
           }
         printf("\n");
       }
@@ -470,6 +466,21 @@ struct lock_bitmap
   static_assert(sizeof(HOSTRPC_ATOMIC(Word) *) == 8, "");
   static_assert(Prop::hasFetchOp(), "");
   static_assert(Prop::hasCasOp(), "");
+
+ private:
+  HOSTRPC_ANNOTATE constexpr size_t wordBits() const
+  {
+    return 8 * sizeof(Word);
+  }
+
+  HOSTRPC_ANNOTATE bool read_bit(uint32_t size, uint32_t i) const
+  {
+    uint32_t w = index_to_element<Word>(i);
+    Word d = load_word(size, w);
+    return bits::nthbitset(d, index_to_subindex<Word>(i));
+  }
+
+ public:
   Ty *a;
   HOSTRPC_ANNOTATE static constexpr size_t bits_per_slot() { return 1; }
 
@@ -478,6 +489,28 @@ struct lock_bitmap
 
   HOSTRPC_ANNOTATE ~lock_bitmap() {}
   HOSTRPC_ANNOTATE Ty *data() { return a; }
+
+  HOSTRPC_ANNOTATE void dump(uint32_t size) const
+  {
+    (void)size;
+#if HOSTRPC_HAVE_STDIO
+    uint32_t w = size / wordBits();
+    // printf("Size %u / words %u\n", size, w);
+    for (uint32_t i = 0; i < w; i++)
+      {
+        printf("[%2u]:", i);
+        for (uint32_t j = 0; j < wordBits(); j++)
+          {
+            if (j % 8 == 0)
+              {
+                printf(" ");
+              }
+            printf("%c", read_bit(size, wordBits() * i + j) ? '1' : '0');
+          }
+        printf("\n");
+      }
+#endif
+  }
 
   // cas, true on success
   // on return true, loaded contains active[w]
@@ -553,6 +586,8 @@ struct lock_bitmap
     Ty *addr = &a[w];
     platform::atomic_fetch_and<Word, __ATOMIC_ACQ_REL,
                                __OPENCL_MEMORY_SCOPE_DEVICE>(addr, mask);
+
+    assert(!bits::nthbitset(load_word(size, w), subindex));
   }
 
   HOSTRPC_ANNOTATE Word load_word(uint32_t size, uint32_t w) const

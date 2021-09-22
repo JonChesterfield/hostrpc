@@ -33,11 +33,13 @@ struct wrap_server_state
 
   std::unique_ptr<print_buffer_t> print_buffer;
 
+  wrap_server_state() = delete;
+
   wrap_server_state(wrap_server_state &&) = delete;
   wrap_server_state &operator=(wrap_server_state &&) = delete;
 
-  wrap_server_state(std::unique_ptr<server_client_type> &&p, uint32_t size)
-      : p(std::move(p))
+  wrap_server_state(std::unique_ptr<server_client_type> &&p_, uint32_t size)
+      : p(std::move(p_))
   {
     platform::atomic_store<uint32_t, __ATOMIC_RELEASE,
                            __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>(

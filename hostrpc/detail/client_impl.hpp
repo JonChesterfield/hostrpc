@@ -125,9 +125,13 @@ struct client_impl : public SZT, public Counter
 #if HOSTRPC_HAVE_STDIO
     fprintf(stderr, "shared_buffer %p\n", shared_buffer);
     fprintf(stderr, "inbox         %p\n", inbox.a);
+    inbox.dump(size());
     fprintf(stderr, "outbox        %p\n", outbox.a);
+    outbox.dump(size());
     fprintf(stderr, "active        %p\n", active.a);
+    active.dump(size());
     fprintf(stderr, "outbox stg    %p\n", staging.a);
+    staging.dump(size());
 #endif
   }
 
@@ -162,6 +166,12 @@ struct client_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE void rpc_port_wait_for_result(T active_threads,
                                                  uint32_t port);
 
+  template <typename T>
+  HOSTRPC_ANNOTATE void rpc_port_discard_result(T active_threads, uint32_t port)
+  {
+    release_slot(active_threads, port);
+  }
+
   template <typename Use, typename T>
   HOSTRPC_ANNOTATE void rpc_port_recv(T active_threads, uint32_t slot,
                                       Use &&use)
@@ -179,7 +189,7 @@ struct client_impl : public SZT, public Counter
     // leaving the visible one. In that case the update may be transfered
     // for free, or it may never become visible in which case the server
     // won't realise the slot is no longer in use
-    release_slot(active_threads, slot);
+    rpc_port_discard_result(active_threads, slot);
   }
 
  private:

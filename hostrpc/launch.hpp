@@ -136,9 +136,6 @@ struct launch_t
                               hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
                               hsa::kernel_dispatch_setup());
 
-    printf("Launch_t kernel:\n");
-    hsa_packet::dump_kernel((unsigned char *)packet);
-
     hsa_signal_store_release(queue->doorbell_signal, packet_id);
   }
 

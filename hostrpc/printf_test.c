@@ -109,7 +109,7 @@ static inline bool is_master_lane(void)
 EVILUNIT_MAIN_MODULE()
 {
   DEPENDS(specifier);
-
+  
   TEST("ex")
   {
     if (is_master_lane())
