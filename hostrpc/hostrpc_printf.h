@@ -2,6 +2,7 @@
 #define HOSTRPC_PRINTF_H_INCLUDED
 
 #include "detail/platform_detect.hpp"
+#include "hostrpc_printf_api_macro.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -29,23 +30,36 @@
     __printf_print_end(__port);                          \
   }
 
-#ifdef __attribute__
-#warning "__attribute__ is a macro, missing freestanding?"
-#endif
+// Functions implemented out of C header. printf resolves to multiple calls to
+// these. Some implemented on gcn. All should probably be implemented on
+// gcn/ptx/x64
+__PRINTF_API_EXTERNAL uint32_t __printf_print_start(const char *fmt);
+__PRINTF_API_EXTERNAL int __printf_print_end(uint32_t port);
 
-// printf implementation macros, noinline is convenient for reading IR
-#define __PRINTF_API_EXTERNAL_ HOSTRPC_ANNOTATE __attribute__((noinline))
-#define __PRINTF_API_INTERNAL_ \
-  HOSTRPC_ANNOTATE static inline __attribute__((unused))
+// simple types
+__PRINTF_API_EXTERNAL void __printf_pass_element_int32(uint32_t port,
+                                                       int32_t x);
+__PRINTF_API_EXTERNAL void __printf_pass_element_uint32(uint32_t port,
+                                                        uint32_t x);
+__PRINTF_API_EXTERNAL void __printf_pass_element_int64(uint32_t port,
+                                                       int64_t x);
+__PRINTF_API_EXTERNAL void __printf_pass_element_uint64(uint32_t port,
+                                                        uint64_t x);
+__PRINTF_API_EXTERNAL void __printf_pass_element_double(uint32_t port,
+                                                        double x);
 
-#ifdef __cplusplus
-#define __PRINTF_API_EXTERNAL __PRINTF_API_EXTERNAL_ extern "C"
-#define __PRINTF_API_INTERNAL __PRINTF_API_INTERNAL_
-#else
-#define __PRINTF_API_EXTERNAL __PRINTF_API_EXTERNAL_
-#define __PRINTF_API_INTERNAL \
-  __PRINTF_API_INTERNAL_ __attribute__((overloadable))
-#endif
+// print the address of the argument on the gpu
+__PRINTF_API_EXTERNAL void __printf_pass_element_void(uint32_t port,
+                                                      const void *x);
+
+// copy null terminated string starting at x, print the string
+__PRINTF_API_EXTERNAL void __printf_pass_element_cstr(uint32_t port,
+                                                      const char *x);
+
+// implement %n specifier, may need one per sizeof target
+__PRINTF_API_EXTERNAL void __printf_pass_element_write_int64(uint32_t port,
+                                                             int64_t *x);
+
 
 #define __PRINTF_PASTE_(X, Y) X##Y
 #define __PRINTF_PASTE(X, Y) __PRINTF_PASTE_(X, Y)
@@ -112,35 +126,6 @@
   __PRINTF_PASTE(__PRINTF_WRAP, __PRINTF_PP_NARG(__VA_ARGS__))(FMT, __VA_ARGS__)
 
 
-// Functions implemented out of header. printf resolves to multiple calls to
-// these. Some implemented on gcn. All should probably be implemented on
-// gcn/ptx/x64
-__PRINTF_API_EXTERNAL uint32_t __printf_print_start(const char *fmt);
-__PRINTF_API_EXTERNAL int __printf_print_end(uint32_t port);
-
-// simple types
-__PRINTF_API_EXTERNAL void __printf_pass_element_int32(uint32_t port,
-                                                       int32_t x);
-__PRINTF_API_EXTERNAL void __printf_pass_element_uint32(uint32_t port,
-                                                        uint32_t x);
-__PRINTF_API_EXTERNAL void __printf_pass_element_int64(uint32_t port,
-                                                       int64_t x);
-__PRINTF_API_EXTERNAL void __printf_pass_element_uint64(uint32_t port,
-                                                        uint64_t x);
-__PRINTF_API_EXTERNAL void __printf_pass_element_double(uint32_t port,
-                                                        double x);
-
-// print the address of the argument on the gpu
-__PRINTF_API_EXTERNAL void __printf_pass_element_void(uint32_t port,
-                                                      const void *x);
-
-// copy null terminated string starting at x, print the string
-__PRINTF_API_EXTERNAL void __printf_pass_element_cstr(uint32_t port,
-                                                      const char *x);
-
-// implement %n specifier, may need one per sizeof target
-__PRINTF_API_EXTERNAL void __printf_pass_element_write_int64(uint32_t port,
-                                                             int64_t *x);
 
 // approximate compile time calculations in C. TODO: Can force it when in C++
 enum __printf_spec_t

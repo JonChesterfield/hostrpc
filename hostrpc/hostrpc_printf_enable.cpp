@@ -6,6 +6,7 @@
 
 #include "cxa_atexit.hpp"
 
+#include "hostrpc_printf_client.hpp"
 #include "hostrpc_printf_server.hpp"
 
 #if (HOSTRPC_AMDGCN)

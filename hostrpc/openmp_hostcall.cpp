@@ -22,6 +22,7 @@ using sizeType = hostrpc::size_runtime<uint32_t>;
 
 #if HOSTRPC_AMDGCN
 #pragma omp declare target
+#include "hostrpc_printf_client.hpp"
 
 using client_type = hostrpc::x64_gcn_type<sizeType>::client_type;
 static client_type *get_client();
