@@ -5,7 +5,7 @@ set -o pipefail
 
 ./clean.sh
 
-DERIVE=${1:-4}
+DERIVE=${1:-1}
 
 have_nvptx=0
 if [ -e "/dev/nvidiactl" ]; then

@@ -586,8 +586,6 @@ struct lock_bitmap
     Ty *addr = &a[w];
     platform::atomic_fetch_and<Word, __ATOMIC_ACQ_REL,
                                __OPENCL_MEMORY_SCOPE_DEVICE>(addr, mask);
-
-    assert(!bits::nthbitset(load_word(size, w), subindex));
   }
 
   HOSTRPC_ANNOTATE Word load_word(uint32_t size, uint32_t w) const

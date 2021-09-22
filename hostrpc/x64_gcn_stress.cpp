@@ -252,6 +252,15 @@ void init();
 
 INCBIN(x64_gcn_stress_so, "x64_gcn_stress.gcn.so");
 
+
+static uint32_t size_p(hsa_agent_t kernel_agent)
+{
+  uint32_t cus = hsa::agent_get_info_compute_unit_count(kernel_agent);
+  uint32_t waves = hsa::agent_get_info_max_waves_per_cu(kernel_agent);
+  uint32_t nonblocking_size = cus * waves;
+  return hostrpc::round64(nonblocking_size);
+}
+
 TEST_CASE("x64_gcn_stress")
 {
   hsa::init hsa;
@@ -312,7 +321,7 @@ TEST_CASE("x64_gcn_stress")
     }
 
     HOSTRPC_ATOMIC(bool) server_live(true);
-    SZ N{1920};
+    SZ N{size_p(kernel_agent)};
     hostrpc::x64_gcn_type<SZ> p(N, fine_grained_region.handle,
                                 coarse_grained_region.handle);
 
@@ -443,9 +452,9 @@ TEST_CASE("x64_gcn_stress")
     };
 
     // number tasks = MAX_WAVES * nclients * per_client
-    unsigned nservers = 2;
-    unsigned nclients = 1;
-    unsigned per_client = 64;  // 4096 * 2;
+    unsigned nservers = 8;
+    unsigned nclients = 128;
+    unsigned per_client = 4096 * 2;
 
 #ifndef DERIVE_VAL
 #error "Req derive_val"
