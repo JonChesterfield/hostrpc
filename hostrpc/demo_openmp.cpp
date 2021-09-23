@@ -39,7 +39,7 @@ struct x64_device_type : public x64_device_type_base<SZ, device_num>
 template <typename C>
 static bool invoke(C *client, uint64_t x[8])
 {
-  auto fill = [&](uint32_t, hostrpc::page_t *page) -> void {
+  auto fill = [&](hostrpc::port_t, hostrpc::page_t *page) -> void {
     hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
     line->element[0] = x[0];
     line->element[1] = x[1];
@@ -51,7 +51,7 @@ static bool invoke(C *client, uint64_t x[8])
     line->element[7] = x[7];
   };
 
-  auto use = [&](uint32_t, hostrpc::page_t *page) -> void {
+  auto use = [&](hostrpc::port_t, hostrpc::page_t *page) -> void {
     hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
     x[0] = line->element[0];
     x[1] = line->element[1];
@@ -89,16 +89,16 @@ using base_type = hostrpc::x64_device_type<SZ, device_num>;
 
 struct operate_test
 {
-  void operator()(uint32_t slot, hostrpc::page_t *page)
+  void operator()(hostrpc::port_t port, hostrpc::page_t *page)
   {
     fprintf(stderr, "Invoked operate\n");
     for (unsigned i = 0; i < 64; i++)
       {
-        operator()(slot, i, &page->cacheline[i]);
+        operator()(port, i, &page->cacheline[i]);
       }
   }
 
-  void operator()(uint32_t, unsigned index, hostrpc::cacheline_t *line)
+  void operator()(hostrpc::port_t, unsigned index, hostrpc::cacheline_t *line)
   {
 #if HOSTRPC_HOST
     hostrpc::syscall_on_cache_line(index, line);
@@ -108,7 +108,7 @@ struct operate_test
 
 struct clear_test
 {
-  void operator()(uint32_t, hostrpc::page_t *page)
+  void operator()(hostrpc::port_t, hostrpc::page_t *page)
   {
     for (unsigned c = 0; c < 64; c++)
       {

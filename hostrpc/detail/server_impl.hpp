@@ -225,8 +225,7 @@ struct server_impl : public SZT, public Counter
 #endif
 
     // make the calls
-    op(static_cast<uint32_t>(port),
-       &shared_buffer[static_cast<uint32_t>(port)]);
+    op(port, &shared_buffer[static_cast<uint32_t>(port)]);
   }
 
   template <typename Operate, typename T>
@@ -269,8 +268,7 @@ struct server_impl : public SZT, public Counter
     const uint32_t size = this->size();
     if (have_precondition)
       {
-        cl(static_cast<uint32_t>(port),
-           &shared_buffer[static_cast<uint32_t>(port)]);
+        cl(port, &shared_buffer[static_cast<uint32_t>(port)]);
       }
 
     platform::fence_release();

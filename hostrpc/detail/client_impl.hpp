@@ -15,7 +15,7 @@ namespace hostrpc
 {
 struct fill_nop
 {
-  HOSTRPC_ANNOTATE void operator()(uint32_t, page_t *) {}
+  HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, page_t *) {}
   fill_nop() = default;
   fill_nop(const fill_nop &) = delete;
   fill_nop(fill_nop &&) = delete;
@@ -23,7 +23,7 @@ struct fill_nop
 
 struct use_nop
 {
-  HOSTRPC_ANNOTATE void operator()(uint32_t, page_t *) {}
+  HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, page_t *) {}
   use_nop() = default;
   use_nop(const use_nop &) = delete;
   use_nop(use_nop &&) = delete;
@@ -172,23 +172,22 @@ struct client_impl : public SZT, public Counter
   }
 
   template <typename Use, typename T>
-  HOSTRPC_ANNOTATE void rpc_port_recv(T active_threads, port_t slot, Use &&use)
+  HOSTRPC_ANNOTATE void rpc_port_recv(T active_threads, port_t port, Use &&use)
   {
     // wait for H1, result available
     // if outbox is clear, which is detectable, this will not terminate
-    rpc_port_wait_for_result(active_threads, slot);
+    rpc_port_wait_for_result(active_threads, port);
 
     // call the continuation
-    use(static_cast<uint32_t>(slot),
-        &shared_buffer[static_cast<uint32_t>(slot)]);
+    use(port, &shared_buffer[static_cast<uint32_t>(port)]);
     platform::fence_release();
     // mark the work as no longer in use
     // todo: is it better to leave this for the GC?
-    // can free slots more lazily by updating the staging outbox and
+    // can free ports more lazily by updating the staging outbox and
     // leaving the visible one. In that case the update may be transfered
     // for free, or it may never become visible in which case the server
-    // won't realise the slot is no longer in use
-    rpc_port_discard_result(active_threads, slot);
+    // won't realise the port is no longer in use
+    rpc_port_discard_result(active_threads, port);
   }
 
  private:
@@ -440,8 +439,7 @@ client_impl<WordT, SZT, Counter>::rpc_port_send_given_available(
 
   // wave_populate
   // Fill may have no precondition, in which case this doesn't need to run
-  fill(static_cast<uint32_t>(port),
-       &shared_buffer[static_cast<uint32_t>(port)]);
+  fill(port, &shared_buffer[static_cast<uint32_t>(port)]);
 
   // wave_publish work
   {

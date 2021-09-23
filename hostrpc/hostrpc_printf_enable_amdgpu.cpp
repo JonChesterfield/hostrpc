@@ -134,7 +134,8 @@ int hostrpc_print_enable_on_hsa_agent(hsa_executable_t ex,
   for (uint32_t i = 0; i < p->server.size(); i++)
     {
       hostrpc::page_t *page = &p->server.shared_buffer[i];
-      clear()(i, page);
+      hostrpc::port_t port = static_cast<hostrpc::port_t>(i);
+      clear()(port, page);
     }
 
   {

@@ -43,7 +43,7 @@ struct fill
 {
   uint64_t *d;
   fill(uint64_t *d) : d(d) {}
-  void operator()(uint32_t, hostrpc::page_t *page)
+  void operator()(hostrpc::port_t, hostrpc::page_t *page)
   {
     hostcall_ops::pass_arguments(page, d);
   };
@@ -53,7 +53,7 @@ struct use
 {
   uint64_t *d;
   use(uint64_t *d) : d(d) {}
-  void operator()(uint32_t, hostrpc::page_t *page)
+  void operator()(hostrpc::port_t, hostrpc::page_t *page)
   {
     hostcall_ops::use_result(page, d);
   };
@@ -108,7 +108,7 @@ namespace x64_host_amdgcn_client
 {
 struct operate
 {
-  void operator()(uint32_t, hostrpc::page_t *page)
+  void operator()(hostrpc::port_t, hostrpc::page_t *page)
   {
     hostcall_ops::operate(page);
   }
@@ -116,7 +116,7 @@ struct operate
 
 struct clear
 {
-  void operator()(uint32_t, hostrpc::page_t *page)
+  void operator()(hostrpc::port_t, hostrpc::page_t *page)
   {
     hostcall_ops::clear(page);
   }

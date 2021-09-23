@@ -91,7 +91,7 @@ struct fill
 {
   uint64_t *d;
   fill(uint64_t *d) : d(d) {}
-  void operator()(uint32_t, hostrpc::page_t *page)
+  void operator()(hostrpc::port_t, hostrpc::page_t *page)
   {
     hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
     for (unsigned i = 0; i < 8; i++)
@@ -105,7 +105,7 @@ struct use
 {
   uint64_t *d;
   use(uint64_t *d) : d(d) {}
-  void operator()(uint32_t, hostrpc::page_t *page)
+  void operator()(hostrpc::port_t, hostrpc::page_t *page)
   {
     hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
     for (unsigned i = 0; i < 8; i++)
@@ -206,8 +206,9 @@ struct omp_operate
   void perthread(unsigned c, hostrpc::cacheline_t *line,
                  print_wip &thread_print);
 
-  void operator()(uint32_t slot, hostrpc::page_t *page)
+  void operator()(hostrpc::port_t port, hostrpc::page_t *page)
   {
+    uint32_t slot = static_cast<uint32_t>(port);
     std::array<print_wip, 64> &print_slot_buffer = (*print_buffer)[slot];
     for (unsigned c = 0; c < 64; c++)
       perthread(c, &page->cacheline[c], print_slot_buffer[c]);
@@ -216,7 +217,7 @@ struct omp_operate
 
 struct omp_clear
 {
-  void operator()(uint32_t, hostrpc::page_t *page)
+  void operator()(hostrpc::port_t, hostrpc::page_t *page)
   {
     for (unsigned c = 0; c < 64; c++)
       page->cacheline[c].element[0] = opcodes_nop;
