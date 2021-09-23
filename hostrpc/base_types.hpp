@@ -35,7 +35,6 @@ _Static_assert(128 == round64(65), "");
 _Static_assert(128 == round64(127), "");
 _Static_assert(128 == round64(128), "");
 _Static_assert(192 == round64(129), "");
-}  // namespace hostrpc
 
 template <uint64_t lhs, uint64_t rhs>
 HOSTRPC_ANNOTATE constexpr bool static_equal()
@@ -51,8 +50,11 @@ HOSTRPC_ANNOTATE constexpr bool static_lessthan_equal()
   return lhs <= rhs;
 }
 
-namespace hostrpc
+enum class port_t : uint32_t
 {
+  unavailable = UINT32_MAX,
+};
+
 struct cacheline_t
 {
   alignas(64) uint64_t element[8];

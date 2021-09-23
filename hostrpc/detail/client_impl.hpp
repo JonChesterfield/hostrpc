@@ -143,45 +143,44 @@ struct client_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE client_counters get_counters() { return Counter::get(); }
 
   template <typename T>
-  HOSTRPC_ANNOTATE uint32_t
+  HOSTRPC_ANNOTATE port_t
   rpc_open_port(T active_threads);  // UINT32_MAX on failure
 
   template <typename T>
   HOSTRPC_ANNOTATE void rpc_close_port(
       T active_threads,
-      uint32_t port);  // Require != UINT32_MAX, not already closed
+      port_t port);  // Require != UINT32_MAX, not already closed
 
   template <typename T>
   HOSTRPC_ANNOTATE void rpc_port_wait_until_available(T active_threads,
-                                                      uint32_t port);
+                                                      port_t port);
 
   template <typename Op, typename T>
-  HOSTRPC_ANNOTATE void rpc_port_send(T active_threads, uint32_t port, Op &&op);
+  HOSTRPC_ANNOTATE void rpc_port_send(T active_threads, port_t port, Op &&op);
 
   template <typename Op, typename T>
   HOSTRPC_ANNOTATE void rpc_port_send_given_available(T active_threads,
-                                                      uint32_t port, Op &&op);
+                                                      port_t port, Op &&op);
 
   template <typename T>
-  HOSTRPC_ANNOTATE void rpc_port_wait_for_result(T active_threads,
-                                                 uint32_t port);
+  HOSTRPC_ANNOTATE void rpc_port_wait_for_result(T active_threads, port_t port);
 
   template <typename T>
-  HOSTRPC_ANNOTATE void rpc_port_discard_result(T active_threads, uint32_t port)
+  HOSTRPC_ANNOTATE void rpc_port_discard_result(T active_threads, port_t port)
   {
     release_slot(active_threads, port);
   }
 
   template <typename Use, typename T>
-  HOSTRPC_ANNOTATE void rpc_port_recv(T active_threads, uint32_t slot,
-                                      Use &&use)
+  HOSTRPC_ANNOTATE void rpc_port_recv(T active_threads, port_t slot, Use &&use)
   {
     // wait for H1, result available
     // if outbox is clear, which is detectable, this will not terminate
     rpc_port_wait_for_result(active_threads, slot);
 
     // call the continuation
-    use(slot, &shared_buffer[slot]);
+    use(static_cast<uint32_t>(slot),
+        &shared_buffer[static_cast<uint32_t>(slot)]);
     platform::fence_release();
     // mark the work as no longer in use
     // todo: is it better to leave this for the GC?
@@ -219,7 +218,7 @@ struct client_impl : public SZT, public Counter
   }
 
   template <typename T>
-  HOSTRPC_ANNOTATE void release_slot(T active_threads, uint32_t slot)
+  HOSTRPC_ANNOTATE void release_slot(T active_threads, port_t slot)
   {
     const uint32_t size = this->size();
     platform::fence_release();
@@ -255,15 +254,15 @@ struct client_impl : public SZT, public Counter
 
   template <typename T>
   HOSTRPC_ANNOTATE bool rpc_verify_port_available(T active_threads,
-                                                  uint32_t slot) noexcept;
+                                                  port_t port) noexcept;
 
   template <typename T>
-  HOSTRPC_ANNOTATE bool result_available(T active_threads, uint32_t slot);
+  HOSTRPC_ANNOTATE bool result_available(T active_threads, port_t port);
 };
 
 template <typename WordT, typename SZT, typename Counter>
 template <typename T>
-HOSTRPC_ANNOTATE uint32_t
+HOSTRPC_ANNOTATE port_t
 client_impl<WordT, SZT, Counter>::rpc_open_port(T active_threads)
 {
   const slot_type size = this->size();
@@ -302,10 +301,11 @@ client_impl<WordT, SZT, Counter>::rpc_open_port(T active_threads)
               Counter::cas_lock_fail(active_threads, cas_fail_count);
 
               // Test if it is available, e.g. isn't garbage
-              if (rpc_verify_port_available(active_threads, slot))
+              if (rpc_verify_port_available(active_threads,
+                                            static_cast<port_t>(slot)))
                 {
                   // Yep, got it and it's good to go
-                  return slot;
+                  return static_cast<port_t>(slot);
                 }
             }
           else
@@ -316,20 +316,20 @@ client_impl<WordT, SZT, Counter>::rpc_open_port(T active_threads)
     }
 
   // couldn't get a slot in any word
-  return UINT32_MAX;
+  return port_t::unavailable;
 }
 
 template <typename WordT, typename SZT, typename Counter>
 template <typename T>
 HOSTRPC_ANNOTATE void client_impl<WordT, SZT, Counter>::rpc_close_port(
-    T active_threads, uint32_t port)
+    T active_threads, port_t port)
 {
   const uint32_t size = this->size();
   // something needs to release() the buffer element before
   // dropping this lock
 
-  assert(port != UINT32_MAX);
-  assert(port < size);
+  assert(port != port_t::unavailable);
+  assert(static_cast<uint32_t>(port) < size);
 
   if (platform::is_master_lane(active_threads))
     {
@@ -341,7 +341,7 @@ template <typename WordT, typename SZT, typename Counter>
 template <typename T>
 HOSTRPC_ANNOTATE void
 client_impl<WordT, SZT, Counter>::rpc_port_wait_until_available(
-    T active_threads, uint32_t port)
+    T active_threads, port_t port)
 {
   const uint32_t size = this->size();
   const uint32_t w = index_to_element<Word>(port);
@@ -414,7 +414,7 @@ client_impl<WordT, SZT, Counter>::rpc_port_wait_until_available(
 template <typename WordT, typename SZT, typename Counter>
 template <typename Op, typename T>
 HOSTRPC_ANNOTATE void client_impl<WordT, SZT, Counter>::rpc_port_send(
-    T active_threads, uint32_t port, Op &&op)
+    T active_threads, port_t port, Op &&op)
 {
   // If the port has just been opened, we know it is available to
   // submit work to. In general, send might be called while the
@@ -433,14 +433,15 @@ template <typename WordT, typename SZT, typename Counter>
 template <typename Fill, typename T>
 HOSTRPC_ANNOTATE void
 client_impl<WordT, SZT, Counter>::rpc_port_send_given_available(
-    T active_threads, uint32_t port, Fill &&fill)
+    T active_threads, port_t port, Fill &&fill)
 {
-  assert(port != UINT32_MAX);
+  assert(port != port_t::unavailable);
   const uint32_t size = this->size();
 
   // wave_populate
   // Fill may have no precondition, in which case this doesn't need to run
-  fill(port, &shared_buffer[port]);
+  fill(static_cast<uint32_t>(port),
+       &shared_buffer[static_cast<uint32_t>(port)]);
 
   // wave_publish work
   {
@@ -482,7 +483,7 @@ template <typename WordT, typename SZT, typename Counter>
 template <typename T>
 HOSTRPC_ANNOTATE void
 client_impl<WordT, SZT, Counter>::rpc_port_wait_for_result(T active_threads,
-                                                           uint32_t port)
+                                                           port_t port)
 {
   // assumes output live
   assert(bits::nthbitset(
@@ -502,9 +503,9 @@ template <typename WordT, typename SZT, typename Counter>
 template <typename T>
 HOSTRPC_ANNOTATE bool
 client_impl<WordT, SZT, Counter>::rpc_verify_port_available(
-    T active_threads, uint32_t port) noexcept
+    T active_threads, port_t port) noexcept
 {
-  assert(port != UINT32_MAX);
+  assert(port != port_t::unavailable);
   const uint32_t element = index_to_element<Word>(port);
   const uint32_t subindex = index_to_subindex<Word>(port);
 
@@ -548,7 +549,7 @@ client_impl<WordT, SZT, Counter>::rpc_verify_port_available(
 template <typename WordT, typename SZT, typename Counter>
 template <typename T>
 HOSTRPC_ANNOTATE bool client_impl<WordT, SZT, Counter>::result_available(
-    T active_threads, uint32_t slot)
+    T active_threads, port_t slot)
 {
   const uint32_t size = this->size();
   uint32_t got = 0;
@@ -572,8 +573,8 @@ struct client : public client_impl<WordT, SZT, Counter>
   HOSTRPC_ANNOTATE bool rpc_invoke_async(T active_threads, Op &&op) noexcept
   {
     // get a port, send it, don't wait
-    uint32_t port = base::rpc_open_port(active_threads);
-    if (port == UINT32_MAX)
+    port_t port = base::rpc_open_port(active_threads);
+    if (port == port_t::unavailable)
       {
         return false;
       }
@@ -589,8 +590,8 @@ struct client : public client_impl<WordT, SZT, Counter>
   template <typename T, typename Fill, typename Use>
   HOSTRPC_ANNOTATE bool rpc_invoke(T active_threads, Fill &&f, Use &&u) noexcept
   {
-    uint32_t port = base::rpc_open_port(active_threads);
-    if (port == UINT32_MAX)
+    port_t port = base::rpc_open_port(active_threads);
+    if (port == port_t::unavailable)
       {
         return false;
       }

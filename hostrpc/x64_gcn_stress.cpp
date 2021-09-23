@@ -252,7 +252,6 @@ void init();
 
 INCBIN(x64_gcn_stress_so, "x64_gcn_stress.gcn.so");
 
-
 static uint32_t size_p(hsa_agent_t kernel_agent)
 {
   uint32_t cus = hsa::agent_get_info_compute_unit_count(kernel_agent);

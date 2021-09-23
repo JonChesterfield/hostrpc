@@ -75,9 +75,9 @@ template <typename T>
 __PRINTF_API_INTERNAL uint32_t __printf_print_start(T *client, const char *fmt)
 {
   auto active_threads = platform::active_threads();
-  uint32_t port = client->rpc_open_port(active_threads);
+  hostrpc::port_t port = client->rpc_open_port(active_threads);
 
-  while (port == UINT32_MAX)
+  while (port == hostrpc::port_t::unavailable)
     {
       // TODO: Check a port is eventually available
       // Otherwise need to report failure via the return value from printf
@@ -90,15 +90,16 @@ __PRINTF_API_INTERNAL uint32_t __printf_print_start(T *client, const char *fmt)
     client->rpc_port_send(active_threads, port, f);
   }
 
-  __printf_pass_element_cstr(port, fmt);
+  __printf_pass_element_cstr(static_cast<uint32_t>(port), fmt);
 
-  return port;
+  return static_cast<uint32_t>(port);
 }
 
 template <typename T>
-__PRINTF_API_INTERNAL int __printf_print_end(T *client, uint32_t port)
+__PRINTF_API_INTERNAL int __printf_print_end(T *client, uint32_t uport)
 {
-  assert(port != UINT32_MAX);
+  hostrpc::port_t port = static_cast<hostrpc::port_t>(uport);
+  assert(port != hostrpc::port_t::unavailable);
   auto active_threads = platform::active_threads();
   {
     __printf_print_end_t inst;
@@ -117,10 +118,11 @@ __PRINTF_API_INTERNAL int __printf_print_end(T *client, uint32_t port)
 
 template <typename T>
 __PRINTF_API_INTERNAL void __printf_pass_element_uint64(T *client,
-                                                        uint32_t port,
+                                                        uint32_t uport,
                                                         uint64_t v)
 {
-  assert(port != UINT32_MAX);
+  hostrpc::port_t port = static_cast<hostrpc::port_t>(uport);
+  assert(port != hostrpc::port_t::unavailable);
   auto active_threads = platform::active_threads();
   __printf_pass_element_scalar_t inst(hostrpc_printf_pass_element_uint64, v);
   send_by_copy<__printf_pass_element_scalar_t> f(&inst);
@@ -129,9 +131,11 @@ __PRINTF_API_INTERNAL void __printf_pass_element_uint64(T *client,
 
 template <typename T>
 __PRINTF_API_INTERNAL void __printf_pass_element_double(T *client,
-                                                        uint32_t port, double v)
+                                                        uint32_t uport,
+                                                        double v)
 {
-  assert(port != UINT32_MAX);
+  hostrpc::port_t port = static_cast<hostrpc::port_t>(uport);
+  assert(port != hostrpc::port_t::unavailable);
   auto active_threads = platform::active_threads();
   __printf_pass_element_scalar_t inst(hostrpc_printf_pass_element_double, v);
   send_by_copy<__printf_pass_element_scalar_t> f(&inst);
@@ -139,10 +143,11 @@ __PRINTF_API_INTERNAL void __printf_pass_element_double(T *client,
 }
 
 template <typename T>
-__PRINTF_API_INTERNAL void __printf_pass_element_void(T *client, uint32_t port,
+__PRINTF_API_INTERNAL void __printf_pass_element_void(T *client, uint32_t uport,
                                                       const void *v)
 {
-  assert(port != UINT32_MAX);
+  hostrpc::port_t port = static_cast<hostrpc::port_t>(uport);
+  assert(port != hostrpc::port_t::unavailable);
   _Static_assert(sizeof(const void *) == 8, "");
   auto active_threads = platform::active_threads();
   uint64_t c;
@@ -153,10 +158,11 @@ __PRINTF_API_INTERNAL void __printf_pass_element_void(T *client, uint32_t port,
 }
 
 template <typename T>
-__PRINTF_API_INTERNAL void __printf_pass_element_cstr(T *client, uint32_t port,
+__PRINTF_API_INTERNAL void __printf_pass_element_cstr(T *client, uint32_t uport,
                                                       const char *str)
 {
-  assert(port != UINT32_MAX);
+  hostrpc::port_t port = static_cast<hostrpc::port_t>(uport);
+  assert(port != hostrpc::port_t::unavailable);
   auto active_threads = platform::active_threads();
   uint64_t L = __printf_strlen(str);
 
@@ -184,10 +190,11 @@ __PRINTF_API_INTERNAL void __printf_pass_element_cstr(T *client, uint32_t port,
 
 template <typename T>
 __PRINTF_API_INTERNAL void __printf_pass_element_write_int64(T *client,
-                                                             uint32_t port,
+                                                             uint32_t uport,
                                                              int64_t *x)
 {
-  assert(port != UINT32_MAX);
+  hostrpc::port_t port = static_cast<hostrpc::port_t>(uport);
+  assert(port != hostrpc::port_t::unavailable);
   auto active_threads = platform::active_threads();
   __printf_pass_element_write_t inst;
   inst.payload = 42;

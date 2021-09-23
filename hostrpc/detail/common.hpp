@@ -38,10 +38,22 @@ HOSTRPC_ANNOTATE inline uint32_t index_to_element(uint32_t x)
 }
 
 template <typename Word>
+HOSTRPC_ANNOTATE inline uint32_t index_to_element(port_t x)
+{
+  return index_to_element<Word>(static_cast<uint32_t>(x));
+}
+
+template <typename Word>
 HOSTRPC_ANNOTATE inline uint32_t index_to_subindex(uint32_t x)
 {
   uint32_t wordBits = 8 * sizeof(Word);
   return x % wordBits;
+}
+
+template <typename Word>
+HOSTRPC_ANNOTATE inline uint32_t index_to_subindex(port_t x)
+{
+  return index_to_subindex<Word>(static_cast<uint32_t>(x));
 }
 
 namespace bits
@@ -295,7 +307,7 @@ struct slot_bitmap
   HOSTRPC_ANNOTATE ~slot_bitmap() {}
   HOSTRPC_ANNOTATE Ty *data() { return a; }
 
-  HOSTRPC_ANNOTATE bool read_bit(uint32_t size, uint32_t i, Word *loaded) const
+  HOSTRPC_ANNOTATE bool read_bit(uint32_t size, port_t i, Word *loaded) const
   {
     uint32_t w = index_to_element<Word>(i);
     Word d = load_word(size, w);
@@ -303,7 +315,7 @@ struct slot_bitmap
     return bits::nthbitset(d, index_to_subindex<Word>(i));
   }
 
-  HOSTRPC_ANNOTATE bool read_bit(uint32_t size, uint32_t i) const
+  HOSTRPC_ANNOTATE bool read_bit(uint32_t size, port_t i) const
   {
     Word loaded;
     return read_bit(size, i, &loaded);
@@ -333,10 +345,10 @@ struct slot_bitmap
 
   // assumes slot available
   HOSTRPC_ANNOTATE Word claim_slot_returning_updated_word(uint32_t size,
-                                                          uint32_t i)
+                                                          port_t i)
   {
     (void)size;
-    assert(i < size);
+    assert(static_cast<uint32_t>(i) < size);
     uint32_t w = index_to_element<Word>(i);
     uint32_t subindex = index_to_subindex<Word>(i);
     assert(!bits::nthbitset(load_word(size, w), subindex));
@@ -350,16 +362,16 @@ struct slot_bitmap
   }
 
   // assumes slot taken
-  HOSTRPC_ANNOTATE void release_slot(uint32_t size, uint32_t i)
+  HOSTRPC_ANNOTATE void release_slot(uint32_t size, port_t i)
   {
     release_slot_returning_updated_word(size, i);
   }
 
   HOSTRPC_ANNOTATE Word release_slot_returning_updated_word(uint32_t size,
-                                                            uint32_t i)
+                                                            port_t i)
   {
     (void)size;
-    assert(i < size);
+    assert(static_cast<uint32_t>(i) < size);
     uint32_t w = index_to_element<Word>(i);
     uint32_t subindex = index_to_subindex<Word>(i);
     assert(bits::nthbitset(load_word(size, w), subindex));
@@ -572,10 +584,10 @@ struct lock_bitmap
   }
 
   // assumes slot taken
-  HOSTRPC_ANNOTATE void release_slot(uint32_t size, uint32_t i)
+  HOSTRPC_ANNOTATE void release_slot(uint32_t size, port_t i)
   {
     (void)size;
-    assert(i < size);
+    assert(static_cast<uint32_t>(i) < size);
     uint32_t w = index_to_element<Word>(i);
     uint32_t subindex = index_to_subindex<Word>(i);
     assert(bits::nthbitset(load_word(size, w), subindex));
@@ -650,13 +662,13 @@ struct slot_bytemap
   HOSTRPC_ANNOTATE Ty *data() { return a; }
 
   // assumes slot available
-  HOSTRPC_ANNOTATE void claim_slot(uint32_t size, uint32_t i)
+  HOSTRPC_ANNOTATE void claim_slot(uint32_t size, port_t i)
   {
     write_byte<1>(size, i);
   }
 
   // assumes slot taken
-  HOSTRPC_ANNOTATE void release_slot(uint32_t size, uint32_t i)
+  HOSTRPC_ANNOTATE void release_slot(uint32_t size, port_t i)
   {
     write_byte<0>(size, i);
   }
@@ -684,8 +696,9 @@ struct slot_bytemap
 
  private:
   template <uint8_t v>
-  HOSTRPC_ANNOTATE void write_byte(uint32_t size, uint32_t i)
+  HOSTRPC_ANNOTATE void write_byte(uint32_t size, port_t port)
   {
+    uint32_t i = static_cast<uint32_t>(port);
     (void)size;
     assert(i < size);
 #if SLOT_BYTEMAP_ATOMIC
@@ -736,14 +749,14 @@ struct slot_bytemap
 template <bool InitialState, typename Word, size_t Sscope, typename SProp,
           size_t Vscope, typename VProp>
 HOSTRPC_ANNOTATE void update_visible_from_staging(
-    uint32_t size, uint32_t i, slot_bitmap<Word, Sscope, SProp> *staging,
+    uint32_t size, port_t i, slot_bitmap<Word, Sscope, SProp> *staging,
     slot_bitmap<Word, Vscope, VProp> *visible, uint64_t *cas_fail_count,
     uint64_t *cas_help_count)
 {
   // Write value ~InitialState to slot[i]
 
   assert((void *)visible != (void *)staging);
-  assert(i < size);
+  assert(static_cast<uint32_t>(i) < size);
   const uint32_t w = index_to_element<Word>(i);
   const uint32_t subindex = index_to_subindex<Word>(i);
 
@@ -795,7 +808,7 @@ HOSTRPC_ANNOTATE void update_visible_from_staging(
 template <typename Word, size_t Sscope, typename SProp, size_t Vscope,
           typename VProp>
 HOSTRPC_ANNOTATE void staged_claim_slot(
-    uint32_t size, uint32_t i, slot_bitmap<Word, Sscope, SProp> *staging,
+    uint32_t size, port_t i, slot_bitmap<Word, Sscope, SProp> *staging,
     slot_bitmap<Word, Vscope, VProp> *visible, uint64_t *cas_fail_count,
     uint64_t *cas_help_count)
 {
@@ -806,7 +819,7 @@ HOSTRPC_ANNOTATE void staged_claim_slot(
 template <typename Word, size_t Sscope, typename SProp, size_t Vscope,
           typename VProp>
 HOSTRPC_ANNOTATE void staged_release_slot(
-    uint32_t size, uint32_t i, slot_bitmap<Word, Sscope, SProp> *staging,
+    uint32_t size, port_t i, slot_bitmap<Word, Sscope, SProp> *staging,
     slot_bitmap<Word, Vscope, VProp> *visible, uint64_t *cas_fail_count,
     uint64_t *cas_help_count)
 {
@@ -816,13 +829,13 @@ HOSTRPC_ANNOTATE void staged_release_slot(
 
 template <bool InitialState, typename Word, size_t Sscope, typename SProp>
 HOSTRPC_ANNOTATE void update_visible_from_staging(
-    uint32_t size, uint32_t i, slot_bitmap<Word, Sscope, SProp> *staging,
+    uint32_t size, port_t i, slot_bitmap<Word, Sscope, SProp> *staging,
     slot_bytemap<Word> *visible, uint64_t *, uint64_t *)
 {
   // Write value ~InitialState to slot[i]
 
   assert((void *)visible != (void *)staging);
-  assert(i < size);
+  assert(static_cast<uint32_t>(i) < size);
 
   // (InitialState ? fetch_and : fetch_or) to update staging
   if (InitialState)
