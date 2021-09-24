@@ -96,13 +96,116 @@ extern "C" HOSTRPC_ANNOTATE void reference(client_type& c)
   // opencl deduces the wrong type for fill line (__private qualifies it)
   c.rpc_invoke(hostrpc::make_apply<fill_line>(fill_line{}));
 }
+namespace hostrpc
+{
+
+// Would like to be able to pass either
+// void operator()(port_t, uint32_t call_number, uint64_t *)
+// or
+// void operator()(port_t port, page_t *page)
+// Disassembling via traits and counting number arguments is thwarted
+// by opencl rejecting function pointers, even in unevaluated contexts
+
+namespace dispatch
+{
+namespace detail
+{
+
+enum class dispatch_case
+{
+  to_page,
+  to_line,
+  unknown,
+};
+
+template <typename T, size_t>
+struct takes_page
+{
+  template <typename U>
+  static constexpr decltype(cxx::declval<U>().operator()(
+                                cxx::declval<hostrpc::port_t>(),
+                                cxx::declval<hostrpc::page_t*>()),
+                            bool())
+  test(int)
+  {
+    return true;
+  }
+
+  template <typename U>
+  static constexpr bool test(...)
+  {
+    return false;
+  }
+
+  static constexpr bool value = test<T>(int());
+};
+
+template <typename T, size_t N>
+struct takes_line
+{
+  template <typename U>
+  static constexpr decltype(cxx::declval<U>().operator()(
+                                cxx::declval<hostrpc::port_t>(),
+                                cxx::declval<uint32_t>(),
+                                cxx::declval<uint64_t*>()),
+                            bool())
+  test(int)
+  {
+    return true;
+  }
+
+  template <typename U>
+  static constexpr decltype(cxx::declval<U>().operator()(
+                                cxx::declval<hostrpc::port_t>(),
+                                cxx::declval<uint32_t>(),
+                                cxx::declval<uint64_t (&)[N]>()),
+                            bool())
+  test(int)
+  {
+    return true;
+  }
+
+  template <typename U>
+  static constexpr bool test(...)
+  {
+    return false;
+  }
+
+  static constexpr bool value = test<T>(int());
+};
+
+}  // namespace detail
+
+template <typename F>
+constexpr detail::dispatch_case classify()
+{
+  constexpr size_t N = 8;
+  using namespace detail;
+  constexpr bool p = takes_page<F, N>::value;
+  constexpr bool l = takes_line<F, N>::value;
+  static_assert(!(p && l), "exclusive types");
+
+  if (p)
+    {
+      return dispatch_case::to_page;
+    }
+  if (l)
+    {
+      return dispatch_case::to_line;
+    }
+  return dispatch_case::unknown;
+}
+
+}  // namespace dispatch
+
+}  // namespace hostrpc
 
 extern "C" HOSTRPC_ANNOTATE void pointer(client_type& c)
 {
   struct fill_line
   {
     HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, uint32_t call_number,
-                                     uint64_t* element)
+                                     uint64_t (&element)[8])
     {
       (void)call_number;
       element[0] = element[1];
@@ -111,5 +214,14 @@ extern "C" HOSTRPC_ANNOTATE void pointer(client_type& c)
   };
 
   // opencl deduces the wrong type for fill line (__private qualifies it)
-  c.rpc_invoke(hostrpc::make_apply<fill_line>(fill_line{}));
+  auto a = hostrpc::make_apply<fill_line>(fill_line{});
+
+  static_assert(hostrpc::dispatch::classify<fill_line>() ==
+                    hostrpc::dispatch::detail::dispatch_case::to_line,
+                "");
+  static_assert(hostrpc::dispatch::classify<decltype(a)>() ==
+                    hostrpc::dispatch::detail::dispatch_case::to_page,
+                "");
+
+  c.rpc_invoke(hostrpc::cxx::move(a));
 }
