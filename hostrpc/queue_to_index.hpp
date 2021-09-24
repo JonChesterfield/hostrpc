@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "detail/platform/detect.hpp"
+#include "platform/detect.hpp"
 
 // There is a finite number of HSA queues supported by the driver:
 static const constexpr uint32_t MAX_NUM_DOORBELLS = 0x400;

@@ -5,7 +5,7 @@ kernel void __device_example(void) { example(); }
 #else
 
 #include "cxa_atexit.hpp"
-#include "detail/platform/detect.hpp"
+#include "platform/detect.hpp"
 #include "x64_gcn_type.hpp"
 
 #undef printf

@@ -2,7 +2,7 @@
 
 #define printf(...) __hostrpc_printf(__VA_ARGS__)
 
-#include "detail/platform/detect.hpp"
+#include "platform/detect.hpp"
 
 #ifdef PRECOMPILE
 #define TMP #define EVILUNIT_USE_STDIO 0

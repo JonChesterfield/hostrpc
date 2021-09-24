@@ -1,7 +1,7 @@
 #define VISIBLE __attribute__((visibility("default")))
 
 #include "cxa_atexit.hpp"
-#include "detail/platform/detect.hpp"
+#include "platform/detect.hpp"
 
 #if !defined __OPENCL__
 #if defined(__AMDGCN__)
@@ -110,7 +110,7 @@ struct gcn_x64_type
 #include <stddef.h>
 #include <stdint.h>
 
-#include "detail/platform.hpp"
+#include "platform.hpp"
 
 struct kernel_args
 {
@@ -311,7 +311,7 @@ TEST_CASE("persistent_kernel")
     {
       hostrpc::page_t *d;
       fill(hostrpc::page_t *d) : d(d) {}
-      void operator()(uint32_t, hostrpc::page_t *page)
+      void operator()(hostrpc::port_t, hostrpc::page_t *page)
       {
         __builtin_memcpy(page, d, sizeof(hostrpc::page_t));
       };
@@ -321,7 +321,7 @@ TEST_CASE("persistent_kernel")
     {
       hostrpc::page_t *d;
       use(hostrpc::page_t *d) : d(d) {}
-      void operator()(uint32_t, hostrpc::page_t *page)
+      void operator()(hostrpc::port_t, hostrpc::page_t *page)
       {
         __builtin_memcpy(d, page, sizeof(hostrpc::page_t));
       };

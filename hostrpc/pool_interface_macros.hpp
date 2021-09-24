@@ -1,7 +1,7 @@
 #ifndef POOL_INTERFACE_MACROS_HPP_INCLUDED
 #define POOL_INTERFACE_MACROS_HPP_INCLUDED
 
-#include "detail/platform/detect.hpp"
+#include "platform/detect.hpp"
 
 // Macros that expand into various boilerplate definitions based on a symbol
 // Set up so macros can be used on amdgcn, host or amdgcn-opencl, such

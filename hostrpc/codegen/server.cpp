@@ -1,4 +1,4 @@
-#include "../detail/platform/detect.hpp"
+#include "../platform/detect.hpp"
 #include "../detail/server_impl.hpp"
 
 using SZ = hostrpc::size_compiletime<128>;

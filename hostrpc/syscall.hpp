@@ -5,7 +5,7 @@
 
 #include "allocator.hpp"  // uses the openmp_impl for shared
 #include "base_types.hpp"
-#include "detail/platform/detect.hpp"
+#include "platform/detect.hpp"
 
 #if HOSTRPC_HOST
 #include <stdio.h>

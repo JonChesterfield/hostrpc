@@ -1,10 +1,10 @@
-#include "detail/platform/detect.hpp"
+#include "platform/detect.hpp"
 #include "pool_interface.hpp"
 
 POOL_INTERFACE_BOILERPLATE_AMDGPU(example, 32);
 
 #if !defined(__OPENCL_C_VERSION__)
-#include "detail/platform.hpp"
+#include "platform.hpp"
 
 #if HOSTRPC_AMDGCN
 

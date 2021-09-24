@@ -2,7 +2,7 @@
 #define ALLOCATOR_HPP_INCLUDED
 
 #include "detail/cxx.hpp"
-#include "detail/platform/detect.hpp"
+#include "platform/detect.hpp"
 
 #include <stddef.h>
 #include <stdint.h>

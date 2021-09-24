@@ -1,4 +1,4 @@
-#include "detail/platform/detect.hpp"
+#include "platform/detect.hpp"
 
 #include <stdint.h>
 // may want to use __attribute__((address_space(3))) in openmp to restrict

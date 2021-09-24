@@ -4,8 +4,8 @@
 #include <stdint.h>
 
 #include "../base_types.hpp"
-#include "platform.hpp"
-#include "platform/detect.hpp"
+#include "../platform.hpp"
+#include "../platform/detect.hpp"
 
 namespace hostrpc
 {

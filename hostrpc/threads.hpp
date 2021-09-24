@@ -1,7 +1,7 @@
 #ifndef THREADS_HPP_INCLUDED
 #define THREADS_HPP_INCLUDED
 
-#include "detail/platform.hpp"
+#include "platform.hpp"
 #include <stdint.h>
 
 namespace hostrpc

@@ -1,4 +1,4 @@
-#include "detail/platform.hpp"
+#include "platform.hpp"
 #undef printf
 #include "hostcall.hpp"
 #include <stddef.h>

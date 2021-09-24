@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 // todo: saner printf handling
-#include "detail/platform.hpp"
+#include "platform.hpp"
 
 #if HOSTRPC_HOST
 #include <stdio.h>

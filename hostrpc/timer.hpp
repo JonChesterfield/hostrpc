@@ -1,7 +1,7 @@
 #ifndef TIMER_HPP_INCLUDED
 #define TIMER_HPP_INCLUDED
 
-#include "detail/platform/detect.hpp"
+#include "platform/detect.hpp"
 
 #if HOSTRPC_HOST
 #include <chrono>

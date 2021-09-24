@@ -2,7 +2,7 @@
 #define SERVER_THREAD_STATE_HPP_INCLUDED
 
 #include "detail/cxx.hpp"
-#include "detail/platform.hpp"
+#include "platform.hpp"
 
 namespace hostrpc
 {

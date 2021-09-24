@@ -40,7 +40,7 @@ extern "C" void __ockl_hsa_signal_store(hsa_signal_t, uint64_t value,
 
 #endif
 
-#include "detail/platform.hpp"
+#include "platform.hpp"
 
 namespace offset
 {

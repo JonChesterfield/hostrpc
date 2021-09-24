@@ -1,7 +1,7 @@
 #ifndef COUNTERS_HPP_INCLUDED
 #define COUNTERS_HPP_INCLUDED
 
-#include "platform.hpp"
+#include "../platform.hpp"
 
 namespace hostrpc
 {

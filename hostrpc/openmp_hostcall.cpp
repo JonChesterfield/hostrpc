@@ -1,6 +1,6 @@
 #include "detail/common.hpp"
-#include "detail/platform.hpp"
-#include "detail/platform/detect.hpp"
+#include "platform.hpp"
+#include "platform/detect.hpp"
 #include "hostcall.hpp"
 #include "hostcall_hsa.hpp"
 #include "hostrpc_printf.h"

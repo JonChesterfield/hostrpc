@@ -8,7 +8,7 @@
 
 #include "allocator.hpp"
 #include "detail/client_impl.hpp"
-#include "detail/platform/detect.hpp"
+#include "platform/detect.hpp"
 #include "detail/server_impl.hpp"
 #include "host_client.hpp"
 #include "x64_gcn_type.hpp"
@@ -26,7 +26,7 @@
 #include <vector>
 #endif
 
-#include "detail/platform.hpp"  // assert
+#include "platform.hpp"  // assert
 
 // a 'per queue' structure, one per gpu, is basically a global variable
 // could be factored as such

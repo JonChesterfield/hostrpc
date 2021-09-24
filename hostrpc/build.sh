@@ -458,7 +458,7 @@ $CXX_X64 -I$HSAINC persistent_kernel.cpp -c -o persistent_kernel.x64.bc
 set -e
 fi
 
-$CXX_CUDA -std=c++14 --cuda-device-only -nogpuinc -nobuiltininc $PTX_VER detail/platform/nvptx.cu -c -emit-llvm -o detail/platform.ptx.bc
+$CXX_CUDA -std=c++14 --cuda-device-only -nogpuinc -nobuiltininc $PTX_VER platform/nvptx.cu -c -emit-llvm -o obj/platform.ptx.bc
 
 if (($have_amdgcn)); then
     # Tries to treat foo.so as a hip input file. Somewhat surprised, but might be right.
@@ -505,7 +505,7 @@ if (($have_nvptx)); then
     $LINK obj/openmp_support.x64.bc obj/cuda_support.x64.bc obj/syscall.x64.bc -o demo_bitcode_ptx.omp.bc
 
     $CLANGXX -I$HSAINC -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=$PTXGFX -I/usr/local/cuda/include -DDEMO_NVPTX=1 demo_openmp.cpp \
-             -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode_ptx.omp.bc -Xclang -mlink-builtin-bitcode -Xclang detail/platform.ptx.bc -o demo_openmp_ptx $CUDALINK -Wl,-rpath=$RDIR/lib
+             -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode_ptx.omp.bc -Xclang -mlink-builtin-bitcode -Xclang obj/platform.ptx.bc -o demo_openmp_ptx $CUDALINK -Wl,-rpath=$RDIR/lib
 fi
 
 
@@ -520,9 +520,9 @@ fi
 
 if (($have_nvptx)); then
 
-$LINK nvptx_main.ptx.bc tools/loader/nvptx_loader_entry.cu.ptx.bc detail/platform.ptx.bc -o executable_device.ptx.bc
+$LINK nvptx_main.ptx.bc tools/loader/nvptx_loader_entry.cu.ptx.bc obj/platform.ptx.bc -o executable_device.ptx.bc
 
-$LINK nvptx_main.ptx.bc tools/loader/nvptx_loader_entry.cu.ptx.bc detail/platform.ptx.bc -o executable_device.ptx.bc
+$LINK nvptx_main.ptx.bc tools/loader/nvptx_loader_entry.cu.ptx.bc obj/platform.ptx.bc -o executable_device.ptx.bc
 
 
 $CLANGXX --target=nvptx64-nvidia-cuda -march=$PTXGFX $PTX_VER executable_device.ptx.bc -S -o executable_device.ptx.s

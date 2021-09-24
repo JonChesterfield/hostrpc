@@ -3,8 +3,8 @@
 
 #include <stdint.h>
 
-#include "../base_types.hpp"  // page_t
-#include "fastint.hpp"
+#include "base_types.hpp"  // page_t
+#include "detail/fastint.hpp"
 #include "platform/detect.hpp"
 
 // todo: this should all be under namespace hostrpc

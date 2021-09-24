@@ -1,7 +1,7 @@
 #ifndef HOSTRPC_PRINTF_SERVER_HPP_INCLUDED
 #define HOSTRPC_PRINTF_SERVER_HPP_INCLUDED
 
-#include "detail/platform.hpp"
+#include "platform.hpp"
 #include "hostrpc_printf.h"
 
 #include "hostrpc_printf_api_macro.h"

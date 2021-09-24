@@ -1,7 +1,7 @@
 #ifndef HOSTCALL_HSA_HPP_INCLUDED
 #define HOSTCALL_HSA_HPP_INCLUDED
 
-#include "detail/platform/detect.hpp"
+#include "platform/detect.hpp"
 #include <stddef.h>
 
 #if HOSTRPC_HOST

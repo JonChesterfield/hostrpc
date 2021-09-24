@@ -4,7 +4,7 @@
 #include "common.hpp"
 #include "counters.hpp"
 #include "cxx.hpp"
-#include "platform/detect.hpp"
+#include "../platform/detect.hpp"
 
 // Intend to have call and service working across gcn and x86
 // The normal terminology is:
