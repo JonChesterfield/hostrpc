@@ -882,9 +882,73 @@ HOSTRPC_ANNOTATE void staged_release_slot(
 // each platform defines platform::native_width(), presently either 1|32|64
 // the application provides a function of type void (*)(port_t, page_t*) and
 // is responsible for using get_lane_id or similar to iterate across the page
+// the following defines an adapter by:
+template <typename Func>
+HOSTRPC_ANNOTATE auto make_apply(Func &&f);
+// Takes an object defining one of:
+// void operator()(port_t port, page_t *page)
+// void operator()
+// (hostrpc::port_t, uint32_t call_number, uint64_t (&element)[8])
+// void operator()
+// (hostrpc::port_t, uint32_t call_number, uint64_t *element)
+// and returns a callable object defining:
+// void operator()(port_t port, page_t *page)
+// which maps the passed function  across the rows in the page
 
 namespace detail
 {
+enum class callback_type
+{
+  to_page,
+  to_line,
+  unknown,
+};
+
+template <typename T, size_t N>
+class classify_callback_type
+{
+  template <typename U>
+  static constexpr decltype(cxx::declval<U>().operator()(
+                                cxx::declval<hostrpc::port_t>(),
+                                cxx::declval<hostrpc::page_t *>()),
+                            callback_type())
+  test(int)
+  {
+    return callback_type::to_page;
+  }
+
+  template <typename U>
+  static constexpr decltype(cxx::declval<U>().operator()(
+                                cxx::declval<hostrpc::port_t>(),
+                                cxx::declval<uint32_t>(),
+                                cxx::declval<uint64_t *>()),
+                            callback_type())
+  test(int)
+  {
+    return callback_type::to_line;
+  }
+
+  template <typename U>
+  static constexpr decltype(cxx::declval<U>().operator()(
+                                cxx::declval<hostrpc::port_t>(),
+                                cxx::declval<uint32_t>(),
+                                cxx::declval<uint64_t (&)[N]>()),
+                            callback_type())
+  test(int)
+  {
+    return callback_type::to_line;
+  }
+
+  // would use (...) as the worst match but opencl rejects it
+  static constexpr callback_type test(long)
+  {
+    return callback_type::unknown;
+  }
+  
+ public:
+  static constexpr callback_type value() { return test<T>(0); }
+};
+
 namespace apply
 {
 enum class apply_case
@@ -938,7 +1002,7 @@ static_assert(!divides_exactly(5, 2), "");
 static_assert(!divides_exactly(2, 5), "");
 
 template <size_t page_width, size_t platform_width>
-constexpr apply_case classify()
+constexpr apply_case classify_relative_width()
 {
   if (page_width == platform_width)
     {
@@ -968,9 +1032,10 @@ constexpr apply_case classify()
 
 static_assert(platform::native_width() != 0, "");
 
-static_assert(classify<page_t::width, platform::native_width()>() !=
-                  apply_case::nonintegral_ratio,
-              "");
+static_assert(
+    classify_relative_width<page_t::width, platform::native_width()>() !=
+        apply_case::nonintegral_ratio,
+    "");
 
 template <typename Func, apply_case c>
 struct apply;
@@ -1003,7 +1068,6 @@ struct apply<Func, apply_case::page_wider>
 
     for (size_t step = 0; step < ratio; step++)
       {
-        // todo: compile time id? requires unrolling loop
         uint32_t id =
             platform::get_lane_id().value() + step * platform::native_width();
         hostrpc::cacheline_t *L = &page->cacheline[id];
@@ -1030,20 +1094,72 @@ struct apply<Func, apply_case::page_narrower>
 };
 
 }  // namespace apply
+
+template <typename Func, apply::apply_case, callback_type>
+struct apply_function_iff_required;
+
+template <typename Func, apply::apply_case C>
+struct apply_function_iff_required<Func, C, callback_type::to_page>
+{
+  Func f;
+  HOSTRPC_ANNOTATE apply_function_iff_required(Func &&f_)
+      : f(cxx::forward<Func>(f_))
+  {
+  }
+
+  HOSTRPC_ANNOTATE void operator()(port_t port, page_t *page) { f(port, page); }
+};
+
+template <typename Func, apply::apply_case C>
+struct apply_function_iff_required<Func, C, callback_type::to_line>
+{
+  apply::apply<Func, C>      f;
+  HOSTRPC_ANNOTATE apply_function_iff_required(Func &&f_)
+      : f(cxx::forward<Func>(f_))
+  {
+  }
+
+  HOSTRPC_ANNOTATE void operator()(port_t port, page_t *page) { f(port, page); }
+};
+
 }  // namespace detail
+
+
+// Example use:
+// auto ApplyFill = hostrpc::make_apply<Fill>(cxx::forward<Fill>(fill));
+// followed by passing ApplyFill around
+// Unfortunately, opencl thwarts us here as well. The Func instance is sometimes
+// on the stack, and that wins error: field may not be qualified with __private
 
 template <typename Func>
 HOSTRPC_ANNOTATE auto make_apply(Func &&f)
 {
-  using namespace detail::apply;
-  // Takes an object defining:
-  // void operator()(hostrpc::port_t, uint32_t call_number, uint64_t
-  // (&element)[8]) and returns a callable object defining:
-  // void operator()(port_t port, page_t *page)
-  // which maps the element[8] function
-  // across the rows in the page
-  constexpr apply_case c = classify<page_t::width, platform::native_width()>();
-  return apply<Func, c>{cxx::forward<Func>(f)};
+  // Work out some properties of Func
+  constexpr size_t N = 8;
+  constexpr auto CallbackType = detail::classify_callback_type<Func,N>::value();
+  constexpr auto ApplyType = detail::apply::classify_relative_width<page_t::width,
+                                                                   platform::native_width()>();
+
+  // Need to be taking an operator() that acts on either pages or lines
+ static_assert(CallbackType == detail::callback_type::to_page ||
+               CallbackType == detail::callback_type::to_line
+               , "");
+
+
+ // page & platform width need to be an integral ratio
+ static_assert(ApplyType != detail::apply::apply_case::nonintegral_ratio, "");
+
+ // build a class that does the mapping across lines if necessary
+  auto r = detail::apply_function_iff_required<
+    Func, ApplyType, CallbackType>{
+      cxx::forward<Func>(f)};
+
+
+  // check we've built something that takes a page at a time
+  static_assert(detail::classify_callback_type<decltype(r), N>::value() ==
+                    detail::callback_type::to_page,
+                "");
+  return r;
 }
 
 }  // namespace hostrpc
