@@ -79,13 +79,30 @@ client_instance_from_aliasing(void* from)
   client_instance_invoke_direct(*c);
 }
 
-extern "C" HOSTRPC_ANNOTATE void wot(client_type& c)
+extern "C" HOSTRPC_ANNOTATE void reference(client_type& c)
 {
   struct fill_line
   {
     // passing it as a reference gives bounds checking
     HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, uint32_t call_number,
                                      uint64_t (&element)[8])
+    {
+      (void)call_number;
+      element[0] = element[1];
+      element[6] = element[7];
+    }
+  };
+
+  // opencl deduces the wrong type for fill line (__private qualifies it)
+  c.rpc_invoke(hostrpc::make_apply<fill_line>(fill_line{}));
+}
+
+extern "C" HOSTRPC_ANNOTATE void pointer(client_type& c)
+{
+  struct fill_line
+  {
+    HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, uint32_t call_number,
+                                     uint64_t* element)
     {
       (void)call_number;
       element[0] = element[1];
