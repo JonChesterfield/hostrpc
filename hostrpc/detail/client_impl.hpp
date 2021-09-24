@@ -567,8 +567,8 @@ struct client : public client_impl<WordT, SZT, Counter>
   using base = client_impl<WordT, SZT, Counter>;
   using base::client_impl;
 
-  template <typename T, typename Op>
-  HOSTRPC_ANNOTATE bool rpc_invoke_async(T active_threads, Op &&op) noexcept
+  template <typename T, typename Fill>
+  HOSTRPC_ANNOTATE bool rpc_invoke_async(T active_threads, Fill &&fill) noexcept
   {
     // get a port, send it, don't wait
     port_t port = base::rpc_open_port(active_threads);
@@ -576,7 +576,7 @@ struct client : public client_impl<WordT, SZT, Counter>
       {
         return false;
       }
-    base::rpc_port_send(active_threads, port, cxx::forward<Op>(op));
+    base::rpc_port_send(active_threads, port, cxx::forward<Fill>(fill));
     base::rpc_close_port(active_threads, port);
     return true;
   }

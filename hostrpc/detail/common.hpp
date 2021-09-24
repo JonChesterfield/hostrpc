@@ -885,6 +885,8 @@ HOSTRPC_ANNOTATE void staged_release_slot(
 
 namespace detail
 {
+namespace apply
+{
 enum class apply_case
 {
   same_width,
@@ -1027,19 +1029,21 @@ struct apply<Func, apply_case::page_narrower>
   }
 };
 
+}  // namespace apply
 }  // namespace detail
 
 template <typename Func>
 HOSTRPC_ANNOTATE auto make_apply(Func &&f)
 {
+  using namespace detail::apply;
   // Takes an object defining:
   // void operator()(hostrpc::port_t, uint32_t call_number, uint64_t
-  // (&element)[8]) and returns a callable object defining: void
-  // operator()(port_t port, page_t *page) which maps the element[8] function
+  // (&element)[8]) and returns a callable object defining:
+  // void operator()(port_t port, page_t *page)
+  // which maps the element[8] function
   // across the rows in the page
-  constexpr detail::apply_case c =
-      detail::classify<page_t::width, platform::native_width()>();
-  return detail::apply<Func, c>{cxx::forward<Func>(f)};
+  constexpr apply_case c = classify<page_t::width, platform::native_width()>();
+  return apply<Func, c>{cxx::forward<Func>(f)};
 }
 
 }  // namespace hostrpc
