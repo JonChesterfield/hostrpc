@@ -1,7 +1,7 @@
 #ifndef HOSTRPC_PRINTF_ENABLE_HPP_INCLUDED
 #define HOSTRPC_PRINTF_ENABLE_HPP_INCLUDED
 
-#include "detail/platform_detect.hpp"
+#include "detail/platform/detect.hpp"
 
 #include <stddef.h>
 #include <stdint.h>

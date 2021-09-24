@@ -1,7 +1,7 @@
 #ifndef LAUNCH_HPP_INCLUDED
 #define LAUNCH_HPP_INCLUDED
 
-#include "detail/platform_detect.hpp"
+#include "detail/platform/detect.hpp"
 
 #if !HOSTRPC_HOST
 #error "launch.hpp assumes host"

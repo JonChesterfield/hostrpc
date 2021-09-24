@@ -8,7 +8,7 @@
 
 #include "allocator.hpp"
 #include "detail/client_impl.hpp"
-#include "detail/platform_detect.hpp"
+#include "detail/platform/detect.hpp"
 #include "detail/server_impl.hpp"
 #include "host_client.hpp"
 #include "x64_gcn_type.hpp"

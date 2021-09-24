@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 #include "detail/fastint.hpp"
-#include "detail/platform_detect.hpp"
+#include "detail/platform/detect.hpp"
 
 #if HOSTRPC_HAVE_STDIO
 #include <stdio.h>

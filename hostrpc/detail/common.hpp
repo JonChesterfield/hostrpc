@@ -5,7 +5,7 @@
 
 #include "../base_types.hpp"
 #include "platform.hpp"
-#include "platform_detect.hpp"
+#include "platform/detect.hpp"
 
 namespace hostrpc
 {

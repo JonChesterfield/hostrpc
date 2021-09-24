@@ -1,8 +1,7 @@
 #ifndef HOSTRPC_PLATFORM_UTILS_HPP_INCLUDED
 #define HOSTRPC_PLATFORM_UTILS_HPP_INCLUDED
 
-#include "platform.hpp"
-#include "platform_detect.hpp"
+#include "../platform.hpp"
 
 namespace platform
 {

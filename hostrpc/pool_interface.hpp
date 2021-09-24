@@ -1,7 +1,7 @@
 #ifndef POOL_INTERFACE_HPP_INCLUDED
 #define POOL_INTERFACE_HPP_INCLUDED
 
-#include "detail/platform_detect.hpp"
+#include "detail/platform/detect.hpp"
 
 // Instantiate one of the boilerplate macros with a symbol and a compile time
 // integer for the maximum number of threads that can be managed by the pool.

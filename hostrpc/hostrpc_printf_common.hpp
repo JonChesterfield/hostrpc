@@ -5,7 +5,7 @@
 
 #include <stdint.h>
 
-#include "detail/platform_detect.hpp"
+#include "detail/platform/detect.hpp"
 
 enum func_type
 {

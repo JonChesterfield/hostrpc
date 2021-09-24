@@ -1,6 +1,7 @@
 // Intent is to use the cuda calls initially, then transform to clang intrinsics
 // and move into platform.hpp. This will need a patch to clang to lower the
 // opencl intrinsics in c++, or an alternative e.g. inline asm for the atomics.
+// May be able to use nvvm_ intrinsics instead
 
 #include <stdint.h>
 

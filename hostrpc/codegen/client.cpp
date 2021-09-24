@@ -1,5 +1,5 @@
 #include "../detail/client_impl.hpp"
-#include "../detail/platform_detect.hpp"
+#include "../detail/platform/detect.hpp"
 
 #include "../allocator.hpp"
 

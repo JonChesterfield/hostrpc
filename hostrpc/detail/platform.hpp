@@ -5,7 +5,7 @@
 
 #include "../base_types.hpp"  // page_t
 #include "fastint.hpp"
-#include "platform_detect.hpp"
+#include "platform/detect.hpp"
 
 // todo: this should all be under namespace hostrpc
 
@@ -87,15 +87,15 @@ inline HOSTRPC_ANNOTATE auto all_threads_active_constant();
 }  // namespace platform
 
 #if HOSTRPC_HOST
-#include "platform_host.hpp"
+#include "platform/host.hpp"
 #endif
 
 #if HOSTRPC_AMDGCN
-#include "platform_amdgcn.hpp"
+#include "platform/amdgcn.hpp"
 #endif
 
 #if HOSTRPC_NVPTX
-#include "platform_nvptx.hpp"
+#include "platform/nvptx.hpp"
 #endif
 
 namespace platform
@@ -347,7 +347,7 @@ HOSTRPC_ANNOTATE __attribute__((always_inline)) inline void assert_fail(
 }  // namespace detail
 
 #define HOSTRPC_PLATFORM_ATOMIC_ADDRSPACE_ATTRIBUTE
-#include "platform_atomic.inc"
+#include "platform/atomic.inc"
 
 }  // namespace host
 }  // namespace platform
@@ -394,7 +394,7 @@ HOSTRPC_ANNOTATE __attribute__((always_inline)) inline uint32_t all_true(
 }
 
 #define HOSTRPC_PLATFORM_ATOMIC_ADDRSPACE_ATTRIBUTE
-#include "platform_atomic.inc"
+#include "platform/atomic.inc"
 
 }  // namespace amdgcn
 
@@ -402,7 +402,7 @@ HOSTRPC_ANNOTATE __attribute__((always_inline)) inline uint32_t all_true(
 // todo: see if these overloads can be dropped by casting at call site
 #define HOSTRPC_PLATFORM_ATOMIC_ADDRSPACE_ATTRIBUTE \
   __attribute__((address_space(1)))
-#include "platform_atomic.inc"
+#include "platform/atomic.inc"
 
 }  // namespace platform
 #endif  // defined(__AMDGCN__)

@@ -6,7 +6,7 @@
 #include "allocator.hpp"
 #include "client_server_pair.hpp"
 #include "detail/client_impl.hpp"
-#include "detail/platform_detect.hpp"
+#include "detail/platform/detect.hpp"
 #include "detail/server_impl.hpp"
 #include "host_client.hpp"
 

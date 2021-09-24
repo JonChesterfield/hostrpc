@@ -1,4 +1,4 @@
-#include "detail/platform_detect.hpp"
+#include "detail/platform/detect.hpp"
 #include "run_on_hsa.hpp"
 
 // needs to parse as C for opencl, could use opencl++ instead

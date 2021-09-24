@@ -1,7 +1,7 @@
 #ifndef HOSTRPC_PRINTF_H_INCLUDED
 #define HOSTRPC_PRINTF_H_INCLUDED
 
-#include "detail/platform_detect.hpp"
+#include "detail/platform/detect.hpp"
 #include "hostrpc_printf_api_macro.h"
 
 #include <stdbool.h>

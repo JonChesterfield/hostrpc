@@ -3,7 +3,7 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 
-#include "detail/platform_detect.hpp"
+#include "detail/platform/detect.hpp"
 #if !HOSTRPC_HOST
 #error "allocator_cuda relies on the cuda host library"
 #endif

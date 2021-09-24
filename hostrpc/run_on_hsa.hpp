@@ -13,7 +13,7 @@
 // from an instantiation of HOSTRPC_ENTRY_POINT(NAME, TYPE) compiled as
 // amdgcn ocl/cxx and on the host
 
-#include "detail/platform_detect.hpp"
+#include "detail/platform/detect.hpp"
 
 #define HOSTRPC_ENTRY_POINT(NAME, TYPE) \
   /* void NAME(TYPE*); */               \

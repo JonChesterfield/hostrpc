@@ -458,7 +458,7 @@ $CXX_X64 -I$HSAINC persistent_kernel.cpp -c -o persistent_kernel.x64.bc
 set -e
 fi
 
-$CXX_CUDA -std=c++14 --cuda-device-only -nogpuinc -nobuiltininc $PTX_VER detail/platform.cu -c -emit-llvm -o detail/platform.ptx.bc
+$CXX_CUDA -std=c++14 --cuda-device-only -nogpuinc -nobuiltininc $PTX_VER detail/platform/nvptx.cu -c -emit-llvm -o detail/platform.ptx.bc
 
 if (($have_amdgcn)); then
     # Tries to treat foo.so as a hip input file. Somewhat surprised, but might be right.

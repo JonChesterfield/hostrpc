@@ -4,7 +4,7 @@
 #include "common.hpp"
 #include "counters.hpp"
 #include "cxx.hpp"
-#include "platform_detect.hpp"
+#include "platform/detect.hpp"
 
 namespace hostrpc
 {
