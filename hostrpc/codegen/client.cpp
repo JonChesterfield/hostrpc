@@ -84,13 +84,15 @@ extern "C" HOSTRPC_ANNOTATE void wot(client_type& c)
   struct fill_line
   {
     // passing it as a reference gives bounds checking
-    HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, uint64_t (&element)[8])
+    HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, uint32_t call_number,
+                                     uint64_t (&element)[8])
     {
+      (void)call_number;
       element[0] = element[1];
       element[6] = element[7];
     }
   };
 
-  hostrpc::apply<fill_line> ap(fill_line{});
-  c.rpc_invoke(ap);
+  // opencl deduces the wrong type for fill line (__private qualifies it)
+  c.rpc_invoke(hostrpc::make_apply<fill_line>(fill_line{}));
 }

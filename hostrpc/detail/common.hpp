@@ -971,27 +971,27 @@ static_assert(classify<page_t::width, platform::native_width()>() !=
               "");
 
 template <typename Func, apply_case c>
-struct apply_dispatch;
+struct apply;
 
 template <typename Func>
-struct apply_dispatch<Func, apply_case::same_width>
+struct apply<Func, apply_case::same_width>
 {
   Func f;
-  HOSTRPC_ANNOTATE apply_dispatch(Func &&f_) : f(cxx::forward<Func>(f_)) {}
+  HOSTRPC_ANNOTATE apply(Func &&f_) : f(cxx::forward<Func>(f_)) {}
 
   HOSTRPC_ANNOTATE void operator()(port_t port, page_t *page)
   {
-    unsigned id = platform::get_lane_id();
+    auto id = platform::get_lane_id();
     hostrpc::cacheline_t *L = &page->cacheline[id];
-    f(port, L->element);
+    f(port, id, L->element);
   }
 };
 
 template <typename Func>
-struct apply_dispatch<Func, apply_case::page_wider>
+struct apply<Func, apply_case::page_wider>
 {
   Func f;
-  HOSTRPC_ANNOTATE apply_dispatch(Func &&f_) : f(cxx::forward<Func>(f_)) {}
+  HOSTRPC_ANNOTATE apply(Func &&f_) : f(cxx::forward<Func>(f_)) {}
 
   HOSTRPC_ANNOTATE void operator()(port_t port, page_t *page)
   {
@@ -1001,26 +1001,28 @@ struct apply_dispatch<Func, apply_case::page_wider>
 
     for (size_t step = 0; step < ratio; step++)
       {
-        unsigned id = platform::get_lane_id() + step * platform::native_width();
+        // todo: compile time id? requires unrolling loop
+        uint32_t id =
+            platform::get_lane_id().value() + step * platform::native_width();
         hostrpc::cacheline_t *L = &page->cacheline[id];
-        f(port, L->element);
+        f(port, id, L->element);
       }
   }
 };
 
 template <typename Func>
-struct apply_dispatch<Func, apply_case::page_narrower>
+struct apply<Func, apply_case::page_narrower>
 {
   Func f;
-  HOSTRPC_ANNOTATE apply_dispatch(Func &&f_) : f(cxx::forward<Func>(f_)) {}
+  HOSTRPC_ANNOTATE apply(Func &&f_) : f(cxx::forward<Func>(f_)) {}
 
   HOSTRPC_ANNOTATE void operator()(port_t port, page_t *page)
   {
-    unsigned id = platform::get_lane_id();
+    auto id = platform::get_lane_id();
     if (id < page_t::width)
       {
         hostrpc::cacheline_t *L = &page->cacheline[id];
-        f(port, L->element);
+        f(port, id, L->element);
       }
   }
 };
@@ -1028,15 +1030,17 @@ struct apply_dispatch<Func, apply_case::page_narrower>
 }  // namespace detail
 
 template <typename Func>
-struct apply
-    : public detail::apply_dispatch<
-          Func, detail::classify<page_t::width, platform::native_width()>()>
+HOSTRPC_ANNOTATE auto make_apply(Func &&f)
 {
-  using base = detail::apply_dispatch<
-      Func, detail::classify<page_t::width, platform::native_width()>()>;
-
-  HOSTRPC_ANNOTATE apply(Func &&f_) : base(cxx::forward<Func>(f_)) {}
-};
+  // Takes an object defining:
+  // void operator()(hostrpc::port_t, uint32_t call_number, uint64_t
+  // (&element)[8]) and returns a callable object defining: void
+  // operator()(port_t port, page_t *page) which maps the element[8] function
+  // across the rows in the page
+  constexpr detail::apply_case c =
+      detail::classify<page_t::width, platform::native_width()>();
+  return detail::apply<Func, c>{cxx::forward<Func>(f)};
+}
 
 }  // namespace hostrpc
 
