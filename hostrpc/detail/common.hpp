@@ -6,6 +6,7 @@
 #include "../base_types.hpp"
 #include "../platform.hpp"
 #include "../platform/detect.hpp"
+#include "cxx.hpp"
 
 namespace hostrpc
 {
@@ -877,6 +878,165 @@ HOSTRPC_ANNOTATE void staged_release_slot(
   update_visible_from_staging<true>(size, i, staging, visible, cas_fail_count,
                                     cas_help_count);
 }
+
+// each platform defines platform::native_width(), presently either 1|32|64
+// the application provides a function of type void (*)(port_t, page_t*) and
+// is responsible for using get_lane_id or similar to iterate across the page
+
+namespace detail
+{
+enum class apply_case
+{
+  same_width,
+  page_wider,
+  page_narrower,
+  nonintegral_ratio,
+};
+
+constexpr bool divides_exactly(size_t x, size_t y)
+{
+  if ((x == 0) || (y == 0))
+    {
+      return false;
+    }
+
+  if (x == y)
+    {
+      return true;
+    }
+
+  if (x < y)
+    {
+      size_t ratio = y / x;
+      bool exact = y == ratio * x;
+      return exact;
+    }
+  else
+    {
+      return divides_exactly(y, x);
+    }
+}
+
+// No zero
+static_assert(!divides_exactly(1, 0), "");
+static_assert(!divides_exactly(0, 1), "");
+static_assert(!divides_exactly(0, 0), "");
+
+// Multiples of one
+static_assert(divides_exactly(1, 1), "");
+static_assert(divides_exactly(2, 1), "");
+static_assert(divides_exactly(1, 2), "");
+
+// Multiples of not-one
+static_assert(divides_exactly(2, 4), "");
+static_assert(divides_exactly(4, 2), "");
+
+// Not multiple
+static_assert(!divides_exactly(5, 2), "");
+static_assert(!divides_exactly(2, 5), "");
+
+template <size_t page_width, size_t platform_width>
+constexpr apply_case classify()
+{
+  if (page_width == platform_width)
+    {
+      return apply_case::same_width;
+    }
+
+  if (page_width < platform_width)
+    {
+      constexpr bool exact = divides_exactly(page_width, platform_width);
+      if (exact)
+        {
+          return apply_case::page_narrower;
+        }
+    }
+
+  if (page_width > platform_width)
+    {
+      constexpr bool exact = divides_exactly(page_width, platform_width);
+      if (exact)
+        {
+          return apply_case::page_wider;
+        }
+    }
+
+  return apply_case::nonintegral_ratio;
+}
+
+static_assert(platform::native_width() != 0, "");
+
+static_assert(classify<page_t::width, platform::native_width()>() !=
+                  apply_case::nonintegral_ratio,
+              "");
+
+template <typename Func, apply_case c>
+struct apply_dispatch;
+
+template <typename Func>
+struct apply_dispatch<Func, apply_case::same_width>
+{
+  Func f;
+  HOSTRPC_ANNOTATE apply_dispatch(Func &&f_) : f(cxx::forward<Func>(f_)) {}
+
+  HOSTRPC_ANNOTATE void operator()(port_t port, page_t *page)
+  {
+    unsigned id = platform::get_lane_id();
+    hostrpc::cacheline_t *L = &page->cacheline[id];
+    f(port, L->element);
+  }
+};
+
+template <typename Func>
+struct apply_dispatch<Func, apply_case::page_wider>
+{
+  Func f;
+  HOSTRPC_ANNOTATE apply_dispatch(Func &&f_) : f(cxx::forward<Func>(f_)) {}
+
+  HOSTRPC_ANNOTATE void operator()(port_t port, page_t *page)
+  {
+    constexpr size_t ratio = page_t::width / platform::native_width();
+    static_assert(ratio != 1, "");
+    static_assert(ratio * platform::native_width() == page_t::width, "");
+
+    for (size_t step = 0; step < ratio; step++)
+      {
+        unsigned id = platform::get_lane_id() + step * platform::native_width();
+        hostrpc::cacheline_t *L = &page->cacheline[id];
+        f(port, L->element);
+      }
+  }
+};
+
+template <typename Func>
+struct apply_dispatch<Func, apply_case::page_narrower>
+{
+  Func f;
+  HOSTRPC_ANNOTATE apply_dispatch(Func &&f_) : f(cxx::forward<Func>(f_)) {}
+
+  HOSTRPC_ANNOTATE void operator()(port_t port, page_t *page)
+  {
+    unsigned id = platform::get_lane_id();
+    if (id < page_t::width)
+      {
+        hostrpc::cacheline_t *L = &page->cacheline[id];
+        f(port, L->element);
+      }
+  }
+};
+
+}  // namespace detail
+
+template <typename Func>
+struct apply
+    : public detail::apply_dispatch<
+          Func, detail::classify<page_t::width, platform::native_width()>()>
+{
+  using base = detail::apply_dispatch<
+      Func, detail::classify<page_t::width, platform::native_width()>()>;
+
+  HOSTRPC_ANNOTATE apply(Func &&f_) : base(cxx::forward<Func>(f_)) {}
+};
 
 }  // namespace hostrpc
 

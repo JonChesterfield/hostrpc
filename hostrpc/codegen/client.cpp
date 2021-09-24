@@ -78,3 +78,19 @@ client_instance_from_aliasing(void* from)
   aliasing_client_type* c = reinterpret_cast<aliasing_client_type*>(from);
   client_instance_invoke_direct(*c);
 }
+
+extern "C" HOSTRPC_ANNOTATE void wot(client_type& c)
+{
+  struct fill_line
+  {
+    // passing it as a reference gives bounds checking
+    HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, uint64_t (&element)[8])
+    {
+      element[0] = element[1];
+      element[6] = element[7];
+    }
+  };
+
+  hostrpc::apply<fill_line> ap(fill_line{});
+  c.rpc_invoke(ap);
+}
