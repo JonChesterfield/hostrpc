@@ -570,13 +570,14 @@ struct client : public client_impl<WordT, SZT, Counter>
   template <typename T, typename Fill>
   HOSTRPC_ANNOTATE bool rpc_invoke_async(T active_threads, Fill &&fill) noexcept
   {
+    auto ApplyFill = hostrpc::make_apply<Fill>(cxx::forward<Fill>(fill));
     // get a port, send it, don't wait
     port_t port = base::rpc_open_port(active_threads);
     if (port == port_t::unavailable)
       {
         return false;
       }
-    base::rpc_port_send(active_threads, port, cxx::forward<Fill>(fill));
+    base::rpc_port_send(active_threads, port, cxx::move(ApplyFill));
     base::rpc_close_port(active_threads, port);
     return true;
   }
@@ -586,16 +587,20 @@ struct client : public client_impl<WordT, SZT, Counter>
 
   // Return after calling use(), i.e. waits for server
   template <typename T, typename Fill, typename Use>
-  HOSTRPC_ANNOTATE bool rpc_invoke(T active_threads, Fill &&f, Use &&u) noexcept
+  HOSTRPC_ANNOTATE bool rpc_invoke(T active_threads, Fill &&fill,
+                                   Use &&use) noexcept
   {
+    auto ApplyFill = hostrpc::make_apply<Fill>(cxx::forward<Fill>(fill));
+    auto ApplyUse = hostrpc::make_apply<Use>(cxx::forward<Use>(use));
+
     port_t port = base::rpc_open_port(active_threads);
     if (port == port_t::unavailable)
       {
         return false;
       }
-    base::rpc_port_send(active_threads, port, cxx::forward<Fill>(f));
+    base::rpc_port_send(active_threads, port, cxx::move(ApplyFill));
     base::rpc_port_recv(active_threads, port,
-                        cxx::forward<Use>(u));  // wait for result
+                        cxx::move(ApplyUse));  // wait for result
     base::rpc_close_port(active_threads, port);
     return true;
   }

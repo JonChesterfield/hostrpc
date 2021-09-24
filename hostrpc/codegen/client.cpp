@@ -106,8 +106,6 @@ namespace hostrpc
 // Disassembling via traits and counting number arguments is thwarted
 // by opencl rejecting function pointers, even in unevaluated contexts
 
-
-
 }  // namespace hostrpc
 
 extern "C" HOSTRPC_ANNOTATE void pointer(client_type& c)
@@ -125,7 +123,6 @@ extern "C" HOSTRPC_ANNOTATE void pointer(client_type& c)
 
   // opencl deduces the wrong type for fill line (__private qualifies it)
   auto a = hostrpc::make_apply<fill_line>(fill_line{});
-
 
   c.rpc_invoke(hostrpc::cxx::move(a));
 }

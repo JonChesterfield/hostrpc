@@ -883,6 +883,7 @@ HOSTRPC_ANNOTATE void staged_release_slot(
 // the application provides a function of type void (*)(port_t, page_t*) and
 // is responsible for using get_lane_id or similar to iterate across the page
 // the following defines an adapter by:
+// (adapter holds references so must not outlive f)
 template <typename Func>
 HOSTRPC_ANNOTATE auto make_apply(Func &&f);
 // Takes an object defining one of:
@@ -940,11 +941,8 @@ class classify_callback_type
   }
 
   // would use (...) as the worst match but opencl rejects it
-  static constexpr callback_type test(long)
-  {
-    return callback_type::unknown;
-  }
-  
+  static constexpr callback_type test(long) { return callback_type::unknown; }
+
  public:
   static constexpr callback_type value() { return test<T>(0); }
 };
@@ -1043,7 +1041,7 @@ struct apply;
 template <typename Func>
 struct apply<Func, apply_case::same_width>
 {
-  Func f;
+  Func &&f;
   HOSTRPC_ANNOTATE apply(Func &&f_) : f(cxx::forward<Func>(f_)) {}
 
   HOSTRPC_ANNOTATE void operator()(port_t port, page_t *page)
@@ -1057,7 +1055,7 @@ struct apply<Func, apply_case::same_width>
 template <typename Func>
 struct apply<Func, apply_case::page_wider>
 {
-  Func f;
+  Func &&f;
   HOSTRPC_ANNOTATE apply(Func &&f_) : f(cxx::forward<Func>(f_)) {}
 
   HOSTRPC_ANNOTATE void operator()(port_t port, page_t *page)
@@ -1079,7 +1077,7 @@ struct apply<Func, apply_case::page_wider>
 template <typename Func>
 struct apply<Func, apply_case::page_narrower>
 {
-  Func f;
+  Func &&f;
   HOSTRPC_ANNOTATE apply(Func &&f_) : f(cxx::forward<Func>(f_)) {}
 
   HOSTRPC_ANNOTATE void operator()(port_t port, page_t *page)
@@ -1101,7 +1099,10 @@ struct apply_function_iff_required;
 template <typename Func, apply::apply_case C>
 struct apply_function_iff_required<Func, C, callback_type::to_page>
 {
-  Func f;
+  apply_function_iff_required(const apply_function_iff_required &) = delete;
+  apply_function_iff_required(apply_function_iff_required &&) = default;
+
+  Func &&f;
   HOSTRPC_ANNOTATE apply_function_iff_required(Func &&f_)
       : f(cxx::forward<Func>(f_))
   {
@@ -1113,7 +1114,10 @@ struct apply_function_iff_required<Func, C, callback_type::to_page>
 template <typename Func, apply::apply_case C>
 struct apply_function_iff_required<Func, C, callback_type::to_line>
 {
-  apply::apply<Func, C>      f;
+  apply_function_iff_required(const apply_function_iff_required &) = delete;
+  apply_function_iff_required(apply_function_iff_required &&) = default;
+
+  apply::apply<Func, C> f;
   HOSTRPC_ANNOTATE apply_function_iff_required(Func &&f_)
       : f(cxx::forward<Func>(f_))
   {
@@ -1123,7 +1127,6 @@ struct apply_function_iff_required<Func, C, callback_type::to_line>
 };
 
 }  // namespace detail
-
 
 // Example use:
 // auto ApplyFill = hostrpc::make_apply<Fill>(cxx::forward<Fill>(fill));
@@ -1136,30 +1139,29 @@ HOSTRPC_ANNOTATE auto make_apply(Func &&f)
 {
   // Work out some properties of Func
   constexpr size_t N = 8;
-  constexpr auto CallbackType = detail::classify_callback_type<Func,N>::value();
-  constexpr auto ApplyType = detail::apply::classify_relative_width<page_t::width,
-                                                                   platform::native_width()>();
+  constexpr auto CallbackType =
+      detail::classify_callback_type<Func, N>::value();
+  constexpr auto ApplyType =
+      detail::apply::classify_relative_width<page_t::width,
+                                             platform::native_width()>();
 
   // Need to be taking an operator() that acts on either pages or lines
- static_assert(CallbackType == detail::callback_type::to_page ||
-               CallbackType == detail::callback_type::to_line
-               , "");
+  static_assert(CallbackType == detail::callback_type::to_page ||
+                    CallbackType == detail::callback_type::to_line,
+                "");
 
+  // page & platform width need to be an integral ratio
+  static_assert(ApplyType != detail::apply::apply_case::nonintegral_ratio, "");
 
- // page & platform width need to be an integral ratio
- static_assert(ApplyType != detail::apply::apply_case::nonintegral_ratio, "");
-
- // build a class that does the mapping across lines if necessary
-  auto r = detail::apply_function_iff_required<
-    Func, ApplyType, CallbackType>{
+  // build a class that does the mapping across lines if necessary
+  auto r = detail::apply_function_iff_required<Func, ApplyType, CallbackType>{
       cxx::forward<Func>(f)};
-
 
   // check we've built something that takes a page at a time
   static_assert(detail::classify_callback_type<decltype(r), N>::value() ==
                     detail::callback_type::to_page,
                 "");
-  return r;
+  return cxx::move(r);
 }
 
 }  // namespace hostrpc
