@@ -6,9 +6,9 @@
 #include "allocator.hpp"
 #include "client_server_pair.hpp"
 #include "detail/client_impl.hpp"
-#include "platform/detect.hpp"
 #include "detail/server_impl.hpp"
 #include "host_client.hpp"
+#include "platform/detect.hpp"
 
 namespace hostrpc
 {

@@ -1,10 +1,10 @@
 #ifndef HOSTRPC_CLIENT_HPP_INCLUDED
 #define HOSTRPC_CLIENT_HPP_INCLUDED
 
+#include "../platform/detect.hpp"
 #include "common.hpp"
 #include "counters.hpp"
 #include "cxx.hpp"
-#include "../platform/detect.hpp"
 
 // Intend to have call and service working across gcn and x86
 // The normal terminology is:

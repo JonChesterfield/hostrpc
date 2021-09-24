@@ -1,10 +1,10 @@
 #ifndef HOSTRPC_SERVER_HPP_INCLUDED
 #define HOSTRPC_SERVER_HPP_INCLUDED
 
+#include "../platform/detect.hpp"
 #include "common.hpp"
 #include "counters.hpp"
 #include "cxx.hpp"
-#include "../platform/detect.hpp"
 
 namespace hostrpc
 {

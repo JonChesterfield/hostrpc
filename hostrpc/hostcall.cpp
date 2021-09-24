@@ -8,9 +8,9 @@
 
 #include "allocator.hpp"
 #include "detail/client_impl.hpp"
-#include "platform/detect.hpp"
 #include "detail/server_impl.hpp"
 #include "host_client.hpp"
+#include "platform/detect.hpp"
 #include "x64_gcn_type.hpp"
 
 #if HOSTRPC_HOST

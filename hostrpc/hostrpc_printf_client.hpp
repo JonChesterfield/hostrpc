@@ -1,9 +1,9 @@
 #ifndef HOSTRPC_PRINTF_CLIENT_HPP_INCLUDED
 #define HOSTRPC_PRINTF_CLIENT_HPP_INCLUDED
 
-#include "platform.hpp"
 #include "hostrpc_printf_api_macro.h"
 #include "hostrpc_printf_common.hpp"
+#include "platform.hpp"
 
 namespace
 {

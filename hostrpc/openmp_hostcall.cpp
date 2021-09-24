@@ -1,11 +1,11 @@
 #include "detail/common.hpp"
-#include "platform.hpp"
-#include "platform/detect.hpp"
 #include "hostcall.hpp"
 #include "hostcall_hsa.hpp"
 #include "hostrpc_printf.h"
 #include "hostrpc_printf_enable.hpp"
 #include "hostrpc_printf_server.hpp"
+#include "platform.hpp"
+#include "platform/detect.hpp"
 #include "x64_gcn_type.hpp"
 
 #include "detail/client_impl.hpp"
