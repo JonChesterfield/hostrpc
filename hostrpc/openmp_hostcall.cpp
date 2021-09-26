@@ -454,7 +454,7 @@ unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
   }
 
   // set up the server side printf buffer state
-  storage.stash_print_buffer.emplace_back();
+  storage.stash_print_buffer.emplace_back(std::make_unique<print_buffer_t>());
   std::unique_ptr<print_buffer_t> &print_buffer =
       storage.stash_print_buffer.back();
   print_buffer->resize(size.value());
