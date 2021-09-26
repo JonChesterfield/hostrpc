@@ -250,6 +250,7 @@ void omp_operate::perthread(unsigned c, hostrpc::cacheline_t *line,
       default:
         {
           printf("Unhandled ID: %lu\n", ID);
+          break;
         }
 
       case opcodes_malloc:

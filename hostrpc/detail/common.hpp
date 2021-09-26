@@ -1061,9 +1061,6 @@ struct apply<Func, apply_case::page_wider>
   HOSTRPC_ANNOTATE void operator()(port_t port, page_t *page)
   {
     constexpr size_t ratio = page_t::width / platform::native_width();
-    static_assert(ratio != 1, "");
-    static_assert(ratio * platform::native_width() == page_t::width, "");
-
     for (size_t step = 0; step < ratio; step++)
       {
         uint32_t id =
