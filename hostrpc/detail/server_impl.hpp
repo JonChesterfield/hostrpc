@@ -46,6 +46,12 @@ struct server_impl : public SZT, public Counter
   outbox_t outbox;
   staging_t staging;
 
+  static_assert(cxx::is_trivially_copyable<page_t *>::value, "");
+  static_assert(cxx::is_trivially_copyable<lock_t>::value, "");
+  static_assert(cxx::is_trivially_copyable<inbox_t>::value, "");
+  static_assert(cxx::is_trivially_copyable<outbox_t>::value, "");
+  static_assert(cxx::is_trivially_copyable<staging_t>::value, "");
+  
   HOSTRPC_ANNOTATE server_impl()
       : SZ{},
         Counter{},
@@ -56,7 +62,7 @@ struct server_impl : public SZT, public Counter
         staging{}
   {
   }
-  HOSTRPC_ANNOTATE ~server_impl() {}
+  HOSTRPC_ANNOTATE ~server_impl() = default;
   HOSTRPC_ANNOTATE server_impl(SZ sz, lock_t active, inbox_t inbox,
                                outbox_t outbox, staging_t staging,
                                page_t* shared_buffer)
@@ -509,6 +515,8 @@ struct server : public server_impl<WordT, SZT, Counter>
 {
   using base = server_impl<WordT, SZT, Counter>;
   using base::server_impl;
+
+  static_assert(cxx::is_trivially_copyable<base>::value, "");
 
   // rpc_handle return true if it handled one task, does not attempt multiple.
 

@@ -305,7 +305,7 @@ struct slot_bitmap
     // zeroed for the bitmap to work.
   }
 
-  HOSTRPC_ANNOTATE ~slot_bitmap() {}
+  HOSTRPC_ANNOTATE ~slot_bitmap() = default;
   HOSTRPC_ANNOTATE Ty *data() { return a; }
 
   HOSTRPC_ANNOTATE bool read_bit(uint32_t size, port_t i, Word *loaded) const
@@ -500,7 +500,7 @@ struct lock_bitmap
   HOSTRPC_ANNOTATE lock_bitmap() : a(nullptr) {}
   HOSTRPC_ANNOTATE lock_bitmap(Ty *d) : a(d) {}
 
-  HOSTRPC_ANNOTATE ~lock_bitmap() {}
+  HOSTRPC_ANNOTATE ~lock_bitmap() = default;
   HOSTRPC_ANNOTATE Ty *data() { return a; }
 
   HOSTRPC_ANNOTATE void dump(uint32_t size) const
@@ -659,7 +659,7 @@ struct slot_bytemap
     // zeroed for the bytemap to work.
   }
 
-  HOSTRPC_ANNOTATE ~slot_bytemap() {}
+  HOSTRPC_ANNOTATE ~slot_bytemap() = default;
   HOSTRPC_ANNOTATE Ty *data() { return a; }
 
   // assumes slot available

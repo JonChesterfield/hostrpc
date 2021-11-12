@@ -73,6 +73,12 @@ struct client_impl : public SZT, public Counter
   outbox_t outbox;
   staging_t staging;
 
+  static_assert(cxx::is_trivially_copyable<page_t *>::value, "");
+  static_assert(cxx::is_trivially_copyable<lock_t>::value, "");
+  static_assert(cxx::is_trivially_copyable<inbox_t>::value, "");
+  static_assert(cxx::is_trivially_copyable<outbox_t>::value, "");
+  static_assert(cxx::is_trivially_copyable<staging_t>::value, "");
+
   HOSTRPC_ANNOTATE client_impl()
       : SZ{},
         Counter{},
@@ -83,7 +89,7 @@ struct client_impl : public SZT, public Counter
         staging{}
   {
   }
-  HOSTRPC_ANNOTATE ~client_impl() {}
+  HOSTRPC_ANNOTATE ~client_impl() = default;
   HOSTRPC_ANNOTATE client_impl(SZ sz, lock_t active, inbox_t inbox,
                                outbox_t outbox, staging_t staging,
                                page_t *shared_buffer)
@@ -566,6 +572,8 @@ struct client : public client_impl<WordT, SZT, Counter>
 {
   using base = client_impl<WordT, SZT, Counter>;
   using base::client_impl;
+
+  static_assert(cxx::is_trivially_copyable<base>::value, "");
 
   template <typename T, typename Fill>
   HOSTRPC_ANNOTATE bool rpc_invoke_async(T active_threads, Fill &&fill) noexcept

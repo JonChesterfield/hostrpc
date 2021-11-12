@@ -51,6 +51,22 @@ T cxx_declval(long);
 template <class T>
 decltype(cxx_declval<T>(0)) declval() noexcept;
 
+template <class T, T v>
+struct integral_constant
+{
+  static constexpr const T value = v;
+  typedef T value_type;
+  typedef integral_constant type;
+  constexpr operator value_type() const noexcept { return value; }
+  constexpr value_type operator()() const noexcept { return value; }
+};
+
+template <class T>
+struct is_trivially_copyable
+    : public integral_constant<bool, __is_trivially_copyable(T)>
+{
+};
+
 }  // namespace cxx
 }  // namespace hostrpc
 
