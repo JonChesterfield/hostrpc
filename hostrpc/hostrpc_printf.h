@@ -416,7 +416,7 @@ __PRINTF_API_INTERNAL bool __printf_conversion_specifier_p(char c)
   uint32_t E = __printf_haystack('n', 'p', 'n', 'p');
 
   // Works, but can probably be optimised further
-  return __printf_haszero(broadcast ^ A) | __printf_haszero(broadcast ^ B) |
+  return (int/*suppress spurious warning*/)__printf_haszero(broadcast ^ A) | __printf_haszero(broadcast ^ B) |
          __printf_haszero(broadcast ^ C) | __printf_haszero(broadcast ^ D) |
          __printf_haszero(broadcast ^ E);
 }

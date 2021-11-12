@@ -184,8 +184,10 @@ fi
 # Code running on the host can link in host, hsa or cuda support library.
 # Fills in gaps in the cuda/hsa libs, implements allocators
 
-$CLANG $AMDGPU -O2 -emit-llvm -S conv.c -o obj/codegen_conv.ll
-$CLANG $AMDGPU -O2 -S conv.c -o obj/codegen_conv.s
+if (($have_amdgcn)); then
+  $CLANG $AMDGPU -ffreestanding -fno-exceptions -O2 -emit-llvm -S conv.c -o obj/codegen_conv.ll
+  $CLANG $AMDGPU -ffreestanding -fno-exceptions -O2 -S conv.c -o obj/codegen_conv.s
+fi
 
 $CXX_X64 -I$HSAINC incprintf.cpp -O3 -c -o obj/incprintf.x64.bc
 
@@ -224,13 +226,9 @@ $LINK obj/allocator_openmp.x64.bc obj/openmp_plugins.x64.bc -o obj/openmp_suppor
 
 if (($have_amdgcn)); then
     $CXX_GCN hostrpc_printf_enable_amdgpu.cpp -O3 -c -o obj/hostrpc_printf_enable_amdgpu.gcn.bc
+    $CXX_X64 hostrpc_printf_enable_amdgpu.cpp -I$HSAINC -O3 -c -o obj/hostrpc_printf_enable_amdgpu.x64.bc
+    $CXX_X64 hostrpc_printf_enable_host.cpp -I$HSAINC -O3 -c -o obj/hostrpc_printf_enable_host.x64.bc
 fi
-
-
-
-$CXX_X64 hostrpc_printf_enable_amdgpu.cpp -I$HSAINC -O3 -c -o obj/hostrpc_printf_enable_amdgpu.x64.bc
-
-$CXX_X64 hostrpc_printf_enable_host.cpp -I$HSAINC -O3 -c -o obj/hostrpc_printf_enable_host.x64.bc
 
 
 if (($have_amdgcn)); then
@@ -255,8 +253,11 @@ if (($have_amdgcn)); then
 fi
 
 
-$CXX_X64 -I$HSAINC pool_example_host.cpp -O3 -c -o obj/pool_example_host.x64.bc
-$CXX_X64_LD obj/pool_example_host.x64.bc $LDFLAGS -o pool_example_host.x64.exe
+if (($have_amdgcn)); then
+    # Currently assumes hsa, but shouldn't
+  $CXX_X64 -I$HSAINC pool_example_host.cpp -O3 -c -o obj/pool_example_host.x64.bc
+  $CXX_X64_LD obj/pool_example_host.x64.bc $LDFLAGS -o pool_example_host.x64.exe
+fi
 
 if (($have_amdgcn)); then
 $CXX_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.code.bc
@@ -322,21 +323,17 @@ if (($have_nvptx)); then
 fi
 
 if (($have_amdgcn)); then
-$CLANG -std=c11 $COMMONFLAGS $GCNFLAGS test_example.c -c -o obj/test_example.gcn.bc
-$LINK obj/test_example.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc amdgcn_loader_device.gcn.bc -o test_example.gcn.bc
-$CXX_GCN_LD test_example.gcn.bc -o test_example.gcn
-fi
+  $CLANG -std=c11 $COMMONFLAGS $GCNFLAGS test_example.c -c -o obj/test_example.gcn.bc
+  $LINK obj/test_example.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc amdgcn_loader_device.gcn.bc -o test_example.gcn.bc
+  $CXX_GCN_LD test_example.gcn.bc -o test_example.gcn
 
-$CLANG -std=c11 -I$HSAINC $COMMONFLAGS $X64FLAGS printf_test.c -c -o obj/printf_test.x64.bc
+  $CLANG -std=c11 -I$HSAINC $COMMONFLAGS $X64FLAGS printf_test.c -c -o obj/printf_test.x64.bc
 
+  $CXX_X64_LD obj/host_support.x64.bc obj/hostrpc_printf_enable_host.x64.bc obj/printf_test.x64.bc obj/incprintf.x64.bc -o printf_test.x64.exe -pthread
 
-$CXX_X64_LD obj/host_support.x64.bc obj/hostrpc_printf_enable_host.x64.bc obj/printf_test.x64.bc obj/incprintf.x64.bc -o printf_test.x64.exe -pthread
-
-
-if (($have_amdgcn)); then
-    $CLANG -std=c11 $COMMONFLAGS $GCNFLAGS printf_test.c -c -o obj/printf_test.gcn.bc
-    $LINK obj/printf_test.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc amdgcn_loader_device.gcn.bc -o printf_test.gcn.bc
-    $CXX_GCN_LD printf_test.gcn.bc -o printf_test.gcn
+  $CLANG -std=c11 $COMMONFLAGS $GCNFLAGS printf_test.c -c -o obj/printf_test.gcn.bc
+  $LINK obj/printf_test.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc amdgcn_loader_device.gcn.bc -o printf_test.gcn.bc
+  $CXX_GCN_LD printf_test.gcn.bc -o printf_test.gcn
 fi
 
 

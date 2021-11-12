@@ -1,6 +1,6 @@
 #include "EvilUnit.h"
 
-#include "../../EvilUnit/EvilUnit_selftest.c"
+#include "thirdparty/EvilUnit/EvilUnit_selftest.c"
 
 static MODULE(another_module) { CHECK(1); }
 

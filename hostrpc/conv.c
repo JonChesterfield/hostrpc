@@ -1,8 +1,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#ifndef __AMDGCN__
 #include <stdio.h>
-
+#endif
 const char specs[] = {'c', 's', 'd', 'i', 'o', 'x', 'X', 'u', 'f',
                       'F', 'e', 'E', 'a', 'A', 'g', 'G', 'n', 'p'};
 
@@ -59,8 +60,10 @@ int main()
 
   for (size_t i = 0; i < N; i++)
     {
+      #ifndef __AMDGCN__
       printf("spec[%zu] %c = %d 0x%x\n", i, specs[i], specs[i],
              (unsigned)specs[i]);
+      #endif
     }
 
   for (unsigned i = 0; i < 256; i++)
@@ -74,9 +77,10 @@ int main()
       if (current != proposed)
         {
           differ++;
-
+#ifndef __AMDGCN__
           printf("Differ at %u (%c), %u != %u\n", i, c, (unsigned)current,
                  (unsigned)proposed);
+#endif
         }
       else
         {
