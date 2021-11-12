@@ -88,7 +88,9 @@ else
 fi
 
 
+set +e
 clang++ -W -Wno-deprecated-copy -Wno-missing-field-initializers -Wno-inline-new-delete -Wno-unused-parameter -std=c++14 -ffreestanding -I $HOME/relacy/ minimal.cpp -stdlib=libc++ -o minimal.out
+set -e
 
 echo "Using toolchain at $RDIR, GCNGFX=$GCNGFX, PTXGFX=$PTXGFX"
 
@@ -546,11 +548,15 @@ $CXX_X64_LD tests.x64.bc obj/host_support.x64.bc obj/catch.o $LDFLAGS -o tests.e
 
 
 # clang trunk is crashing on this at present
+if (($have_amdgcn)); then
 set +e
 $CXX_X64_LD persistent_kernel.x64.bc obj/catch.o obj/hsa_support.x64.bc $LDFLAGS -o persistent_kernel.exe
 set -e
+fi
 
+if (($have_amdgcn)); then
 ./pool_example_amdgpu.x64.exe
+fi
 exit
 
 time valgrind --leak-check=full --fair-sched=yes ./prototype/states.exe
