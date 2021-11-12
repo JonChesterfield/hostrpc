@@ -17,6 +17,8 @@ if [ -e "/dev/kfd" ]; then
     have_amdgcn=1
 fi
 
+have_amdgcn=0
+
 echo "have_nvptx: $have_nvptx"
 echo "have_amdgcn: $have_amdgcn"
 

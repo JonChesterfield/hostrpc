@@ -36,6 +36,8 @@ _Static_assert(128 == round64(127), "");
 _Static_assert(128 == round64(128), "");
 _Static_assert(192 == round64(129), "");
 
+// would be useful to add a maximum here but it's not always a compile
+// time value
 enum class port_t : uint32_t
 {
   unavailable = UINT32_MAX,

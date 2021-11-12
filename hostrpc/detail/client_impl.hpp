@@ -150,12 +150,12 @@ struct client_impl : public SZT, public Counter
 
   template <typename T>
   HOSTRPC_ANNOTATE port_t
-  rpc_open_port(T active_threads);  // UINT32_MAX on failure
+  rpc_open_port(T active_threads);  // port_t::unavailable on failure
 
   template <typename T>
   HOSTRPC_ANNOTATE void rpc_close_port(
       T active_threads,
-      port_t port);  // Require != UINT32_MAX, not already closed
+      port_t port);  // Require != port_t::unavailable, not already closed
 
   template <typename T>
   HOSTRPC_ANNOTATE void rpc_port_wait_until_available(T active_threads,

@@ -104,7 +104,7 @@ struct server_impl : public SZT, public Counter
     // printf("%lu %lu %lu\n", i, o, a);
 #endif
   }
-
+b
   template <typename Clear, typename T>
   HOSTRPC_ANNOTATE port_t rpc_open_port(T active_threads, Clear&& cl,
                                         uint32_t* location_arg)
