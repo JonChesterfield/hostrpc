@@ -295,6 +295,9 @@ struct slot_bitmap
 {
   using Ty = typename Prop::Ty;
   using Word = WordT;
+  static constexpr bool isInverted() { return Inverted;}
+  using invertedType = slot_bitmap<WordT, scope, !Inverted, Prop>;
+
   // could check the types, expecting uint64_t or uint32_t
   static_assert((sizeof(Word) == 8) || (sizeof(Word) == 4), "");
 
@@ -321,7 +324,14 @@ struct slot_bitmap
     // zeroed for the bitmap to work.
   }
   HOSTRPC_ANNOTATE ~slot_bitmap() = default;
-
+ 
+  template <bool withInverted>
+  slot_bitmap<WordT, scope, withInverted, Prop>
+  HOSTRPC_ANNOTATE asInverted()
+  {
+    return {underlying};
+  }
+  
   HOSTRPC_ANNOTATE bool read_bit(uint32_t size, port_t i, Word *loaded) const
   {
     uint32_t w = index_to_element<Word>(i);

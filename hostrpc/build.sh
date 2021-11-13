@@ -59,6 +59,7 @@ LOADPREFIX='LD_LIBRARY_PATH='$RDIR'/lib '
 mkdir -p obj
 mkdir -p lib
 mkdir -p obj/tools
+mkdir -p obj/unit_tests
 mkdir -p thirdparty
 
 if [[ -d "$HOME/relacy" ]]
@@ -325,9 +326,9 @@ if (($have_nvptx)); then
 fi
 
 if (($have_amdgcn)); then
-  $CLANG -std=c11 $COMMONFLAGS $GCNFLAGS test_example.c -c -o obj/test_example.gcn.bc
-  $LINK obj/test_example.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc amdgcn_loader_device.gcn.bc -o test_example.gcn.bc
-  $CXX_GCN_LD test_example.gcn.bc -o test_example.gcn
+  $CLANG -std=c11 $COMMONFLAGS $GCNFLAGS unit_tests/test_example.c -c -o obj/unit_tests/test_example.gcn.bc
+  $LINK obj/unit_tests/test_example.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc amdgcn_loader_device.gcn.bc -o unit_tests/test_example.gcn.bc
+  $CXX_GCN_LD unit_tests/test_example.gcn.bc -o unit_tests/test_example.gcn
 
   $CLANG -std=c11 -I$HSAINC $COMMONFLAGS $X64FLAGS printf_test.c -c -o obj/printf_test.x64.bc
 
@@ -338,6 +339,9 @@ if (($have_amdgcn)); then
   $CXX_GCN_LD printf_test.gcn.bc -o printf_test.gcn
 fi
 
+
+$CXX_X64 unit_tests/common.cpp -c -o obj/unit_tests/common.x64.bc
+$CXX_X64_LD obj/unit_tests/common.x64.bc -o unit_tests/common.x64.exe
 
 #if (($have_amdgcn)); then
 #    $CXX_GCN devicertl_pteam_mem_barrier.cpp -c -o obj/devicertl_pteam_mem_barrier.gcn.bc
@@ -557,7 +561,6 @@ fi
 if (($have_amdgcn)); then
 ./pool_example_amdgpu.x64.exe
 fi
-exit
 
 time valgrind --leak-check=full --fair-sched=yes ./prototype/states.exe
 
@@ -575,7 +578,7 @@ set +e # Keep running tests after one fails
 time ./x64_x64_stress.exe
 
 if (($have_amdgcn)); then
-./test_example.gcn
+./unit_tests/test_example.gcn
 fi
 
 # Not totally reliable, sometimes raises memory access errors
@@ -583,13 +586,15 @@ fi
 #if (($have_amdgcn)); then  
 #    ./pool_example_amdgpu.x64.exe
 #fi
+if (($have_amdgcn)); then
+    # slightly spuriously depends on hsa
 ./pool_example_host.x64.exe
-
+fi
 
 #if (($have_amdgcn)); then
 #$RDIR/bin/amdgpu-arch
 #./pool_example_amdgpu.x64.exe #works
-#./test_example.gcn
+#./unit_tests/test_example.gcn
 #./pool_example_amdgpu.x64.exe #hangs then persistent memory fault
 #fi
 
