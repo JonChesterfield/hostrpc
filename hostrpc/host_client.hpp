@@ -42,7 +42,8 @@ host_client(AllocBuffer alloc_buffer, AllocInboxOutbox alloc_inbox_outbox,
       is_same<typename LocalType::Word, typename RemoteType::Word>::value, "");
   static_assert(is_same<typename LocalType::SZ, typename RemoteType::SZ>::value,
                 "");
-
+#if 0
+  // can have different values for Inverted
   static_assert(is_same<typename LocalType::inbox_t,
                         typename RemoteType::outbox_t>::value,
                 "");
@@ -50,7 +51,7 @@ host_client(AllocBuffer alloc_buffer, AllocInboxOutbox alloc_inbox_outbox,
   static_assert(is_same<typename LocalType::outbox_t,
                         typename RemoteType::inbox_t>::value,
                 "");
-
+#endif
   static_assert(AllocBuffer::align == alignof(page_t), "");
   static_assert(AllocInboxOutbox::align == 64, "");
 

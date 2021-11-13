@@ -28,8 +28,8 @@ struct server_impl : public SZT, public Counter
   using Word = WordT;
   using SZ = SZT;
   using lock_t = lock_bitmap<Word>;
-  using inbox_t = message_bitmap<Word>;
-  using outbox_t = message_bitmap<Word>;
+  using inbox_t = message_bitmap<Word, false>;
+  using outbox_t = message_bitmap<Word, false>;
   using staging_t = slot_bitmap_device_local<Word>;
 
   HOSTRPC_ANNOTATE constexpr size_t wordBits() const

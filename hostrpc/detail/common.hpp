@@ -271,18 +271,18 @@ struct device_local : base<true, true>
 template <typename Word, size_t scope, bool Inverted, typename Prop>
 struct slot_bitmap;
 
-template <typename Word>
+template <typename Word, bool Inverted>
 struct slot_bytemap;
 
 #if 1
 // bytemap is working for persistent kernel but not for loader executable
 // see: SLOT_BYTEMAP_ATOMIC
-template <typename Word>
+template <typename Word, bool Inverted>
 using message_bitmap = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
-                                   false, properties::fine_grain<Word>>;
+                                   Inverted, properties::fine_grain<Word>>;
 #else
-template <typename Word>
-using message_bitmap = slot_bytemap<Word>;
+template <typename Word, bool Inverted>
+using message_bitmap = slot_bytemap<Word, Inverted>;
 #endif
 
 template <typename Word>
@@ -290,11 +290,11 @@ using slot_bitmap_device_local =
     slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_DEVICE, false,
                 properties::device_local<Word>>;
 
-template <typename Word, size_t scope, bool Inverted, typename Prop>
+template <typename WordT, size_t scope, bool Inverted, typename Prop>
 struct slot_bitmap
 {
   using Ty = typename Prop::Ty;
-
+  using Word = WordT;
   // could check the types, expecting uint64_t or uint32_t
   static_assert((sizeof(Word) == 8) || (sizeof(Word) == 4), "");
 
@@ -699,9 +699,10 @@ struct lock_bitmap
   }
 };
 
-template <typename Word>
+template <typename Word, bool Inverted>
 struct slot_bytemap
 {
+  static_assert(Inverted == true, "");
   static_assert(sizeof(Word) == 8, "Unimplemented for uint32_t");
   // gcn back end fails to select AtomicStore<(store syncscope("one-as")
 #define SLOT_BYTEMAP_ATOMIC 0
@@ -972,11 +973,11 @@ HOSTRPC_ANNOTATE void staged_toggle_slot(
 }
 
 template <update_type type, typename Word, size_t Sscope, bool SInverted,
-          typename SProp>
+          typename SProp, bool VInverted>
 HOSTRPC_ANNOTATE void update_visible_from_staging(
     uint32_t size, port_t i,
     slot_bitmap<Word, Sscope, SInverted, SProp> *staging,
-    slot_bytemap<Word> *visible, uint64_t *, uint64_t *)
+    slot_bytemap<Word, VInverted> *visible, uint64_t *, uint64_t *)
 {
   assert((void *)visible != (void *)staging);
   assert(static_cast<uint32_t>(i) < size);
@@ -1005,33 +1006,33 @@ HOSTRPC_ANNOTATE void update_visible_from_staging(
     }
 }
 
-template <typename Word, size_t Sscope, bool SInverted, typename SProp>
+template <typename Word, size_t Sscope, bool SInverted, typename SProp, bool VInverted>
 HOSTRPC_ANNOTATE void staged_claim_slot(
     uint32_t size, uint32_t i,
     slot_bitmap<Word, Sscope, SInverted, SProp> *staging,
-    slot_bytemap<Word> *visible, uint64_t *cas_fail_count,
+    slot_bytemap<Word, VInverted> *visible, uint64_t *cas_fail_count,
     uint64_t *cas_help_count)
 {
   update_visible_from_staging<update_type::claim>(
       size, i, staging, visible, cas_fail_count, cas_help_count);
 }
 
-template <typename Word, size_t Sscope, bool SInverted, typename SProp>
+template <typename Word, size_t Sscope, bool SInverted, typename SProp, bool VInverted>
 HOSTRPC_ANNOTATE void staged_release_slot(
     uint32_t size, uint32_t i,
     slot_bitmap<Word, Sscope, SInverted, SProp> *staging,
-    slot_bytemap<Word> *visible, uint64_t *cas_fail_count,
+    slot_bytemap<Word, VInverted> *visible, uint64_t *cas_fail_count,
     uint64_t *cas_help_count)
 {
   update_visible_from_staging<update_type::release>(
       size, i, staging, visible, cas_fail_count, cas_help_count);
 }
 
-template <typename Word, size_t Sscope, bool SInverted, typename SProp>
+template <typename Word, size_t Sscope, bool SInverted, typename SProp, bool VInverted>
 HOSTRPC_ANNOTATE void staged_toggle_slot(
     uint32_t size, uint32_t i,
     slot_bitmap<Word, Sscope, SInverted, SProp> *staging,
-    slot_bytemap<Word> *visible, uint64_t *cas_fail_count,
+    slot_bytemap<Word, VInverted> *visible, uint64_t *cas_fail_count,
     uint64_t *cas_help_count)
 {
   update_visible_from_staging<update_type::toggle>(

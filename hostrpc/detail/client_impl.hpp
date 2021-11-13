@@ -49,6 +49,143 @@ enum class client_state : uint8_t
 // garbage that is, can't claim the slot for a new thread is that a sufficient
 // criteria for the slot to be awaiting gc?
 
+#if 0
+template <typename WordT, typename SZT, typename Counter = counters::client>
+struct client_impl : public state_machine_impl<WordT, SZT, Counter, message_bitmap<WordT, true>, message_bitmap<WordT, false>>
+{
+  using base = state_machine_impl<WordT, SZT, Counter, message_bitmap<WordT, true>, message_bitmap<WordT, false>>;
+  using typename base::state_machine_impl;
+
+  using Word = typename base::Word;
+  using SZ = typename base::SZ;
+  using lock_t = typename base::lock_t;
+  using inbox_t = typename base::inbox_t;
+  using outbox_t = typename base::outbox_t;
+  using staging_t = typename base::staging_t;
+
+  HOSTRPC_ANNOTATE client_impl()
+    : base ()
+  {
+  }
+  HOSTRPC_ANNOTATE ~client_impl() = default;
+  HOSTRPC_ANNOTATE client_impl(SZ sz, lock_t active, inbox_t inbox,
+                               outbox_t outbox, staging_t staging,
+                               page_t *shared_buffer)
+
+    : base (sz, active, inbox, outbox, staging, shared_buffer)
+  {
+    constexpr size_t client_size = 40;
+
+    // SZ is expected to be zero bytes or a uint
+    struct SZ_local : public SZ
+    {
+      float x;
+    };
+    // Counter is zero bytes for nop or potentially many
+    struct Counter_local : public Counter
+    {
+      float x;
+    };
+    constexpr bool SZ_empty = sizeof(SZ_local) == sizeof(float);
+    constexpr bool Counter_empty = sizeof(Counter_local) == sizeof(float);
+
+    constexpr size_t SZ_size = hostrpc::round8(SZ_empty ? 0 : sizeof(SZ));
+    constexpr size_t Counter_size = Counter_empty ? 0 : sizeof(Counter);
+
+    constexpr size_t total_size = client_size + SZ_size + Counter_size;
+
+    static_assert(sizeof(client_impl) == total_size, "");
+    static_assert(alignof(client_impl) == 8, "");
+  }
+
+  HOSTRPC_ANNOTATE static void *operator new(size_t, client_impl *p)
+  {
+    return p;
+  }
+
+  HOSTRPC_ANNOTATE client_counters get_counters() { return Counter::get(); }
+
+  template <typename T>
+  HOSTRPC_ANNOTATE port_t
+  rpc_open_port(T active_threads)
+  {
+    return base::rpc_open_port_lo(active_threads);
+  }
+
+  template <typename T>
+  HOSTRPC_ANNOTATE void rpc_close_port(
+      T active_threads,
+      port_t port)
+  {
+    base::rpc_close_port(active_threads, port);
+  }
+
+  template <typename T>
+  HOSTRPC_ANNOTATE void rpc_port_wait_until_available(T active_threads,
+                                                      port_t port)
+  {
+    typename base::port_state s;
+    base::template rpc_port_wait_until_state<T, base::port_state::either_low_or_high>(active_threads, port, &s);
+
+    if (s == base::port_state::high_values)
+      {
+        rpc_port_discard_result(active_threads, port);
+        base::template rpc_port_wait_until_state<T, base::port_state::low_values>(active_threads, port);
+      }
+  }
+
+  template <typename Op, typename T>
+  HOSTRPC_ANNOTATE void rpc_port_send(T active_threads, port_t port, Op &&op)
+  {
+    // If the port has just been opened, we know it is available to
+    // submit work to. In general, send might be called while the
+    // state machine is elsewhere, so conservatively progress it
+    // until the slot is empty.
+    // There is a potential bug here if 'use' is being used to
+    // reset the state, instead of the server clean, as 'use'
+    // is not being called, but that might be deemed a API misuse
+    // as the callee could have used recv() explicitly instead of
+    // dropping the result
+    rpc_port_wait_until_available(active_threads, port);  // expensive
+    rpc_port_send_given_available<Op>(active_threads, port, cxx::forward<Op>(op));
+  }
+
+  template <typename Op, typename T>
+  HOSTRPC_ANNOTATE void rpc_port_send_given_available(T active_threads,
+                                                      port_t port, Op &&op)
+  {
+    base::template rpc_port_apply_lo(active_threads, port, cxx::forward<Op>(op));
+  }
+
+  template <typename T>
+  HOSTRPC_ANNOTATE void rpc_port_wait_for_result(T active_threads, port_t port)
+  {
+    // assumes output live
+    assert(bits::nthbitset(
+                           base::staging.load_word(this->size(), index_to_element<Word>(port)),
+                           index_to_subindex<Word>(port)));
+    base::template rpc_port_wait_until_state<T, base::port_state::high_values>(active_threads, port);
+    
+
+  }
+
+  template <typename T>
+  HOSTRPC_ANNOTATE void rpc_port_discard_result(T active_threads, port_t port)
+  {
+    base::template rpc_port_apply_hi(active_threads, port, [](hostrpc::port_t, page_t*) {});
+  }
+
+  template <typename Use, typename T>
+  HOSTRPC_ANNOTATE void rpc_port_recv(T active_threads, port_t port, Use &&use)
+  {
+    rpc_port_wait_for_result(active_threads, port);
+    base::template rpc_port_apply_hi(active_threads, port, cxx::forward<Use>(use));
+  }
+
+    
+};
+
+#else
 // enabling counters breaks codegen for amdgcn,
 template <typename WordT, typename SZT, typename Counter = counters::client>
 struct client_impl : public SZT, public Counter
@@ -57,8 +194,8 @@ struct client_impl : public SZT, public Counter
   using SZ = SZT;
   using slot_type = typename SZ::type;
   using lock_t = lock_bitmap<Word>;
-  using inbox_t = message_bitmap<Word>;
-  using outbox_t = message_bitmap<Word>;
+  using inbox_t = message_bitmap<Word,false>;
+  using outbox_t = message_bitmap<Word,false>;
   using staging_t = slot_bitmap_device_local<Word>;
   HOSTRPC_ANNOTATE constexpr size_t wordBits() const
   {
@@ -567,6 +704,8 @@ HOSTRPC_ANNOTATE bool client_impl<WordT, SZT, Counter>::result_available(
 
   return (got == 1);
 }
+
+#endif
 
 template <typename WordT, typename SZT, typename Counter = counters::client>
 struct client : public client_impl<WordT, SZT, Counter>
