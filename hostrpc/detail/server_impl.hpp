@@ -5,6 +5,7 @@
 #include "common.hpp"
 #include "counters.hpp"
 #include "cxx.hpp"
+#include "state_machine.hpp"
 
 namespace hostrpc
 {

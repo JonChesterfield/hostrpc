@@ -307,10 +307,10 @@ struct slot_bitmap
   static_assert(sizeof(Word *) == 8, "");
   static_assert(sizeof(HOSTRPC_ATOMIC(Word) *) == 8, "");
 
-private:
+ private:
   Ty *underlying;
-public:
-  
+
+ public:
   HOSTRPC_ANNOTATE static constexpr uint32_t bits_per_slot() { return 1; }
   HOSTRPC_ANNOTATE slot_bitmap() : underlying(nullptr) {}
   HOSTRPC_ANNOTATE slot_bitmap(Ty *d) : underlying(d)
@@ -429,7 +429,10 @@ public:
     assert(w < (size / (8 * sizeof(Word))));
     Ty *addr = &underlying[w];
     Word res = platform::atomic_load<Word, __ATOMIC_RELAXED, scope>(addr);
-    if (Inverted) { res = ~res; }
+    if (Inverted)
+      {
+        res = ~res;
+      }
     return res;
   }
 
@@ -444,11 +447,9 @@ public:
         replace = ~replace;
       }
     Word tmp;
-    bool r = platform::atomic_compare_exchange_weak<Word, __ATOMIC_ACQ_REL,
-                                                  scope>(addr,
-                                                         expect,
-                                                         replace,
-                                                         &tmp);
+    bool r =
+        platform::atomic_compare_exchange_weak<Word, __ATOMIC_ACQ_REL, scope>(
+            addr, expect, replace, &tmp);
     if (Inverted)
       {
         tmp = ~tmp;
@@ -461,7 +462,6 @@ public:
   // these are used on memory visible fromi all svm devices
 
  private:
-
   template <typename Op>
   HOSTRPC_ANNOTATE Word fetch_op(uint32_t element, Word mask)
   {
@@ -483,9 +483,9 @@ public:
           {
             Word replace = Op::Simple(current, mask);
             Word loaded;
-            
+
             bool r = cas(element, current, replace, &loaded);
-            
+
             if (r)
               {
                 return loaded;

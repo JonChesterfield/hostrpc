@@ -17,8 +17,8 @@ namespace hostrpc
 // inbox != outbox:
 //   waiting on other agent
 
-template <typename WordT, typename SZT>
-struct state_machine_impl : public SZT
+template <typename WordT, typename SZT, typename Counter>
+struct state_machine_impl : public SZT, public Counter
 {
   using Word = WordT;
   using SZ = SZT;
@@ -135,7 +135,7 @@ struct state_machine_impl : public SZT
   template <typename T>
   HOSTRPC_ANNOTATE port_t rpc_open_port(T active_threads,
                                         uint32_t scan_from = 0,
-                                        port_state* which = nullptr);
+                                        port_state* which = nullptr)
   {
     return rpc_open_port<T, port_state::either_low_or_high>(active_threads,
                                                             scan_from, which);
@@ -199,7 +199,7 @@ struct state_machine_impl : public SZT
         return port_state::low_values;
       }
 
-    if ((in == high) && (out == high))
+    if ((in == true) && (out == true))
       {
         return port_state::high_values;
       }
@@ -348,22 +348,6 @@ struct state_machine_impl : public SZT
     return port_t::unavailable;
   }
 
-  template <typename T>
-  HOSTRPC_ANNOTATE void rpc_close_port(
-      T active_threads,
-      port_t port)  // Require != port_t::unavailable
-  {
-    const uint32_t size = this->size();
-    // warning: something needs to release() the buffer element before
-    // dropping this lock
-
-    assert(port != port_t::unavailable);
-    if (platform::is_master_lane(active_threads))
-      {
-        active.release_slot(size, port);
-      }
-  }
-
   template <typename T, typename Op, port_state Req>
   HOSTRPC_ANNOTATE void rpc_port_apply_given_state(T active_threads,
                                                    port_t port, Op&& op)
@@ -414,11 +398,31 @@ struct state_machine_impl : public SZT
   }
 };
 
-template <typename WordT, typename SZT>
-template <typename T, port_state Req>
-HOSTRPC_ANNOTATE void state_machine_impl<WordT, SZT>::rpc_port_wait_until_state(
+template <typename WordT, typename SZT, typename Counter>
+template <typename T>
+HOSTRPC_ANNOTATE void state_machine_impl<WordT, SZT, Counter>::rpc_close_port(
+    T active_threads,
+    port_t port)  // Require != port_t::unavailable
+{
+  const uint32_t size = this->size();
+  // warning: something needs to release() the buffer element before
+  // dropping this lock
+
+  assert(port != port_t::unavailable);
+  if (platform::is_master_lane(active_threads))
+    {
+      active.release_slot(size, port);
+    }
+}
+
+template <typename WordT, typename SZT, typename Counter>
+template <typename T,
+          typename state_machine_impl<WordT, SZT, Counter>::port_state Req>
+HOSTRPC_ANNOTATE void
+state_machine_impl<WordT, SZT, Counter>::rpc_port_wait_until_state(
     T active_threads, port_t port)
 {
+  (void)active_threads;
   const uint32_t size = this->size();
   const uint32_t w = index_to_element<Word>(port);
   const uint32_t subindex = index_to_subindex<Word>(port);
