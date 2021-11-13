@@ -307,10 +307,13 @@ struct slot_bitmap
   static_assert(sizeof(Word *) == 8, "");
   static_assert(sizeof(HOSTRPC_ATOMIC(Word) *) == 8, "");
 
-  Ty *a;
+private:
+  Ty *underlying;
+public:
+  
   HOSTRPC_ANNOTATE static constexpr uint32_t bits_per_slot() { return 1; }
-  HOSTRPC_ANNOTATE slot_bitmap() : a(nullptr) {}
-  HOSTRPC_ANNOTATE slot_bitmap(Ty *d) : a(d)
+  HOSTRPC_ANNOTATE slot_bitmap() : underlying(nullptr) {}
+  HOSTRPC_ANNOTATE slot_bitmap(Ty *d) : underlying(d)
   {
     // can't necessarily write to a from this object. if the memory is on
     // the gpu, but this instance is being constructed on the gpu first,
@@ -424,69 +427,50 @@ struct slot_bitmap
   {
     (void)size;
     assert(w < (size / (8 * sizeof(Word))));
-    Ty *addr = &a[w];
-    return platform::atomic_load<Word, __ATOMIC_RELAXED, scope>(addr);
+    Ty *addr = &underlying[w];
+    Word res = platform::atomic_load<Word, __ATOMIC_RELAXED, scope>(addr);
+    if (Inverted) { res = ~res; }
+    return res;
   }
 
   HOSTRPC_ANNOTATE bool cas(Word element, Word expect, Word replace,
                             Word *loaded)
   {
-    Ty *addr = &a[element];
+    Ty *addr = &underlying[element];
     // this cas function is not used across devices by this library
-    return platform::atomic_compare_exchange_weak<Word, __ATOMIC_ACQ_REL,
-                                                  scope>(addr, expect, replace,
-                                                         loaded);
+    if (Inverted)
+      {
+        expect = ~expect;
+        replace = ~replace;
+      }
+    Word tmp;
+    bool r = platform::atomic_compare_exchange_weak<Word, __ATOMIC_ACQ_REL,
+                                                  scope>(addr,
+                                                         expect,
+                                                         replace,
+                                                         &tmp);
+    if (Inverted)
+      {
+        tmp = ~tmp;
+      }
+    *loaded = tmp;
+    return r;
   }
 
   // returns value from before the and/or
   // these are used on memory visible fromi all svm devices
 
  private:
-  struct And
-  {
-    HOSTRPC_ANNOTATE static Word Simple(Word lhs, Word rhs)
-    {
-      return lhs & rhs;
-    }
-    HOSTRPC_ANNOTATE static Word Atomic(Ty *addr, Word value)
-    {
-      return platform::atomic_fetch_and<Word, __ATOMIC_ACQ_REL, scope>(addr,
-                                                                       value);
-    }
-  };
-  struct Or
-  {
-    HOSTRPC_ANNOTATE static Word Simple(Word lhs, Word rhs)
-    {
-      return lhs | rhs;
-    }
-    HOSTRPC_ANNOTATE static Word Atomic(Ty *addr, Word value)
-    {
-      return platform::atomic_fetch_or<Word, __ATOMIC_ACQ_REL, scope>(addr,
-                                                                      value);
-    }
-  };
-  struct Xor
-  {
-    HOSTRPC_ANNOTATE static Word Simple(Word lhs, Word rhs)
-    {
-      return lhs ^ rhs;
-    }
-    HOSTRPC_ANNOTATE static Word Atomic(Ty *addr, Word value)
-    {
-      return platform::atomic_fetch_xor<Word, __ATOMIC_ACQ_REL, scope>(addr,
-                                                                       value);
-    }
-  };
 
   template <typename Op>
   HOSTRPC_ANNOTATE Word fetch_op(uint32_t element, Word mask)
   {
-    Ty *addr = &a[element];
+    Ty *addr = &underlying[element];
     if (Prop::hasFetchOp())
       {
         // This seems to work on amdgcn, but only with acquire. acq/rel fails
-        return Op::Atomic(addr, mask);
+        Word r = Op::Atomic(addr, mask);
+        return Inverted ? ~r : r;
       }
     else
       {
@@ -494,34 +478,73 @@ struct slot_bitmap
         // use a (usually wrong) initial guess instead of a load
         Word current =
             platform::atomic_load<Word, __ATOMIC_RELAXED, scope>(addr);
+        current = Inverted ? ~current : current;
         while (1)
           {
             Word replace = Op::Simple(current, mask);
             Word loaded;
-            bool r =
-                platform::atomic_compare_exchange_weak<Word, __ATOMIC_ACQ_REL,
-                                                       scope>(addr, current,
-                                                              replace, &loaded);
+            
+            bool r = cas(element, current, replace, &loaded);
+            
             if (r)
               {
                 return loaded;
               }
+
+            // new best guess at what is in memory
+            current = loaded;
           }
       }
   }
 
   HOSTRPC_ANNOTATE Word fetch_and(uint32_t element, Word mask)
   {
+    struct And
+    {
+      HOSTRPC_ANNOTATE static Word Simple(Word lhs, Word rhs)
+      {
+        return lhs & rhs;
+      }
+      HOSTRPC_ANNOTATE static Word Atomic(Ty *addr, Word value)
+      {
+        return platform::atomic_fetch_and<Word, __ATOMIC_ACQ_REL, scope>(addr,
+                                                                         value);
+      }
+    };
     return fetch_op<And>(element, mask);
   }
 
   HOSTRPC_ANNOTATE Word fetch_or(uint32_t element, Word mask)
   {
+    struct Or
+    {
+      HOSTRPC_ANNOTATE static Word Simple(Word lhs, Word rhs)
+      {
+        return lhs | rhs;
+      }
+      HOSTRPC_ANNOTATE static Word Atomic(Ty *addr, Word value)
+      {
+        return platform::atomic_fetch_or<Word, __ATOMIC_ACQ_REL, scope>(addr,
+                                                                        value);
+      }
+    };
     return fetch_op<Or>(element, mask);
   }
 
   HOSTRPC_ANNOTATE Word fetch_xor(uint32_t element, Word mask)
   {
+    struct Xor
+    {
+      HOSTRPC_ANNOTATE static Word Simple(Word lhs, Word rhs)
+      {
+        return lhs ^ rhs;
+      }
+      HOSTRPC_ANNOTATE static Word Atomic(Ty *addr, Word value)
+      {
+        return platform::atomic_fetch_xor<Word, __ATOMIC_ACQ_REL, scope>(addr,
+                                                                         value);
+      }
+    };
     return fetch_op<Xor>(element, mask);
   }
 };
