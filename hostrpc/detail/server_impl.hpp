@@ -46,12 +46,12 @@ struct server_impl : public SZT, public Counter
   outbox_t outbox;
   staging_t staging;
 
-  static_assert(cxx::is_trivially_copyable<page_t *>::value, "");
+  static_assert(cxx::is_trivially_copyable<page_t*>::value, "");
   static_assert(cxx::is_trivially_copyable<lock_t>::value, "");
   static_assert(cxx::is_trivially_copyable<inbox_t>::value, "");
   static_assert(cxx::is_trivially_copyable<outbox_t>::value, "");
   static_assert(cxx::is_trivially_copyable<staging_t>::value, "");
-  
+
   HOSTRPC_ANNOTATE server_impl()
       : SZ{},
         Counter{},
@@ -104,7 +104,7 @@ struct server_impl : public SZT, public Counter
     // printf("%lu %lu %lu\n", i, o, a);
 #endif
   }
-b
+
   template <typename Clear, typename T>
   HOSTRPC_ANNOTATE port_t rpc_open_port(T active_threads, Clear&& cl,
                                         uint32_t* location_arg)
@@ -466,12 +466,10 @@ b
   HOSTRPC_ANNOTATE bool rpc_verify_slot_available(T active_threads, Clear&& cl,
                                                   port_t port)
   {
+    const uint32_t size = this->size();
     assert(port != port_t::unavailable);
-
     const uint32_t element = index_to_element<Word>(port);
     const uint32_t subindex = index_to_subindex<Word>(port);
-
-    const uint32_t size = this->size();
 
     Word i = inbox.load_word(size, element);
     Word o = staging.load_word(size, element);

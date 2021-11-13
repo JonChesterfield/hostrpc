@@ -159,6 +159,9 @@ HOSTRPC_ANNOTATE T atomic_fetch_and(HOSTRPC_ATOMIC(T) *, T);
 template <typename T, size_t memorder, size_t scope>
 HOSTRPC_ANNOTATE T atomic_fetch_or(HOSTRPC_ATOMIC(T) *, T);
 
+template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE T atomic_fetch_xor(HOSTRPC_ATOMIC(T) *, T);
+
 // single memorder used for success and failure cases
 template <typename T, size_t memorder, size_t scope>
 HOSTRPC_ANNOTATE bool atomic_compare_exchange_weak(HOSTRPC_ATOMIC(T) *,
@@ -212,7 +215,11 @@ HOSTRPC_ANNOTATE constexpr bool atomic_params_readmodifywrite()
 #if (HOSTRPC_HOST && defined(__OPENCL_C_VERSION__))
 // No assert available. Probably want to change to platform::require
 // and provide implementations for each arch.
+#ifdef NDEBUG
 #define assert(x) (void)0
+#else
+#define assert(x) (void)(x)
+#endif
 #define printf(...) __hostrpc_printf(__VA_ARGS__)
 
 extern "C" HOSTRPC_ANNOTATE __attribute__((always_inline)) inline int
@@ -252,7 +259,7 @@ hostrpc_inline_printf()
 #define assert_str_1(x) #x
 
 #if 1
-#define assert(x) (void)0
+#define assert(x) (void)(x)
 #else
 #define assert(x)                                                          \
   ((void)(platform::all_true(x) ||                                         \
@@ -454,6 +461,8 @@ namespace detail
                                                  TYPE value);                 \
   HOSTRPC_ANNOTATE TYPE atomic_fetch_or_relaxed(HOSTRPC_ATOMIC(TYPE) * addr,  \
                                                 TYPE value);                  \
+  HOSTRPC_ANNOTATE TYPE atomic_fetch_xor_relaxed(HOSTRPC_ATOMIC(TYPE) * addr, \
+                                                 TYPE value);                 \
   HOSTRPC_ANNOTATE bool atomic_compare_exchange_weak_relaxed(                 \
       HOSTRPC_ATOMIC(TYPE) * addr, TYPE expected, TYPE desired, TYPE * loaded)
 
@@ -548,6 +557,15 @@ HOSTRPC_ANNOTATE T atomic_fetch_or(HOSTRPC_ATOMIC(T) * addr, T value)
   static_assert(
       platform::detail::atomic_params_readmodifywrite<memorder, scope>(), "");
   return detail::atomic_fetch_op<T, detail::atomic_fetch_or_relaxed, memorder,
+                                 scope>(addr, value);
+}
+
+template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE T atomic_fetch_xor(HOSTRPC_ATOMIC(T) * addr, T value)
+{
+  static_assert(
+      platform::detail::atomic_params_readmodifywrite<memorder, scope>(), "");
+  return detail::atomic_fetch_op<T, detail::atomic_fetch_xor_relaxed, memorder,
                                  scope>(addr, value);
 }
 
@@ -655,6 +673,12 @@ template <typename T, size_t memorder, size_t scope>
 HOSTRPC_ANNOTATE inline T atomic_fetch_or(HOSTRPC_ATOMIC(T) * a, T v)
 {
   return HOSTRPC_IMPL_NS::atomic_fetch_or<T, memorder, scope>(a, v);
+}
+
+template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE inline T atomic_fetch_xor(HOSTRPC_ATOMIC(T) * a, T v)
+{
+  return HOSTRPC_IMPL_NS::atomic_fetch_xor<T, memorder, scope>(a, v);
 }
 
 // single memorder used for success and failure cases

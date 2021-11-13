@@ -95,6 +95,18 @@ HOSTRPC_ANNOTATE inline uint64_t clearnthbit(uint64_t x, uint32_t n)
   return x & ~(UINT64_C(1) << n);
 }
 
+HOSTRPC_ANNOTATE inline uint32_t togglenthbit(uint32_t x, uint32_t n)
+{
+  assert(n < 32);
+  return x ^ ~(UINT32_C(1) << n);
+}
+
+HOSTRPC_ANNOTATE inline uint64_t togglenthbit(uint64_t x, uint32_t n)
+{
+  assert(n < 64);
+  return x ^ ~(UINT64_C(1) << n);
+}
+
 HOSTRPC_ANNOTATE inline uint32_t ctz(uint32_t value)
 {
   if (value == 0)
@@ -256,7 +268,7 @@ struct device_local : base<true, true>
 
 }  // namespace properties
 
-template <typename Word, size_t scope, typename Prop>
+template <typename Word, size_t scope, bool Inverted, typename Prop>
 struct slot_bitmap;
 
 template <typename Word>
@@ -267,17 +279,18 @@ struct slot_bytemap;
 // see: SLOT_BYTEMAP_ATOMIC
 template <typename Word>
 using message_bitmap = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
-                                   properties::fine_grain<Word>>;
+                                   false, properties::fine_grain<Word>>;
 #else
 template <typename Word>
 using message_bitmap = slot_bytemap<Word>;
 #endif
 
 template <typename Word>
-using slot_bitmap_device_local = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_DEVICE,
-                                             properties::device_local<Word>>;
+using slot_bitmap_device_local =
+    slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_DEVICE, false,
+                properties::device_local<Word>>;
 
-template <typename Word, size_t scope, typename Prop>
+template <typename Word, size_t scope, bool Inverted, typename Prop>
 struct slot_bitmap
 {
   using Ty = typename Prop::Ty;
@@ -304,9 +317,7 @@ struct slot_bitmap
     // then direct writes will fail. However, the data does need to be
     // zeroed for the bitmap to work.
   }
-
   HOSTRPC_ANNOTATE ~slot_bitmap() = default;
-  HOSTRPC_ANNOTATE Ty *data() { return a; }
 
   HOSTRPC_ANNOTATE bool read_bit(uint32_t size, port_t i, Word *loaded) const
   {
@@ -345,6 +356,10 @@ struct slot_bitmap
   }
 
   // assumes slot available
+  HOSTRPC_ANNOTATE void claim_slot(uint32_t size, port_t i)
+  {
+    claim_slot_returning_updated_word(size, i);
+  }
   HOSTRPC_ANNOTATE Word claim_slot_returning_updated_word(uint32_t size,
                                                           port_t i)
   {
@@ -367,7 +382,6 @@ struct slot_bitmap
   {
     release_slot_returning_updated_word(size, i);
   }
-
   HOSTRPC_ANNOTATE Word release_slot_returning_updated_word(uint32_t size,
                                                             port_t i)
   {
@@ -384,18 +398,40 @@ struct slot_bitmap
     return before & mask;
   }
 
+  HOSTRPC_ANNOTATE void toggle_slot(uint32_t size, port_t i)
+  {
+    toggle_slot_returning_updated_word(size, i);
+  }
+  HOSTRPC_ANNOTATE Word toggle_slot_returning_updated_word(uint32_t size,
+                                                           port_t i)
+  {
+    (void)size;
+    assert(static_cast<uint32_t>(i) < size);
+    uint32_t w = index_to_element<Word>(i);
+    uint32_t subindex = index_to_subindex<Word>(i);
+#ifndef NDEBUG
+    bool bit_before = bits::nthbitset(load_word(size, w), subindex);
+#endif
+    // xor with only the slot set
+    Word mask = bits::setnthbit((Word)0, subindex);
+
+    Word before = fetch_xor(w, mask);
+    assert(bit_before != bits::nthbitset(load_word(size, w), subindex));
+    return before ^ mask;
+  }
+
   HOSTRPC_ANNOTATE Word load_word(uint32_t size, uint32_t w) const
   {
     (void)size;
     assert(w < (size / (8 * sizeof(Word))));
-    return platform::atomic_load<Word, __ATOMIC_RELAXED, scope>(&a[w]);
+    Ty *addr = &a[w];
+    return platform::atomic_load<Word, __ATOMIC_RELAXED, scope>(addr);
   }
 
   HOSTRPC_ANNOTATE bool cas(Word element, Word expect, Word replace,
                             Word *loaded)
   {
     Ty *addr = &a[element];
-
     // this cas function is not used across devices by this library
     return platform::atomic_compare_exchange_weak<Word, __ATOMIC_ACQ_REL,
                                                   scope>(addr, expect, replace,
@@ -406,14 +442,51 @@ struct slot_bitmap
   // these are used on memory visible fromi all svm devices
 
  private:
-  HOSTRPC_ANNOTATE Word fetch_and(uint32_t element, Word mask)
+  struct And
+  {
+    HOSTRPC_ANNOTATE static Word Simple(Word lhs, Word rhs)
+    {
+      return lhs & rhs;
+    }
+    HOSTRPC_ANNOTATE static Word Atomic(Ty *addr, Word value)
+    {
+      return platform::atomic_fetch_and<Word, __ATOMIC_ACQ_REL, scope>(addr,
+                                                                       value);
+    }
+  };
+  struct Or
+  {
+    HOSTRPC_ANNOTATE static Word Simple(Word lhs, Word rhs)
+    {
+      return lhs | rhs;
+    }
+    HOSTRPC_ANNOTATE static Word Atomic(Ty *addr, Word value)
+    {
+      return platform::atomic_fetch_or<Word, __ATOMIC_ACQ_REL, scope>(addr,
+                                                                      value);
+    }
+  };
+  struct Xor
+  {
+    HOSTRPC_ANNOTATE static Word Simple(Word lhs, Word rhs)
+    {
+      return lhs ^ rhs;
+    }
+    HOSTRPC_ANNOTATE static Word Atomic(Ty *addr, Word value)
+    {
+      return platform::atomic_fetch_xor<Word, __ATOMIC_ACQ_REL, scope>(addr,
+                                                                       value);
+    }
+  };
+
+  template <typename Op>
+  HOSTRPC_ANNOTATE Word fetch_op(uint32_t element, Word mask)
   {
     Ty *addr = &a[element];
     if (Prop::hasFetchOp())
       {
         // This seems to work on amdgcn, but only with acquire. acq/rel fails
-        return platform::atomic_fetch_and<Word, __ATOMIC_ACQ_REL, scope>(addr,
-                                                                         mask);
+        return Op::Atomic(addr, mask);
       }
     else
       {
@@ -423,14 +496,12 @@ struct slot_bitmap
             platform::atomic_load<Word, __ATOMIC_RELAXED, scope>(addr);
         while (1)
           {
-            Word replace = current & mask;
-
+            Word replace = Op::Simple(current, mask);
             Word loaded;
             bool r =
                 platform::atomic_compare_exchange_weak<Word, __ATOMIC_ACQ_REL,
                                                        scope>(addr, current,
                                                               replace, &loaded);
-
             if (r)
               {
                 return loaded;
@@ -439,34 +510,19 @@ struct slot_bitmap
       }
   }
 
+  HOSTRPC_ANNOTATE Word fetch_and(uint32_t element, Word mask)
+  {
+    return fetch_op<And>(element, mask);
+  }
+
   HOSTRPC_ANNOTATE Word fetch_or(uint32_t element, Word mask)
   {
-    Ty *addr = &a[element];
-    if (Prop::hasFetchOp())
-      {
-        return platform::atomic_fetch_or<Word, __ATOMIC_ACQ_REL, scope>(addr,
-                                                                        mask);
-      }
-    else
-      {
-        Word current =
-            platform::atomic_load<Word, __ATOMIC_RELAXED, scope>(addr);
-        while (1)
-          {
-            Word replace = current | mask;
+    return fetch_op<Or>(element, mask);
+  }
 
-            Word loaded;
-            bool r =
-                platform::atomic_compare_exchange_weak<Word, __ATOMIC_ACQ_REL,
-                                                       scope>(addr, current,
-                                                              replace, &loaded);
-
-            if (r)
-              {
-                return loaded;
-              }
-          }
-      }
+  HOSTRPC_ANNOTATE Word fetch_xor(uint32_t element, Word mask)
+  {
+    return fetch_op<Xor>(element, mask);
   }
 };
 
@@ -499,9 +555,7 @@ struct lock_bitmap
 
   HOSTRPC_ANNOTATE lock_bitmap() : a(nullptr) {}
   HOSTRPC_ANNOTATE lock_bitmap(Ty *d) : a(d) {}
-
   HOSTRPC_ANNOTATE ~lock_bitmap() = default;
-  HOSTRPC_ANNOTATE Ty *data() { return a; }
 
   HOSTRPC_ANNOTATE void dump(uint32_t size) const
   {
@@ -658,9 +712,7 @@ struct slot_bytemap
     // then direct writes will fail. However, the data does need to be
     // zeroed for the bytemap to work.
   }
-
   HOSTRPC_ANNOTATE ~slot_bytemap() = default;
-  HOSTRPC_ANNOTATE Ty *data() { return a; }
 
   // assumes slot available
   HOSTRPC_ANNOTATE void claim_slot(uint32_t size, port_t i)
@@ -674,6 +726,8 @@ struct slot_bytemap
     write_byte<0>(size, i);
   }
 
+  // todo: toggle_slot?
+
   HOSTRPC_ANNOTATE
   Word load_word(uint32_t size, uint32_t w) const
   {
@@ -685,8 +739,7 @@ struct slot_bytemap
     return pack_words(&a[i]);
   }
 
-  HOSTRPC_ANNOTATE bool operator()(uint32_t size, uint32_t i,
-                                   Word *loaded) const
+  HOSTRPC_ANNOTATE bool read_bit(uint32_t size, uint32_t i, Word *loaded) const
   {
     // TODO: Works iff load_word matches bitmap
     uint32_t w = index_to_element<Word>(i);
@@ -747,36 +800,88 @@ struct slot_bytemap
   }
 };
 
-template <bool InitialState, typename Word, size_t Sscope, typename SProp,
-          size_t Vscope, typename VProp>
-HOSTRPC_ANNOTATE void update_visible_from_staging(
-    uint32_t size, port_t i, slot_bitmap<Word, Sscope, SProp> *staging,
-    slot_bitmap<Word, Vscope, VProp> *visible, uint64_t *cas_fail_count,
-    uint64_t *cas_help_count)
+enum class update_type
 {
-  // Write value ~InitialState to slot[i]
+  claim,
+  release,
+  toggle,
+};
 
+template <update_type type, typename Word, size_t Sscope, bool SInverted,
+          typename SProp, size_t Vscope, bool VInverted, typename VProp>
+HOSTRPC_ANNOTATE void update_visible_from_staging(
+    uint32_t size, port_t i,
+    slot_bitmap<Word, Sscope, SInverted, SProp> *staging,
+    slot_bitmap<Word, Vscope, VInverted, VProp> *visible,
+    uint64_t *cas_fail_count, uint64_t *cas_help_count)
+{
   assert((void *)visible != (void *)staging);
   assert(static_cast<uint32_t>(i) < size);
   const uint32_t w = index_to_element<Word>(i);
   const uint32_t subindex = index_to_subindex<Word>(i);
 
-  // InitialState locked for staged_release, clear for staged_claim
-  assert(InitialState ==
-         bits::nthbitset(staging->load_word(size, w), subindex));
-  assert(InitialState ==
-         bits::nthbitset(visible->load_word(size, w), subindex));
+#ifndef NDEBUG
+  bool stagingBitSet = bits::nthbitset(staging->load_word(size, w), subindex);
+  bool visibleBitSet = bits::nthbitset(visible->load_word(size, w), subindex);
+#endif
 
-  // (InitialState ? fetch_and : fetch_or) to update staging
-  Word staged_result =
-      InitialState ? staging->release_slot_returning_updated_word(size, i)
-                   : staging->claim_slot_returning_updated_word(size, i);
-  assert(!InitialState == bits::nthbitset(staged_result, subindex));
+  switch (type)
+    {
+      case update_type::claim:
+        {
+          assert(false == stagingBitSet);
+          assert(false == visibleBitSet);
+          break;
+        }
+      case update_type::release:
+        {
+          assert(true == stagingBitSet);
+          assert(true == visibleBitSet);
+          break;
+        }
+      case update_type::toggle:
+        {
+          break;
+        }
+    }
 
-  // propose a value that could plausibly be in visible. can refactor to drop
-  // the arithmetic
-  Word guess = InitialState ? bits::setnthbit(staged_result, subindex)
-                            : bits::clearnthbit(staged_result, subindex);
+  // result of updating staging value
+  Word staged_result;
+
+  // propose a value that could plausibly be in visible. That is, the word
+  // other than the bit which is being updated here. If successful, saves a
+  // load before going into the cas loop
+  Word guess;
+
+  // value we're trying to write into the slot
+  bool required_value_for_slot;
+
+  switch (type)
+    {
+      case update_type::claim:
+        {
+          staged_result = staging->claim_slot_returning_updated_word(size, i);
+          required_value_for_slot = true;
+          guess = bits::clearnthbit(staged_result, subindex);
+          break;
+        }
+      case update_type::release:
+        {
+          staged_result = staging->release_slot_returning_updated_word(size, i);
+          required_value_for_slot = false;
+          guess = bits::clearnthbit(staged_result, subindex);
+          break;
+        }
+      case update_type::toggle:
+        {
+          staged_result = staging->toggle_slot_returning_updated_word(size, i);
+          required_value_for_slot = bits::nthbitset(staged_result, subindex);
+          guess = bits::togglenthbit(staged_result, subindex);
+          break;
+        }
+    }
+
+  assert(required_value_for_slot == bits::nthbitset(staged_result, subindex));
 
   // initialise the value with the latest view of staging that is already
   // available
@@ -784,99 +889,130 @@ HOSTRPC_ANNOTATE void update_visible_from_staging(
 
   uint64_t local_fail_count = 0;
   uint64_t local_help_count = 0;
+
   while (!visible->cas(w, guess, proposed, &guess))
     {
+      // cas failed but another thread may have done our work
       local_fail_count++;
-      if (!InitialState == bits::nthbitset(guess, subindex))
+      if (required_value_for_slot == bits::nthbitset(guess, subindex))
         {
-          // Cas failed, but another thread has done our work
           local_help_count++;
           proposed = guess;
           break;
         }
 
-      // Update our view of proposed and try again
+      // Update our view of proposed to pull in other threads changes
       proposed = staging->load_word(size, w);
-      assert(!InitialState == bits::nthbitset(proposed, subindex));
+      assert(required_value_for_slot == bits::nthbitset(proposed, subindex));
     }
   *cas_fail_count = *cas_fail_count + local_fail_count;
   *cas_help_count = *cas_help_count + local_help_count;
 
-  assert(!InitialState ==
+  assert(required_value_for_slot ==
          bits::nthbitset(visible->load_word(size, w), subindex));
 }
 
-template <typename Word, size_t Sscope, typename SProp, size_t Vscope,
-          typename VProp>
+template <typename Word, size_t Sscope, bool SInverted, typename SProp,
+          size_t Vscope, bool VInverted, typename VProp>
 HOSTRPC_ANNOTATE void staged_claim_slot(
-    uint32_t size, port_t i, slot_bitmap<Word, Sscope, SProp> *staging,
-    slot_bitmap<Word, Vscope, VProp> *visible, uint64_t *cas_fail_count,
-    uint64_t *cas_help_count)
+    uint32_t size, port_t i,
+    slot_bitmap<Word, Sscope, SInverted, SProp> *staging,
+    slot_bitmap<Word, Vscope, VInverted, VProp> *visible,
+    uint64_t *cas_fail_count, uint64_t *cas_help_count)
 {
-  update_visible_from_staging<false>(size, i, staging, visible, cas_fail_count,
-                                     cas_help_count);
+  update_visible_from_staging<update_type::claim>(
+      size, i, staging, visible, cas_fail_count, cas_help_count);
 }
 
-template <typename Word, size_t Sscope, typename SProp, size_t Vscope,
-          typename VProp>
+template <typename Word, size_t Sscope, bool SInverted, typename SProp,
+          size_t Vscope, bool VInverted, typename VProp>
 HOSTRPC_ANNOTATE void staged_release_slot(
-    uint32_t size, port_t i, slot_bitmap<Word, Sscope, SProp> *staging,
-    slot_bitmap<Word, Vscope, VProp> *visible, uint64_t *cas_fail_count,
-    uint64_t *cas_help_count)
+    uint32_t size, port_t i,
+    slot_bitmap<Word, Sscope, SInverted, SProp> *staging,
+    slot_bitmap<Word, Vscope, VInverted, VProp> *visible,
+    uint64_t *cas_fail_count, uint64_t *cas_help_count)
 {
-  update_visible_from_staging<true>(size, i, staging, visible, cas_fail_count,
-                                    cas_help_count);
+  update_visible_from_staging<update_type::release>(
+      size, i, staging, visible, cas_fail_count, cas_help_count);
 }
 
-template <bool InitialState, typename Word, size_t Sscope, typename SProp>
+template <typename Word, size_t Sscope, typename SProp, bool SInverted,
+          size_t Vscope, bool VInverted, typename VProp>
+HOSTRPC_ANNOTATE void staged_toggle_slot(
+    uint32_t size, port_t i,
+    slot_bitmap<Word, Sscope, SInverted, SProp> *staging,
+    slot_bitmap<Word, Vscope, VInverted, VProp> *visible,
+    uint64_t *cas_fail_count, uint64_t *cas_help_count)
+{
+  update_visible_from_staging<update_type::toggle>(
+      size, i, staging, visible, cas_fail_count, cas_help_count);
+}
+
+template <update_type type, typename Word, size_t Sscope, bool SInverted,
+          typename SProp>
 HOSTRPC_ANNOTATE void update_visible_from_staging(
-    uint32_t size, port_t i, slot_bitmap<Word, Sscope, SProp> *staging,
+    uint32_t size, port_t i,
+    slot_bitmap<Word, Sscope, SInverted, SProp> *staging,
     slot_bytemap<Word> *visible, uint64_t *, uint64_t *)
 {
-  // Write value ~InitialState to slot[i]
-
   assert((void *)visible != (void *)staging);
   assert(static_cast<uint32_t>(i) < size);
 
-  // (InitialState ? fetch_and : fetch_or) to update staging
-  if (InitialState)
+  // update staging then write single byte
+  switch (type)
     {
-      staging->release_slot_returning_updated_word(size, i);
-    }
-  else
-    {
-      staging->claim_slot_returning_updated_word(size, i);
-    }
-
-  // Write single byte
-  if (InitialState)
-    {
-      visible->release_slot(size, i);
-    }
-  else
-    {
-      visible->claim_slot(size, i);
+      case update_type::claim:
+        {
+          staging->claim_slot(size, i);
+          visible->claim_slot(size, i);
+          break;
+        }
+      case update_type::release:
+        {
+          staging->release_slot(size, i);
+          visible->release_slot(size, i);
+          break;
+        }
+      case update_type::toggle:
+        {
+          staging->toggle_slot(size, i);
+          visible->toggle_slot(size, i);
+          break;
+        }
     }
 }
 
-template <typename Word, size_t Sscope, typename SProp>
+template <typename Word, size_t Sscope, bool SInverted, typename SProp>
 HOSTRPC_ANNOTATE void staged_claim_slot(
-    uint32_t size, uint32_t i, slot_bitmap<Word, Sscope, SProp> *staging,
+    uint32_t size, uint32_t i,
+    slot_bitmap<Word, Sscope, SInverted, SProp> *staging,
     slot_bytemap<Word> *visible, uint64_t *cas_fail_count,
     uint64_t *cas_help_count)
 {
-  update_visible_from_staging<false>(size, i, staging, visible, cas_fail_count,
-                                     cas_help_count);
+  update_visible_from_staging<update_type::claim>(
+      size, i, staging, visible, cas_fail_count, cas_help_count);
 }
 
-template <typename Word, size_t Sscope, typename SProp>
+template <typename Word, size_t Sscope, bool SInverted, typename SProp>
 HOSTRPC_ANNOTATE void staged_release_slot(
-    uint32_t size, uint32_t i, slot_bitmap<Word, Sscope, SProp> *staging,
+    uint32_t size, uint32_t i,
+    slot_bitmap<Word, Sscope, SInverted, SProp> *staging,
     slot_bytemap<Word> *visible, uint64_t *cas_fail_count,
     uint64_t *cas_help_count)
 {
-  update_visible_from_staging<true>(size, i, staging, visible, cas_fail_count,
-                                    cas_help_count);
+  update_visible_from_staging<update_type::release>(
+      size, i, staging, visible, cas_fail_count, cas_help_count);
+}
+
+template <typename Word, size_t Sscope, bool SInverted, typename SProp>
+HOSTRPC_ANNOTATE void staged_toggle_slot(
+    uint32_t size, uint32_t i,
+    slot_bitmap<Word, Sscope, SInverted, SProp> *staging,
+    slot_bytemap<Word> *visible, uint64_t *cas_fail_count,
+    uint64_t *cas_help_count)
+{
+  update_visible_from_staging<update_type::toggle>(
+      size, i, staging, visible, cas_fail_count, cas_help_count);
 }
 
 // each platform defines platform::native_width(), presently either 1|32|64
