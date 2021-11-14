@@ -165,8 +165,6 @@ struct client_impl : public state_machine_impl<WordT, SZT, Counter, message_bitm
                            base::staging.load_word(this->size(), index_to_element<Word>(port)),
                            index_to_subindex<Word>(port)));
     base::template rpc_port_wait_until_state<T, base::port_state::high_values>(active_threads, port);
-    
-
   }
 
   template <typename T>
@@ -194,8 +192,8 @@ struct client_impl : public SZT, public Counter
   using SZ = SZT;
   using slot_type = typename SZ::type;
   using lock_t = lock_bitmap<Word>;
-  using inbox_t = message_bitmap<Word,false>;
-  using outbox_t = message_bitmap<Word,false>;
+  using inbox_t = message_bitmap<Word, false>;
+  using outbox_t = message_bitmap<Word, false>;
   using staging_t = slot_bitmap_device_local<Word>;
   HOSTRPC_ANNOTATE constexpr size_t wordBits() const
   {

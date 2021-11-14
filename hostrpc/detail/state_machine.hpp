@@ -17,10 +17,7 @@ namespace hostrpc
 // inbox != outbox:
 //   waiting on other agent
 
-template <typename WordT,
-          typename SZT,
-          typename Counter,
-          typename inbox_t_arg,
+template <typename WordT, typename SZT, typename Counter, typename inbox_t_arg,
           typename outbox_t_arg>
 struct state_machine_impl : public SZT, public Counter
 {
@@ -34,7 +31,7 @@ struct state_machine_impl : public SZT, public Counter
   // TODO: Better assert is same_type
   static_assert(sizeof(Word) == sizeof(typename inbox_t::Word), "");
   static_assert(sizeof(Word) == sizeof(typename outbox_t::Word), "");
-  
+
   HOSTRPC_ANNOTATE constexpr size_t wordBits() const
   {
     return 8 * sizeof(Word);
@@ -81,7 +78,7 @@ struct state_machine_impl : public SZT, public Counter
   }
 
   HOSTRPC_ANNOTATE void dump()
-  {    
+  {
 #if HOSTRPC_HAVE_STDIO
     fprintf(stderr, "shared_buffer %p\n", shared_buffer);
     fprintf(stderr, "inbox         %p\n", inbox.a);
@@ -161,8 +158,7 @@ struct state_machine_impl : public SZT, public Counter
   // Can only wait on the inbox to change state as this thread will not change
   // the outbox during the busy wait
   template <typename T, port_state Req>
-  HOSTRPC_ANNOTATE void rpc_port_wait_until_state(T active_threads,
-                                                  port_t port,
+  HOSTRPC_ANNOTATE void rpc_port_wait_until_state(T active_threads, port_t port,
                                                   port_state* which = nullptr);
 
   template <typename T, typename Op>
@@ -194,7 +190,7 @@ struct state_machine_impl : public SZT, public Counter
         active_threads, port, cxx::forward<Op>(op));
   }
 
-private:
+ private:
   HOSTRPC_ANNOTATE
   port_state loadPortState(port_t port)
   {
@@ -412,9 +408,11 @@ private:
   }
 };
 
-template <typename WordT, typename SZT, typename Counter, typename inbox_t, typename outbox_t>
+template <typename WordT, typename SZT, typename Counter, typename inbox_t,
+          typename outbox_t>
 template <typename T>
-HOSTRPC_ANNOTATE void state_machine_impl<WordT, SZT, Counter, inbox_t, outbox_t>::rpc_close_port(
+HOSTRPC_ANNOTATE void
+state_machine_impl<WordT, SZT, Counter, inbox_t, outbox_t>::rpc_close_port(
     T active_threads,
     port_t port)  // Require != port_t::unavailable
 {
@@ -429,11 +427,15 @@ HOSTRPC_ANNOTATE void state_machine_impl<WordT, SZT, Counter, inbox_t, outbox_t>
     }
 }
 
-template <typename WordT, typename SZT, typename Counter, typename inbox_t, typename outbox_t>
-template <typename T,
-          typename state_machine_impl<WordT, SZT, Counter, inbox_t, outbox_t>::port_state Req>
+template <typename WordT, typename SZT, typename Counter, typename inbox_t,
+          typename outbox_t>
+template <typename T, typename state_machine_impl<WordT, SZT, Counter, inbox_t,
+                                                  outbox_t>::port_state Req>
 HOSTRPC_ANNOTATE void
-state_machine_impl<WordT, SZT, Counter, inbox_t, outbox_t>::rpc_port_wait_until_state(T active_threads, port_t port, port_state* which)
+state_machine_impl<WordT, SZT, Counter, inbox_t,
+                   outbox_t>::rpc_port_wait_until_state(T active_threads,
+                                                        port_t port,
+                                                        port_state* which)
 {
   (void)active_threads;
   const uint32_t size = this->size();
@@ -483,12 +485,18 @@ state_machine_impl<WordT, SZT, Counter, inbox_t, outbox_t>::rpc_port_wait_until_
         {
           if (out)
             {
-              if (which) {*which = port_state::high_values;  }
+              if (which)
+                {
+                  *which = port_state::high_values;
+                }
               goto hi;
             }
           else
             {
-              if (which) {*which = port_state::low_values;  }
+              if (which)
+                {
+                  *which = port_state::low_values;
+                }
               goto lo;
             }
         }

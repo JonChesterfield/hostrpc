@@ -295,7 +295,7 @@ struct slot_bitmap
 {
   using Ty = typename Prop::Ty;
   using Word = WordT;
-  static constexpr bool isInverted() { return Inverted;}
+  static constexpr bool isInverted() { return Inverted; }
   using invertedType = slot_bitmap<WordT, scope, !Inverted, Prop>;
 
   // could check the types, expecting uint64_t or uint32_t
@@ -324,14 +324,13 @@ struct slot_bitmap
     // zeroed for the bitmap to work.
   }
   HOSTRPC_ANNOTATE ~slot_bitmap() = default;
- 
+
   template <bool withInverted>
-  slot_bitmap<WordT, scope, withInverted, Prop>
-  HOSTRPC_ANNOTATE asInverted()
+  slot_bitmap<WordT, scope, withInverted, Prop> HOSTRPC_ANNOTATE asInverted()
   {
     return {underlying};
   }
-  
+
   HOSTRPC_ANNOTATE bool read_bit(uint32_t size, port_t i, Word *loaded) const
   {
     uint32_t w = index_to_element<Word>(i);
@@ -1016,7 +1015,8 @@ HOSTRPC_ANNOTATE void update_visible_from_staging(
     }
 }
 
-template <typename Word, size_t Sscope, bool SInverted, typename SProp, bool VInverted>
+template <typename Word, size_t Sscope, bool SInverted, typename SProp,
+          bool VInverted>
 HOSTRPC_ANNOTATE void staged_claim_slot(
     uint32_t size, uint32_t i,
     slot_bitmap<Word, Sscope, SInverted, SProp> *staging,
@@ -1027,7 +1027,8 @@ HOSTRPC_ANNOTATE void staged_claim_slot(
       size, i, staging, visible, cas_fail_count, cas_help_count);
 }
 
-template <typename Word, size_t Sscope, bool SInverted, typename SProp, bool VInverted>
+template <typename Word, size_t Sscope, bool SInverted, typename SProp,
+          bool VInverted>
 HOSTRPC_ANNOTATE void staged_release_slot(
     uint32_t size, uint32_t i,
     slot_bitmap<Word, Sscope, SInverted, SProp> *staging,
@@ -1038,7 +1039,8 @@ HOSTRPC_ANNOTATE void staged_release_slot(
       size, i, staging, visible, cas_fail_count, cas_help_count);
 }
 
-template <typename Word, size_t Sscope, bool SInverted, typename SProp, bool VInverted>
+template <typename Word, size_t Sscope, bool SInverted, typename SProp,
+          bool VInverted>
 HOSTRPC_ANNOTATE void staged_toggle_slot(
     uint32_t size, uint32_t i,
     slot_bitmap<Word, Sscope, SInverted, SProp> *staging,

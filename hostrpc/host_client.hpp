@@ -27,16 +27,13 @@ struct is_same<T, T>
   static constexpr bool value = true;
 };
 
-  
-template<typename T, typename U>
+template <typename T, typename U>
 struct is_same_or_inverted
 {
-  static constexpr bool value = is_same<T, U>::value ||
-                                is_same<T, typename U::invertedType>::value;
+  static constexpr bool value =
+      is_same<T, U>::value || is_same<T, typename U::invertedType>::value;
 };
 
-
-  
 // local, remote are instances of client_impl, server_impl
 template <typename SZ, typename LocalType, typename RemoteType,
           typename AllocBuffer, typename AllocInboxOutbox, typename AllocLocal,
@@ -55,11 +52,11 @@ host_client(AllocBuffer alloc_buffer, AllocInboxOutbox alloc_inbox_outbox,
 
   // can have different values for Inverted without problems
   static_assert(is_same_or_inverted<typename LocalType::inbox_t,
-                        typename RemoteType::outbox_t>::value,
+                                    typename RemoteType::outbox_t>::value,
                 "");
 
   static_assert(is_same_or_inverted<typename LocalType::outbox_t,
-                        typename RemoteType::inbox_t>::value,
+                                    typename RemoteType::inbox_t>::value,
                 "");
 
   static_assert(AllocBuffer::align == alignof(page_t), "");

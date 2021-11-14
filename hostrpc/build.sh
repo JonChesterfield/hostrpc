@@ -20,7 +20,7 @@ fi
 echo "have_nvptx: $have_nvptx"
 echo "have_amdgcn: $have_amdgcn"
 
-RDIR=$HOME/llvm-install   
+RDIR=$HOME/llvm-install
 
 # set arch to reasonable defaults, override with those on the current system
 # for the architecture that is available locally
@@ -90,7 +90,7 @@ fi
 
 
 set +e
-clang++ -W -Wno-deprecated-copy -Wno-missing-field-initializers -Wno-inline-new-delete -Wno-unused-parameter -std=c++14 -ffreestanding -I $HOME/relacy/ minimal.cpp -stdlib=libc++ -o minimal.out
+$RDIR/bin/clang++ -W -Wno-deprecated-copy -Wno-missing-field-initializers -Wno-inline-new-delete -Wno-unused-parameter -std=c++14 -ffreestanding -I $HOME/relacy/ minimal.cpp -stdlib=libc++ -o minimal.out
 set -e
 
 echo "Using toolchain at $RDIR, GCNGFX=$GCNGFX, PTXGFX=$PTXGFX"
@@ -342,6 +342,7 @@ fi
 
 $CXX_X64 unit_tests/common.cpp -c -o obj/unit_tests/common.x64.bc
 $CXX_X64_LD obj/unit_tests/common.x64.bc -o unit_tests/common.x64.exe
+./unit_tests/common.x64.exe
 
 #if (($have_amdgcn)); then
 #    $CXX_GCN devicertl_pteam_mem_barrier.cpp -c -o obj/devicertl_pteam_mem_barrier.gcn.bc

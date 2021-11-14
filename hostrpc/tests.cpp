@@ -131,8 +131,9 @@ TEST_CASE("set up single word system")
     });
 
     safe_thread sv_thrd([&]() {
-      server_type sv = {SZ{}, server_active,  send,
-                        recv.asInverted<false>()/*here*/, server_staging, &shared_buffer[0]};
+      server_type sv = {SZ{},           server_active,
+                        send,           recv.asInverted<false>() /*here*/,
+                        server_staging, &shared_buffer[0]};
 
       uint32_t loc_arg = 0;
       for (;;)
