@@ -218,7 +218,6 @@ struct client_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE client_impl()
       : SZ{},
         Counter{},
-        shared_buffer(nullptr),
         active{},
         inbox{},
         outbox{},

@@ -315,7 +315,11 @@ struct slot_bitmap
 
  public:
   HOSTRPC_ANNOTATE static constexpr uint32_t bits_per_slot() { return 1; }
-  HOSTRPC_ANNOTATE slot_bitmap() : underlying(nullptr) {}
+
+  // allocate in coarse grain memory can be followed by placement new of
+  // the default constructor, which means the default constructor can't write
+  // anything
+  HOSTRPC_ANNOTATE slot_bitmap() /*: underlying(nullptr)*/ {}
   HOSTRPC_ANNOTATE slot_bitmap(Ty *d) : underlying(d)
   {
     // can't necessarily write to a from this object. if the memory is on
@@ -585,7 +589,7 @@ struct lock_bitmap
   Ty *a;
   HOSTRPC_ANNOTATE static constexpr size_t bits_per_slot() { return 1; }
 
-  HOSTRPC_ANNOTATE lock_bitmap() : a(nullptr) {}
+  HOSTRPC_ANNOTATE lock_bitmap() /*: a(nullptr)*/ {}
   HOSTRPC_ANNOTATE lock_bitmap(Ty *d) : a(d) {}
   HOSTRPC_ANNOTATE ~lock_bitmap() = default;
 
@@ -737,7 +741,7 @@ struct slot_bytemap
 
   Ty *a;
   HOSTRPC_ANNOTATE static constexpr size_t bits_per_slot() { return 8; }
-  HOSTRPC_ANNOTATE slot_bytemap() : a(nullptr) {}
+  HOSTRPC_ANNOTATE slot_bytemap() /*: a(nullptr)*/ {}
   HOSTRPC_ANNOTATE slot_bytemap(Ty *d) : a(d)
   {
     // can't necessarily write to a from this object. if the memory is on

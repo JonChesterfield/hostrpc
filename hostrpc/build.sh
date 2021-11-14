@@ -344,6 +344,12 @@ $CXX_X64 unit_tests/common.cpp -c -o obj/unit_tests/common.x64.bc
 $CXX_X64_LD obj/unit_tests/common.x64.bc -o unit_tests/common.x64.exe
 ./unit_tests/common.x64.exe
 
+$CXX_GCN unit_tests/common.cpp -c -o obj/unit_tests/common.gcn.bc
+$LINK obj/unit_tests/common.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc amdgcn_loader_device.gcn.bc hostcall.gcn.bc -o obj/unit_tests/common.gcn.linked.bc
+
+$CXX_GCN_LD obj/unit_tests/common.gcn.linked.bc -o unit_tests/common.gcn.exe
+../amdgcn_loader.exe ./unit_tests/common.gcn.exe
+
 #if (($have_amdgcn)); then
 #    $CXX_GCN devicertl_pteam_mem_barrier.cpp -c -o obj/devicertl_pteam_mem_barrier.gcn.bc
 #    # todo: refer to lib from RDIR, once that lib has the function non-static    
@@ -516,7 +522,7 @@ fi
 # Build the device library that calls into main()
 
 if (($have_amdgcn)); then
-$LINK amdgcn_main.gcn.bc amdgcn_loader_device.gcn.bc  hostcall.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc -o executable_device.gcn.bc
+$LINK amdgcn_main.gcn.bc amdgcn_loader_device.gcn.bc hostcall.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc -o executable_device.gcn.bc
 
 # Link the device image
 $CXX_GCN_LD executable_device.gcn.bc -o a.gcn.out
