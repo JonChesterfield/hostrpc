@@ -49,11 +49,15 @@ enum class client_state : uint8_t
 // garbage that is, can't claim the slot for a new thread is that a sufficient
 // criteria for the slot to be awaiting gc?
 
-#if 0
+#if 1
 template <typename WordT, typename SZT, typename Counter = counters::client>
-struct client_impl : public state_machine_impl<WordT, SZT, Counter, message_bitmap<WordT, true>, message_bitmap<WordT, false>>
+struct client_impl : public state_machine_impl<WordT, SZT, Counter,
+                                               message_bitmap<WordT, false>,
+                                               message_bitmap<WordT, false>>
 {
-  using base = state_machine_impl<WordT, SZT, Counter, message_bitmap<WordT, true>, message_bitmap<WordT, false>>;
+  using base = state_machine_impl<WordT, SZT, Counter,
+                                  message_bitmap<WordT, false>,
+                                  message_bitmap<WordT, false>>;
   using typename base::state_machine_impl;
 
   using Word = typename base::Word;

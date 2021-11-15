@@ -56,7 +56,6 @@ struct state_machine_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE state_machine_impl()
       : SZ{},
         Counter{},
-        shared_buffer(nullptr),
         active{},
         inbox{},
         outbox{},
