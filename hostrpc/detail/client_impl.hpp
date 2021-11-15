@@ -55,9 +55,9 @@ struct client_impl : public state_machine_impl<WordT, SZT, Counter,
                                                message_bitmap<WordT, false>,
                                                message_bitmap<WordT, false>>
 {
-  using base = state_machine_impl<WordT, SZT, Counter,
-                                  message_bitmap<WordT, false>,
-                                  message_bitmap<WordT, false>>;
+  using base =
+      state_machine_impl<WordT, SZT, Counter, message_bitmap<WordT, false>,
+                         message_bitmap<WordT, false>>;
   using typename base::state_machine_impl;
 
   using Word = typename base::Word;
@@ -67,16 +67,13 @@ struct client_impl : public state_machine_impl<WordT, SZT, Counter,
   using outbox_t = typename base::outbox_t;
   using staging_t = typename base::staging_t;
 
-  HOSTRPC_ANNOTATE client_impl()
-    : base ()
-  {
-  }
+  HOSTRPC_ANNOTATE client_impl() : base() {}
   HOSTRPC_ANNOTATE ~client_impl() = default;
   HOSTRPC_ANNOTATE client_impl(SZ sz, lock_t active, inbox_t inbox,
                                outbox_t outbox, staging_t staging,
                                page_t *shared_buffer)
 
-    : base (sz, active, inbox, outbox, staging, shared_buffer)
+      : base(sz, active, inbox, outbox, staging, shared_buffer)
   {
     constexpr size_t client_size = 40;
 
@@ -110,8 +107,7 @@ struct client_impl : public state_machine_impl<WordT, SZT, Counter,
   HOSTRPC_ANNOTATE client_counters get_counters() { return Counter::get(); }
 
   template <typename T>
-  HOSTRPC_ANNOTATE port_t
-  rpc_open_port(T active_threads)
+  HOSTRPC_ANNOTATE port_t rpc_open_port(T active_threads)
   {
     return base::rpc_open_port_lo(active_threads);
   }
@@ -121,12 +117,15 @@ struct client_impl : public state_machine_impl<WordT, SZT, Counter,
                                                       port_t port)
   {
     typename base::port_state s;
-    base::template rpc_port_wait_until_state<T, base::port_state::either_low_or_high>(active_threads, port, &s);
+    base::template rpc_port_wait_until_state<
+        T, base::port_state::either_low_or_high>(active_threads, port, &s);
 
     if (s == base::port_state::high_values)
       {
         rpc_port_discard_result(active_threads, port);
-        base::template rpc_port_wait_until_state<T, base::port_state::low_values>(active_threads, port);
+        base::template rpc_port_wait_until_state<T,
+                                                 base::port_state::low_values>(
+            active_threads, port);
       }
   }
 
@@ -143,14 +142,16 @@ struct client_impl : public state_machine_impl<WordT, SZT, Counter,
     // as the callee could have used recv() explicitly instead of
     // dropping the result
     rpc_port_wait_until_available(active_threads, port);  // expensive
-    rpc_port_send_given_available<Op>(active_threads, port, cxx::forward<Op>(op));
+    rpc_port_send_given_available<Op>(active_threads, port,
+                                      cxx::forward<Op>(op));
   }
 
   template <typename Op, typename T>
   HOSTRPC_ANNOTATE void rpc_port_send_given_available(T active_threads,
                                                       port_t port, Op &&op)
   {
-    base::template rpc_port_apply_lo(active_threads, port, cxx::forward<Op>(op));
+    base::template rpc_port_apply_lo(active_threads, port,
+                                     cxx::forward<Op>(op));
   }
 
   template <typename T>
@@ -158,25 +159,26 @@ struct client_impl : public state_machine_impl<WordT, SZT, Counter,
   {
     // assumes output live
     assert(bits::nthbitset(
-                           base::staging.load_word(this->size(), index_to_element<Word>(port)),
-                           index_to_subindex<Word>(port)));
-    base::template rpc_port_wait_until_state<T, base::port_state::high_values>(active_threads, port);
+        base::staging.load_word(this->size(), index_to_element<Word>(port)),
+        index_to_subindex<Word>(port)));
+    base::template rpc_port_wait_until_state<T, base::port_state::high_values>(
+        active_threads, port);
   }
 
   template <typename T>
   HOSTRPC_ANNOTATE void rpc_port_discard_result(T active_threads, port_t port)
   {
-    base::template rpc_port_apply_hi(active_threads, port, [](hostrpc::port_t, page_t*) {});
+    base::template rpc_port_apply_hi(active_threads, port,
+                                     [](hostrpc::port_t, page_t *) {});
   }
 
   template <typename Use, typename T>
   HOSTRPC_ANNOTATE void rpc_port_recv(T active_threads, port_t port, Use &&use)
   {
     rpc_port_wait_for_result(active_threads, port);
-    base::template rpc_port_apply_hi(active_threads, port, cxx::forward<Use>(use));
+    base::template rpc_port_apply_hi(active_threads, port,
+                                     cxx::forward<Use>(use));
   }
-
-    
 };
 
 #else
@@ -212,12 +214,7 @@ struct client_impl : public SZT, public Counter
   static_assert(cxx::is_trivially_copyable<staging_t>::value, "");
 
   HOSTRPC_ANNOTATE client_impl()
-      : SZ{},
-        Counter{},
-        active{},
-        inbox{},
-        outbox{},
-        staging{}
+      : SZ{}, Counter{}, active{}, inbox{}, outbox{}, staging{}
   {
   }
   HOSTRPC_ANNOTATE ~client_impl() = default;

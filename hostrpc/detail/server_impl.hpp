@@ -28,9 +28,9 @@ struct server_impl : public state_machine_impl<WordT, SZT, Counter,
                                                message_bitmap<WordT, true>,
                                                message_bitmap<WordT, false>>
 {
-  using base = state_machine_impl<WordT, SZT, Counter,
-                                  message_bitmap<WordT, true>,
-                                  message_bitmap<WordT, false>>;
+  using base =
+      state_machine_impl<WordT, SZT, Counter, message_bitmap<WordT, true>,
+                         message_bitmap<WordT, false>>;
   using typename base::state_machine_impl;
 
   using Word = typename base::Word;
@@ -48,15 +48,12 @@ struct server_impl : public state_machine_impl<WordT, SZT, Counter,
   HOSTRPC_ANNOTATE uint32_t size() const { return SZ::value(); }
   HOSTRPC_ANNOTATE uint32_t words() const { return size() / wordBits(); }
 
-  HOSTRPC_ANNOTATE server_impl()
-    : base ()
-  {
-  }
+  HOSTRPC_ANNOTATE server_impl() : base() {}
   HOSTRPC_ANNOTATE ~server_impl() = default;
   HOSTRPC_ANNOTATE server_impl(SZ sz, lock_t active, inbox_t inbox,
                                outbox_t outbox, staging_t staging,
                                page_t* shared_buffer)
-    : base (sz, active, inbox, outbox, staging, shared_buffer)
+      : base(sz, active, inbox, outbox, staging, shared_buffer)
   {
     constexpr size_t server_size = 40;
 
@@ -82,13 +79,12 @@ struct server_impl : public state_machine_impl<WordT, SZT, Counter,
     static_assert(alignof(server_impl) == 8, "");
   }
 
-  HOSTRPC_ANNOTATE static void *operator new(size_t, server_impl *p)
+  HOSTRPC_ANNOTATE static void* operator new(size_t, server_impl* p)
   {
     return p;
   }
-  
-  HOSTRPC_ANNOTATE server_counters get_counters() { return Counter::get(); }
 
+  HOSTRPC_ANNOTATE server_counters get_counters() { return Counter::get(); }
 
   template <typename Clear, typename T>
   HOSTRPC_ANNOTATE port_t rpc_open_port(T active_threads, Clear&& cl,
@@ -126,7 +122,7 @@ struct server_impl : public state_machine_impl<WordT, SZT, Counter,
     return rpc_open_port(active_threads, &location_arg);
   }
 
-    HOSTRPC_ANNOTATE bool lock_held(port_t port)
+  HOSTRPC_ANNOTATE bool lock_held(port_t port)
   {
     const uint32_t element = index_to_element<Word>(port);
     const uint32_t subindex = index_to_subindex<Word>(port);
@@ -138,34 +134,33 @@ struct server_impl : public state_machine_impl<WordT, SZT, Counter,
                                                          Operate&& op,
                                                          port_t port)
   {
-    (void)active_threads;(void)op;(void)port;
+    (void)active_threads;
+    (void)op;
+    (void)port;
 
     (void)active_threads;
     assert(port != port_t::unavailable);
 
     base::rpc_port_apply_lo(active_threads, port, cxx::forward<Operate>(op));
 
-
-
     // claim
-    
+
     assert(lock_held(port));
   }
-  
-protected:
 
+ protected:
   template <typename Clear, bool have_precondition, typename T>
   HOSTRPC_ANNOTATE port_t rpc_open_port_impl(T active_threads, Clear&& cl,
                                              uint32_t* location_arg)
   {
     // suspicious of open lo-or-hi
     {
-    port_t p = base::template rpc_open_port_hi(active_threads, *location_arg);
-    if (p != port_t::unavailable)
-      {
-        base::rpc_port_apply_hi(active_threads, p, Clear{cl});
-        base::rpc_close_port(active_threads, p);
-      }
+      port_t p = base::template rpc_open_port_hi(active_threads, *location_arg);
+      if (p != port_t::unavailable)
+        {
+          base::rpc_port_apply_hi(active_threads, p, Clear{cl});
+          base::rpc_close_port(active_threads, p);
+        }
     }
 
     {
@@ -178,7 +173,10 @@ protected:
   again:;
     typename base::port_state ps;
     port_t p = base::template rpc_open_port(active_threads, *location_arg, &ps);
-    if (p == port_t::unavailable) { return p; }
+    if (p == port_t::unavailable)
+      {
+        return p;
+      }
 
     if (ps == base::port_state::high_values)
       {
@@ -191,9 +189,8 @@ protected:
     *location_arg = static_cast<uint32_t>(p) + 1;
     return p;
   }
-
 };
-  
+
 #else
 template <typename WordT, typename SZT, typename Counter = counters::server>
 struct server_impl : public SZT, public Counter

@@ -54,12 +54,7 @@ struct state_machine_impl : public SZT, public Counter
   static_assert(cxx::is_trivially_copyable<staging_t>::value, "");
 
   HOSTRPC_ANNOTATE state_machine_impl()
-      : SZ{},
-        Counter{},
-        active{},
-        inbox{},
-        outbox{},
-        staging{}
+      : SZ{}, Counter{}, active{}, inbox{}, outbox{}, staging{}
   {
   }
   HOSTRPC_ANNOTATE ~state_machine_impl() = default;
@@ -242,27 +237,34 @@ struct state_machine_impl : public SZT, public Counter
       }
   }
 
-  static_assert((available_bitmap<port_state::low_values>(0, 0) & 1) == 1,"");
-  static_assert((available_bitmap<port_state::low_values>(1, 0) & 1) == 0,"");
-  static_assert((available_bitmap<port_state::low_values>(0, 1) & 1) == 0,"");
-  static_assert((available_bitmap<port_state::low_values>(1, 1) & 1) == 0,"");
+  static_assert((available_bitmap<port_state::low_values>(0, 0) & 1) == 1, "");
+  static_assert((available_bitmap<port_state::low_values>(1, 0) & 1) == 0, "");
+  static_assert((available_bitmap<port_state::low_values>(0, 1) & 1) == 0, "");
+  static_assert((available_bitmap<port_state::low_values>(1, 1) & 1) == 0, "");
 
-  static_assert((available_bitmap<port_state::high_values>(0, 0) & 1) == 0,"");
-  static_assert((available_bitmap<port_state::high_values>(1, 0) & 1) == 0,"");
-  static_assert((available_bitmap<port_state::high_values>(0, 1) & 1) == 0,"");
-  static_assert((available_bitmap<port_state::high_values>(1, 1) & 1) == 1,"");
+  static_assert((available_bitmap<port_state::high_values>(0, 0) & 1) == 0, "");
+  static_assert((available_bitmap<port_state::high_values>(1, 0) & 1) == 0, "");
+  static_assert((available_bitmap<port_state::high_values>(0, 1) & 1) == 0, "");
+  static_assert((available_bitmap<port_state::high_values>(1, 1) & 1) == 1, "");
 
-  static_assert((available_bitmap<port_state::either_low_or_high>(0, 0) & 1) == 1,"");
-  static_assert((available_bitmap<port_state::either_low_or_high>(1, 0) & 1) == 0,"");
-  static_assert((available_bitmap<port_state::either_low_or_high>(0, 1) & 1) == 0,"");
-  static_assert((available_bitmap<port_state::either_low_or_high>(1, 1) & 1) == 1,"");
+  static_assert((available_bitmap<port_state::either_low_or_high>(0, 0) & 1) ==
+                    1,
+                "");
+  static_assert((available_bitmap<port_state::either_low_or_high>(1, 0) & 1) ==
+                    0,
+                "");
+  static_assert((available_bitmap<port_state::either_low_or_high>(0, 1) & 1) ==
+                    0,
+                "");
+  static_assert((available_bitmap<port_state::either_low_or_high>(1, 1) & 1) ==
+                    1,
+                "");
 
-  static_assert((available_bitmap<port_state::unavailable>(0, 0) & 1) == 0,"");
-  static_assert((available_bitmap<port_state::unavailable>(1, 0) & 1) == 1,"");
-  static_assert((available_bitmap<port_state::unavailable>(0, 1) & 1) == 1,"");
-  static_assert((available_bitmap<port_state::unavailable>(1, 1) & 1) == 0,"");
-  
-  
+  static_assert((available_bitmap<port_state::unavailable>(0, 0) & 1) == 0, "");
+  static_assert((available_bitmap<port_state::unavailable>(1, 0) & 1) == 1, "");
+  static_assert((available_bitmap<port_state::unavailable>(0, 1) & 1) == 1, "");
+  static_assert((available_bitmap<port_state::unavailable>(1, 1) & 1) == 0, "");
+
   template <port_state Req>
   HOSTRPC_ANNOTATE bool is_slot_still_available(uint32_t w, uint32_t idx,
                                                 port_state* which)

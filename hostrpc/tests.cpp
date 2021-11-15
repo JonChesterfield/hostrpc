@@ -109,8 +109,12 @@ TEST_CASE("set up single word system")
 
   {
     safe_thread cl_thrd([&]() {
-      client_type cl = {SZ{}, client_active,  recv.asInverted<false>(),
-                        send.asInverted<false>(), client_staging, &shared_buffer[0]};
+      client_type cl = {SZ{},
+                        client_active,
+                        recv.asInverted<false>(),
+                        send.asInverted<false>(),
+                        client_staging,
+                        &shared_buffer[0]};
 
       fill f(&val);
       use u;
@@ -131,10 +135,12 @@ TEST_CASE("set up single word system")
     });
 
     safe_thread sv_thrd([&]() {
-      server_type sv = {SZ{},           server_active,
+      server_type sv = {SZ{},
+                        server_active,
                         send.asInverted<true>(),
                         recv.asInverted<false>(),
-                        server_staging, &shared_buffer[0]};
+                        server_staging,
+                        &shared_buffer[0]};
 
       uint32_t loc_arg = 0;
       for (;;)

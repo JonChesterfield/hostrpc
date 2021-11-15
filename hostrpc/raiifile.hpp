@@ -1,11 +1,11 @@
 #ifndef RAIIFILE_HPP_INCLUDED
 #define RAIIFILE_HPP_INCLUDED
 
+#include <errno.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
-#include <errno.h>
-#include <string.h>
 
 struct raiifile
 {
@@ -18,7 +18,8 @@ struct raiifile
     FILE *handle = fopen(filename, "rb");
     if (!handle)
       {
-        fprintf(stderr, "Failed to open %s, errno %d %s\n", filename, errno, strerror(errno));
+        fprintf(stderr, "Failed to open %s, errno %d %s\n", filename, errno,
+                strerror(errno));
         return;
       }
 

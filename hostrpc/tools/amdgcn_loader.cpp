@@ -321,7 +321,8 @@ static int main_with_hsa(int argc, char **argv)
   auto offsets = offsets_into_strtab(app_argc, app_argv);
   size_t bytes_for_argv = 8 * app_argc;
   size_t bytes_for_strtab = (offsets.back() + 3) & ~size_t{3};
-  size_t number_return_values = hsa::agent_get_info_wavefront_size(kernel_agent);
+  size_t number_return_values =
+      hsa::agent_get_info_wavefront_size(kernel_agent);
   size_t bytes_for_return = sizeof(int) * number_return_values;
 
   // Always allocates > 0 because of the return slot
