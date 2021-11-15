@@ -19,6 +19,31 @@ namespace hostrpc
 
 template <typename WordT, typename SZT, typename Counter, typename inbox_t_arg,
           typename outbox_t_arg>
+struct state_machine_impl;
+
+template <unsigned I, unsigned O>
+class typed_port_t
+{
+  typed_port_t(typed_port_t&&) = default;
+  typed_port_t& operator=(typed_port_t&&) = default;
+  operator uint32_t() const { return value; }
+
+ private:
+  template <typename WordT, typename SZT, typename Counter,
+            typename inbox_t_arg, typename outbox_t_arg>
+  friend struct state_machine_impl;
+
+  typed_port_t(uint32_t v) : value(v)
+  {
+    static_assert((I <= 1) && (O <= 1), "");
+  }
+  typed_port_t(const typed_port_t&) = delete;
+  typed_port_t& operator=(const typed_port_t&) = delete;
+  uint32_t value;
+};
+
+template <typename WordT, typename SZT, typename Counter, typename inbox_t_arg,
+          typename outbox_t_arg>
 struct state_machine_impl : public SZT, public Counter
 {
   using Word = WordT;
@@ -145,6 +170,13 @@ struct state_machine_impl : public SZT, public Counter
   }
 
   template <typename T>
+  HOSTRPC_ANNOTATE typed_port_t<0, 0> rpc_open_typed_port_lo(
+      T active_threads, uint32_t scan_from = 0)
+  {
+    return rpc_open_typed_port_impl<0, 0>(active_threads, scan_from);
+  }
+
+  template <typename T>
   HOSTRPC_ANNOTATE void rpc_close_port(
       T active_threads,
       port_t port);  // Require != port_t::unavailable, not already closed
@@ -182,6 +214,39 @@ struct state_machine_impl : public SZT, public Counter
 #endif
     rpc_port_apply_given_state<T, Op, port_state::either_low_or_high_values>(
         active_threads, port, cxx::forward<Op>(op));
+  }
+
+  // Apply will leave input unchanged and toggle output
+  template <unsigned IandO, typename T, typename Op>
+  HOSTRPC_ANNOTATE typed_port_t<IandO, !IandO> rpc_port_apply(
+      T active_threads, typed_port_t<IandO, IandO>&& port, Op&& op)
+  {
+    uint32_t raw = static_cast<uint32_t>(port);
+    port_t tmp = static_cast<port_t>(raw);
+    rpc_port_apply_hi(active_threads, tmp, cxx::forward<Op>(op));
+    return typed_port_t<1, 0>(raw);
+  }
+
+  template <unsigned I, typename T>
+  HOSTRPC_ANNOTATE bool rpc_port_inbox_has_changed(T,
+                                                   typed_port_t<I, !I> const&)
+  {
+    // todo, intended as a means for caller to tell if rpc_port_wait will
+    // transition without spinning
+    return false;
+  }
+
+  template <unsigned I, typename T>
+  HOSTRPC_ANNOTATE typed_port_t<!I, !I> rpc_port_wait(
+      T active_threads, typed_port_t<I, !I>&& port)
+  {
+    // can only wait on the inbox to change
+    constexpr port_state Req =
+        I == 1 ? port_state::low_values : port_state::high_values;
+    uint32_t raw = static_cast<uint32_t>(port);
+    port_t tmp = static_cast<port_t>(raw);
+    rpc_port_wait_until_state(active_threads, tmp);
+    return typed_port_t<!I, !I>(raw);
   }
 
  private:
@@ -308,7 +373,6 @@ struct state_machine_impl : public SZT, public Counter
     static_assert(Req != port_state::unavailable, "");
     const uint32_t size = this->size();
     const uint32_t words = this->words();
-
     const uint32_t location = scan_from % size;
     const uint32_t element = index_to_element<Word>(location);
 
@@ -425,6 +489,58 @@ struct state_machine_impl : public SZT, public Counter
                                    &cas_fail_count, &cas_help_count);
               }
             break;
+          }
+      }
+  }
+
+  template <unsigned I, unsigned O, typename T>
+  HOSTRPC_ANNOTATE typed_port_t<I, O> rpc_open_typed_port_impl(
+      T active_threads, uint32_t scan_from)
+  {
+    static_assert(I == O, "");
+    constexpr port_state Req =
+        I == 0 ? port_state::low_values : port_state::high_values;
+
+    port_t p = rpc_open_port<T, Req>(active_threads, scan_from);
+    if (p != port_state::unavailable)
+      {
+        return typed_port_t<I, O>(static_cast<uint32_t>(p));
+      }
+
+    // todo: do amdgpu and nvptx need to implement this or is IR xform
+    // sufficient note: returning a typed port means spinning if none is
+    // available
+    [[clang::musttail]] return rpc_open_typed_port_impl(active_threads,
+                                                        scan_from);
+  }
+
+  template <unsigned I, unsigned O, typename T>
+  HOSTRPC_ANNOTATE void rpc_close_port(T active_threads,
+                                       typed_port_t<I, O>&& port)
+  {
+    rpc_close_port(active_threads, static_cast<uint32_t>(port));
+  }
+
+  template <typename T, typename CB00, typename CB11, typename CBNone>
+  HOSTRPC_ANNOTATE void rpc_with_opened_port(T active_threads,
+                                             uint32_t scan_from, CB00 On00,
+                                             CB11 On11, CBNone None)
+  {
+    port_t p = rpc_open_port<T, port_state::either_low_or_high>(active_threads,
+                                                                scan_from);
+    if (p == port_state::unavailable)
+      {
+        None(active_threads);
+      }
+    else
+      {
+        if (p == port_state::low_values)
+          {
+            On00(active_threads, typed_port_t<0, 0>(static_cast<uint32_t>(p)));
+          }
+        else
+          {
+            On11(active_threads, typed_port_t<1, 1>(static_cast<uint32_t>(p)));
           }
       }
   }
