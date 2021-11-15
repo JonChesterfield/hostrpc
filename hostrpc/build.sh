@@ -22,6 +22,21 @@ echo "have_amdgcn: $have_amdgcn"
 
 RDIR=$HOME/llvm-install
 
+if [[ -d "$RDIR" ]]
+then
+    echo "Using RDIR = $RDIR"
+else
+    RDIR=$(dirname $(dirname $(which clang)))
+fi
+
+if [[ -d "$RDIR" ]]
+then
+    echo "Using RDIR = $RDIR"
+else
+    echo "Failed to find a root toolchain directory"
+    exit 1
+fi
+
 # set arch to reasonable defaults, override with those on the current system
 # for the architecture that is available locally
 PTXGFX=sm_50
@@ -29,11 +44,23 @@ GCNGFX=gfx906
 
 
 if (($have_nvptx)); then
-    PTXGFX=`$RDIR/bin/llvm-omp-device-info | awk '/Compute Capabilities/{print "sm_"$3}'`
+    if [[ -f "$RDIR/bin/llvm-omp-device-info" ]] ; then
+        echo "Setting PTXGFX using llvm-omp-device-info"
+        PTXGFX=`$RDIR/bin/llvm-omp-device-info | awk '/Compute Capabilities/{print "sm_"$3}'`
+    else
+        echo "No llvm-omp-device-info, disabling nvptx offloading"
+        have_nvptx=0
+    fi
 fi
 
 if (($have_amdgcn)); then
-    GCNGFX=`$RDIR/bin/amdgpu-arch | uniq`
+    if [[ -f "$RDIR/bin/amdgpu-arch" ]] ; then
+        echo "Setting GCNGFX using amdgpu-arch"
+        GCNGFX=`$RDIR/bin/amdgpu-arch | uniq`
+    else
+        echo "No amdgpu-arch, disabling amdgpu offloading"
+        have_amdgcn=0
+    fi
 fi
 
 
@@ -344,11 +371,13 @@ $CXX_X64 unit_tests/common.cpp -c -o obj/unit_tests/common.x64.bc
 $CXX_X64_LD obj/unit_tests/common.x64.bc -o unit_tests/common.x64.exe
 ./unit_tests/common.x64.exe
 
+if (($have_amdgcn)); then
 $CXX_GCN unit_tests/common.cpp -c -o obj/unit_tests/common.gcn.bc
 $LINK obj/unit_tests/common.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc amdgcn_loader_device.gcn.bc hostcall.gcn.bc -o obj/unit_tests/common.gcn.linked.bc
 
 $CXX_GCN_LD obj/unit_tests/common.gcn.linked.bc -o unit_tests/common.gcn.exe
 ../amdgcn_loader.exe ./unit_tests/common.gcn.exe
+fi
 
 #if (($have_amdgcn)); then
 #    $CXX_GCN devicertl_pteam_mem_barrier.cpp -c -o obj/devicertl_pteam_mem_barrier.gcn.bc

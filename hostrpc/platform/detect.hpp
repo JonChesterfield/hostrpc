@@ -146,4 +146,20 @@
 #define HOSTRPC_ANNOTATE HOSTRPC_ANNOTATE_HOST HOSTRPC_ANNOTATE_DEVICE
 
 
+#if !defined(__has_include)
+#error "Expected compiler to provide __has_include"
+#endif
+
+#if __has_include ("hsa.h")
+#define HOSTRPC_HAVE_HSA_LIBRARY 1
+#else
+#define HOSTRPC_HAVE_HSA_LIBRARY 0
+#endif
+
+#if __has_include (<cuda.h>)
+#define HOSTRPC_HAVE_CUDA_LIBRARY 1
+#else
+#define HOSTRPC_HAVE_CUDA_LIBRARY 0
+#endif
+
 #endif

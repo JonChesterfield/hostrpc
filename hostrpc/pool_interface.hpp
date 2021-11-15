@@ -789,7 +789,7 @@ struct via_hsa
 
 // In a source file.
 
-#if HOSTRPC_HOST && !defined(__OPENCL_C_VERSION__)
+#if HOSTRPC_HOST && !defined(__OPENCL_C_VERSION__) && HOSTRPC_HAVE_HSA_LIBRARY
 
 #include "hsa.hpp"
 
