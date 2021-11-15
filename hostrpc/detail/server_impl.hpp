@@ -22,6 +22,179 @@ enum class server_state : uint8_t
   result_with_thread = 0b111,
 };
 
+#if 1
+template <typename WordT, typename SZT, typename Counter = counters::server>
+struct server_impl : public state_machine_impl<WordT, SZT, Counter,
+                                               message_bitmap<WordT, true>,
+                                               message_bitmap<WordT, false>>
+{
+  using base = state_machine_impl<WordT, SZT, Counter,
+                                  message_bitmap<WordT, true>,
+                                  message_bitmap<WordT, false>>;
+  using typename base::state_machine_impl;
+
+  using Word = typename base::Word;
+  using SZ = typename base::SZ;
+  using lock_t = typename base::lock_t;
+  using inbox_t = typename base::inbox_t;
+  using outbox_t = typename base::outbox_t;
+  using staging_t = typename base::staging_t;
+
+  HOSTRPC_ANNOTATE constexpr size_t wordBits() const
+  {
+    return 8 * sizeof(Word);
+  }
+  // may want to rename this, number-slots?
+  HOSTRPC_ANNOTATE uint32_t size() const { return SZ::value(); }
+  HOSTRPC_ANNOTATE uint32_t words() const { return size() / wordBits(); }
+
+  HOSTRPC_ANNOTATE server_impl()
+    : base ()
+  {
+  }
+  HOSTRPC_ANNOTATE ~server_impl() = default;
+  HOSTRPC_ANNOTATE server_impl(SZ sz, lock_t active, inbox_t inbox,
+                               outbox_t outbox, staging_t staging,
+                               page_t* shared_buffer)
+    : base (sz, active, inbox, outbox, staging, shared_buffer)
+  {
+    constexpr size_t server_size = 40;
+
+    // SZ is expected to be zero bytes or a uint
+    struct SZ_local : public SZ
+    {
+      float x;
+    };
+    // Counter is zero bytes for nop or potentially many
+    struct Counter_local : public Counter
+    {
+      float x;
+    };
+    constexpr bool SZ_empty = sizeof(SZ_local) == sizeof(float);
+    constexpr bool Counter_empty = sizeof(Counter_local) == sizeof(float);
+
+    constexpr size_t SZ_size = hostrpc::round8(SZ_empty ? 0 : sizeof(SZ));
+    constexpr size_t Counter_size = Counter_empty ? 0 : sizeof(Counter);
+
+    constexpr size_t total_size = server_size + SZ_size + Counter_size;
+
+    static_assert(sizeof(server_impl) == total_size, "");
+    static_assert(alignof(server_impl) == 8, "");
+  }
+
+  HOSTRPC_ANNOTATE static void *operator new(size_t, server_impl *p)
+  {
+    return p;
+  }
+  
+  HOSTRPC_ANNOTATE server_counters get_counters() { return Counter::get(); }
+
+
+  template <typename Clear, typename T>
+  HOSTRPC_ANNOTATE port_t rpc_open_port(T active_threads, Clear&& cl,
+                                        uint32_t* location_arg)
+  {
+    return rpc_open_port_impl<Clear, false>(
+        active_threads, cxx::forward<Clear>(cl), location_arg);
+  }
+
+  template <typename T>
+  HOSTRPC_ANNOTATE port_t rpc_open_port(T active_threads,
+                                        uint32_t* location_arg)
+  {
+    struct Clear
+    {
+      HOSTRPC_ANNOTATE void operator()(uint32_t, hostrpc::page_t*){};
+    };
+    return rpc_open_port_impl<Clear, false>(active_threads, Clear{},
+                                            location_arg);
+  }
+
+  // default location_arg to zero and discard returned hint
+  template <typename Clear, typename T>
+  HOSTRPC_ANNOTATE port_t rpc_open_port(T active_threads, Clear&& cl)
+  {
+    uint32_t location_arg = 0;
+    return rpc_open_port<Clear>(active_threads, cxx::forward<Clear>(cl),
+                                &location_arg);
+  }
+
+  template <typename T>
+  HOSTRPC_ANNOTATE port_t rpc_open_port(T active_threads)
+  {
+    uint32_t location_arg = 0;
+    return rpc_open_port(active_threads, &location_arg);
+  }
+
+    HOSTRPC_ANNOTATE bool lock_held(port_t port)
+  {
+    const uint32_t element = index_to_element<Word>(port);
+    const uint32_t subindex = index_to_subindex<Word>(port);
+    return bits::nthbitset(base::active.load_word(size(), element), subindex);
+  }
+
+  template <typename Operate, typename T>
+  HOSTRPC_ANNOTATE void rpc_port_operate_given_available(T active_threads,
+                                                         Operate&& op,
+                                                         port_t port)
+  {
+    (void)active_threads;(void)op;(void)port;
+
+    (void)active_threads;
+    assert(port != port_t::unavailable);
+
+    base::rpc_port_apply_lo(active_threads, port, cxx::forward<Operate>(op));
+
+
+
+    // claim
+    
+    assert(lock_held(port));
+  }
+  
+protected:
+
+  template <typename Clear, bool have_precondition, typename T>
+  HOSTRPC_ANNOTATE port_t rpc_open_port_impl(T active_threads, Clear&& cl,
+                                             uint32_t* location_arg)
+  {
+    // suspicious of open lo-or-hi
+    {
+    port_t p = base::template rpc_open_port_hi(active_threads, *location_arg);
+    if (p != port_t::unavailable)
+      {
+        base::rpc_port_apply_hi(active_threads, p, Clear{cl});
+        base::rpc_close_port(active_threads, p);
+      }
+    }
+
+    {
+      port_t p = base::template rpc_open_port_lo(active_threads, *location_arg);
+      *location_arg = static_cast<uint32_t>(p) + 1;
+      return p;
+    }
+
+    // this in contrast deadlocks
+  again:;
+    typename base::port_state ps;
+    port_t p = base::template rpc_open_port(active_threads, *location_arg, &ps);
+    if (p == port_t::unavailable) { return p; }
+
+    if (ps == base::port_state::high_values)
+      {
+        base::rpc_port_apply_hi(active_threads, p, Clear{cl});
+        base::rpc_close_port(active_threads, p);
+        goto again;
+      }
+
+    assert(ps == base::port_state::low_values);
+    *location_arg = static_cast<uint32_t>(p) + 1;
+    return p;
+  }
+
+};
+  
+#else
 template <typename WordT, typename SZT, typename Counter = counters::server>
 struct server_impl : public SZT, public Counter
 {
@@ -508,6 +681,8 @@ struct server_impl : public SZT, public Counter
     return true;
   }
 };
+
+#endif
 
 template <typename WordT, typename SZT, typename Counter = counters::server>
 struct server : public server_impl<WordT, SZT, Counter>

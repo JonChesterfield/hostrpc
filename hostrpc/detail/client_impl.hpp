@@ -117,14 +117,6 @@ struct client_impl : public state_machine_impl<WordT, SZT, Counter,
   }
 
   template <typename T>
-  HOSTRPC_ANNOTATE void rpc_close_port(
-      T active_threads,
-      port_t port)
-  {
-    base::rpc_close_port(active_threads, port);
-  }
-
-  template <typename T>
   HOSTRPC_ANNOTATE void rpc_port_wait_until_available(T active_threads,
                                                       port_t port)
   {
