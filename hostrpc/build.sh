@@ -116,8 +116,10 @@ else
 fi
 
 
+CXXVER='-std=c++17'
+
 set +e
-$RDIR/bin/clang++ -W -Wno-deprecated-copy -Wno-missing-field-initializers -Wno-inline-new-delete -Wno-unused-parameter -std=c++14 -ffreestanding -I $HOME/relacy/ minimal.cpp -stdlib=libc++ -o minimal.out
+$RDIR/bin/clang++ -W -Wno-deprecated-copy -Wno-missing-field-initializers -Wno-inline-new-delete -Wno-unused-parameter $CXXVER -ffreestanding -I $HOME/relacy/ minimal.cpp -stdlib=libc++ -o minimal.out
 set -e
 
 echo "Using toolchain at $RDIR, GCNGFX=$GCNGFX, PTXGFX=$PTXGFX"
@@ -164,7 +166,7 @@ OPT="$RDIR/bin/opt"
 #CLANG="g++"
 #LINK="ld -r"
 
-CXX="$CLANGXX -std=c++14 -Wall -Wextra"
+CXX="$CLANGXX $CXXVER -Wall -Wextra"
 LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR -lelf"
 
 # Some languages need march and some need mcpu
@@ -188,8 +190,8 @@ GCNFLAGS=" -O2 -ffreestanding -fno-exceptions $AMDGPU"
 # clang/ptx back end is crashing in llvm::DwarfDebug::constructCallSiteEntryDIEs
 NVPTXFLAGS=" -O2 -ffreestanding -fno-exceptions -Wno-atomic-alignment -emit-llvm $NVGPU "
 
-CXX_X64="$CLANGXX -std=c++14 $COMMONFLAGS $X64FLAGS"
-CXX_GCN="$CLANGXX -std=c++14 $COMMONFLAGS $GCNFLAGS"
+CXX_X64="$CLANGXX $CXXVER $COMMONFLAGS $X64FLAGS"
+CXX_GCN="$CLANGXX $CXXVER $COMMONFLAGS $GCNFLAGS"
 
 CXXCL="$CLANGXX -Wall -Wextra -x cl -Xclang -cl-std=CL2.0 -D__OPENCL__ -D__OPENCL_C_VERSION__=200"
 CXXCL_GCN="$CXXCL -emit-llvm -ffreestanding $AMDGPU"
@@ -344,7 +346,7 @@ fi
 
 if (($have_nvptx)); then
  # presently using the cuda entry point but may want the opencl one later
- $CXX_CUDA -std=c++14 --cuda-device-only tools/loader/nvptx_loader_entry.cu -c -emit-llvm -o tools/loader/nvptx_loader_entry.cu.ptx.bc   
+ $CXX_CUDA $CXXVER --cuda-device-only tools/loader/nvptx_loader_entry.cu -c -emit-llvm -o tools/loader/nvptx_loader_entry.cu.ptx.bc   
  $CXXCL_PTX tools/loader/nvptx_loader_entry.cl -c -o tools/loader/nvptx_loader_entry.cl.ptx.bc
  $CXX_PTX tools/loader/opencl_loader_cast.cpp -c -o tools/loader/opencl_loader_cast.ptx.bc
 
@@ -421,20 +423,20 @@ $CXX_X64 codegen/foo_cxx.cpp -S -o codegen/foo_cxx.x64.ll
 $CXX_GCN codegen/foo_cxx.cpp -S -o codegen/foo_cxx.gcn.ll
 $CXX_PTX codegen/foo_cxx.cpp -S -o codegen/foo_cxx.ptx.ll
 
-$CLANGXX $XCUDA -std=c++14 --cuda-device-only -nocudainc -nocudalib codegen/foo.cu -emit-llvm -S -o codegen/foo.cuda.ptx.ll
+$CLANGXX $XCUDA $CXXVER --cuda-device-only -nocudainc -nocudalib codegen/foo.cu -emit-llvm -S -o codegen/foo.cuda.ptx.ll
 
-$CLANGXX $XCUDA -std=c++14 --cuda-host-only -nocudainc -nocudalib codegen/foo.cu -emit-llvm -S -o codegen/foo.cuda.x64.ll
+$CLANGXX $XCUDA $CXXVER --cuda-host-only -nocudainc -nocudalib codegen/foo.cu -emit-llvm -S -o codegen/foo.cuda.x64.ll
 
 cd codegen
-$CLANGXX $XCUDA -std=c++14 -nocudainc -nocudalib foo.cu -emit-llvm -S
+$CLANGXX $XCUDA $CXXVER -nocudainc -nocudalib foo.cu -emit-llvm -S
 mv foo.ll foo.cuda.both_x64.ll
 mv foo-cuda-nvptx64-nvidia-cuda-*.ll foo.cuda.both_ptx.ll
 cd -
 
 
 # aomp has broken cuda-device-only
-$CLANGXX -x hip --cuda-gpu-arch=$GCNGFX -nogpulib -nogpuinc -std=c++14 -O1 --cuda-device-only codegen/foo.cu -emit-llvm -S -o codegen/foo.hip.gcn.ll
-$CLANGXX -x hip --cuda-gpu-arch=$GCNGFX -nogpulib -nogpuinc -std=c++14 -O1 --cuda-host-only codegen/foo.cu -emit-llvm -S -o codegen/foo.hip.x64.ll
+$CLANGXX -x hip --cuda-gpu-arch=$GCNGFX -nogpulib -nogpuinc $CXXVER -O1 --cuda-device-only codegen/foo.cu -emit-llvm -S -o codegen/foo.hip.gcn.ll
+$CLANGXX -x hip --cuda-gpu-arch=$GCNGFX -nogpulib -nogpuinc $CXXVER -O1 --cuda-host-only codegen/foo.cu -emit-llvm -S -o codegen/foo.hip.x64.ll
 
 # hip doesn't understand -emit-llvm (or -S, or -c) when trying to do host and device together
 # so can't test that here
@@ -458,15 +460,15 @@ $CLANGXX $XOPENCL -S -nogpulib -emit-llvm -target amdgcn-amd-amdhsa -mcpu=$GCNGF
 # recognises mcpu but warns that it is unused
 $CLANGXX $XOPENCL -S -nogpulib -emit-llvm -target nvptx64-nvidia-cuda codegen/foo_cxx.cpp -S -o codegen/foo.cl.ptx.ll
 
-$CLANGXX $XCUDA $PTX_VER -std=c++14 --cuda-device-only -nocudainc -nocudalib codegen/client.cpp -emit-llvm -S -o codegen/client.cuda.ptx.ll
-$CLANGXX $XCUDA -std=c++14 --cuda-host-only -nocudainc -nocudalib codegen/client.cpp -emit-llvm -S -o codegen/client.cuda.x64.ll
+$CLANGXX $XCUDA $PTX_VER $CXXVER --cuda-device-only -nocudainc -nocudalib codegen/client.cpp -emit-llvm -S -o codegen/client.cuda.ptx.ll
+$CLANGXX $XCUDA $CXXVER --cuda-host-only -nocudainc -nocudalib codegen/client.cpp -emit-llvm -S -o codegen/client.cuda.x64.ll
 
 
 # Fails to annotate CFG at O0
-$CLANGXX $XHIP -std=c++14 -O1 --cuda-device-only codegen/client.cpp -S -o codegen/client.hip.gcn.ll
-$CLANGXX $XHIP -std=c++14 -O1 --cuda-host-only codegen/client.cpp -S -o codegen/client.hip.x64.ll
-$CLANGXX $XHIP -std=c++14 -O1 --cuda-device-only codegen/server.cpp -S -o codegen/server.hip.gcn.ll
-$CLANGXX $XHIP -std=c++14 -O1 --cuda-host-only codegen/server.cpp -S -o codegen/server.hip.x64.ll
+$CLANGXX $XHIP $CXXVER -O1 --cuda-device-only codegen/client.cpp -S -o codegen/client.hip.gcn.ll
+$CLANGXX $XHIP $CXXVER -O1 --cuda-host-only codegen/client.cpp -S -o codegen/client.hip.x64.ll
+$CLANGXX $XHIP $CXXVER -O1 --cuda-device-only codegen/server.cpp -S -o codegen/server.hip.gcn.ll
+$CLANGXX $XHIP $CXXVER -O1 --cuda-host-only codegen/server.cpp -S -o codegen/server.hip.x64.ll
 
 # Build as opencl/c++ too
 $CLANGXX $XOPENCL -S -emit-llvm codegen/client.cpp -S -o codegen/client.ocl.x64.ll
@@ -497,7 +499,7 @@ $CXX_X64 -I$HSAINC persistent_kernel.cpp -c -o persistent_kernel.x64.bc
 set -e
 fi
 
-$CXX_CUDA -std=c++14 --cuda-device-only -nogpuinc -nobuiltininc $PTX_VER platform/nvptx.cu -c -emit-llvm -o obj/platform.ptx.bc
+$CXX_CUDA $CXXVER --cuda-device-only -nogpuinc -nobuiltininc $PTX_VER platform/nvptx.cu -c -emit-llvm -o obj/platform.ptx.bc
 
 if (($have_amdgcn)); then
     # Tries to treat foo.so as a hip input file. Somewhat surprised, but might be right.
@@ -519,14 +521,14 @@ if (($have_nvptx)); then
     $CLANGXX $XCUDA hello.cu -o hello -I/usr/local/cuda/include -L/usr/local/cuda/lib64/ -lcuda -lcudart_static -ldl -lrt -pthread && ./hello
 
 # hello.o is an executable elf, may be able to load it from cuda
-$CLANGXX $XCUDA -std=c++14 hello.cu --cuda-device-only $PTX_VER -c -o hello.o  -I/usr/local/cuda/include
+$CLANGXX $XCUDA $CXXVER hello.cu --cuda-device-only $PTX_VER -c -o hello.o  -I/usr/local/cuda/include
 
 
 # ./../nvptx_loader.exe hello.o
 
 fi
 
-$CLANGXX -std=c++14 -Wall -Wextra -O0 -g test_storage.cpp obj/openmp_support.x64.bc obj/host_support.x64.bc $RDIR/lib/libomptarget.so -o test_storage.exe -pthread -ldl -Wl,-rpath=$RDIR/lib && valgrind ./test_storage.exe
+$CLANGXX $CXXVER -Wall -Wextra -O0 -g test_storage.cpp obj/openmp_support.x64.bc obj/host_support.x64.bc $RDIR/lib/libomptarget.so -o test_storage.exe -pthread -ldl -Wl,-rpath=$RDIR/lib && valgrind ./test_storage.exe
 
 if (($have_amdgcn)); then
     $LINK obj/openmp_support.x64.bc obj/hsa_support.x64.bc obj/syscall.x64.bc -o obj/demo_bitcode_gcn.omp.bc

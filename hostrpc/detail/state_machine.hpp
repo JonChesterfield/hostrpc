@@ -24,16 +24,23 @@ struct state_machine_impl;
 template <unsigned I, unsigned O>
 class typed_port_t
 {
-  typed_port_t(typed_port_t&&) = default;
-  typed_port_t& operator=(typed_port_t&&) = default;
-  operator uint32_t() const { return value; }
+ public:
+  // can move one and convert it to a uint32, but can't make one
+  HOSTRPC_ANNOTATE typed_port_t(typed_port_t&&) = default;
+  HOSTRPC_ANNOTATE typed_port_t& operator=(typed_port_t&&) = default;
+  HOSTRPC_ANNOTATE operator uint32_t() const { return value; }
+
+  HOSTRPC_ANNOTATE typed_port_t()
+      : value(static_cast<uint32_t>(port_t::unavailable))
+  {
+  }
 
  private:
   template <typename WordT, typename SZT, typename Counter,
             typename inbox_t_arg, typename outbox_t_arg>
   friend struct state_machine_impl;
 
-  typed_port_t(uint32_t v) : value(v)
+  HOSTRPC_ANNOTATE typed_port_t(uint32_t v) : value(v)
   {
     static_assert((I <= 1) && (O <= 1), "");
   }
@@ -173,7 +180,7 @@ struct state_machine_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE typed_port_t<0, 0> rpc_open_typed_port_lo(
       T active_threads, uint32_t scan_from = 0)
   {
-    return rpc_open_typed_port_impl<0, 0>(active_threads, scan_from);
+    return rpc_open_typed_port_impl<0, 0, T>(active_threads, scan_from);
   }
 
   template <typename T>
@@ -217,6 +224,8 @@ struct state_machine_impl : public SZT, public Counter
   }
 
   // Apply will leave input unchanged and toggle output
+  // passed <0, 0> returns <0, 1>, i.e. output changed
+  // passed <1, 1> returns <1, 0>, i.e. output changed
   template <unsigned IandO, typename T, typename Op>
   HOSTRPC_ANNOTATE typed_port_t<IandO, !IandO> rpc_port_apply(
       T active_threads, typed_port_t<IandO, IandO>&& port, Op&& op)
@@ -224,7 +233,7 @@ struct state_machine_impl : public SZT, public Counter
     uint32_t raw = static_cast<uint32_t>(port);
     port_t tmp = static_cast<port_t>(raw);
     rpc_port_apply_hi(active_threads, tmp, cxx::forward<Op>(op));
-    return typed_port_t<1, 0>(raw);
+    return typed_port_t<IandO, !IandO>(raw);
   }
 
   template <unsigned I, typename T>
@@ -245,8 +254,45 @@ struct state_machine_impl : public SZT, public Counter
         I == 1 ? port_state::low_values : port_state::high_values;
     uint32_t raw = static_cast<uint32_t>(port);
     port_t tmp = static_cast<port_t>(raw);
-    rpc_port_wait_until_state(active_threads, tmp);
+    rpc_port_wait_until_state<T, Req>(active_threads, tmp);
     return typed_port_t<!I, !I>(raw);
+  }
+
+  template <unsigned I, unsigned O, typename T>
+  HOSTRPC_ANNOTATE void rpc_close_port(T active_threads,
+                                       typed_port_t<I, O>&& port)
+  {
+    //
+    const uint32_t size = this->size();
+    const port_t slot = static_cast<port_t>(static_cast<uint32_t>(port));
+    if (platform::is_master_lane(active_threads))
+      {
+        active.release_slot(size, slot);
+      }
+  }
+
+  template <typename T, typename CB00, typename CB11, typename CBNone>
+  HOSTRPC_ANNOTATE void rpc_with_opened_port(T active_threads,
+                                             uint32_t scan_from, CB00 On00,
+                                             CB11 On11, CBNone None)
+  {
+    port_t p = rpc_open_port<T, port_state::either_low_or_high>(active_threads,
+                                                                scan_from);
+    if (p == port_state::unavailable)
+      {
+        None(active_threads);
+      }
+    else
+      {
+        if (p == port_state::low_values)
+          {
+            On00(active_threads, typed_port_t<0, 0>(static_cast<uint32_t>(p)));
+          }
+        else
+          {
+            On11(active_threads, typed_port_t<1, 1>(static_cast<uint32_t>(p)));
+          }
+      }
   }
 
  private:
@@ -501,8 +547,10 @@ struct state_machine_impl : public SZT, public Counter
     constexpr port_state Req =
         I == 0 ? port_state::low_values : port_state::high_values;
 
-    port_t p = rpc_open_port<T, Req>(active_threads, scan_from);
-    if (p != port_state::unavailable)
+    port_t p = rpc_open_port<T, Req>(active_threads, scan_from, nullptr);
+    // ugly...
+    if (static_cast<uint32_t>(p) !=
+        static_cast<uint32_t>(port_state::unavailable))
       {
         return typed_port_t<I, O>(static_cast<uint32_t>(p));
       }
@@ -510,39 +558,8 @@ struct state_machine_impl : public SZT, public Counter
     // todo: do amdgpu and nvptx need to implement this or is IR xform
     // sufficient note: returning a typed port means spinning if none is
     // available
-    [[clang::musttail]] return rpc_open_typed_port_impl(active_threads,
-                                                        scan_from);
-  }
-
-  template <unsigned I, unsigned O, typename T>
-  HOSTRPC_ANNOTATE void rpc_close_port(T active_threads,
-                                       typed_port_t<I, O>&& port)
-  {
-    rpc_close_port(active_threads, static_cast<uint32_t>(port));
-  }
-
-  template <typename T, typename CB00, typename CB11, typename CBNone>
-  HOSTRPC_ANNOTATE void rpc_with_opened_port(T active_threads,
-                                             uint32_t scan_from, CB00 On00,
-                                             CB11 On11, CBNone None)
-  {
-    port_t p = rpc_open_port<T, port_state::either_low_or_high>(active_threads,
-                                                                scan_from);
-    if (p == port_state::unavailable)
-      {
-        None(active_threads);
-      }
-    else
-      {
-        if (p == port_state::low_values)
-          {
-            On00(active_threads, typed_port_t<0, 0>(static_cast<uint32_t>(p)));
-          }
-        else
-          {
-            On11(active_threads, typed_port_t<1, 1>(static_cast<uint32_t>(p)));
-          }
-      }
+    [[clang::musttail]] return rpc_open_typed_port_impl<I, O>(active_threads,
+                                                              scan_from);
   }
 };
 
