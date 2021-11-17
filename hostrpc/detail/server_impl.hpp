@@ -153,6 +153,7 @@ struct server_impl : public state_machine_impl<WordT, SZT, Counter,
   HOSTRPC_ANNOTATE port_t rpc_open_port_impl(T active_threads, Clear&& cl,
                                              uint32_t* location_arg)
   {
+#if 1
     // suspicious of open lo-or-hi
     {
       port_t p = base::template rpc_open_port_hi(active_threads, *location_arg);
@@ -168,7 +169,7 @@ struct server_impl : public state_machine_impl<WordT, SZT, Counter,
       *location_arg = static_cast<uint32_t>(p) + 1;
       return p;
     }
-
+#else
     // this in contrast deadlocks
   again:;
     typename base::port_state ps;
@@ -188,6 +189,7 @@ struct server_impl : public state_machine_impl<WordT, SZT, Counter,
     assert(ps == base::port_state::low_values);
     *location_arg = static_cast<uint32_t>(p) + 1;
     return p;
+#endif
   }
 };
 
@@ -740,6 +742,63 @@ struct server : public server_impl<WordT, SZT, Counter>
                                         Clear&& cl,
                                         uint32_t* location_arg) noexcept
   {
+#if 0
+    bool result = false;
+
+    struct On00_t
+    {
+      server* self;
+      bool* result;
+      Operate & op;
+      On00_t(server* self, bool* result, Operate& op)
+        : self(self), result(result), op(op)
+      {
+      }
+
+      void operator()(T active_threads, typed_port_t<0, 0>&& port)
+      {
+        self->rpc_port_apply(active_threads, cxx::move(port), cxx::forward<Operate>(op));
+
+        *result = true;
+      }
+    } On00(this, &result, op);
+
+    struct On11_t
+    {
+      server* self;
+      bool* result;
+      Clear & cl;
+      On11_t(server* self, bool* result, Clear& cl)
+          : self(self), result(result), cl(cl)
+      {
+      }
+
+      void operator()(T active_threads, typed_port_t<1, 1>&& port)
+      {
+        self->rpc_port_apply(active_threads, cxx::move(port),
+                             cxx::forward<Clear>(cl));
+        *result = true;
+      }
+    } On11(this, &result, cl);
+
+    struct None_t
+    {
+      bool* result;
+      None_t(bool* result) : result(result) {}
+
+      void operator()(T) { *result = false; }
+    } None(&result);
+
+    *location_arg = 1 + base::template rpc_with_opened_port(
+                            active_threads, *location_arg,
+                            cxx::move(On00),
+                            cxx::move(On11),
+                            cxx::move(None));
+
+    return result;
+
+#else
+    
     const port_t port =
         base::template rpc_open_port_impl<Clear, have_precondition>(
             active_threads, cxx::forward<Clear>(cl), location_arg);
@@ -753,6 +812,7 @@ struct server : public server_impl<WordT, SZT, Counter>
 
     base::rpc_close_port(active_threads, port);
     return true;
+#endif
   }
 };
 

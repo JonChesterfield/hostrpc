@@ -412,16 +412,16 @@ fi
 if true; then
 # Sanity checks that the client and server compile successfully
 # and provide an example of the generated IR
-$CXX_X64 -DNDEBUG codegen/client.cpp -S -o codegen/client.x64.ll
-$CXX_X64 -DNDEBUG codegen/server.cpp -S -o codegen/server.x64.ll
-$CXX_GCN -DNDEBUG codegen/client.cpp -S -o codegen/client.gcn.ll
-$CXX_GCN -DNDEBUG codegen/server.cpp -S -o codegen/server.gcn.ll
-$CXX_PTX -DNDEBUG codegen/client.cpp -S -o codegen/client.ptx.ll
-$CXX_PTX -DNDEBUG codegen/server.cpp -S -o codegen/server.ptx.ll
+$CXX_X64 $CXXVER -DNDEBUG codegen/client.cpp -S -o codegen/client.x64.ll
+$CXX_X64 $CXXVER -DNDEBUG codegen/server.cpp -S -o codegen/server.x64.ll
+$CXX_GCN $CXXVER -DNDEBUG codegen/client.cpp -S -o codegen/client.gcn.ll
+$CXX_GCN $CXXVER -DNDEBUG codegen/server.cpp -S -o codegen/server.gcn.ll
+$CXX_PTX $CXXVER -DNDEBUG codegen/client.cpp -S -o codegen/client.ptx.ll
+$CXX_PTX $CXXVER -DNDEBUG codegen/server.cpp -S -o codegen/server.ptx.ll
 
-$CXX_X64 codegen/foo_cxx.cpp -S -o codegen/foo_cxx.x64.ll
-$CXX_GCN codegen/foo_cxx.cpp -S -o codegen/foo_cxx.gcn.ll
-$CXX_PTX codegen/foo_cxx.cpp -S -o codegen/foo_cxx.ptx.ll
+$CXX_X64 $CXXVER codegen/foo_cxx.cpp -S -o codegen/foo_cxx.x64.ll
+$CXX_GCN $CXXVER codegen/foo_cxx.cpp -S -o codegen/foo_cxx.gcn.ll
+$CXX_PTX $CXXVER codegen/foo_cxx.cpp -S -o codegen/foo_cxx.ptx.ll
 
 $CLANGXX $XCUDA $CXXVER --cuda-device-only -nocudainc -nocudalib codegen/foo.cu -emit-llvm -S -o codegen/foo.cuda.ptx.ll
 

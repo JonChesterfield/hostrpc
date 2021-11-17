@@ -272,25 +272,29 @@ struct state_machine_impl : public SZT, public Counter
   }
 
   template <typename T, typename CB00, typename CB11, typename CBNone>
-  HOSTRPC_ANNOTATE void rpc_with_opened_port(T active_threads,
-                                             uint32_t scan_from, CB00 On00,
-                                             CB11 On11, CBNone None)
+  HOSTRPC_ANNOTATE uint32_t /* port used */ rpc_with_opened_port(
+      T active_threads, uint32_t scan_from, CB00&& On00, CB11&& On11,
+      CBNone&& None)
   {
+    port_state ps;
     port_t p = rpc_open_port<T, port_state::either_low_or_high>(active_threads,
-                                                                scan_from);
-    if (p == port_state::unavailable)
+                                                                scan_from, &ps);
+    if (ps == port_state::unavailable)
       {
         None(active_threads);
+        return scan_from;
       }
     else
       {
-        if (p == port_state::low_values)
+        if (ps == port_state::low_values)
           {
             On00(active_threads, typed_port_t<0, 0>(static_cast<uint32_t>(p)));
+            return static_cast<uint32_t>(p);
           }
         else
           {
             On11(active_threads, typed_port_t<1, 1>(static_cast<uint32_t>(p)));
+            return static_cast<uint32_t>(p);
           }
       }
   }
