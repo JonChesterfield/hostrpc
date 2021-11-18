@@ -719,23 +719,25 @@ struct server : public server_impl<WordT, SZT, Counter>
   }
 
  private:
-  template <typename T, typename Op, unsigned IO>
+  template <typename T, typename Op, unsigned IandO, bool retValue>
   struct noLambdasInOpenCL
   {
     server* self;
     bool* result;
     Op& op;
 
-    noLambdasInOpenCL(server* self, bool* result, Op& op)
+    HOSTRPC_ANNOTATE noLambdasInOpenCL(server* self, bool* result, Op& op)
         : self(self), result(result), op(op)
     {
     }
 
-    void operator()(T active_threads, typed_port_t<IO, IO>&& port)
+    HOSTRPC_ANNOTATE typed_port_t<IandO, !IandO> operator()(
+        T active_threads, typed_port_t<IandO, IandO>&& port)
     {
-      self->rpc_port_apply(active_threads, cxx::move(port),
-                           cxx::forward<Op>(op));
-      *result = true;
+      typed_port_t<IandO, !IandO> r = self->rpc_port_apply(
+          active_threads, cxx::move(port), cxx::forward<Op>(op));
+      *result = retValue;
+      return r;
     }
   };
 
@@ -747,13 +749,14 @@ struct server : public server_impl<WordT, SZT, Counter>
   {
 #if 0
     bool result = false;
-    auto On00 = noLambdasInOpenCL<T, Operate, 0>(this, &result, op);
-    auto On11 = noLambdasInOpenCL<T, Clear, 1>(this, &result, cl);
+    // rpc_handle only reports 'true' on operate, garbage collection isn't
+    // counted
+    auto On00 = noLambdasInOpenCL<T, Operate, 0, true>(this, &result, op);
+    auto On11 = noLambdasInOpenCL<T, Clear, 1, false>(this, &result, cl);
     struct None
     {
-      void operator()(T)
-      { /*result initialised to false*/
-      }
+      /*result initialised to false*/
+      HOSTRPC_ANNOTATE void operator()(T) {}
     };
 
     *location_arg = 1 + base::template rpc_with_opened_port(

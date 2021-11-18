@@ -348,6 +348,7 @@ __PRINTF_DISPATCH_INDIRECT(const unsigned char *, const void *)
 // todo: check if memcpy on unknown length has the same problem
 __PRINTF_API_INTERNAL size_t __printf_strlen(const char *str)
 {
+  // unreliable at O0
   if (__builtin_constant_p(str))
     {
       return __builtin_strlen(str);

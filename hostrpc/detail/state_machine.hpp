@@ -305,13 +305,17 @@ struct state_machine_impl : public SZT, public Counter
       {
         if (ps == port_state::low_values)
           {
-            On00(active_threads, typed_port_t<0, 0>(static_cast<uint32_t>(p)));
+            typed_port_t<0, 1> res = On00(
+                active_threads, typed_port_t<0, 0>(static_cast<uint32_t>(p)));
+            rpc_close_port(active_threads, cxx::move(res));
             return static_cast<uint32_t>(p);
           }
         else
           {
             assert(ps == port_state::high_values);
-            On11(active_threads, typed_port_t<1, 1>(static_cast<uint32_t>(p)));
+            typed_port_t<1, 0> res =
+              On11(active_threads, typed_port_t<1, 1>(static_cast<uint32_t>(p)));
+            // rpc_close_port(active_threads, cxx::move(res)); // <- would like to detect this
             return static_cast<uint32_t>(p);
           }
       }

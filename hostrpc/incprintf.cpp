@@ -187,7 +187,7 @@ int incr::__printf_pass_element_T(T value)
 void incr::set_format(const char *fmt)
 {
   loc = 0;
-  format = {fmt, fmt + strlen(fmt)};
+  format = {fmt, fmt + __printf_strlen(fmt)};
   output.push_back('\0');
 }
 
@@ -284,7 +284,7 @@ static MODULE(incr)
     for (size_t i = 0; i < N; i++)
       {
         auto r = no_format(cases[i]);
-        CHECK(r.size() == strlen(cases[i]) + 1);
+        CHECK(r.size() == __printf_strlen(cases[i]) + 1);
         CHECK(strcmp(r.data(), cases[i]) == 0);
       }
   }
@@ -304,7 +304,7 @@ static MODULE(incr)
         tmp.set_format(std::get<0>(cases[i]));
         __printf_pass_element_uint64(std::get<1>(cases[i]), tmp);
         auto r = tmp.finalize();
-        CHECK(r.size() == strlen(std::get<2>(cases[i])) + 1);
+        CHECK(r.size() == __printf_strlen(std::get<2>(cases[i])) + 1);
         CHECK(strcmp(r.data(), std::get<2>(cases[i])) == 0);
       }
   }
@@ -326,7 +326,7 @@ static MODULE(incr)
         __printf_pass_element_uint64(std::get<1>(cases[i]), tmp);
         __printf_pass_element_uint64(std::get<2>(cases[i]), tmp);
         auto r = tmp.finalize();
-        CHECK(r.size() == strlen(std::get<3>(cases[i])) + 1);
+        CHECK(r.size() == __printf_strlen(std::get<3>(cases[i])) + 1);
         CHECK(strcmp(r.data(), std::get<3>(cases[i])) == 0);
       }
   }
@@ -346,7 +346,7 @@ static MODULE(incr)
         tmp.set_format(std::get<0>(cases[i]));
         tmp.__printf_pass_element_T(std::get<1>(cases[i]));
         auto r = tmp.finalize();
-        bool size = r.size() == strlen(std::get<2>(cases[i])) + 1;
+        bool size = r.size() == __printf_strlen(std::get<2>(cases[i])) + 1;
         bool contents = strcmp(r.data(), std::get<2>(cases[i])) == 0;
         CHECK(size);
         CHECK(contents);
