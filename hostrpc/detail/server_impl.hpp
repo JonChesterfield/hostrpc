@@ -39,6 +39,8 @@ struct server_impl : public state_machine_impl<WordT, SZT, Counter,
   using inbox_t = typename base::inbox_t;
   using outbox_t = typename base::outbox_t;
   using staging_t = typename base::staging_t;
+  template <unsigned I, unsigned O>
+  using typed_port_t = typename base::template typed_port_t<I, O>;
 
   HOSTRPC_ANNOTATE constexpr size_t wordBits() const
   {
@@ -671,6 +673,8 @@ struct server : public server_impl<WordT, SZT, Counter>
 {
   using base = server_impl<WordT, SZT, Counter>;
   using base::server_impl;
+  template <unsigned I, unsigned O>
+  using typed_port_t = typename base::template typed_port_t<I, O>;
 
   static_assert(cxx::is_trivially_copyable<base>::value, "");
 
@@ -747,7 +751,7 @@ struct server : public server_impl<WordT, SZT, Counter>
                                         Clear&& cl,
                                         uint32_t* location_arg) noexcept
   {
-#if 0
+#if 1
     bool result = false;
     // rpc_handle only reports 'true' on operate, garbage collection isn't
     // counted

@@ -35,15 +35,16 @@ extern "C" __attribute__((always_inline)) HOSTRPC_ANNOTATE void
 client_instance_invoke_via_typed_port_runtime(client_type& c)
 {
   using namespace hostrpc;
+
   auto active_threads = platform::active_threads();
-  typed_port_t<0, 0> p0 = c.rpc_open_typed_port_lo(active_threads);
-  typed_port_t<0, 1> p1 =
+  client_type::typed_port_t<0, 0> p0 = c.rpc_open_typed_port_lo(active_threads);
+  client_type::typed_port_t<0, 1> p1 =
       c.rpc_port_send(active_threads, cxx::move(p0), hostrpc::fill_nop{});
-  typed_port_t<1, 1> p2 =
+  client_type::typed_port_t<1, 1> p2 =
       c.rpc_port_wait_for_result(active_threads, cxx::move(p1));
-  typed_port_t<1, 0> p3 =
+  client_type::typed_port_t<1, 0> p3 =
       c.rpc_port_recv(active_threads, cxx::move(p2), hostrpc::use_nop{});
-  typed_port_t<0, 0> p4 =
+  client_type::typed_port_t<0, 0> p4 =
       c.rpc_port_wait_until_available(active_threads, cxx::move(p3));
   c.rpc_close_port(active_threads, cxx::move(p4));
 }

@@ -167,7 +167,7 @@ OPT="$RDIR/bin/opt"
 #CLANG="g++"
 #LINK="ld -r"
 
-CXX="$CLANGXX $CXXVER -Wall -Wextra"
+CXX="$CLANGXX $CXXVER -Wall -Wextra "
 LDFLAGS="-pthread $HSALIB -Wl,-rpath=$HSALIBDIR -lelf"
 
 # Some languages need march and some need mcpu
@@ -181,7 +181,7 @@ NVGPU="--target=nvptx64-nvidia-cuda -march=$PTXGFX $PTX_VER -Xclang -fconvergent
 
 CUDALINK="--cuda-path=/usr/local/cuda  -L/usr/local/cuda/lib64/ -lcuda -lcudart_static -ldl -lrt -pthread"
 
-COMMONFLAGS="-Wall -Wextra -emit-llvm " # -DNDEBUG -Wno-type-limits "
+COMMONFLAGS="-Wall -Wextra -Wconsumed -emit-llvm " # -DNDEBUG -Wno-type-limits "
 # cuda/openmp pass the host O flag through to ptxas, which crashes on debug info if > 0
 # there's a failure mode in trunk clang - 'remaining virtual register operands' - but it
 # resists changing the pipeline to llvm-link + llc, will have to debug it later
@@ -374,6 +374,11 @@ $CXX_X64 unit_tests/common.cpp -c -o obj/unit_tests/common.x64.bc
 $CXX_X64_LD obj/unit_tests/common.x64.bc -o unit_tests/common.x64.exe
 ./unit_tests/common.x64.exe
 
+$CXX_X64 unit_tests/typed_port.cpp -c -o obj/unit_tests/typed_port.x64.bc
+$CXX_X64_LD obj/unit_tests/typed_port.x64.bc -o unit_tests/typed_port.x64.exe
+./unit_tests/typed_port.x64.exe
+
+
 if (($have_amdgcn)); then
 $CXX_GCN unit_tests/common.cpp -c -o obj/unit_tests/common.gcn.bc
 $LINK obj/unit_tests/common.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc amdgcn_loader_device.gcn.bc hostcall.gcn.bc -o obj/unit_tests/common.gcn.linked.bc
@@ -539,7 +544,7 @@ if (($have_amdgcn)); then
     # this now fails to compile (fairly quickly), looks like mlink-builtin-bitcode is mixing
     # the two ISAs in a single module
     set +e
-    $CLANGXX -I$HSAINC $OPTLEVEL -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GCNGFX -mcpu=$GCNGFX -DDEMO_AMDGCN=1 demo_openmp.cpp \
+    $CLANGXX $CXXVER -I$HSAINC $OPTLEVEL -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GCNGFX -mcpu=$GCNGFX -DDEMO_AMDGCN=1 demo_openmp.cpp \
          -Xclang -mlink-builtin-bitcode -Xclang obj/demo_bitcode_gcn.omp.bc -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR && ./demo_openmp_gcn
     set -e
 fi
@@ -547,7 +552,7 @@ fi
 if (($have_nvptx)); then
     $LINK obj/openmp_support.x64.bc obj/cuda_support.x64.bc obj/syscall.x64.bc -o demo_bitcode_ptx.omp.bc
 
-    $CLANGXX -I$HSAINC -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=$PTXGFX -I/usr/local/cuda/include -DDEMO_NVPTX=1 demo_openmp.cpp \
+    $CLANGXX $CXXVER -I$HSAINC -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=$PTXGFX -I/usr/local/cuda/include -DDEMO_NVPTX=1 demo_openmp.cpp \
              -Xclang -mlink-builtin-bitcode -Xclang demo_bitcode_ptx.omp.bc -Xclang -mlink-builtin-bitcode -Xclang obj/platform.ptx.bc -o demo_openmp_ptx $CUDALINK -Wl,-rpath=$RDIR/lib
 fi
 

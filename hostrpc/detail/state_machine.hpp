@@ -5,6 +5,7 @@
 #include "common.hpp"
 #include "counters.hpp"
 #include "cxx.hpp"
+#include "typed_port_t.hpp"
 
 namespace hostrpc
 {
@@ -16,38 +17,6 @@ namespace hostrpc
 //
 // inbox != outbox:
 //   waiting on other agent
-
-template <typename WordT, typename SZT, typename Counter, typename inbox_t_arg,
-          typename outbox_t_arg>
-struct state_machine_impl;
-
-template <unsigned I, unsigned O>
-class typed_port_t
-{
- public:
-  // can move one and convert it to a uint32, but can't make one
-  HOSTRPC_ANNOTATE typed_port_t(typed_port_t&&) = default;
-  HOSTRPC_ANNOTATE typed_port_t& operator=(typed_port_t&&) = default;
-  HOSTRPC_ANNOTATE operator uint32_t() const { return value; }
-
-  HOSTRPC_ANNOTATE typed_port_t()
-      : value(static_cast<uint32_t>(port_t::unavailable))
-  {
-  }
-
- private:
-  template <typename WordT, typename SZT, typename Counter,
-            typename inbox_t_arg, typename outbox_t_arg>
-  friend struct state_machine_impl;
-
-  HOSTRPC_ANNOTATE typed_port_t(uint32_t v) : value(v)
-  {
-    static_assert((I <= 1) && (O <= 1), "");
-  }
-  typed_port_t(const typed_port_t&) = delete;
-  typed_port_t& operator=(const typed_port_t&) = delete;
-  uint32_t value;
-};
 
 template <typename WordT, typename SZT, typename Counter, typename inbox_t_arg,
           typename outbox_t_arg>
@@ -63,6 +32,9 @@ struct state_machine_impl : public SZT, public Counter
   // TODO: Better assert is same_type
   static_assert(sizeof(Word) == sizeof(typename inbox_t::Word), "");
   static_assert(sizeof(Word) == sizeof(typename outbox_t::Word), "");
+
+  template <unsigned I, unsigned O>
+  using typed_port_t = typed_port_impl_t<state_machine_impl, I, O>;
 
   HOSTRPC_ANNOTATE constexpr size_t wordBits() const
   {
@@ -279,13 +251,13 @@ struct state_machine_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE void rpc_close_port(T active_threads,
                                        typed_port_t<I, O>&& port)
   {
-    //
     const uint32_t size = this->size();
     const port_t slot = static_cast<port_t>(static_cast<uint32_t>(port));
     if (platform::is_master_lane(active_threads))
       {
         active.release_slot(size, slot);
       }
+    port.drop();
   }
 
   template <typename T, typename CB00, typename CB11, typename CBNone>
@@ -313,9 +285,9 @@ struct state_machine_impl : public SZT, public Counter
         else
           {
             assert(ps == port_state::high_values);
-            typed_port_t<1, 0> res =
-              On11(active_threads, typed_port_t<1, 1>(static_cast<uint32_t>(p)));
-            // rpc_close_port(active_threads, cxx::move(res)); // <- would like to detect this
+            typed_port_t<1, 0> res = On11(
+                active_threads, typed_port_t<1, 1>(static_cast<uint32_t>(p)));
+            rpc_close_port(active_threads, cxx::move(res));
             return static_cast<uint32_t>(p);
           }
       }
@@ -544,6 +516,7 @@ struct state_machine_impl : public SZT, public Counter
     static_assert(I == O, "");
     constexpr port_state Req =
         I == 0 ? port_state::low_values : port_state::high_values;
+  try_again:;
 
     port_t p = rpc_open_port<T, Req>(active_threads, scan_from, nullptr);
     // ugly...
@@ -553,11 +526,12 @@ struct state_machine_impl : public SZT, public Counter
         return typed_port_t<I, O>(static_cast<uint32_t>(p));
       }
 
+    // wait musttail, but lost that when a temporary (a typed port) was no
+    // longer trivially destructible
     // todo: do amdgpu and nvptx need to implement this or is IR xform
     // sufficient note: returning a typed port means spinning if none is
     // available
-    [[clang::musttail]] return rpc_open_typed_port_impl<I, O>(active_threads,
-                                                              scan_from);
+    goto try_again;
   }
 };
 

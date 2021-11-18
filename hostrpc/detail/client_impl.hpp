@@ -66,6 +66,8 @@ struct client_impl : public state_machine_impl<WordT, SZT, Counter,
   using inbox_t = typename base::inbox_t;
   using outbox_t = typename base::outbox_t;
   using staging_t = typename base::staging_t;
+  template <unsigned I, unsigned O>
+  using typed_port_t = typename base::template typed_port_t<I, O>;
 
   HOSTRPC_ANNOTATE client_impl() : base() {}
   HOSTRPC_ANNOTATE ~client_impl() = default;
@@ -783,6 +785,8 @@ struct client : public client_impl<WordT, SZT, Counter>
 {
   using base = client_impl<WordT, SZT, Counter>;
   using base::client_impl;
+  template <unsigned I, unsigned O>
+  using typed_port_t = typename base::template typed_port_t<I, O>;
 
   static_assert(cxx::is_trivially_copyable<base>::value, "");
 
