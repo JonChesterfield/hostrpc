@@ -184,6 +184,13 @@ struct state_machine_impl : public SZT, public Counter
   }
 
   template <typename T>
+  HOSTRPC_ANNOTATE typed_port_t<1, 1> rpc_open_typed_port_hi(
+      T active_threads, uint32_t scan_from = 0)
+  {
+    return rpc_open_typed_port_impl<1, 1, T>(active_threads, scan_from);
+  }
+
+  template <typename T>
   HOSTRPC_ANNOTATE void rpc_close_port(
       T active_threads,
       port_t port);  // Require != port_t::unavailable, not already closed
@@ -232,7 +239,17 @@ struct state_machine_impl : public SZT, public Counter
   {
     uint32_t raw = static_cast<uint32_t>(port);
     port_t tmp = static_cast<port_t>(raw);
-    rpc_port_apply_hi(active_threads, tmp, cxx::forward<Op>(op));
+    if constexpr (IandO == 1)
+      {
+        rpc_port_apply_given_state<T, Op, port_state::high_values>(
+            active_threads, tmp, cxx::forward<Op>(op));
+      }
+    else
+      {
+        rpc_port_apply_given_state<T, Op, port_state::low_values>(
+            active_threads, tmp, cxx::forward<Op>(op));
+      }
+
     return typed_port_t<IandO, !IandO>(raw);
   }
 
@@ -293,6 +310,7 @@ struct state_machine_impl : public SZT, public Counter
           }
         else
           {
+            assert(ps == port_state::high_values);
             On11(active_threads, typed_port_t<1, 1>(static_cast<uint32_t>(p)));
             return static_cast<uint32_t>(p);
           }
@@ -342,7 +360,7 @@ struct state_machine_impl : public SZT, public Counter
         case port_state::either_low_or_high:
           {
             // both 0 or both 1
-            return !(i ^ o);
+            return ~(i ^ o);
           }
         case port_state::unavailable:
           {
@@ -351,34 +369,6 @@ struct state_machine_impl : public SZT, public Counter
           }
       }
   }
-
-  static_assert((available_bitmap<port_state::low_values>(0, 0) & 1) == 1, "");
-  static_assert((available_bitmap<port_state::low_values>(1, 0) & 1) == 0, "");
-  static_assert((available_bitmap<port_state::low_values>(0, 1) & 1) == 0, "");
-  static_assert((available_bitmap<port_state::low_values>(1, 1) & 1) == 0, "");
-
-  static_assert((available_bitmap<port_state::high_values>(0, 0) & 1) == 0, "");
-  static_assert((available_bitmap<port_state::high_values>(1, 0) & 1) == 0, "");
-  static_assert((available_bitmap<port_state::high_values>(0, 1) & 1) == 0, "");
-  static_assert((available_bitmap<port_state::high_values>(1, 1) & 1) == 1, "");
-
-  static_assert((available_bitmap<port_state::either_low_or_high>(0, 0) & 1) ==
-                    1,
-                "");
-  static_assert((available_bitmap<port_state::either_low_or_high>(1, 0) & 1) ==
-                    0,
-                "");
-  static_assert((available_bitmap<port_state::either_low_or_high>(0, 1) & 1) ==
-                    0,
-                "");
-  static_assert((available_bitmap<port_state::either_low_or_high>(1, 1) & 1) ==
-                    1,
-                "");
-
-  static_assert((available_bitmap<port_state::unavailable>(0, 0) & 1) == 0, "");
-  static_assert((available_bitmap<port_state::unavailable>(1, 0) & 1) == 1, "");
-  static_assert((available_bitmap<port_state::unavailable>(0, 1) & 1) == 1, "");
-  static_assert((available_bitmap<port_state::unavailable>(1, 1) & 1) == 0, "");
 
   template <port_state Req>
   HOSTRPC_ANNOTATE bool is_slot_still_available(uint32_t w, uint32_t idx,

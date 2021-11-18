@@ -153,26 +153,10 @@ struct server_impl : public state_machine_impl<WordT, SZT, Counter,
   HOSTRPC_ANNOTATE port_t rpc_open_port_impl(T active_threads, Clear&& cl,
                                              uint32_t* location_arg)
   {
-#if 1
-    // suspicious of open lo-or-hi
-    {
-      port_t p = base::template rpc_open_port_hi(active_threads, *location_arg);
-      if (p != port_t::unavailable)
-        {
-          base::rpc_port_apply_hi(active_threads, p, Clear{cl});
-          base::rpc_close_port(active_threads, p);
-        }
-    }
-
-    {
-      port_t p = base::template rpc_open_port_lo(active_threads, *location_arg);
-      *location_arg = static_cast<uint32_t>(p) + 1;
-      return p;
-    }
-#else
-    // this in contrast deadlocks
-  again:;
     typename base::port_state ps;
+    Clear& clref = cl;
+
+  try_again:;
     port_t p = base::template rpc_open_port(active_threads, *location_arg, &ps);
     if (p == port_t::unavailable)
       {
@@ -181,15 +165,14 @@ struct server_impl : public state_machine_impl<WordT, SZT, Counter,
 
     if (ps == base::port_state::high_values)
       {
-        base::rpc_port_apply_hi(active_threads, p, Clear{cl});
+        base::rpc_port_apply_hi(active_threads, p, clref);
         base::rpc_close_port(active_threads, p);
-        goto again;
+        goto try_again;
       }
 
     assert(ps == base::port_state::low_values);
     *location_arg = static_cast<uint32_t>(p) + 1;
     return p;
-#endif
   }
 };
 
@@ -736,6 +719,26 @@ struct server : public server_impl<WordT, SZT, Counter>
   }
 
  private:
+  template <typename T, typename Op, unsigned IO>
+  struct noLambdasInOpenCL
+  {
+    server* self;
+    bool* result;
+    Op& op;
+
+    noLambdasInOpenCL(server* self, bool* result, Op& op)
+        : self(self), result(result), op(op)
+    {
+    }
+
+    void operator()(T active_threads, typed_port_t<IO, IO>&& port)
+    {
+      self->rpc_port_apply(active_threads, cxx::move(port),
+                           cxx::forward<Op>(op));
+      *result = true;
+    }
+  };
+
   template <typename Operate, typename Clear, bool have_precondition,
             typename T>
   HOSTRPC_ANNOTATE bool rpc_handle_impl(T active_threads, Operate&& op,
@@ -744,61 +747,23 @@ struct server : public server_impl<WordT, SZT, Counter>
   {
 #if 0
     bool result = false;
-
-    struct On00_t
+    auto On00 = noLambdasInOpenCL<T, Operate, 0>(this, &result, op);
+    auto On11 = noLambdasInOpenCL<T, Clear, 1>(this, &result, cl);
+    struct None
     {
-      server* self;
-      bool* result;
-      Operate & op;
-      On00_t(server* self, bool* result, Operate& op)
-        : self(self), result(result), op(op)
-      {
+      void operator()(T)
+      { /*result initialised to false*/
       }
-
-      void operator()(T active_threads, typed_port_t<0, 0>&& port)
-      {
-        self->rpc_port_apply(active_threads, cxx::move(port), cxx::forward<Operate>(op));
-
-        *result = true;
-      }
-    } On00(this, &result, op);
-
-    struct On11_t
-    {
-      server* self;
-      bool* result;
-      Clear & cl;
-      On11_t(server* self, bool* result, Clear& cl)
-          : self(self), result(result), cl(cl)
-      {
-      }
-
-      void operator()(T active_threads, typed_port_t<1, 1>&& port)
-      {
-        self->rpc_port_apply(active_threads, cxx::move(port),
-                             cxx::forward<Clear>(cl));
-        *result = true;
-      }
-    } On11(this, &result, cl);
-
-    struct None_t
-    {
-      bool* result;
-      None_t(bool* result) : result(result) {}
-
-      void operator()(T) { *result = false; }
-    } None(&result);
+    };
 
     *location_arg = 1 + base::template rpc_with_opened_port(
-                            active_threads, *location_arg,
-                            cxx::move(On00),
-                            cxx::move(On11),
-                            cxx::move(None));
+                            active_threads, *location_arg, cxx::move(On00),
+                            cxx::move(On11), None{});
 
     return result;
 
 #else
-    
+
     const port_t port =
         base::template rpc_open_port_impl<Clear, have_precondition>(
             active_threads, cxx::forward<Clear>(cl), location_arg);

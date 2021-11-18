@@ -117,6 +117,7 @@ fi
 
 
 CXXVER='-std=c++17'
+OPTLEVEL='-O2'
 
 set +e
 $RDIR/bin/clang++ -W -Wno-deprecated-copy -Wno-missing-field-initializers -Wno-inline-new-delete -Wno-unused-parameter $CXXVER -ffreestanding -I $HOME/relacy/ minimal.cpp -stdlib=libc++ -o minimal.out
@@ -184,11 +185,11 @@ COMMONFLAGS="-Wall -Wextra -emit-llvm " # -DNDEBUG -Wno-type-limits "
 # cuda/openmp pass the host O flag through to ptxas, which crashes on debug info if > 0
 # there's a failure mode in trunk clang - 'remaining virtual register operands' - but it
 # resists changing the pipeline to llvm-link + llc, will have to debug it later
-X64FLAGS=" -O2 -g -pthread " # nvptx can't handle debug info on x64 for O>0
-GCNFLAGS=" -O2 -ffreestanding -fno-exceptions $AMDGPU"
+X64FLAGS=" $OPTLEVEL -g -pthread " # nvptx can't handle debug info on x64 for O>0
+GCNFLAGS=" $OPTLEVEL -ffreestanding -fno-exceptions $AMDGPU"
 # atomic alignment objection seems reasonable - may want 32 wide atomics on nvptx
 # clang/ptx back end is crashing in llvm::DwarfDebug::constructCallSiteEntryDIEs
-NVPTXFLAGS=" -O2 -ffreestanding -fno-exceptions -Wno-atomic-alignment -emit-llvm $NVGPU "
+NVPTXFLAGS=" $OPTLEVEL -ffreestanding -fno-exceptions -Wno-atomic-alignment -emit-llvm $NVGPU "
 
 CXX_X64="$CLANGXX $CXXVER $COMMONFLAGS $X64FLAGS"
 CXX_GCN="$CLANGXX $CXXVER $COMMONFLAGS $GCNFLAGS"
@@ -204,7 +205,7 @@ XCUDA="-x cuda --cuda-gpu-arch=$PTXGFX --cuda-path=/usr/local/cuda"
 XHIP="-x hip --cuda-gpu-arch=$GCNGFX -nogpulib -nogpuinc"
 XOPENCL="-x cl -Xclang -cl-std=clc++ -DCL_VERSION_2_0=200 -D__OPENCL_C_VERSION__=200  -Dcl_khr_fp64 -Dcl_khr_fp16   -Dcl_khr_subgroups -Dcl_khr_int64_base_atomics -Dcl_khr_int64_extended_atomics" 
 
-CXX_CUDA="$CLANGXX -O2 $COMMONFLAGS $XCUDA -I/usr/local/cuda/include -nocudalib"
+CXX_CUDA="$CLANGXX $OPTLEVEL $COMMONFLAGS $XCUDA -I/usr/local/cuda/include -nocudalib"
 
 CXX_X64_LD="$CXX"
 CXX_GCN_LD="$CXX $GCNFLAGS"
@@ -217,11 +218,11 @@ fi
 # Fills in gaps in the cuda/hsa libs, implements allocators
 
 if (($have_amdgcn)); then
-  $CLANG $AMDGPU -ffreestanding -fno-exceptions -O2 -emit-llvm -S conv.c -o obj/codegen_conv.ll
-  $CLANG $AMDGPU -ffreestanding -fno-exceptions -O2 -S conv.c -o obj/codegen_conv.s
+  $CLANG $AMDGPU -ffreestanding -fno-exceptions $OPTLEVEL -emit-llvm -S conv.c -o obj/codegen_conv.ll
+  $CLANG $AMDGPU -ffreestanding -fno-exceptions $OPTLEVEL -S conv.c -o obj/codegen_conv.s
 fi
 
-$CXX_X64 -I$HSAINC incprintf.cpp -O3 -c -o obj/incprintf.x64.bc
+$CXX_X64 -I$HSAINC incprintf.cpp $OPTLEVEL -c -o obj/incprintf.x64.bc
 
 # host support library
 $CXX_X64 allocator_host_libc.cpp -c -o obj/allocator_host_libc.x64.bc
@@ -257,27 +258,27 @@ $LINK obj/allocator_openmp.x64.bc obj/openmp_plugins.x64.bc -o obj/openmp_suppor
 # currently standalone
 
 if (($have_amdgcn)); then
-    $CXX_GCN hostrpc_printf_enable_amdgpu.cpp -O3 -c -o obj/hostrpc_printf_enable_amdgpu.gcn.bc
-    $CXX_X64 hostrpc_printf_enable_amdgpu.cpp -I$HSAINC -O3 -c -o obj/hostrpc_printf_enable_amdgpu.x64.bc
-    $CXX_X64 hostrpc_printf_enable_host.cpp -I$HSAINC -O3 -c -o obj/hostrpc_printf_enable_host.x64.bc
+    $CXX_GCN hostrpc_printf_enable_amdgpu.cpp $OPTLEVEL -c -o obj/hostrpc_printf_enable_amdgpu.gcn.bc
+    $CXX_X64 hostrpc_printf_enable_amdgpu.cpp -I$HSAINC $OPTLEVEL -c -o obj/hostrpc_printf_enable_amdgpu.x64.bc
+    $CXX_X64 hostrpc_printf_enable_host.cpp -I$HSAINC $OPTLEVEL -c -o obj/hostrpc_printf_enable_host.x64.bc
 fi
 
 
 if (($have_amdgcn)); then
-    $CXX_GCN threads.cpp -O3 -c -o threads.gcn.bc
+    $CXX_GCN threads.cpp $OPTLEVEL -c -o threads.gcn.bc
 
-    # $CXXCL_GCN pool_example_amdgpu.cpp -O3 -c -o pool_example_amdgpu.ocl.gcn.bc
+    # $CXXCL_GCN pool_example_amdgpu.cpp $OPTLEVEL -c -o pool_example_amdgpu.ocl.gcn.bc
 
-    $CLANGXX $XOPENCL pool_example_amdgpu.cpp -O3 -emit-llvm -nogpulib -target amdgcn-amd-amdhsa -mcpu=$GCNGFX -c -o pool_example_amdgpu.ocl.gcn.bc
-    $CXX_GCN pool_example_amdgpu.cpp -O3 -c -o pool_example_amdgpu.cpp.gcn.bc
+    $CLANGXX $XOPENCL pool_example_amdgpu.cpp $OPTLEVEL -emit-llvm -nogpulib -target amdgcn-amd-amdhsa -mcpu=$GCNGFX -c -o pool_example_amdgpu.ocl.gcn.bc
+    $CXX_GCN pool_example_amdgpu.cpp $OPTLEVEL -c -o pool_example_amdgpu.cpp.gcn.bc
 
     $LINK threads.gcn.bc pool_example_amdgpu.ocl.gcn.bc pool_example_amdgpu.cpp.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc $EXTRABC | $OPT -O2 -o obj/merged_pool_example_amdgpu.gcn.bc 
     $DIS obj/merged_pool_example_amdgpu.gcn.bc
 
     $CXX_GCN_LD obj/merged_pool_example_amdgpu.gcn.bc -o pool_example_amdgpu.gcn.so
 
-    $CXX_X64 threads.cpp -O3 -c -o threads.x64.bc
-    $CXX_X64 pool_example_amdgpu.cpp -I$HSAINC -O3 -c -o obj/pool_example_amdgpu.x64.bc
+    $CXX_X64 threads.cpp $OPTLEVEL -c -o threads.x64.bc
+    $CXX_X64 pool_example_amdgpu.cpp -I$HSAINC $OPTLEVEL -c -o obj/pool_example_amdgpu.x64.bc
     
     $CXX_X64_LD threads.x64.bc obj/hsa_support.x64.bc obj/catch.o $LDFLAGS -o threads.x64.exe
 
@@ -287,7 +288,7 @@ fi
 
 if (($have_amdgcn)); then
     # Currently assumes hsa, but shouldn't
-  $CXX_X64 -I$HSAINC pool_example_host.cpp -O3 -c -o obj/pool_example_host.x64.bc
+  $CXX_X64 -I$HSAINC pool_example_host.cpp $OPTLEVEL -c -o obj/pool_example_host.x64.bc
   $CXX_X64_LD obj/pool_example_host.x64.bc $LDFLAGS -o pool_example_host.x64.exe
 fi
 
@@ -433,24 +434,25 @@ mv foo.ll foo.cuda.both_x64.ll
 mv foo-cuda-nvptx64-nvidia-cuda-*.ll foo.cuda.both_ptx.ll
 cd -
 
+CODEGENOPTLEVEL='-O2'
 
 # aomp has broken cuda-device-only
-$CLANGXX -x hip --cuda-gpu-arch=$GCNGFX -nogpulib -nogpuinc $CXXVER -O1 --cuda-device-only codegen/foo.cu -emit-llvm -S -o codegen/foo.hip.gcn.ll
-$CLANGXX -x hip --cuda-gpu-arch=$GCNGFX -nogpulib -nogpuinc $CXXVER -O1 --cuda-host-only codegen/foo.cu -emit-llvm -S -o codegen/foo.hip.x64.ll
+$CLANGXX -x hip --cuda-gpu-arch=$GCNGFX -nogpulib -nogpuinc $CXXVER $CODEGENOPTLEVEL --cuda-device-only codegen/foo.cu -emit-llvm -S -o codegen/foo.hip.gcn.ll
+$CLANGXX -x hip --cuda-gpu-arch=$GCNGFX -nogpulib -nogpuinc $CXXVER $CODEGENOPTLEVEL --cuda-host-only codegen/foo.cu -emit-llvm -S -o codegen/foo.hip.x64.ll
 
 # hip doesn't understand -emit-llvm (or -S, or -c) when trying to do host and device together
 # so can't test that here
 
 # This ignores -S for some reason
-$CLANGXX -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GCNGFX codegen/foo.omp.cpp -c -emit-llvm --cuda-device-only -o codegen/foo.omp.gcn.bc && $DIS codegen/foo.omp.gcn.bc && rm codegen/foo.omp.gcn.bc
+$CLANGXX $CODEGENOPTLEVEL -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GCNGFX codegen/foo.omp.cpp -c -emit-llvm --cuda-device-only -o codegen/foo.omp.gcn.bc && $DIS codegen/foo.omp.gcn.bc && rm codegen/foo.omp.gcn.bc
 
 # ignores host-only, so the IR has a binary gfx pasted at the top
-$CLANGXX -O2  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GCNGFX  codegen/foo.omp.cpp -S -emit-llvm --cuda-host-only -o codegen/foo.omp.gcn-x64.ll
+$CLANGXX $CODEGENOPTLEVEL  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GCNGFX  codegen/foo.omp.cpp -S -emit-llvm --cuda-host-only -o codegen/foo.omp.gcn-x64.ll
 
 
-$CLANGXX -O2  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=$PTXGFX  codegen/foo.omp.cpp -c -emit-llvm -S --cuda-device-only -o codegen/foo.omp.ptx.ll
+$CLANGXX $CODEGENOPTLEVEL  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=$PTXGFX  codegen/foo.omp.cpp -c -emit-llvm -S --cuda-device-only -o codegen/foo.omp.ptx.ll
 
-$CLANGXX -O2  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=$PTXGFX  codegen/foo.omp.cpp -c -emit-llvm -S --cuda-host-only -o codegen/foo.omp.ptx-x64.ll
+$CLANGXX $CODEGENOPTLEVEL  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=$PTXGFX  codegen/foo.omp.cpp -c -emit-llvm -S --cuda-host-only -o codegen/foo.omp.ptx-x64.ll
 
 # OpenCL compilation model is essentially that of c++
 $CLANGXX $XOPENCL -S -emit-llvm codegen/foo_cxx.cpp -S -o codegen/foo.cl.x64.ll
@@ -465,10 +467,10 @@ $CLANGXX $XCUDA $CXXVER --cuda-host-only -nocudainc -nocudalib codegen/client.cp
 
 
 # Fails to annotate CFG at O0
-$CLANGXX $XHIP $CXXVER -O1 --cuda-device-only codegen/client.cpp -S -o codegen/client.hip.gcn.ll
-$CLANGXX $XHIP $CXXVER -O1 --cuda-host-only codegen/client.cpp -S -o codegen/client.hip.x64.ll
-$CLANGXX $XHIP $CXXVER -O1 --cuda-device-only codegen/server.cpp -S -o codegen/server.hip.gcn.ll
-$CLANGXX $XHIP $CXXVER -O1 --cuda-host-only codegen/server.cpp -S -o codegen/server.hip.x64.ll
+$CLANGXX $XHIP $CXXVER $CODEGENOPTLEVEL --cuda-device-only codegen/client.cpp -S -o codegen/client.hip.gcn.ll
+$CLANGXX $XHIP $CXXVER $CODEGENOPTLEVEL --cuda-host-only codegen/client.cpp -S -o codegen/client.hip.x64.ll
+$CLANGXX $XHIP $CXXVER $CODEGENOPTLEVEL --cuda-device-only codegen/server.cpp -S -o codegen/server.hip.gcn.ll
+$CLANGXX $XHIP $CXXVER $CODEGENOPTLEVEL --cuda-host-only codegen/server.cpp -S -o codegen/server.hip.x64.ll
 
 # Build as opencl/c++ too
 $CLANGXX $XOPENCL -S -emit-llvm codegen/client.cpp -S -o codegen/client.ocl.x64.ll
@@ -514,7 +516,7 @@ if (($have_amdgcn)); then
     # ./demo hsa runtime presently segfaults in hip's library
 fi
 
-$CXX_PTX nvptx_main.cpp -ffreestanding -c -o nvptx_main.ptx.bc
+$CXX_PTX $CXXVER nvptx_main.cpp -ffreestanding -c -o nvptx_main.ptx.bc
 
 if (($have_nvptx)); then
 # One step at a time
@@ -537,7 +539,7 @@ if (($have_amdgcn)); then
     # this now fails to compile (fairly quickly), looks like mlink-builtin-bitcode is mixing
     # the two ISAs in a single module
     set +e
-    $CLANGXX -I$HSAINC -O2 -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GCNGFX -mcpu=$GCNGFX -DDEMO_AMDGCN=1 demo_openmp.cpp \
+    $CLANGXX -I$HSAINC $OPTLEVEL -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GCNGFX -mcpu=$GCNGFX -DDEMO_AMDGCN=1 demo_openmp.cpp \
          -Xclang -mlink-builtin-bitcode -Xclang obj/demo_bitcode_gcn.omp.bc -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR && ./demo_openmp_gcn
     set -e
 fi
