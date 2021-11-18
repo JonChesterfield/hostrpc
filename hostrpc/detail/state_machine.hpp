@@ -526,7 +526,7 @@ struct state_machine_impl : public SZT, public Counter
         return typed_port_t<I, O>(static_cast<uint32_t>(p));
       }
 
-    // wait musttail, but lost that when a temporary (a typed port) was no
+    // want musttail, but lost that when a temporary (a typed port) was no
     // longer trivially destructible
     // todo: do amdgpu and nvptx need to implement this or is IR xform
     // sufficient note: returning a typed port means spinning if none is

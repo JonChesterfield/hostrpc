@@ -741,7 +741,7 @@ struct server : public server_impl<WordT, SZT, Counter>
       typed_port_t<IandO, !IandO> r = self->rpc_port_apply(
           active_threads, cxx::move(port), cxx::forward<Op>(op));
       *result = retValue;
-      return r;
+      return cxx::move(r);
     }
   };
 

@@ -15,7 +15,7 @@ namespace hostrpc
 template <typename Friend, unsigned I, unsigned O>
 class typed_port_impl_t;
 
-#define HOSTRPC_USE_TYPESTATE 0
+#define HOSTRPC_USE_TYPESTATE 1
 
 #if defined(__OPENCL_C_VERSION__)
 // May be able to make this work, need work out why opencl is upset about
@@ -108,11 +108,9 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
 
   HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_DEAD ~typed_port_impl_t() {}
 
-  HOSTRPC_ANNOTATE HOSTRPC_RETURN_CONSUMED typed_port_impl_t()
-      : value(static_cast<uint32_t>(port_t::unavailable))
-  {
-    // todo: leave value uninitialised once this compiles successfully
-  }
+  // leaves value uninitialised, uses of the value are caught
+  // by the typestate annotations
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_CONSUMED typed_port_impl_t() {}
 
  private:
   HOSTRPC_ANNOTATE static typed_port_impl_t HOSTRPC_CREATED_RES
