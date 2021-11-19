@@ -101,6 +101,7 @@ MSGPACKINCLUDE="thirdparty/msgpack"
 if [[ -d $MSGPACKINCLUDE ]]
 then
     echo "Using existing msgpack"
+    cd $MSGPACKINCLUDE && git pull && cd -
 else
     echo "Cloning msgpack"
     git clone https://github.com/jonchesterfield/msgpack.git $MSGPACKINCLUDE
