@@ -35,6 +35,13 @@ struct is_same_or_inverted
 };
 
 // local, remote are instances of client_impl, server_impl
+// essentially a misnamed constructor for allocator::store_impl
+
+// may want to embed the architecture type in the client/server, kind of messy
+// carrying it around like this
+// allocators are stateful, and the state is not bound to the client/server
+// instance,
+
 template <typename SZ, typename LocalType, typename RemoteType,
           typename AllocBuffer, typename AllocInboxOutbox, typename AllocLocal,
           typename AllocRemote>
@@ -44,7 +51,7 @@ host_client(AllocBuffer alloc_buffer, AllocInboxOutbox alloc_inbox_outbox,
             AllocLocal alloc_local, AllocRemote alloc_remote, SZ sz,
             LocalType* local, RemoteType* remote)
 {
-  // consistency constraints
+  // consistency constraints (todo: let word vary across the two?)
   static_assert(
       is_same<typename LocalType::Word, typename RemoteType::Word>::value, "");
   static_assert(is_same<typename LocalType::SZ, typename RemoteType::SZ>::value,

@@ -1,0 +1,2 @@
+Replace atomics with nvvm intrinsics on nvidia to remove platform.cu
+

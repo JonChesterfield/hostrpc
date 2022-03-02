@@ -333,6 +333,8 @@ struct openmp_shared : public interface<Align, openmp_shared<Align>>
   }
 };
 
+// Store multiple raw pointers with sufficient type information
+// to deallocate them later
 template <typename AllocBufferT, typename AllocInboxOutboxT,
           typename AllocLocalT, typename AllocRemoteT>
 struct store_impl

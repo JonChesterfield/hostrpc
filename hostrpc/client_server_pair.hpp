@@ -9,12 +9,23 @@
 #include "host_client.hpp"
 #include "platform/detect.hpp"
 
+// local / remote distinction may not be useful here
+// allocator is defined in terms of shared memory, buffers on the device doing
+// the allocation and buffers on the other device. That is, it doesn't have a
+// client/server notion, just 'here' and 'there' This probably needs to take
+// AllocClient and AllocRemote parameters.
+
 namespace hostrpc
 {
-template <typename SZ_, typename Word_, typename AllocBuffer_,
-          typename AllocInboxOutbox_, typename AllocLocal_,
-          typename AllocRemote_, typename client_counter = counters::client_nop,
-          typename server_counter = counters::server_nop>
+template <
+    typename SZ_,    // size_compiletime or size_runtime, number of slots
+    typename Word_,  // width of atomic operations (strictly could be different
+                     // on each side)
+    typename AllocBuffer_,  // allocate shared memory used for argument passing
+    typename AllocInboxOutbox_,  // shared memory use for state transitions
+    typename AllocLocal_, typename AllocRemote_,
+    typename client_counter = counters::client_nop,
+    typename server_counter = counters::server_nop>
 struct client_server_pair_t
 {
   using SZ = SZ_;
@@ -48,6 +59,7 @@ struct client_server_pair_t
                                         AllocInboxOutbox alloc_inbox_outbox,
                                         AllocLocal alloc_local,
                                         AllocRemote alloc_remote)
+      // host_client is mapping &server to local and &client to remote
       : storage(host_client(alloc_buffer, alloc_inbox_outbox, alloc_local,
                             alloc_remote, sz, &server, &client))
   {
