@@ -37,7 +37,11 @@ struct equalImpl
   template <typename T, typename U>
   static bool equal(T const& t, U const& u)
   {
-    bool StartEqual = t.template get<S>() == u.template get<S>();
+    auto lhs = t.template get<S>();
+    auto rhs = u.template get<S>();
+    // Floating point compares aren't eliminated in to/from byte round trip
+    bool StartEqual = lhs == rhs;
+    // bool StartEqual = __builtin_memcmp(&lhs,&rhs, sizeof(lhs)) == 0;
     bool RestEqual = equalImpl<S + 1, E>::equal(t, u);
     return StartEqual && RestEqual;
   }
