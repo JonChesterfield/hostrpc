@@ -11,10 +11,7 @@
 namespace hostrpc
 {
 template <typename SZ>
-using x64_x64_type_base = client_server_pair_t<
-    SZ, uint64_t, hostrpc::allocator::host_libc<alignof(page_t)>,
-    hostrpc::allocator::host_libc<64>, hostrpc::allocator::host_libc<64>,
-    hostrpc::allocator::host_libc<64> >;
+using x64_x64_type_base = client_server_pair_t<SZ, arch::x64, arch::x64>;
 
 template <typename SZ>
 struct x64_x64_type : public x64_x64_type_base<SZ>

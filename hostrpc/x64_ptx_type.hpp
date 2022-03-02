@@ -12,10 +12,7 @@
 namespace hostrpc
 {
 template <typename SZ>
-using x64_ptx_type_base = client_server_pair_t<
-    SZ, uint32_t, hostrpc::allocator::cuda_shared<alignof(page_t)>,
-    hostrpc::allocator::cuda_shared<64>, hostrpc::allocator::host_libc<64>,
-    hostrpc::allocator::cuda_gpu<64>>;
+using x64_ptx_type_base = client_server_pair_t<SZ, arch::x64, arch::ptx>;
 
 template <typename SZ>
 struct x64_ptx_type : public x64_ptx_type_base<SZ>
