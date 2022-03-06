@@ -66,7 +66,9 @@ struct global
     SZ N = size_p(kernel_agent);
 
     return std::make_unique<hostrpc::x64_gcn_type<SZ>>(
-        N, fine_grained_region.handle, coarse_grained_region.handle);
+        N, hostrpc::arch::x64{},
+        hostrpc::arch::gcn{fine_grained_region.handle,
+                           coarse_grained_region.handle});
   }
 
   using wrap_state = wrap_server_state<hostrpc::x64_gcn_type<SZ>>;

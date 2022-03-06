@@ -192,7 +192,8 @@ class hostcall_impl
     // TODO: Avoid this heap alloc?
     auto res = std::unique_ptr<hostrpc::x64_gcn_type<SZ>>(
         new (std::nothrow) hostrpc::x64_gcn_type<SZ>(
-            SZ{}, fine_grained_region.handle, coarse_grained_region.handle));
+            SZ{}, {},
+            {fine_grained_region.handle, coarse_grained_region.handle}));
     if (!res)
       {
         return 1;

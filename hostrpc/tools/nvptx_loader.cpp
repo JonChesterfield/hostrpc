@@ -143,7 +143,7 @@ int init(void *image)
     [&]() { return cuModuleGetFunction(&Func, Module, "__device_start"); });
 
   using SZ = hostrpc::size_runtime<uint32_t>;
-  hostrpc::x64_ptx_type<SZ> x64_nvptx_state(SZ{128});
+  hostrpc::x64_ptx_type<SZ> x64_nvptx_state(SZ{128}, {}, {});
 
   {
     error_tracker t;

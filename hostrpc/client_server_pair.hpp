@@ -50,21 +50,68 @@ struct x64
 {
   using word_type = uint64_t;
   template <size_t align>
-  using allocator = allocator::host_libc<align>;
+  using local_allocator_t = allocator::host_libc<align>;
+
+  x64() {}
+
+  template <size_t align>
+  local_allocator_t<align> local_allocator()
+  {
+    return {};
+  }
 };
 
 struct gcn
 {
   using word_type = uint64_t;
   template <size_t align>
-  using allocator = allocator::hsa<align>;
+  using local_allocator_t = allocator::hsa<align>;
+  template <size_t align>
+  using shared_allocator_t = allocator::hsa<align>;
+
+  gcn(uint64_t fine_handle_, uint64_t coarse_handle_)
+      : fine_handle(fine_handle_), coarse_handle(coarse_handle_)
+  {
+  }
+
+  template <size_t align>
+  local_allocator_t<align> local_allocator()
+  {
+    return {coarse_handle};
+  }
+
+  template <size_t align>
+  shared_allocator_t<align> shared_allocator()
+  {
+    return {fine_handle};
+  }
+
+ private:
+  uint64_t fine_handle;
+  uint64_t coarse_handle;
 };
 
 struct ptx
 {
   using word_type = uint32_t;
   template <size_t align>
-  using allocator = allocator::cuda_gpu<align>;
+  using local_allocator_t = hostrpc::allocator::cuda_gpu<align>;
+  template <size_t align>
+  using shared_allocator_t = hostrpc::allocator::cuda_shared<align>;
+
+  ptx() {}
+
+  template <size_t align>
+  local_allocator_t<align> local_allocator()
+  {
+    return {};
+  }
+
+  template <size_t align>
+  shared_allocator_t<align> shared_allocator()
+  {
+    return {};
+  }
 };
 
 template <int device_num>
@@ -72,7 +119,23 @@ struct openmp_target
 {
   using word_type = uint32_t;  // TODO: Don't really know, 32 is conservative
   template <size_t align>
-  using allocator = allocator::openmp_device<align, device_num>;
+  using local_allocator_t = allocator::openmp_device<align, device_num>;
+  template <size_t align>
+  using shared_allocator_t = allocator::openmp_shared<align>;
+
+  openmp_target() {}
+
+  template <size_t align>
+  local_allocator_t<align> local_allocator()
+  {
+    return {};
+  }
+
+  template <size_t align>
+  shared_allocator_t<align> shared_allocator()
+  {
+    return {};
+  }
 };
 
 // shared memory allocator type for pairs of architectures
@@ -84,34 +147,84 @@ struct pair;
 template <typename X, typename Y>
 struct pair : public pair<Y, X>
 {
+  pair(X x, Y y) : pair<Y, X>(y, x) {}
 };
 
-template <>
-struct pair<x64, x64>
+// client and server on same arch can use local allocator
+template <typename T>
+struct pair<T, T>
 {
+  pair(T s_) : s(s_) {}
+  pair(T s_, T) : s(s_) {}
+
   template <size_t align>
-  using allocator = x64::allocator<align>;
+  using shared_allocator_t = typename T::template local_allocator_t<align>;
+
+  template <size_t align>
+  shared_allocator_t<align> shared_allocator()
+  {
+    return s.template local_allocator<align>();
+  }
+
+ private:
+  T s;
 };
 
 template <>
 struct pair<x64, ptx>
 {
+  pair(x64 x_, ptx y_) : x(x_), y(y_) {}
+
   template <size_t align>
-  using allocator = allocator::cuda_shared<align>;
+  using shared_allocator_t = allocator::cuda_shared<align>;
+
+  template <size_t align>
+  shared_allocator_t<align> shared_allocator()
+  {
+    return y.template shared_allocator<align>();
+  }
+
+ private:
+  x64 x;
+  ptx y;
 };
 
 template <>
 struct pair<x64, gcn>
 {
+  pair(x64 x_, gcn y_) : x(x_), y(y_) {}
+
   template <size_t align>
-  using allocator = allocator::hsa<align>;
+  using shared_allocator_t = allocator::hsa<align>;
+
+  template <size_t align>
+  shared_allocator_t<align> shared_allocator()
+  {
+    return y.template shared_allocator<align>();
+  }
+
+ private:
+  x64 x;
+  gcn y;
 };
 
 template <int device_num>
 struct pair<x64, openmp_target<device_num>>
 {
+  pair(x64 x_, openmp_target<device_num> y_) : x(x_), y(y_) {}
+
   template <size_t align>
-  using allocator = allocator::openmp_shared<align>;
+  using shared_allocator_t = allocator::openmp_shared<align>;
+
+  template <size_t align>
+  shared_allocator_t<align> shared_allocator()
+  {
+    return y.template shared_allocator<align>();
+  }
+
+ private:
+  x64 x;
+  openmp_target<device_num> y;
 };
 
 template <typename Local, typename Remote>
@@ -122,15 +235,40 @@ struct allocators
       sizeof(typename Local::word_type) <
           sizeof(typename Remote::word_type)>::type::word_type;
 
-  template <size_t align>
-  using local_allocator = typename Local::template allocator<align>;
+  allocators(Local l_, Remote r_) : l(l_), r(r_) {}
 
   template <size_t align>
-  using remote_allocator = typename Remote::template allocator<align>;
+  using local_allocator_t = typename Local::template local_allocator_t<align>;
 
   template <size_t align>
-  using shared_allocator =
-      typename pair<Local, Remote>::template allocator<align>;
+  local_allocator_t<align> local_allocator()
+  {
+    return l.template local_allocator<align>();
+  }
+
+  template <size_t align>
+  using remote_allocator_t = typename Remote::template local_allocator_t<align>;
+
+  template <size_t align>
+  remote_allocator_t<align> remote_allocator()
+  {
+    return r.template local_allocator<align>();
+  }
+
+  template <size_t align>
+  using shared_allocator_t =
+      typename pair<Local, Remote>::template shared_allocator_t<align>;
+
+  template <size_t align>
+  shared_allocator_t<align> shared_allocator()
+  {
+    pair<Local, Remote> p(l, r);
+    return p.template shared_allocator<align>();
+  }
+
+ private:
+  Local l;
+  Remote r;
 };
 
 }  // namespace arch
@@ -141,14 +279,17 @@ template <typename SZ_, typename ClientArch_, typename ServerArch_,
 struct client_server_pair_t
 {
   using SZ = SZ_;
+  using ClientArch = ClientArch_;
+  using ServerArch = ServerArch_;
 
   using Allocators = arch::allocators<ClientArch_, ServerArch_>;
   using Word = typename Allocators::word_type;
+
   using AllocBuffer =
-      typename Allocators::template shared_allocator<alignof(page_t)>;
-  using AllocInboxOutbox = typename Allocators::template shared_allocator<64>;
-  using AllocLocal = typename Allocators::template local_allocator<64>;
-  using AllocRemote = typename Allocators::template remote_allocator<64>;
+      typename Allocators::template shared_allocator_t<alignof(page_t)>;
+  using AllocInboxOutbox = typename Allocators::template shared_allocator_t<64>;
+  using AllocLocal = typename Allocators::template local_allocator_t<64>;
+  using AllocRemote = typename Allocators::template remote_allocator_t<64>;
 
   using client_type = client<Word, SZ, client_counter>;
   using server_type = server<Word, SZ, server_counter>;
@@ -170,13 +311,14 @@ struct client_server_pair_t
 
   HOSTRPC_ANNOTATE client_server_pair_t() {}
 
-  HOSTRPC_ANNOTATE client_server_pair_t(SZ sz, AllocBuffer alloc_buffer,
-                                        AllocInboxOutbox alloc_inbox_outbox,
-                                        AllocLocal alloc_local,
-                                        AllocRemote alloc_remote)
-      // host_client is mapping &server to local and &client to remote
-      : storage(host_client(alloc_buffer, alloc_inbox_outbox, alloc_local,
-                            alloc_remote, sz, &server, &client))
+  HOSTRPC_ANNOTATE client_server_pair_t(SZ sz, ClientArch c, ServerArch s)
+      : storage(host_client(
+            Allocators(c, s).template shared_allocator<alignof(page_t)>(),
+            Allocators(c, s).template shared_allocator<64>(),
+            Allocators(c, s).template local_allocator<64>(),
+            Allocators(c, s).template remote_allocator<64>(), sz, &server,
+            &client))
+
   {
   }
 
@@ -204,5 +346,15 @@ struct client_server_pair_t
 #endif
   }
 };
+
+template <typename SZ, typename ClientArch, typename ServerArch,
+          typename client_counter = counters::client_nop,
+          typename server_counter = counters::server_nop>
+client_server_pair_t<SZ, ClientArch, ServerArch, client_counter, server_counter>
+make_client_server_pair(SZ sz, ClientArch c, ServerArch s)
+{
+  return {sz, c, s};
+}
+
 }  // namespace hostrpc
 #endif

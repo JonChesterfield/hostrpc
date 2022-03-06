@@ -39,7 +39,7 @@ HOSTRPC_ATOMIC(uint64_t) *server_ran = nullptr;
 
 using type_under_test = hostrpc::x64_x64_type<hostrpc::size_runtime<uint32_t>>;
 
-type_under_test p(100);
+type_under_test p(100, {}, {});
 
 uint32_t stress_pool_server::run(uint32_t server_location)
 {
@@ -131,7 +131,7 @@ TEST_CASE("x64_x64_stress")
     reps_per_client = 8192,
   };
 
-  auto alloc = type_under_test::base::AllocBuffer();
+  auto alloc = type_under_test::AllocBuffer();
 
   auto raw_client_to_run =
       alloc.allocate(sizeof(HOSTRPC_ATOMIC(uint64_t)) * maximum_threads);

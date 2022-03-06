@@ -8,21 +8,13 @@ namespace hostrpc
 {
 template <typename SZ, int device_num>
 using x64_device_type_base =
-    client_server_pair_t<SZ, uint64_t,
-                         allocator::openmp_shared<alignof(page_t)>,
-                         allocator::openmp_shared<64>, allocator::host_libc<64>,
-                         allocator::openmp_device<64, device_num>>;
+    client_server_pair_t<SZ, arch::x64, arch::openmp_target<device_num>>;
 
 template <typename SZ, int device_num>
 struct x64_device_type : public x64_device_type_base<SZ, device_num>
 {
   using base = x64_device_type_base<SZ, device_num>;
-  HOSTRPC_ANNOTATE x64_device_type(SZ sz)
-      : base(sz, typename base::AllocBuffer(),
-             typename base::AllocInboxOutbox(), typename base::AllocLocal(),
-             typename base::AllocRemote())
-  {
-  }
+  HOSTRPC_ANNOTATE x64_device_type(SZ sz) : base(sz, {}, {}) {}
 };
 }  // namespace hostrpc
 

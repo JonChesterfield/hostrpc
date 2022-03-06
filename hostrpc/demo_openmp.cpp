@@ -24,12 +24,7 @@ template <typename SZ, int device_num>
 struct x64_device_type : public x64_device_type_base<SZ, device_num>
 {
   using base = x64_device_type_base<SZ, device_num>;
-  HOSTRPC_ANNOTATE x64_device_type(SZ sz)
-      : base(sz, typename base::AllocBuffer(),
-             typename base::AllocInboxOutbox(), typename base::AllocLocal(),
-             typename base::AllocRemote())
-  {
-  }
+  HOSTRPC_ANNOTATE x64_device_type(SZ sz) : base(sz, {}, {}) {}
 };
 }  // namespace hostrpc
 

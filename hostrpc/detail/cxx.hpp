@@ -67,6 +67,12 @@ struct is_trivially_copyable
 {
 };
 
+template <bool B>
+using bool_constant = integral_constant<bool, B>;
+
+typedef bool_constant<true> true_type;
+typedef bool_constant<false> false_type;
+  
 }  // namespace cxx
 }  // namespace hostrpc
 

@@ -160,6 +160,7 @@ struct hsa : public interface<Align, hsa<Align>>
   }
 };
 
+#if 0  // presently unused
 template <size_t Align>
 struct hsa_shared : public interface<Align, hsa_shared<Align>>
 {
@@ -175,6 +176,7 @@ struct hsa_shared : public interface<Align, hsa_shared<Align>>
     return (hsa_impl::deallocate(x->ptr) == 0) ? success : failure;
   }
 };
+#endif
 
 namespace cuda_impl
 {

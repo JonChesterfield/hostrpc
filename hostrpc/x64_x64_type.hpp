@@ -1,29 +1,12 @@
 #ifndef HOSTRPC_X64_X64_TYPE_HPP_INCLUDED
 #define HOSTRPC_X64_X64_TYPE_HPP_INCLUDED
 
-#include "allocator.hpp"
-#include "base_types.hpp"
 #include "client_server_pair.hpp"
-#include "detail/client_impl.hpp"
-#include "detail/server_impl.hpp"
-#include "platform/detect.hpp"
 
 namespace hostrpc
 {
 template <typename SZ>
-using x64_x64_type_base = client_server_pair_t<SZ, arch::x64, arch::x64>;
-
-template <typename SZ>
-struct x64_x64_type : public x64_x64_type_base<SZ>
-{
-  using base = x64_x64_type_base<SZ>;
-  HOSTRPC_ANNOTATE x64_x64_type(SZ sz)
-      : base(sz, typename base::AllocBuffer(),
-             typename base::AllocInboxOutbox(), typename base::AllocLocal(),
-             typename base::AllocRemote())
-  {
-  }
-};
+using x64_x64_type = client_server_pair_t<SZ, arch::x64, arch::x64>;
 
 }  // namespace hostrpc
 

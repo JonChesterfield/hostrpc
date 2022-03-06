@@ -35,7 +35,7 @@ kernel void __device_persistent_kernel(__global void *args)
 #include "detail/server_impl.hpp"
 
 #include "allocator.hpp"
-#include "host_client.hpp"
+#include "client_server_pair.hpp"
 
 #include "memory.hpp"
 
@@ -68,36 +68,18 @@ static void gcn_server_callback(hostrpc::cacheline_t *line)
 }
 #endif
 
-struct gcn_x64_type
+using gcn_x64_type_base =
+    client_server_pair_t<hostrpc::size_runtime<uint32_t>, arch::gcn, arch::x64>;
+
+struct gcn_x64_type : public gcn_x64_type_base
 {
-  using SZ = hostrpc::size_runtime<uint32_t>;
-  using Word = uint64_t;
-
-  using client_type = client<Word, SZ>;
-  using server_type = server<Word, SZ>;
-
-  client_type client;
-  server_type server;
-
-  using AllocBuffer = hostrpc::allocator::hsa<alignof(page_t)>;
-  using AllocInboxOutbox = hostrpc::allocator::hsa<64>;
-
-  using AllocLocal = hostrpc::allocator::hsa<64>;
-  using AllocRemote = hostrpc::allocator::host_libc<64>;
-
-  using storage_type = allocator::store_impl<AllocBuffer, AllocInboxOutbox,
-                                             AllocLocal, AllocRemote>;
-
-  storage_type storage;
-
-  gcn_x64_type(SZ sz, uint64_t fine_handle, uint64_t coarse_handle)
-      : storage(host_client(
-            AllocBuffer(fine_handle), AllocInboxOutbox(fine_handle),
-            AllocLocal(coarse_handle), AllocRemote(), sz, &server, &client))
+  using base = gcn_x64_type_base;
+  HOSTRPC_ANNOTATE gcn_x64_type(hostrpc::size_runtime<uint32_t> sz,
+                                uint64_t fine_handle, uint64_t coarse_handle)
+      : base(sz, {fine_handle, coarse_handle}, {})
   {
   }
-
-  ~gcn_x64_type() { storage.destroy(); }
+  gcn_x64_type() = default;
 };
 
 }  // namespace hostrpc

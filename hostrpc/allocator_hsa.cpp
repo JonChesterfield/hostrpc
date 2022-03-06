@@ -86,6 +86,7 @@ void *allocate(uint64_t hsa_region_t_handle, size_t align, size_t bytes)
   return nullptr;
 }
 
+// currently used by allocator_openmp and syscall example
 void *allocate_fine_grain(size_t bytes)
 {
   bytes = 4 * ((bytes + 3) / 4);  // fill uses a multiple of four
@@ -247,5 +248,4 @@ hsa_amd_memory_pool_t hsa_pool::find_fine_grain_pool_or_abort()
 
 }  // namespace allocator
 
-void init() { allocator::hsa_pool::fine(); }
 }  // namespace hostrpc

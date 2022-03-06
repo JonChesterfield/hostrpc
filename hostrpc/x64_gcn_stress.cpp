@@ -264,9 +264,6 @@ TEST_CASE("x64_gcn_stress")
 {
   hsa::init hsa;
   {
-    {
-      hostrpc::init();
-    }
     using namespace hostrpc;
 
     hsa_agent_t kernel_agent = hsa::find_a_gpu_or_exit();
@@ -321,8 +318,8 @@ TEST_CASE("x64_gcn_stress")
 
     HOSTRPC_ATOMIC(bool) server_live(true);
     SZ N{size_p(kernel_agent)};
-    hostrpc::x64_gcn_type<SZ> p(N, fine_grained_region.handle,
-                                coarse_grained_region.handle);
+    hostrpc::x64_gcn_type<SZ> p(
+        N, {}, {fine_grained_region.handle, coarse_grained_region.handle});
 
     // Great error from valgrind on gfx1010:
     // Address 0x8e08000 is in a --- mapped file /dev/dri/renderD128 segment

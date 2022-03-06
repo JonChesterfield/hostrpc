@@ -20,8 +20,10 @@ struct global
   std::unique_ptr<wrap_state> state;
 
   global()
-      : state(std::make_unique<wrap_state>(std::make_unique<type>(SZ),
-                                           SZ.value()))
+      : state(std::make_unique<wrap_state>(
+            std::make_unique<type>(SZ, hostrpc::arch::x64{},
+                                   hostrpc::arch::x64{}),
+            SZ.value()))
   {
   }
   ~global() {}

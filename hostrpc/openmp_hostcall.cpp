@@ -416,7 +416,7 @@ unsigned long hostrpc_assign_buffer(hsa_agent_t agent, hsa_queue_t *this_Q,
   hsa_region_t coarse_grain = hsa::region_coarse_grained(agent);
 
   storage.stash[device_id] =
-      storage_t::type{size, fine_grain.handle, coarse_grain.handle};
+      storage_t::type{size, {}, {fine_grain.handle, coarse_grain.handle}};
 
   {
     auto alloc = storage_t::type::storage_type::AllocLocal();
