@@ -1,5 +1,6 @@
 #include "EvilUnit.h"
 #include "thirdparty/dlwrap.h"
+#include "thirdparty/make_function.h"
 #include <assert.h>
 
 #include "detail/tuple.hpp"
@@ -23,13 +24,7 @@ __attribute__((noinline)) extern "C" void target(unsigned ID,
   asm volatile("" : "+r"(bytes), "+r"(ID)::"memory");
 }
 
-template <typename F>
-struct trait2;
-template <typename R, typename... Ts>
-struct trait2<R (*)(Ts...)>
-{
-  using tuple_type = hostrpc::cxx::tuple<R, Ts...>;
-};
+
 // https://stackoverflow.com/questions/687490/how-do-i-expand-a-tuple-into-variadic-template-functions-arguments,
 // modified to work with local libc++ functions might want get to be a free
 // function instead of a member of tuple (matches std, seems to be because
@@ -37,6 +32,15 @@ struct trait2<R (*)(Ts...)>
 
 namespace detail
 {
+
+template <typename F>
+struct FunctionToTuple;
+template <typename R, typename... Ts>
+struct FunctionToTuple<R (*)(Ts...)>
+{
+  using Type = hostrpc::cxx::tuple<R, Ts...>;
+};
+
 template <size_t N>
 struct Apply
 {
@@ -77,33 +81,35 @@ struct function_pointer;
 }
 }  // namespace dlwrap
 
+// Each instantiation of the macro allocates a new integer and associates
+// it with the current symbol
 #define DLWRAP_SYNTAX(SYMBOL, ARITY)                              \
   DLWRAP_INC();                                                   \
   namespace dlwrap                                                \
   {                                                               \
-  struct SYMBOL##_Trait : public dlwrap::trait<decltype(&SYMBOL)> \
+    struct SYMBOL##_Trait                                         \
   {                                                               \
     enum                                                          \
     {                                                             \
       ID = DLWRAP_ID() - 1,                                       \
     };                                                            \
-    using T = dlwrap::trait<decltype(&SYMBOL)>;                   \
+    using T = llvm::make_function::trait<decltype(&SYMBOL)>;      \
     static bool call_by_integer(unsigned reqID, unsigned char *b) \
     {                                                             \
       if (reqID != ID) return false;                              \
-      trait2<decltype(&SYMBOL)>::tuple_type tmp;                  \
+      detail::FunctionToTuple<decltype(&SYMBOL)>::Type tmp;       \
       tmp.from_bytes(b);                                          \
       T::ReturnType res = apply(&SYMBOL, tmp.rest);               \
       tmp.value = res;                                            \
       tmp.into_bytes(b);                                          \
       return true;                                                \
     }                                                             \
-    /*todo: specify argument types directly */                    \
+    /*todo: specify argument types directly? */                   \
     template <typename... Ts>                                     \
     static T::ReturnType this_shimfunction(Ts... t)               \
     {                                                             \
       using R = T::ReturnType;                                    \
-      trait2<decltype(&SYMBOL)>::tuple_type tup(R{}, t...);       \
+      detail::FunctionToTuple<decltype(&SYMBOL)>::Type tup(R{}, t...); \
       unsigned char bytes[tup.count_bytes()];                     \
       tup.into_bytes(bytes);                                      \
       target(ID, bytes);                                          \
@@ -112,7 +118,7 @@ struct function_pointer;
     }                                                             \
     static constexpr T::FunctionType get()                        \
     {                                                             \
-      verboseAssert<ARITY, trait<decltype(&SYMBOL)>::nargs>();    \
+      verboseAssert<ARITY, T::nargs>(); \
       return &this_shimfunction;                                  \
     }                                                             \
   };                                                              \
@@ -124,7 +130,7 @@ struct function_pointer;
       return SYMBOL##_Trait::call_by_integer;                     \
     }                                                             \
   };                                                              \
-  }
+  } MAKE_FUNCTION(SYMBOL, dlwrap::SYMBOL##_Trait::this_shimfunction, decltype(&SYMBOL), ARITY)
 
 extern "C" float func(int x, char y, double z);
 extern "C" int func2(int x, char y, double z);
@@ -133,14 +139,6 @@ extern "C" float func3(char y, double z);
 DLWRAP_SYNTAX(func, 3);
 DLWRAP_SYNTAX(func2, 3);
 DLWRAP_SYNTAX(func3, 2);
-
-// Implement global symbols with the correct return + argument types
-// as calls through a (constexpr) function pointer that knows the
-// corresponding integer enumeration for said function and how to
-// serialise the arguments.
-DLWRAP_INSTANTIATE(func, func, 3);
-DLWRAP_INSTANTIATE(func2, func2, 3);
-DLWRAP_INSTANTIATE(func3, func3, 2);
 
 template <size_t N, size_t... Is>
 constexpr std::array<

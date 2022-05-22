@@ -57,7 +57,7 @@
 // DLWRAP(foo, 2) expands to:
 //
 // namespace dlwrap {
-// struct foo_Trait : public dlwrap::trait<decltype(&foo)> {
+// struct foo_Trait {
 //   using T = dlwrap::trait<decltype(&foo)>;
 //   static T::FunctionType get() {
 //     constexpr size_t Index = getIndex();

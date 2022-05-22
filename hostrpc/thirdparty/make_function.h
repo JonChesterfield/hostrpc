@@ -62,6 +62,7 @@ template <typename R, typename... Ts> struct trait<R (*)(Ts...)> {
     typedef typename std::tuple_element<I, std::tuple<Ts...>>::type type;
 #endif
   };
+  typedef R (*FunctionType)(Ts...);
 };
 
 } // namespace make_function
