@@ -30,8 +30,8 @@
 
 // Essentially equivalent to instantiating named copies of:
 // template <typename R, typename... Ts>
-// R func(Ts... ts) {
-//   return other(ts...);
+// R DEFINE_SYMBOL(Ts... ts) {
+//   return USING_SYMBOL(ts...);
 // }
 
 #if !__has_builtin(__type_pack_element)
@@ -47,8 +47,6 @@ constexpr bool verboseAssert() {
   static_assert(Requested == Required, "Arity Error");
   return Requested == Required;
 }
-
-//      verboseAssert<ARITY, trait<decltype(&SYMBOL)>::nargs>();
 
 template <typename F> struct trait;
 template <typename R, typename... Ts> struct trait<R (*)(Ts...)> {

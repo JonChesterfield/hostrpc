@@ -1,10 +1,11 @@
 #include "EvilUnit.h"
-#include "thirdparty/dlwrap.h"
 #include "thirdparty/make_function.h"
 #include <assert.h>
 
 #include "detail/tuple.hpp"
 #include <stdint.h>
+
+#include <array>
 
 template <typename... T>
 __attribute__((used)) bool round_trip(hostrpc::cxx::tuple<T...> const &t)
@@ -32,7 +33,33 @@ __attribute__((noinline)) extern "C" void target(unsigned ID,
 
 namespace detail
 {
+namespace type
+{
+// Book keeping is by type specialization
 
+template <size_t S> struct count {
+  static constexpr size_t N = count<S - 1>::N;
+};
+
+template <> struct count<0> { static constexpr size_t N = 0; };
+
+// Get a constexpr size_t ID, starts at zero
+#define HOSTRPC_CURRENT_IDENTIFIER() (detail::type::count<__LINE__>::N)
+
+// Increment value returned by HOSTRPC_CURRENT_IDENTIFIER
+#define HOSTRPC_INCREMENT_IDENTIFIER()                                                           \
+  template <> struct detail::type::count<__LINE__> {                           \
+    static constexpr size_t N = 1 + detail::type::count<__LINE__ - 1>::N;      \
+  }
+
+template <size_t N>
+struct function_pointer;
+  
+} // namespace type
+
+
+
+  
 template <typename F>
 struct FunctionToTuple;
 template <typename R, typename... Ts>
@@ -72,26 +99,17 @@ inline auto apply(F &&f, T &&t)
       hostrpc::cxx::forward<F>(f), hostrpc::cxx::forward<T>(t));
 }
 
-namespace dlwrap
-{
-namespace type
-{
-template <size_t N>
-struct function_pointer;
-}
-}  // namespace dlwrap
-
 // Each instantiation of the macro allocates a new integer and associates
 // it with the current symbol
-#define DLWRAP_SYNTAX(SYMBOL, ARITY)                              \
-  DLWRAP_INC();                                                   \
-  namespace dlwrap                                                \
+#define HOSTRPC_SYNTAX(SYMBOL, ARITY)                              \
+  HOSTRPC_INCREMENT_IDENTIFIER();                                                   \
+  namespace detail                                                \
   {                                                               \
     struct SYMBOL##_Trait                                         \
   {                                                               \
     enum                                                          \
     {                                                             \
-      ID = DLWRAP_ID() - 1,                                       \
+      ID = HOSTRPC_CURRENT_IDENTIFIER() - 1,                                       \
     };                                                            \
     using T = llvm::make_function::trait<decltype(&SYMBOL)>;      \
     static bool call_by_integer(unsigned reqID, unsigned char *b) \
@@ -118,43 +136,44 @@ struct function_pointer;
     }                                                             \
     static constexpr T::FunctionType get()                        \
     {                                                             \
-      verboseAssert<ARITY, T::nargs>(); \
+      llvm::make_function::verboseAssert<ARITY, T::nargs>();      \
       return &this_shimfunction;                                  \
     }                                                             \
   };                                                              \
   template <>                                                     \
-  struct dlwrap::type::function_pointer<DLWRAP_ID() - 1>          \
+  struct detail::type::function_pointer<HOSTRPC_CURRENT_IDENTIFIER() - 1>          \
   {                                                               \
     static constexpr bool (*call())(unsigned, unsigned char *)    \
     {                                                             \
       return SYMBOL##_Trait::call_by_integer;                     \
     }                                                             \
   };                                                              \
-  } MAKE_FUNCTION(SYMBOL, dlwrap::SYMBOL##_Trait::this_shimfunction, decltype(&SYMBOL), ARITY)
+  } MAKE_FUNCTION(SYMBOL, detail::SYMBOL##_Trait::this_shimfunction, decltype(&SYMBOL), ARITY)
 
 extern "C" float func(int x, char y, double z);
 extern "C" int func2(int x, char y, double z);
 extern "C" float func3(char y, double z);
 
-DLWRAP_SYNTAX(func, 3);
-DLWRAP_SYNTAX(func2, 3);
-DLWRAP_SYNTAX(func3, 2);
+HOSTRPC_SYNTAX(func, 3);
+HOSTRPC_SYNTAX(func2, 3);
+HOSTRPC_SYNTAX(func3, 2);
 
 template <size_t N, size_t... Is>
 constexpr std::array<
     bool (*)(unsigned, unsigned char *),
     N> static getFunctionPointerArray(std::index_sequence<Is...>)
 {
-  return {{dlwrap::type::function_pointer<Is>::call()...}};
+  return {{detail::type::function_pointer<Is>::call()...}};
 }
 
 // Call a function based on runtime value of ID, i.e. what was read out of
 // the packet. A switch over the functions marked out with SYNTAX above
 extern "C" void call_by_integer(unsigned reqID, unsigned char *b)
 {
-  static constexpr std::array<bool (*)(unsigned, unsigned char *), DLWRAP_ID()>
-      function_pointers = getFunctionPointerArray<DLWRAP_ID()>(
-          std::make_index_sequence<DLWRAP_ID()>());
+  enum {max_id = HOSTRPC_CURRENT_IDENTIFIER()};
+  static constexpr std::array<bool (*)(unsigned, unsigned char *), max_id>
+      function_pointers = getFunctionPointerArray<max_id>(
+          std::make_index_sequence<max_id>());
 
   // codegens as a jump table
   // function_pointers[reqID](reqID, b);
@@ -170,8 +189,8 @@ extern "C" void call_by_integer(unsigned reqID, unsigned char *b)
     }
 }
 
-#if 0
-float codegen2(int x, double y);
+#if 1
+__attribute__((noinline)) float codegen2(int x, double y){return (float)y;}
 float codegen(int x, double y)
 {
   auto t = hostrpc::cxx::make_tuple(x, y);
