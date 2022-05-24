@@ -19,17 +19,22 @@ __attribute__((used)) bool round_trip(hostrpc::cxx::tuple<T...> const &t)
 
 #if 1
 
-__attribute__((noinline)) extern "C" void target(unsigned ID,
-                                                 unsigned char *bytes)
+struct TargetF
 {
-  asm volatile("" : "+r"(bytes), "+r"(ID)::"memory");
-}
+  // no static operator(), don't want a TargetF{}()
+  __attribute__((noinline)) static void call(unsigned ID, unsigned char *bytes)
+  {
+    asm volatile("" : "+r"(bytes), "+r"(ID)::"memory");
+  }
+};
 
 // https://stackoverflow.com/questions/687490/how-do-i-expand-a-tuple-into-variadic-template-functions-arguments,
 // modified to work with local libc++ functions might want get to be a free
 // function instead of a member of tuple (matches std, seems to be because
 // writing .template everywhere is annoying)
 
+namespace hostrpc
+{
 namespace detail
 {
 namespace type
@@ -49,14 +54,16 @@ struct count<0>
 };
 
 // Get a constexpr size_t ID, starts at zero
-#define HOSTRPC_CURRENT_IDENTIFIER() (detail::type::count<__LINE__>::N)
+#define HOSTRPC_CURRENT_IDENTIFIER() \
+  (::hostrpc::detail::type::count<__LINE__>::N)
 
 // Increment value returned by HOSTRPC_CURRENT_IDENTIFIER
-#define HOSTRPC_INCREMENT_IDENTIFIER()                                    \
-  template <>                                                             \
-  struct detail::type::count<__LINE__>                                    \
-  {                                                                       \
-    static constexpr size_t N = 1 + detail::type::count<__LINE__ - 1>::N; \
+#define HOSTRPC_INCREMENT_IDENTIFIER()                       \
+  template <>                                                \
+  struct ::hostrpc::detail::type::count<__LINE__>            \
+  {                                                          \
+    static constexpr size_t N =                              \
+        1 + ::hostrpc::detail::type::count<__LINE__ - 1>::N; \
   }
 
 template <size_t N>
@@ -94,61 +101,69 @@ struct Apply<0>
     return hostrpc::cxx::forward<F>(f)(hostrpc::cxx::forward<A>(a)...);
   }
 };
-}  // namespace detail
 
 template <typename F, typename T>
 inline auto apply(F &&f, T &&t)
 {
-  return detail::Apply<hostrpc::cxx::remove_reference<T>::type::size()>::apply(
+  return Apply<hostrpc::cxx::remove_reference<T>::type::size()>::apply(
       hostrpc::cxx::forward<F>(f), hostrpc::cxx::forward<T>(t));
 }
 
+}  // namespace detail
+
+}  // namespace hostrpc
+
 // Each instantiation of the macro allocates a new integer and associates
 // it with the current symbol
-#define HOSTRPC_SYNTAX(SYMBOL, ARITY)                                     \
-  HOSTRPC_INCREMENT_IDENTIFIER();                                         \
-  namespace detail                                                        \
-  {                                                                       \
-  struct SYMBOL##_Trait                                                   \
-  {                                                                       \
-    enum                                                                  \
-    {                                                                     \
-      ID = HOSTRPC_CURRENT_IDENTIFIER() - 1,                              \
-    };                                                                    \
-    using T = llvm::make_function::trait<decltype(&SYMBOL)>;              \
-    static bool call_by_integer(unsigned reqID, unsigned char *b)         \
-    {                                                                     \
-      if (reqID != ID) return false;                                      \
-      detail::FunctionToTuple<decltype(&SYMBOL)>::Type tmp;               \
-      tmp.from_bytes(b);                                                  \
-      T::ReturnType res = apply(&SYMBOL, tmp.rest);                       \
-      tmp.value = res;                                                    \
-      tmp.into_bytes(b);                                                  \
-      return true;                                                        \
-    }                                                                     \
-    /*todo: specify argument types directly? */                           \
-    template <typename... Ts>                                             \
-    static T::ReturnType this_shimfunction(Ts... t)                       \
-    {                                                                     \
-      using R = T::ReturnType;                                            \
-      detail::FunctionToTuple<decltype(&SYMBOL)>::Type tup(R{}, t...);    \
-      unsigned char bytes[tup.count_bytes()];                             \
-      tup.into_bytes(bytes);                                              \
-      target(ID, bytes);                                                  \
-      tup.from_bytes(bytes);                                              \
-      return tup.template get<0>();                                       \
-    }                                                                     \
-  };                                                                      \
-  template <>                                                             \
-  struct detail::type::function_pointer<HOSTRPC_CURRENT_IDENTIFIER() - 1> \
-  {                                                                       \
-    static constexpr bool (*call())(unsigned, unsigned char *)            \
-    {                                                                     \
-      return SYMBOL##_Trait::call_by_integer;                             \
-    }                                                                     \
-  };                                                                      \
-  }                                                                       \
-  MAKE_FUNCTION(SYMBOL, detail::SYMBOL##_Trait::this_shimfunction,        \
+#define HOSTRPC_SYNTAX(SYMBOL, ARITY)                                        \
+  HOSTRPC_INCREMENT_IDENTIFIER();                                            \
+  namespace hostrpc                                                          \
+  {                                                                          \
+  namespace detail                                                           \
+  {                                                                          \
+  struct SYMBOL##_Trait                                                      \
+  {                                                                          \
+    enum                                                                     \
+    {                                                                        \
+      ID = HOSTRPC_CURRENT_IDENTIFIER() - 1,                                 \
+    };                                                                       \
+    using T = llvm::make_function::trait<decltype(&SYMBOL)>;                 \
+    static bool call_by_integer(unsigned reqID, unsigned char *b)            \
+    {                                                                        \
+      if (reqID != ID) return false;                                         \
+      ::hostrpc::detail::FunctionToTuple<decltype(&SYMBOL)>::Type tmp;       \
+      tmp.from_bytes(b);                                                     \
+      T::ReturnType res = ::hostrpc::detail::apply(&SYMBOL, tmp.rest);       \
+      tmp.value = res;                                                       \
+      tmp.into_bytes(b);                                                     \
+      return true;                                                           \
+    }                                                                        \
+    /*todo: specify argument types directly? */                              \
+    template <typename TargetFunctor, typename... Ts>                        \
+    static T::ReturnType this_shimfunction(Ts... t)                          \
+    {                                                                        \
+      ::hostrpc::detail::FunctionToTuple<decltype(&SYMBOL)>::Type tup(       \
+          T::ReturnType{}, t...);                                            \
+      unsigned char bytes[tup.count_bytes()];                                \
+      tup.into_bytes(bytes);                                                 \
+      TargetFunctor::call(ID, bytes);                                        \
+      tup.from_bytes(bytes);                                                 \
+      return tup.template get<0>();                                          \
+    }                                                                        \
+  };                                                                         \
+  template <>                                                                \
+  struct ::hostrpc::detail::type::function_pointer<                          \
+      HOSTRPC_CURRENT_IDENTIFIER() - 1>                                      \
+  {                                                                          \
+    static constexpr bool (*call())(unsigned, unsigned char *)               \
+    {                                                                        \
+      return SYMBOL##_Trait::call_by_integer;                                \
+    }                                                                        \
+  };                                                                         \
+  }                                                                          \
+  }                                                                          \
+  MAKE_FUNCTION(SYMBOL,                                                      \
+                hostrpc::detail::SYMBOL##_Trait::this_shimfunction<TargetF>, \
                 decltype(&SYMBOL), ARITY)
 
 extern "C" float func(int x, char y, double z);
@@ -164,7 +179,7 @@ constexpr hostrpc::cxx::array<
     bool (*)(unsigned, unsigned char *),
     N> static getFunctionPointerArray(hostrpc::cxx::index_sequence<Is...>)
 {
-  return {{detail::type::function_pointer<Is>::call()...}};
+  return {{hostrpc::detail::type::function_pointer<Is>::call()...}};
 }
 
 // Call a function based on runtime value of ID, i.e. what was read out of
