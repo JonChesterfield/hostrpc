@@ -4,6 +4,8 @@
 // Minimal part of lib c++, reimplemented here for use from freestanding code
 // Derived from libc++ where the implementation is not straightforward
 
+#include <stddef.h> // size_t, consider dropping
+
 namespace hostrpc
 {
 namespace cxx
