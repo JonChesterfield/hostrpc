@@ -7,9 +7,9 @@
 
 namespace hostrpc
 {
-uint32_t run_on_hsa_errcount(hsa_executable_t ex, hsa_agent_t agent,
-                             hsa_queue_t *queue, void *kernarg,
-                             const char *name)
+static uint32_t run_on_hsa_errcount(hsa_executable_t ex, hsa_agent_t agent,
+                                    hsa_queue_t *queue, void *kernarg,
+                                    const char *name)
 {
   uint64_t packet_id = hsa::acquire_available_packet_id(queue);
 
@@ -49,8 +49,8 @@ uint32_t run_on_hsa_errcount(hsa_executable_t ex, hsa_agent_t agent,
   return 0;
 }
 
-uint32_t run_on_hsa_errcount(hsa_executable_t ex, hsa_agent_t agent, void *arg,
-                             size_t len, const char *name)
+static uint32_t run_on_hsa_errcount(hsa_executable_t ex, hsa_agent_t agent,
+                                    void *arg, size_t len, const char *name)
 {
   hsa_queue_t *queue;
   {
@@ -114,8 +114,8 @@ uint32_t run_on_hsa_errcount(hsa_executable_t ex, hsa_agent_t agent, void *arg,
   return res;
 }
 
-uint32_t run_on_hsa_errcount(hsa_executable_t ex, void *arg, size_t len,
-                             const char *name)
+static uint32_t run_on_hsa_errcount(hsa_executable_t ex, void *arg, size_t len,
+                                    const char *name)
 {
   hsa::init state;
   (void)arg;

@@ -674,6 +674,7 @@ struct executable
     hsa_executable_symbol_t symbol = get_symbol_by_name(symbol_name);
     if (symbol.handle == sentinel())
       {
+        fprintf(stderr, "get_symbol_by_name failed on %s\n", symbol_name);
         return 0;
       }
 
@@ -688,6 +689,8 @@ struct executable
         return hsa::symbol_get_info_kernel_object(symbol);
       }
 
+    fprintf(stderr, "get_symbol_address_by_name failed on %s, got kind %u\n",
+            symbol_name, kind);
     return 0;
   }
 
@@ -841,7 +844,9 @@ inline void initialize_packet_defaults(uint32_t wavefront_size,
                                          (unsigned char*)packet);
 }
 
-inline hsa_queue_t* create_queue(hsa_agent_t kernel_agent)
+inline hsa_queue_t* create_queue(hsa_agent_t kernel_agent,
+                                 void (*callback)(hsa_status_t, hsa_queue_t*,
+                                                  void*) = nullptr)
 {
   hsa_queue_t* queue;
 
@@ -849,8 +854,8 @@ inline hsa_queue_t* create_queue(hsa_agent_t kernel_agent)
       kernel_agent /* make the queue on this agent */,
       hsa::agent_get_info_queue_max_size(kernel_agent),
       HSA_QUEUE_TYPE_MULTI /* baseline */,
-      NULL /* called on every async event? */,
-      NULL /* data passed to previous */,
+      callback /* called on every async event? */,
+      nullptr /* data passed to previous */,
       // If sizes exceed these values, things are supposed to work slowly
       UINT32_MAX /* private_segment_size, 32_MAX is unknown */,
       UINT32_MAX /* group segment size, as above */, &queue);
@@ -893,6 +898,7 @@ inline void launch_kernel(uint32_t wavefront_size, uint64_t symbol_address,
                           uint64_t inline_argument, uint64_t kernarg_address,
                           hsa_signal_t completion_signal, bool barrier = false)
 {
+  const bool verbose = false;
   uint64_t packet_id = hsa::acquire_available_packet_id(queue);
   hsa_kernel_dispatch_packet_t* packet =
       (hsa_kernel_dispatch_packet_t*)queue->base_address +
@@ -925,14 +931,19 @@ inline void launch_kernel(uint32_t wavefront_size, uint64_t symbol_address,
   __builtin_memcpy(&hardware_doorbell_ptr, doorbell_handle + 8,
                    sizeof(HOSTRPC_ATOMIC(uint64_t*)));
 
-  if (0)
-    printf("Host: Using queue size %u at 0x%lx, writing to 0x%lx\n",
-           queue->size, (uint64_t)queue->base_address, (uint64_t)packet);
-  printf(
-      "Launch kernel on packet_id %lu, db at 0x%lx, indir doorbell at 0x%lx\n",
-      packet_id, (uint64_t)doorbell_handle, (uint64_t)hardware_doorbell_ptr);
+  if (verbose)
+    {
+      if (0)
+        printf("Host: Using queue size %u at 0x%lx, writing to 0x%lx\n",
+               queue->size, (uint64_t)queue->base_address, (uint64_t)packet);
+      printf(
+          "Launch kernel on packet_id %lu, db at 0x%lx, indir doorbell at "
+          "0x%lx\n",
+          packet_id, (uint64_t)doorbell_handle,
+          (uint64_t)hardware_doorbell_ptr);
 
-  hsa_packet::dump_kernel((unsigned char*)packet);
+      hsa_packet::dump_kernel((unsigned char*)packet);
+    }
 #endif
 
   hsa_signal_store_release(queue->doorbell_signal, packet_id);
@@ -949,6 +960,8 @@ inline int launch_kernel(hsa::executable& ex, hsa_queue_t* queue,
   auto it = m.find(std::string(kernel_entry));
   if (it == m.end() || symbol_address == 0)
     {
+      fprintf(stderr, "Looking for symbol %s in kernel info, got address %lu\n",
+              kernel_entry, symbol_address);
       return 1;
     }
   else
@@ -961,6 +974,35 @@ inline int launch_kernel(hsa::executable& ex, hsa_queue_t* queue,
                     barrier);
       return 0;
     }
+}
+
+inline int call_nullary_kernel(hsa::executable& ex, hsa_queue_t* queue,
+                               const char* kernel_entry, bool barrier = false)
+{
+  hsa_signal_t sig;
+  hsa_status_t rc = hsa_signal_create(1, 0, 0, &sig);
+  if (rc != HSA_STATUS_SUCCESS)
+    {
+      fprintf(stderr, "Failed to create signal\n");
+      return 1;
+    }
+
+  int l = launch_kernel(ex, queue, kernel_entry, 0, 0, sig, barrier);
+  if (l != 0)
+    {
+      fprintf(stderr, "Failed to launch kernel %s\n", kernel_entry);
+      hsa_signal_destroy(sig);
+      return l;
+    }
+
+  do
+    {
+    }
+  while (hsa_signal_wait_acquire(sig, HSA_SIGNAL_CONDITION_EQ, 0, 5000,
+                                 HSA_WAIT_STATE_ACTIVE) != 0);
+
+  hsa_signal_destroy(sig);
+  return 0;
 }
 
 inline int copy_host_to_gpu(hsa_agent_t agent, void* dst, const void* src,

@@ -414,23 +414,12 @@ static int main_with_hsa(int argc, char **argv)
       fprintf(stderr, "Spawn queue\n");
     }
 
-  hsa_queue_t *queue;
-  {
-    hsa_status_t rc = hsa_queue_create(
-        kernel_agent /* make the queue on this agent */,
-        hsa::agent_get_info_queue_max_size(kernel_agent),
-        HSA_QUEUE_TYPE_MULTI /* baseline */,
-        callbackQueue /* called on every async event? */,
-        NULL /* data passed to previous */,
-        // If sizes exceed these values, things are supposed to work slowly
-        UINT32_MAX /* private_segment_size, 32_MAX is unknown */,
-        UINT32_MAX /* group segment size, as above */, &queue);
-    if (rc != HSA_STATUS_SUCCESS)
-      {
-        fprintf(stderr, "Failed to create queue\n");
-        exit(1);
-      }
-  }
+  hsa_queue_t *queue = hsa::create_queue(kernel_agent, callbackQueue);
+  if (!queue)
+    {
+      fprintf(stderr, "Failed to create queue\n");
+      exit(1);
+    }
 
   if (hostrpc_print_enable_on_hsa_agent(ex, kernel_agent) != 0)
     {
