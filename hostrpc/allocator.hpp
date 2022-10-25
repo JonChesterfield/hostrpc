@@ -350,9 +350,7 @@ struct store_impl
   typename AllocInboxOutbox::raw recv;
   typename AllocInboxOutbox::raw send;
   typename AllocLocal::raw local_lock;
-  typename AllocLocal::raw local_staging;
   typename AllocRemote::raw remote_lock;
-  typename AllocRemote::raw remote_staging;
 
   HOSTRPC_ANNOTATE store_impl() = default;
   HOSTRPC_ANNOTATE ~store_impl() = default;
@@ -360,16 +358,12 @@ struct store_impl
                               typename AllocInboxOutbox::raw &&recv,
                               typename AllocInboxOutbox::raw &&send,
                               typename AllocLocal::raw &&local_lock,
-                              typename AllocLocal::raw &&local_staging,
-                              typename AllocRemote::raw &&remote_lock,
-                              typename AllocRemote::raw &&remote_staging)
+                              typename AllocRemote::raw &&remote_lock)
       : buffer(hostrpc::cxx::move(buffer)),
         recv(hostrpc::cxx::move(recv)),
         send(hostrpc::cxx::move(send)),
         local_lock(hostrpc::cxx::move(local_lock)),
-        local_staging(hostrpc::cxx::move(local_staging)),
-        remote_lock(hostrpc::cxx::move(remote_lock)),
-        remote_staging(hostrpc::cxx::move(remote_staging))
+        remote_lock(hostrpc::cxx::move(remote_lock))
   {
   }
 
@@ -382,8 +376,7 @@ struct store_impl
   HOSTRPC_ANNOTATE bool valid()
   {
     return buffer.valid() && recv.valid() && send.valid() &&
-           local_lock.valid() && local_staging.valid() && remote_lock.valid() &&
-           remote_staging.valid();
+           local_lock.valid() && remote_lock.valid();
   }
 
   HOSTRPC_ANNOTATE void dump()
@@ -392,9 +385,7 @@ struct store_impl
     recv.dump("recv");
     send.dump("send");
     local_lock.dump("local_lock");
-    local_staging.dump("local_staging");
     remote_lock.dump("remote_lock");
-    remote_staging.dump("remote_staging");
   }
 
   HOSTRPC_ANNOTATE status destroy()
@@ -404,9 +395,7 @@ struct store_impl
     rc = destroy_help(recv, rc);
     rc = destroy_help(send, rc);
     rc = destroy_help(local_lock, rc);
-    rc = destroy_help(local_staging, rc);
     rc = destroy_help(remote_lock, rc);
-    rc = destroy_help(remote_staging, rc);
     return rc;
   }
 

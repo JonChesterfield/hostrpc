@@ -34,14 +34,12 @@ struct x64_alloc_deleter
 template <typename T>
 static T x64_alloc(size_t size, x64_alloc_deleter *store)
 {
-  constexpr size_t bps = T::bits_per_slot();
-  static_assert(bps == 1 || bps == 8, "");
   assert(size % 64 == 0 && "Size must be a multiple of 64");
   constexpr const static size_t align = 64;
   void *memory =
-      hostrpc::allocator::host_libc_impl::allocate(align, size * bps);
+      hostrpc::allocator::host_libc_impl::allocate(align, size);
   typename T::Ty *m =
-      hostrpc::careful_array_cast<typename T::Ty>(memory, size * bps);
+      hostrpc::careful_array_cast<typename T::Ty>(memory, size);
   (*store)(m);
   return {m};
 }
@@ -96,12 +94,10 @@ TEST_CASE("set up single word system")
 
   using server_type = server<Word, SZ>;
 
-  auto send = x64_alloc<client_type::outbox_t>(N, &store);
-  auto recv = x64_alloc<client_type::inbox_t>(N, &store);
+  auto send = x64_alloc<client_type::mailbox_t>(N, &store);
+  auto recv = x64_alloc<client_type::mailbox_t>(N, &store);
   auto client_active = x64_alloc<client_type::lock_t>(N, &store);
-  auto client_staging = x64_alloc<client_type::staging_t>(N, &store);
   auto server_active = x64_alloc<server_type::lock_t>(N, &store);
-  auto server_staging = x64_alloc<server_type::staging_t>(N, &store);
 
   const uint64_t calls_planned = 1024;
   HOSTRPC_ATOMIC(uint64_t) calls_launched(0);
@@ -111,9 +107,8 @@ TEST_CASE("set up single word system")
     safe_thread cl_thrd([&]() {
       client_type cl = {SZ{},
                         client_active,
-                        recv.asInverted<false>(),
-                        send.asInverted<false>(),
-                        client_staging,
+                        recv,
+                        send,
                         &shared_buffer[0]};
 
       fill f(&val);
@@ -137,9 +132,8 @@ TEST_CASE("set up single word system")
     safe_thread sv_thrd([&]() {
       server_type sv = {SZ{},
                         server_active,
-                        send.asInverted<true>(),
-                        recv.asInverted<false>(),
-                        server_staging,
+                        send,
+                        recv,
                         &shared_buffer[0]};
 
       uint32_t loc_arg = 0;

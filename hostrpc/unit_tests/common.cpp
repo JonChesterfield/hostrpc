@@ -27,8 +27,8 @@ void use_result(hostrpc::page_t *page, uint64_t d[8])
 
 namespace hostrpc
 {
-template <typename Word, bool Inverted>
-using bitmap_t = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_DEVICE, Inverted,
+template <typename Word>
+using bitmap_t = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_DEVICE,
                              properties::fine_grain<Word>>;
 }
 
@@ -72,8 +72,8 @@ MODULE(bitmap)
       inverted_storage[i] = m1;
     }
 
-  bitmap_t<Word, false> baseline(baseline_storage);
-  bitmap_t<Word, true> inverted(inverted_storage);
+  bitmap_t<Word> baseline(baseline_storage);
+  bitmap_t<Word> inverted(inverted_storage);
 
   TEST("check initial words")
   {
@@ -81,8 +81,8 @@ MODULE(bitmap)
       {
         for (uint32_t i = 0; i < words; i++)
           {
-            CHECK(baseline.load_word(sz, i) == 0);
-            CHECK(inverted.load_word(sz, i) == 0);
+            CHECK(baseline.load_word<false>(sz, i) == 0);
+            CHECK(inverted.load_word<true>(sz, i) == 0);
             CHECK(bypass_load(&baseline_storage[i]) == 0);
             CHECK(bypass_load(&inverted_storage[i]) == m1);
           }
@@ -97,8 +97,7 @@ MODULE(bitmap)
         for (uint32_t i = 0; i < sz; i++)
           {
             hostrpc::port_t p = static_cast<hostrpc::port_t>(i);
-            ok &= baseline.read_bit(sz, p) == 0;
-            ok &= inverted.read_bit(sz, p) == 0;
+            ok &= baseline.read_bit<false>(sz, p) == 0;
           }
         CHECK(ok);
       }
@@ -113,27 +112,21 @@ MODULE(bitmap)
           {
             hostrpc::port_t p = static_cast<hostrpc::port_t>(i);
             baseline.claim_slot(sz, p);
-            inverted.claim_slot(sz, p);
           }
         for (uint32_t i = 0; i < words; i++)
           {
-            ok &= (baseline.load_word(sz, i) == m1);
-            ok &= (inverted.load_word(sz, i) == m1);
+            ok &= (baseline.load_word<false>(sz, i) == m1);
             ok &= (bypass_load(&baseline_storage[i]) == m1);
-            ok &= (bypass_load(&inverted_storage[i]) == 0);
           }
         for (uint32_t i = 0; i < sz; i++)
           {
             hostrpc::port_t p = static_cast<hostrpc::port_t>(i);
             baseline.release_slot(sz, p);
-            inverted.release_slot(sz, p);
           }
         for (uint32_t i = 0; i < words; i++)
           {
-            ok &= (baseline.load_word(sz, i) == 0);
-            ok &= (inverted.load_word(sz, i) == 0);
+            ok &= (baseline.load_word<false>(sz, i) == 0);
             ok &= (bypass_load(&baseline_storage[i]) == 0);
-            ok &= (bypass_load(&inverted_storage[i]) == m1);
           }
         CHECK(ok);
       }
@@ -148,26 +141,16 @@ MODULE(bitmap)
           {
             hostrpc::port_t p = static_cast<hostrpc::port_t>(i);
 
-            ok &= baseline.read_bit(sz, p) == 0;
+            ok &= baseline.read_bit<false>(sz, p) == 0;
             baseline.claim_slot(sz, p);
-            ok &= baseline.read_bit(sz, p) == 1;
+            ok &= baseline.read_bit<false>(sz, p) == 1;
             baseline.release_slot(sz, p);
-            ok &= baseline.read_bit(sz, p) == 0;
+            ok &= baseline.read_bit<false>(sz, p) == 0;
             baseline.toggle_slot(sz, p);
-            ok &= baseline.read_bit(sz, p) == 1;
+            ok &= baseline.read_bit<false>(sz, p) == 1;
             baseline.toggle_slot(sz, p);
-            ok &= baseline.read_bit(sz, p) == 0;
-
-            ok &= inverted.read_bit(sz, p) == 0;
-            inverted.claim_slot(sz, p);
-            ok &= inverted.read_bit(sz, p) == 1;
-            inverted.release_slot(sz, p);
-            ok &= inverted.read_bit(sz, p) == 0;
-            inverted.toggle_slot(sz, p);
-            ok &= inverted.read_bit(sz, p) == 1;
-            inverted.toggle_slot(sz, p);
-            ok &= inverted.read_bit(sz, p) == 0;
-          }
+            ok &= baseline.read_bit<false>(sz, p) == 0;
+         }
         CHECK(ok);
       }
   }
@@ -179,26 +162,15 @@ MODULE(bitmap)
         for (uint32_t i = 0; i < words; i++)
           {
             Word bl;
-            CHECK(baseline.load_word(sz, i) == 0);
+            CHECK(baseline.load_word<false>(sz, i) == 0);
             while (!baseline.cas(i, 0, m1, &bl))
               ;
             CHECK(bl == 0);
-            CHECK(baseline.load_word(sz, i) == m1);
+            CHECK(baseline.load_word<false>(sz, i) == m1);
             while (!baseline.cas(i, m1, 0, &bl))
               ;
             CHECK(bl == m1);
-            CHECK(baseline.load_word(sz, i) == 0);
-
-            Word il;
-            CHECK(inverted.load_word(sz, i) == 0);
-            while (!inverted.cas(i, 0, m1, &il))
-              ;
-            CHECK(il == 0);
-            CHECK(inverted.load_word(sz, i) == m1);
-            while (!inverted.cas(i, m1, 0, &il))
-              ;
-            CHECK(il == m1);
-            CHECK(inverted.load_word(sz, i) == 0);
+            CHECK(baseline.load_word<false>(sz, i) == 0);
           }
       }
   }

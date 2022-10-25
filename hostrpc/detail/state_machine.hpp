@@ -18,16 +18,17 @@ namespace hostrpc
 // inbox != outbox:
 //   waiting on other agent
 
-template <typename WordT, typename SZT, typename Counter, typename inbox_t_arg,
-          typename outbox_t_arg>
+template <typename WordT, typename SZT, typename Counter, bool InvertedInboxLoad>
 struct state_machine_impl : public SZT, public Counter
 {
   using Word = WordT;
   using SZ = SZT;
   using lock_t = lock_bitmap<Word>;
-  using inbox_t = inbox_t_arg;
-  using outbox_t = outbox_t_arg;
-  using staging_t = slot_bitmap_device_local<Word>;
+
+  using mailbox_t = mailbox_bitmap<Word>;
+  
+  using inbox_t = inbox_bitmap<Word, InvertedInboxLoad>;
+  using outbox_t = outbox_bitmap<Word>;
 
   // TODO: Better assert is same_type
   static_assert(sizeof(Word) == sizeof(typename inbox_t::Word), "");
@@ -49,29 +50,26 @@ struct state_machine_impl : public SZT, public Counter
 
   inbox_t inbox;
   outbox_t outbox;
-  staging_t staging;
 
   static_assert(cxx::is_trivially_copyable<page_t*>::value, "");
   static_assert(cxx::is_trivially_copyable<lock_t>::value, "");
   static_assert(cxx::is_trivially_copyable<inbox_t>::value, "");
   static_assert(cxx::is_trivially_copyable<outbox_t>::value, "");
-  static_assert(cxx::is_trivially_copyable<staging_t>::value, "");
 
   HOSTRPC_ANNOTATE state_machine_impl()
-      : SZ{}, Counter{}, active{}, inbox{}, outbox{}, staging{}
+      : SZ{}, Counter{}, active{}, inbox{}, outbox{}
   {
   }
   HOSTRPC_ANNOTATE ~state_machine_impl() = default;
   HOSTRPC_ANNOTATE state_machine_impl(SZ sz, lock_t active, inbox_t inbox,
-                                      outbox_t outbox, staging_t staging,
+                                      outbox_t outbox,
                                       page_t* shared_buffer)
       : SZ{sz},
         Counter{},
         shared_buffer(shared_buffer),
         active(active),
         inbox(inbox),
-        outbox(outbox),
-        staging(staging)
+        outbox(outbox)
   {
   }
 
@@ -85,8 +83,6 @@ struct state_machine_impl : public SZT, public Counter
     outbox.dump(size());
     fprintf(stderr, "active        %p\n", active.a);
     active.dump(size());
-    fprintf(stderr, "outbox stg    %p\n", staging.a);
-    staging.dump(size());
 #endif
   }
 
@@ -98,7 +94,7 @@ struct state_machine_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE void dump_word(uint32_t size, Word word)
   {
     Word i = inbox.load_word(size, word);
-    Word o = staging.load_word(size, word);
+    Word o = outbox.load_word(size, word);
     Word a = active.load_word(size, word);
     (void)(i + o + a);
 #if HOSTRPC_HAVE_STDIO
@@ -302,7 +298,7 @@ struct state_machine_impl : public SZT, public Counter
     const uint32_t w = index_to_element<Word>(port);
     const uint32_t subindex = index_to_subindex<Word>(port);
     Word i = inbox.load_word(size, w);
-    Word o = staging.load_word(size, w);
+    Word o = outbox.load_word(size, w);
 
     bool out = bits::nthbitset(o, subindex);
     bool in = bits::nthbitset(i, subindex);
@@ -352,7 +348,7 @@ struct state_machine_impl : public SZT, public Counter
   {
     const uint32_t size = this->size();
     Word i = inbox.load_word(size, w);
-    Word o = staging.load_word(size, w);
+    Word o = outbox.load_word(size, w);
     platform::fence_acquire();
     Word r = available_bitmap<Req>(i, o);
     bool available = bits::nthbitset(r, idx);
@@ -374,7 +370,7 @@ struct state_machine_impl : public SZT, public Counter
   {
     const uint32_t size = this->size();
     Word i = inbox.load_word(size, w);
-    Word o = staging.load_word(size, w);
+    Word o = outbox.load_word(size, w);
     Word a = active.load_word(size, w);
     platform::fence_acquire();
 
@@ -477,10 +473,7 @@ struct state_machine_impl : public SZT, public Counter
           {
             if (platform::is_master_lane(active_threads))
               {
-                uint64_t cas_fail_count = 0;
-                uint64_t cas_help_count = 0;
-                staged_claim_slot(size, port, &staging, &outbox,
-                                  &cas_fail_count, &cas_help_count);
+                outbox.claim_slot(size, port);
               }
             break;
           }
@@ -488,10 +481,7 @@ struct state_machine_impl : public SZT, public Counter
           {
             if (platform::is_master_lane(active_threads))
               {
-                uint64_t cas_fail_count = 0;
-                uint64_t cas_help_count = 0;
-                staged_release_slot(size, port, &staging, &outbox,
-                                    &cas_fail_count, &cas_help_count);
+                outbox.release_slot(size, port);
               }
             break;
           }
@@ -499,10 +489,7 @@ struct state_machine_impl : public SZT, public Counter
           {
             if (platform::is_master_lane(active_threads))
               {
-                uint64_t cas_fail_count = 0;
-                uint64_t cas_help_count = 0;
-                staged_toggle_slot(size, port, &staging, &outbox,
-                                   &cas_fail_count, &cas_help_count);
+                outbox.toggle_slot(size, port);
               }
             break;
           }
@@ -535,11 +522,10 @@ struct state_machine_impl : public SZT, public Counter
   }
 };
 
-template <typename WordT, typename SZT, typename Counter, typename inbox_t,
-          typename outbox_t>
+template <typename WordT, typename SZT, typename Counter, bool InvertedInboxLoad>
 template <typename T>
 HOSTRPC_ANNOTATE void
-state_machine_impl<WordT, SZT, Counter, inbox_t, outbox_t>::rpc_close_port(
+state_machine_impl<WordT, SZT, Counter, InvertedInboxLoad>::rpc_close_port(
     T active_threads,
     port_t port)  // Require != port_t::unavailable
 {
@@ -554,13 +540,10 @@ state_machine_impl<WordT, SZT, Counter, inbox_t, outbox_t>::rpc_close_port(
     }
 }
 
-template <typename WordT, typename SZT, typename Counter, typename inbox_t,
-          typename outbox_t>
-template <typename T, typename state_machine_impl<WordT, SZT, Counter, inbox_t,
-                                                  outbox_t>::port_state Req>
+  template <typename WordT, typename SZT, typename Counter, bool InvertedInboxLoad>
+  template <typename T, typename state_machine_impl<WordT, SZT, Counter, InvertedInboxLoad>::port_state Req>
 HOSTRPC_ANNOTATE void
-state_machine_impl<WordT, SZT, Counter, inbox_t,
-                   outbox_t>::rpc_port_wait_until_state(T active_threads,
+  state_machine_impl<WordT, SZT, Counter, InvertedInboxLoad>::rpc_port_wait_until_state(T active_threads,
                                                         port_t port,
                                                         port_state* which)
 {
@@ -570,7 +553,7 @@ state_machine_impl<WordT, SZT, Counter, inbox_t,
   const uint32_t subindex = index_to_subindex<Word>(port);
 
   Word i = inbox.load_word(size, w);
-  Word o = staging.load_word(size, w);
+  Word o = outbox.load_word(size, w);
 
   // current thread assumed to hold lock, thus lock is held
   assert(bits::nthbitset(active.load_word(size, w), subindex));

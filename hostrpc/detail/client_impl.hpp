@@ -51,32 +51,30 @@ enum class client_state : uint8_t
 
 template <typename WordT, typename SZT, typename Counter = counters::client>
 struct client_impl : public state_machine_impl<WordT, SZT, Counter,
-                                               message_bitmap<WordT, false>,
-                                               message_bitmap<WordT, false>>
+                                               false>
 {
   using base =
-      state_machine_impl<WordT, SZT, Counter, message_bitmap<WordT, false>,
-                         message_bitmap<WordT, false>>;
+    state_machine_impl<WordT, SZT, Counter, false>;
   using typename base::state_machine_impl;
 
   using Word = typename base::Word;
   using SZ = typename base::SZ;
   using lock_t = typename base::lock_t;
+  using mailbox_t = typename base::mailbox_t;
   using inbox_t = typename base::inbox_t;
   using outbox_t = typename base::outbox_t;
-  using staging_t = typename base::staging_t;
   template <unsigned I, unsigned O>
   using typed_port_t = typename base::template typed_port_t<I, O>;
 
   HOSTRPC_ANNOTATE client_impl() : base() {}
   HOSTRPC_ANNOTATE ~client_impl() = default;
   HOSTRPC_ANNOTATE client_impl(SZ sz, lock_t active, inbox_t inbox,
-                               outbox_t outbox, staging_t staging,
+                               outbox_t outbox,
                                page_t *shared_buffer)
 
-      : base(sz, active, inbox, outbox, staging, shared_buffer)
+      : base(sz, active, inbox, outbox, shared_buffer)
   {
-    constexpr size_t client_size = 40;
+    constexpr size_t client_size = 32;
 
     // SZ is expected to be zero bytes or a uint
     struct SZ_local : public SZ
@@ -233,7 +231,7 @@ struct client_impl : public state_machine_impl<WordT, SZT, Counter,
   {
     // assumes output live
     assert(bits::nthbitset(
-        base::staging.load_word(this->size(), index_to_element<Word>(port)),
+        base::outbox.load_word(this->size(), index_to_element<Word>(port)),
         index_to_subindex<Word>(port)));
     base::template rpc_port_wait_until_state<T, base::port_state::high_values>(
         active_threads, port);

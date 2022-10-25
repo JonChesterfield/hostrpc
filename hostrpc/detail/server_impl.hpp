@@ -24,20 +24,18 @@ enum class server_state : uint8_t
 
 template <typename WordT, typename SZT, typename Counter = counters::server>
 struct server_impl : public state_machine_impl<WordT, SZT, Counter,
-                                               message_bitmap<WordT, true>,
-                                               message_bitmap<WordT, false>>
+                                               true>
 {
   using base =
-      state_machine_impl<WordT, SZT, Counter, message_bitmap<WordT, true>,
-                         message_bitmap<WordT, false>>;
+    state_machine_impl<WordT, SZT, Counter, true>;
   using typename base::state_machine_impl;
 
   using Word = typename base::Word;
   using SZ = typename base::SZ;
   using lock_t = typename base::lock_t;
+  using mailbox_t = typename base::mailbox_t;
   using inbox_t = typename base::inbox_t;
   using outbox_t = typename base::outbox_t;
-  using staging_t = typename base::staging_t;
   template <unsigned I, unsigned O>
   using typed_port_t = typename base::template typed_port_t<I, O>;
 
@@ -52,11 +50,11 @@ struct server_impl : public state_machine_impl<WordT, SZT, Counter,
   HOSTRPC_ANNOTATE server_impl() : base() {}
   HOSTRPC_ANNOTATE ~server_impl() = default;
   HOSTRPC_ANNOTATE server_impl(SZ sz, lock_t active, inbox_t inbox,
-                               outbox_t outbox, staging_t staging,
+                               outbox_t outbox,
                                page_t* shared_buffer)
-      : base(sz, active, inbox, outbox, staging, shared_buffer)
+      : base(sz, active, inbox, outbox, shared_buffer)
   {
-    constexpr size_t server_size = 40;
+    constexpr size_t server_size = 32;
 
     // SZ is expected to be zero bytes or a uint
     struct SZ_local : public SZ
