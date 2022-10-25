@@ -538,7 +538,7 @@ $CLANGXX $XCUDA $CXXVER hello.cu --cuda-device-only $PTX_VER -c -o hello.o  -I/u
 
 fi
 
-$CLANGXX $CXXVER -Wall -Wextra -O0 -g test_storage.cpp obj/openmp_support.x64.bc obj/host_support.x64.bc $RDIR/lib/libomptarget.so -o test_storage.exe -pthread -ldl -Wl,-rpath=$RDIR/lib && valgrind ./test_storage.exe
+$CLANGXX $CXXVER -Wall -Wextra -O0 -g test_storage.cpp obj/openmp_support.x64.bc obj/host_support.x64.bc $RDIR/lib/libomptarget.so -o test_storage.exe -pthread -ldl -Wl,-rpath=$RDIR/lib && ./test_storage.exe
 
 if (($have_amdgcn)); then
     $LINK obj/openmp_support.x64.bc obj/hsa_support.x64.bc obj/syscall.x64.bc -o obj/demo_bitcode_gcn.omp.bc
