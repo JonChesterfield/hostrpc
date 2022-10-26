@@ -178,6 +178,15 @@ struct client_impl : public state_machine_impl<WordT, SZT, Counter,
     base::template rpc_close_port(active_threads, cxx::move(port));
   }
 
+
+  template <typename T>
+  HOSTRPC_ANNOTATE typed_port_t<0, 0> rpc_open_typed_port_lo(
+      T active_threads, uint32_t scan_from = 0)
+  {
+    return base::template rpc_open_typed_port_lo(active_threads, scan_from);
+  }
+
+  
   template <typename T>
   HOSTRPC_ANNOTATE port_t rpc_open_port(T active_threads)
   {
@@ -275,6 +284,13 @@ struct client : public client_impl<WordT, SZT, Counter>
   HOSTRPC_ANNOTATE bool rpc_invoke_async(T active_threads, Fill &&fill) noexcept
   {
     auto ApplyFill = hostrpc::make_apply<Fill>(cxx::forward<Fill>(fill));
+
+    #if 0
+    typed_port_t<0, 0> tport = base::rpc_open_typed_port_lo(active_threads); // doesn't capture failure
+    typed_port_t<0, 1> send = base::rpc_port_send(active_threads, cxx::move(tport), cxx::move(ApplyFill));
+    base::rpc_close_port(active_threads, cxx::move(send));
+    #endif
+    
     // get a port, send it, don't wait
     port_t port = base::rpc_open_port(active_threads);
     if (port == port_t::unavailable)
@@ -297,6 +313,13 @@ struct client : public client_impl<WordT, SZT, Counter>
     auto ApplyFill = hostrpc::make_apply<Fill>(cxx::forward<Fill>(fill));
     auto ApplyUse = hostrpc::make_apply<Use>(cxx::forward<Use>(use));
 
+    #if 0
+    typed_port_t<0, 0> tport = base::rpc_open_typed_port_lo(active_threads); // doesn't capture failure
+    typed_port_t<0, 1> send = base::rpc_port_send(active_threads, cxx::move(tport), cxx::move(ApplyFill));
+    typed_port_t<1, 0> recv = base::rpc_port_recv(active_threads, cxx::move(send), cxx::move(ApplyUse));
+    base::rpc_close_port(active_threads, cxx::move(recv));
+    #endif
+    
     port_t port = base::rpc_open_port(active_threads);
     if (port == port_t::unavailable)
       {

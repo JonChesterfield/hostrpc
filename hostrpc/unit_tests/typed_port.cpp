@@ -112,6 +112,7 @@ MODULE(create_and_immediately_destroy)
     typed_port_t<0, 1> var0 = cxx::move(make<0, 1>(20));
     (void)(var0 == 20);
     typed_port_t<0, 1> var1 = cxx::move(cxx::move(var0));
+    // (void)(var0 == 20);
     drop(cxx::move(var1));
   }
 

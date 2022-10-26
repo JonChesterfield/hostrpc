@@ -635,7 +635,7 @@ inline void debug_func(const char *file, unsigned int line, const char *func,
 
 }  // namespace detail
 
-// atomics are also be overloaded on different address spaces for some platforms
+// atomics may also be overloaded on different address spaces for some platforms
 // implemented for a slight superset of the subset of T that are presently in
 // use
 

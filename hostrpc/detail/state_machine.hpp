@@ -496,7 +496,7 @@ struct state_machine_impl : public SZT, public Counter
       }
   }
 
-  template <unsigned I, unsigned O, typename T>
+  template <unsigned I, unsigned O, typename T>  
   HOSTRPC_ANNOTATE typed_port_t<I, O> rpc_open_typed_port_impl(
       T active_threads, uint32_t scan_from)
   {

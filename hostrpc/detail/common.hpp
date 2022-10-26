@@ -358,6 +358,7 @@ struct slot_bitmap
     uint32_t w = index_to_element<Word>(i);
     uint32_t subindex = index_to_subindex<Word>(i);
 
+    (void)size;
     if (KnownClearBefore)
       {
         assert(!bits::nthbitset(load_word<false>(size, w), subindex));
@@ -366,7 +367,11 @@ struct slot_bitmap
     if (Prop::hasFetchOp())
       {
         Word mask = bits::setnthbit((Word)0, subindex);
-        Word before = fetch_or(w, mask);
+
+        Ty *addr = &underlying[w];
+        Word before = 
+        platform::atomic_fetch_or<Word, __ATOMIC_ACQ_REL, scope>(addr,
+                                                                 mask);
         return bits::nthbitset(before, subindex);
       }
     else if (KnownClearBefore && Prop::hasAddOp())

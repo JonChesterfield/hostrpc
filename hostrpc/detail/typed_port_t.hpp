@@ -27,6 +27,8 @@ class typed_port_impl_t;
 
 #if HOSTRPC_USE_TYPESTATE
 #define HOSTRPC_RETURN_CONSUMED __attribute__((return_typestate(consumed)))
+#define HOSTRPC_RETURN_UNKNOWN __attribute__((return_typestate(unknown)))
+  
 #define HOSTRPC_CONSUMED_ARG \
   __attribute__((param_typestate(unconsumed))) HOSTRPC_RETURN_CONSUMED
 #define HOSTRPC_CREATED_RES __attribute__((return_typestate(unconsumed)))

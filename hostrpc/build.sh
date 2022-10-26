@@ -382,6 +382,11 @@ $CXX_X64_LD obj/unit_tests/typed_port.x64.bc -o unit_tests/typed_port.x64.exe
 ./unit_tests/typed_port.x64.exe
 
 
+$CXX_X64 unit_tests/maybe.cpp -c -o obj/unit_tests/maybe.x64.bc
+$CXX_X64_LD obj/unit_tests/maybe.x64.bc -o unit_tests/maybe.x64.exe
+./unit_tests/maybe.x64.exe
+
+
 if (($have_amdgcn)); then
 $CXX_GCN unit_tests/common.cpp -c -o obj/unit_tests/common.gcn.bc
 $LINK obj/unit_tests/common.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc amdgcn_loader_device.gcn.bc hostcall.gcn.bc -o obj/unit_tests/common.gcn.linked.bc
