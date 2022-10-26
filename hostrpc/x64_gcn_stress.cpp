@@ -89,7 +89,7 @@ struct use
 #include <cstdint>
 #endif
 
-#define MAX_WAVES (1)
+#define MAX_WAVES (8)
 struct kernel_args
 {
   uint32_t id;
@@ -451,7 +451,7 @@ TEST_CASE("x64_gcn_stress")
 
     // number tasks = MAX_WAVES * nclients * per_client
     unsigned nservers = 8;
-    unsigned nclients = 128;
+    unsigned nclients = 128 / MAX_WAVES;
     unsigned per_client = 4096 * 2;
 
 #ifndef DERIVE_VAL
