@@ -1,5 +1,6 @@
 #include "EvilUnit.h"
 #include <stdint.h>
+#include "../detail/cxx.hpp"
 
 #define HOSTRPC_RETURN_CONSUMED __attribute__((return_typestate(consumed)))
 #define HOSTRPC_RETURN_UNKNOWN __attribute__((return_typestate(unknown)))
@@ -190,37 +191,54 @@ MODULE(create_and_immediately_destroy)
 
 }
 
-#define TEST_TYPESTATE(state)   
 
+template <typename T>
 struct HOSTRPC_CONSUMABLE_CLASS maybe
 {
 
- HOSTRPC_RETURN_UNKNOWN
- maybe(uint32_t payload, bool valid)
- :payload(payload), valid(valid)
+ HOSTRPC_RETURN_UNKNOWN   
+   maybe(T && payload, bool valid)
+   :payload(hostrpc::cxx::forward<T>(payload)),
+   valid(valid)
  {
  }
-
 
   HOSTRPC_CALL_ON_DEAD void consumed() const {}
   HOSTRPC_CALL_ON_LIVE void unconsumed() const {}
   HOSTRPC_CALL_ON_UNKNOWN void unknown() const {}
 
 
-  __attribute__ ((test_typestate(unconsumed)))
-    bool available() { return valid; }
+  HOSTRPC_SET_TYPESTATE(consumed) void kill() const {}
+    HOSTRPC_SET_TYPESTATE(unconsumed) void def() const {}
+    
+   HOSTRPC_CALL_ON_UNKNOWN
+
+
+     
+  operator bool()  __attribute__ ((test_typestate(unconsumed)))
+    {
+      return valid;
+    }
+   #if 0
+  operator bool()  const __attribute__ ((test_typestate(unconsumed)))
+    {
+      return valid;
+    }
+  #endif
 
   HOSTRPC_SET_TYPESTATE(consumed)
- HOSTRPC_CALL_ON_LIVE operator uint32_t()  const
+    HOSTRPC_CALL_ON_LIVE
+    operator T&& ()  
   {
-    return payload;
+    return hostrpc::cxx::move(payload);
   }
 
+  
 
   HOSTRPC_CALL_ON_DEAD  ~maybe() {}
   
  private:
- uint32_t payload;
+ T payload;
  bool valid;
 
 
@@ -229,21 +247,85 @@ struct HOSTRPC_CONSUMABLE_CLASS maybe
 
 MODULE(maybe)
 {
-  TEST("")
+  using maybe_t = maybe<uint32_t>;
+  TEST("happy path, false")
     {
-      maybe i(12, false);
+      
+      maybe_t  i (12, false);
       i.unknown();
 
-      if (i.available())
+      if (i)
         {
           i.unconsumed();
-          uint32_t value = i; (void)value; i.consumed();
+          uint32_t value = i;
+          (void)value;
+          i.consumed();
         }
       else
         {
           i.consumed();
         }
 
+      i.consumed();
+    }
+
+  TEST("happy path, true")
+    {
+      maybe_t i(12, true);
+      i.unknown();
+
+      if (i)
+        {
+          i.unconsumed();
+          uint32_t value = i;
+          (void)value;
+          i.consumed();
+        }
+      else
+        {
+          i.consumed();
+        }
+
+      i.consumed();
+    }
+  
+  TEST("create and ignore is an error")
+    {
+      // maybe_t i(12, false);
+      // maybe_t v(24, true);
+    }
+  
+  TEST("fail to check it")
+    {
+      // maybe_t i(12, true);
+      // uint32_t v = i; (void)v;
+    }
+
+  TEST("check and don't use")
+    {
+      maybe_t i(12, false);
+      i.unknown();
+      if (i)
+        {
+          i.unconsumed();
+        }
+      i.unknown();
+      if (i) {uint32_t d = i; (void)d; }
+      i.consumed();
+    }
+
+  TEST("converting to bool doesn't change state")
+    {
+      maybe_t i(12, false);
+      bool v = i;
+      i.unknown();
+      if (v)
+        {
+          i.unknown();
+        }
+      i.unknown();
+
+      if (i) {uint32_t d = i; (void)d; }
       i.consumed();
     }
   
