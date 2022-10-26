@@ -20,6 +20,7 @@ client_instance_invoke_direct(client_type& c)
     }
 }
 
+#if 0 // looking to delete this api
 extern "C" __attribute__((always_inline)) HOSTRPC_ANNOTATE void
 client_instance_invoke_via_port_runtime(client_type& c)
 {
@@ -30,6 +31,7 @@ client_instance_invoke_via_port_runtime(client_type& c)
   c.rpc_port_recv(active_threads, p, hostrpc::use_nop{});
   c.rpc_close_port(active_threads, p);
 }
+#endif
 
 extern "C" __attribute__((always_inline)) HOSTRPC_ANNOTATE void
 client_instance_invoke_via_typed_port_runtime(client_type& c)
@@ -49,6 +51,7 @@ client_instance_invoke_via_typed_port_runtime(client_type& c)
   c.rpc_close_port(active_threads, cxx::move(p4));
 }
 
+#if 0
 extern "C" __attribute__((always_inline)) HOSTRPC_ANNOTATE void
 client_instance_invoke_via_port_all_active(client_type& c)
 {
@@ -59,6 +62,7 @@ client_instance_invoke_via_port_all_active(client_type& c)
   c.rpc_port_recv(active_threads, p, hostrpc::use_nop{});
   c.rpc_close_port(active_threads, p);
 }
+#endif
 
 extern "C" __attribute__((noinline)) HOSTRPC_ANNOTATE void
 client_instance_from_components(SZ sz, client_type::inbox_t inbox,
@@ -70,6 +74,7 @@ client_instance_from_components(SZ sz, client_type::inbox_t inbox,
   client_instance_invoke_direct(c);
 }
 
+#if 0
 extern "C" __attribute__((noinline)) HOSTRPC_ANNOTATE void
 client_instance_via_port_from_components(SZ sz, client_type::inbox_t inbox,
                                          client_type::outbox_t outbox,
@@ -79,6 +84,7 @@ client_instance_via_port_from_components(SZ sz, client_type::inbox_t inbox,
   client_type c = {sz, active, inbox, outbox, shared_buffer};
   client_instance_invoke_via_port_runtime(c);
 }
+#endif
 
 extern "C" __attribute__((noinline)) HOSTRPC_ANNOTATE void
 client_instance_from_cast(void* from)

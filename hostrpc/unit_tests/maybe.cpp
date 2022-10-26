@@ -144,6 +144,6 @@ MODULE(maybe)
 }
 
 MAIN_MODULE()
-{
+{  
   DEPENDS(maybe);
 }

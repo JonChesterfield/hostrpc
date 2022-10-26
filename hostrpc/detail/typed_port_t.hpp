@@ -2,7 +2,10 @@
 #define TYPED_PORT_T_HPP_INCLUDED
 
 #include "../platform/detect.hpp"
+#include "typestate.hpp"
+
 #include "cxx.hpp"
+#include "maybe.hpp"
 
 namespace hostrpc
 {
@@ -15,36 +18,7 @@ namespace hostrpc
 template <typename Friend, unsigned I, unsigned O>
 class typed_port_impl_t;
 
-#define HOSTRPC_USE_TYPESTATE 1
 
-#if defined(__OPENCL_C_VERSION__)
-// May be able to make this work, need work out why opencl is upset about
-// the definition of cxx::move. Looks like tagging __private or __generic
-// on some of the types is done inconsistently
-#undef HOSTRPC_USE_TYPESTATE
-#define HOSTRPC_USE_TYPESTATE 0
-#endif
-
-#if HOSTRPC_USE_TYPESTATE
-#define HOSTRPC_RETURN_CONSUMED __attribute__((return_typestate(consumed)))
-#define HOSTRPC_RETURN_UNKNOWN __attribute__((return_typestate(unknown)))
-  
-#define HOSTRPC_CONSUMED_ARG \
-  __attribute__((param_typestate(unconsumed))) HOSTRPC_RETURN_CONSUMED
-#define HOSTRPC_CREATED_RES __attribute__((return_typestate(unconsumed)))
-#define HOSTRPC_CALL_ON_LIVE __attribute__((callable_when(unconsumed)))
-#define HOSTRPC_CALL_ON_DEAD __attribute__((callable_when(consumed)))
-#define HOSTRPC_CONSUMABLE_CLASS __attribute__((consumable(unconsumed)))
-#define HOSTRPC_SET_TYPESTATE(X) __attribute__((set_typestate(X)))
-#else
-#define HOSTRPC_RETURN_CONSUMED
-#define HOSTRPC_CONSUMED_ARG
-#define HOSTRPC_CREATED_RES
-#define HOSTRPC_CALL_ON_LIVE
-#define HOSTRPC_CALL_ON_DEAD
-#define HOSTRPC_CONSUMABLE_CLASS
-#define HOSTRPC_SET_TYPESTATE(X)
-#endif
 
 #if HOSTRPC_USE_TYPESTATE
 // It's going to have it's own implementation of cxx::move
@@ -80,6 +54,11 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   HOSTRPC_ANNOTATE HOSTRPC_SET_TYPESTATE(unconsumed) void def() const {}
 
  public:
+
+
+  using maybe = hostrpc::maybe<uint32_t, typed_port_impl_t<Friend, I, O>>;
+  friend maybe;
+
   // can convert it back to a uint32_t for indexing into structures
   HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE constexpr operator uint32_t() const
   {
@@ -136,7 +115,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   {
     static_assert((I <= 1) && (O <= 1), "");
   }
-
+  
   HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE void drop() { kill(); }
   typed_port_impl_t(const typed_port_impl_t &) = delete;
   typed_port_impl_t &operator=(const typed_port_impl_t &) = delete;

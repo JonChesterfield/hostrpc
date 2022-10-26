@@ -1,11 +1,15 @@
 #ifndef HOSTRPC_DETAIL_MAYBE_HPP_INCLUDED
 #define HOSTRPC_DETAIL_MAYBE_HPP_INCLUDED
 
+#include "../platform/detect.hpp"
 #include "typestate.hpp"
 
-namespace hostrpc {
+namespace hostrpc
+{
 
-template <typename T>
+// By default stores a T and returns the same type, but if desired
+// can store a different type and construct it on request
+template <typename T, typename U = T>
 struct HOSTRPC_CONSUMABLE_CLASS maybe
 {
   // Warning: When returning an instance from a function, that
@@ -13,43 +17,38 @@ struct HOSTRPC_CONSUMABLE_CLASS maybe
   // HOSTRPC_RETURN_UNKNOWN
 
   // Starts out with unknown type state
- #if 0
-  HOSTRPC_RETURN_UNKNOWN
-  maybe(T payload, bool valid)
-    : payload(static_cast<T&&>(payload)), valid(valid)
-  {
-    unknown();
-  }
-  #endif
 
   HOSTRPC_RETURN_UNKNOWN
-  maybe(T&& payload, bool valid)
-    : payload(static_cast<T&&>(payload)), valid(valid)
+  HOSTRPC_ANNOTATE
+  maybe(T payload, bool valid)
+      : payload(static_cast<T &&>(payload)), valid(valid)
   {
     unknown();
   }
-  
 
   // Branch on the value, the true side will be 'unconsumed'
   HOSTRPC_CALL_ON_UNKNOWN
-  explicit operator bool() HOSTRPC_TEST_TYPESTATE(unconsumed)
-  {
-    return valid;
-  }
-  
+  HOSTRPC_ANNOTATE
+  explicit operator bool() HOSTRPC_TEST_TYPESTATE(unconsumed) { return valid; }
+
   // When in the true branch, extract T exactly once
   HOSTRPC_SET_TYPESTATE(consumed)
   HOSTRPC_CALL_ON_LIVE
-    operator T &&() { return static_cast<T&&>(payload); }
+  HOSTRPC_ANNOTATE
+  U value() { return static_cast<T &&>(payload); }
 
+  HOSTRPC_SET_TYPESTATE(consumed)
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_ANNOTATE
+  operator U() { return value(); }
+  
   // Errors if the above pattern is not followed
-  HOSTRPC_CALL_ON_DEAD ~maybe() {}
+  HOSTRPC_CALL_ON_DEAD HOSTRPC_ANNOTATE ~maybe() {}
 
   // Useful for checking assumptions
-  HOSTRPC_CALL_ON_DEAD void consumed() const {}
-  HOSTRPC_CALL_ON_LIVE void unconsumed() const {}
-  HOSTRPC_CALL_ON_UNKNOWN void unknown() const {}
-
+  HOSTRPC_CALL_ON_DEAD HOSTRPC_ANNOTATE void consumed() const {}
+  HOSTRPC_CALL_ON_LIVE HOSTRPC_ANNOTATE void unconsumed() const {}
+  HOSTRPC_CALL_ON_UNKNOWN HOSTRPC_ANNOTATE void unknown() const {}
 
  private:
   T payload;
@@ -61,7 +60,6 @@ struct HOSTRPC_CONSUMABLE_CLASS maybe
   maybe &operator=(const maybe &other) = delete;
   maybe &operator=(maybe &&other) = delete;
 };
-}
-
+}  // namespace hostrpc
 
 #endif

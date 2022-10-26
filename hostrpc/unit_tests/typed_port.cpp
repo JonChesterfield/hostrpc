@@ -1,5 +1,6 @@
 #include "../detail/state_machine.hpp"
 #include "EvilUnit.h"
+#include "../detail/maybe.hpp"
 
 namespace
 {
@@ -122,4 +123,33 @@ MODULE(create_and_immediately_destroy)
   TEST("11") { drop(make<1, 1>(45)); }
 }
 
-MAIN_MODULE() { DEPENDS(create_and_immediately_destroy); }
+
+static MODULE(maybe)
+{
+  using namespace hostrpc;
+  TEST("hack default")
+    {
+      typed_port_t<0,1>::maybe val {{}, false};
+      if (val)
+        {
+          typed_port_t<0, 1> tmp = val;
+          drop(cxx::move(tmp));
+        }      
+    }
+
+  TEST("hack non-default")
+    {
+      typed_port_t<0,1>::maybe val {42, false};
+      if (val)
+        {
+          typed_port_t<0, 1> tmp = val;
+          CHECK(tmp == 42);
+          drop(cxx::move(tmp));
+        }      
+    }
+
+  
+  
+}
+
+MAIN_MODULE() { DEPENDS(create_and_immediately_destroy); DEPENDS(maybe);}

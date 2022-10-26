@@ -152,14 +152,14 @@ struct state_machine_impl : public SZT, public Counter
     return rpc_open_typed_port_impl<0, 0, T>(active_threads, scan_from);
   }
 
-  #if 0
+
   template <typename T>
-  HOSTRPC_ANNOTATE maybe<typed_port_t<0, 0>> rpc_try_open_typed_port_lo(
+  HOSTRPC_ANNOTATE typename typed_port_t<0, 0>::maybe rpc_try_open_typed_port_lo(
       T active_threads, uint32_t scan_from = 0)
   {
     return rpc_try_open_typed_port_impl<0, 0, T>(active_threads, scan_from);
   }
-  #endif
+
   
   template <typename T>
   HOSTRPC_ANNOTATE typed_port_t<1, 1> rpc_open_typed_port_hi(
@@ -531,12 +531,11 @@ struct state_machine_impl : public SZT, public Counter
     goto try_again;
   }
 
-  #if 0
-  template <unsigned I, unsigned O, typename T>  
-  HOSTRPC_ANNOTATE maybe<typed_port_t<I, O>> rpc_try_open_typed_port_impl(
+  template <unsigned I, unsigned O, typename T>
+  HOSTRPC_RETURN_UNKNOWN
+  HOSTRPC_ANNOTATE typename typed_port_t<I, O>::maybe rpc_try_open_typed_port_impl(
       T active_threads, uint32_t scan_from)
   {
-    using RTy =  maybe<typed_port_t<I,O>>;
     
     static_assert(I == O, "");
     constexpr port_state Req =
@@ -548,14 +547,14 @@ struct state_machine_impl : public SZT, public Counter
     if (static_cast<uint32_t>(p) !=
         static_cast<uint32_t>(port_state::unavailable))
       {
-        return {typed_port_t<I, O>(static_cast<uint32_t>(p)), true};
+        return {static_cast<uint32_t>(p), true};
       }
     else
       {
-        return {typed_port_t<I, O>(static_cast<uint32_t>(0)), false};
+        return {0, false};
       }
   }
-  #endif
+
 };
 
 

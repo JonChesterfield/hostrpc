@@ -179,15 +179,17 @@ struct client_impl : public state_machine_impl<WordT, SZT, Counter,
   }
 
 
-#if 0
   template <typename T>
-  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN maybe<typed_port_t<0, 0>> rpc_try_open_typed_port_lo(
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename typed_port_t<0, 0>::maybe rpc_try_open_typed_port_lo(
       T active_threads, uint32_t scan_from = 0)
   {
     return base::template rpc_try_open_typed_port_lo(active_threads, scan_from);
   }
-#endif
-  
+
+  #if 1
+  // Would like to delete these.
+  // printf_client.hpp makes that challenging as it's all written in terms of raw uint32_t
+  // It includes interesting use cases like multiple calls to send one after another on the same port
   template <typename T>
   HOSTRPC_ANNOTATE port_t rpc_open_port(T active_threads)
   {
@@ -269,6 +271,8 @@ struct client_impl : public state_machine_impl<WordT, SZT, Counter,
   {
     base::rpc_close_port(active_threads, port);
   }
+
+  #endif
 };
 
 template <typename WordT, typename SZT, typename Counter = counters::client>
@@ -286,33 +290,16 @@ struct client : public client_impl<WordT, SZT, Counter>
   {
     auto ApplyFill = hostrpc::make_apply<Fill>(cxx::forward<Fill>(fill));
 
-#if 0
-    
-    maybe<typed_port_t<0, 0>> maybetport = base::rpc_try_open_typed_port_lo(active_threads); // doesn't capture failure
-
-    if (!maybetport)
+    if (auto maybe = base::rpc_try_open_typed_port_lo(active_threads))
       {
-        return false;
-      }
-    else
-      {
-        typed_port_t<0, 0> tport = maybetport;
-        typed_port_t<0, 1> send = base::rpc_port_send(active_threads, cxx::move(tport), cxx::move(ApplyFill));
+        auto send = base::rpc_port_send(active_threads, maybe.value(), cxx::move(ApplyFill));
         base::rpc_close_port(active_threads, cxx::move(send));
         return true;
       }
-    
-#else
-    // get a port, send it, don't wait
-    port_t port = base::rpc_open_port(active_threads);
-    if (port == port_t::unavailable)
+    else
       {
-        return false;
+       return false;
       }
-    base::rpc_port_send(active_threads, port, cxx::move(ApplyFill));
-    base::rpc_close_port(active_threads, port);
-    return true;
-#endif
   }
 
   // rpc_invoke returns true if it successfully launched the task
@@ -325,24 +312,18 @@ struct client : public client_impl<WordT, SZT, Counter>
   {
     auto ApplyFill = hostrpc::make_apply<Fill>(cxx::forward<Fill>(fill));
     auto ApplyUse = hostrpc::make_apply<Use>(cxx::forward<Use>(use));
-
-    #if 0
-    typed_port_t<0, 0> tport = base::rpc_open_typed_port_lo(active_threads); // doesn't capture failure
-    typed_port_t<0, 1> send = base::rpc_port_send(active_threads, cxx::move(tport), cxx::move(ApplyFill));
-    typed_port_t<1, 0> recv = base::rpc_port_recv(active_threads, cxx::move(send), cxx::move(ApplyUse));
-    base::rpc_close_port(active_threads, cxx::move(recv));
-    #endif
     
-    port_t port = base::rpc_open_port(active_threads);
-    if (port == port_t::unavailable)
+    if (auto maybe = base::rpc_try_open_typed_port_lo(active_threads))
+      {
+        auto send = base::rpc_port_send(active_threads, maybe.value(), cxx::move(ApplyFill));
+        auto recv = base::rpc_port_recv(active_threads, cxx::move(send), cxx::move(ApplyUse));
+        base::rpc_close_port(active_threads, cxx::move(recv));
+        return true;
+      }
+    else
       {
         return false;
-      }
-    base::rpc_port_send(active_threads, port, cxx::move(ApplyFill));
-    base::rpc_port_recv(active_threads, port,
-                        cxx::move(ApplyUse));  // wait for result
-    base::rpc_close_port(active_threads, port);
-    return true;
+      }   
   }
 
   // TODO: Probably want one of these convenience functions for each rpc_invoke,
