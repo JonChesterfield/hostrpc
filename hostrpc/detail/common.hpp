@@ -350,7 +350,39 @@ struct slot_bitmap
 
   // claim / release / toggle assume this is the only possible writer to that index
 
-  
+  // Returns value of bit before writing true to it
+  template <bool KnownClearBefore>
+  HOSTRPC_ANNOTATE bool set_slot(uint32_t size, port_t i)
+  {
+    assert(static_cast<uint32_t>(i) < size);
+    uint32_t w = index_to_element<Word>(i);
+    uint32_t subindex = index_to_subindex<Word>(i);
+
+    if (KnownClearBefore)
+      {
+        assert(!bits::nthbitset(load_word<false>(size, w), subindex));
+      }
+    
+    if (Prop::hasFetchOp())
+      {
+        Word mask = bits::setnthbit((Word)0, subindex);
+        Word before = fetch_or(w, mask);
+        return bits::nthbitset(before, subindex);
+      }
+    else if (KnownClearBefore && Prop::hasAddOp())
+      {
+        Word addend = (Word)1 << subindex;
+        Word before = fetch_add(w, addend);
+        return bits::nthbitset(before, subindex);       
+      }
+    else
+      {
+        // cas is currently hidden behind fetch_or but probably shouldn't be
+        Word mask = bits::setnthbit((Word)0, subindex);
+        Word before = fetch_or(w, mask);
+        return bits::nthbitset(before, subindex);
+      }
+  }
   
   // assumes slot available
   HOSTRPC_ANNOTATE void claim_slot(uint32_t size, port_t i)
@@ -360,33 +392,8 @@ struct slot_bitmap
     uint32_t w = index_to_element<Word>(i);
     uint32_t subindex = index_to_subindex<Word>(i);
     assert(!bits::nthbitset(load_word<false>(size, w), subindex));
-
-    // or with only the slot set
-    static_assert(Prop::hasCasOp(),"");
-    
-    // TODO: Drop the cas fallback path in fetch, possibly dispatch explicitly
-    if (Prop::hasFetchOp())
-      {
-        Word mask = bits::setnthbit((Word)0, subindex);
-        Word before = fetch_or(w, mask);
-        assert(!bits::nthbitset(before, subindex));
-        (void)before;
-      }
-    else if (Prop::hasAddOp())
-      {
-        Word addend = (Word)1 << subindex;
-        Word before = fetch_add(w, addend);
-        assert(!bits::nthbitset(before, subindex));
-        (void)before;
-      }
-    else
-      {
-        // cas is currently hidden behind fetch_or but probably shouldn't be
-        Word mask = bits::setnthbit((Word)0, subindex);
-        Word before = fetch_or(w, mask);
-        assert(!bits::nthbitset(before, subindex));
-        (void)before;
-      }
+    bool before = set_slot<true>(size, i);
+    assert(before == false);
   }
 
   // assumes slot taken
@@ -663,10 +670,35 @@ public:
     a.dump(size);
   }
 
-    // cas, true on success
-  // on return true, loaded contains active[w]
   template <typename T>
-  HOSTRPC_ANNOTATE bool try_claim_empty_slot(T active_threads, uint32_t size,
+  HOSTRPC_ANNOTATE bool try_claim_empty_slot_nospin(T active_threads, uint32_t size,
+                                                    uint32_t slot)
+  {
+    // requires hasFetchOp for correctness, need to refactor that    
+    assert(slot < size);
+
+    uint32_t before = 0;
+    if (platform::is_master_lane(active_threads))
+      {
+        before = a.template set_slot<false>(size, static_cast<port_t>(slot)) ? 1u : 0u;
+      }
+    before = platform::broadcast_master(active_threads, before);
+    
+    if (before)
+      {
+        // was already locked
+        return false;
+      }
+    else
+      {
+        return true;
+      }   
+  }
+
+  
+  // cas, true on success
+  template <typename T>
+  HOSTRPC_ANNOTATE bool try_claim_empty_slot_cas(T active_threads, uint32_t size,
                                              uint32_t slot,
                                              uint64_t *cas_fail_count)
   {
@@ -723,6 +755,23 @@ public:
   }
 
 
+  template <typename T>
+  HOSTRPC_ANNOTATE bool try_claim_empty_slot(T active_threads, uint32_t size,
+                                             uint32_t slot,
+                                             uint64_t *cas_fail_count)
+  {
+    if (Prop::hasFetchOp())
+      {
+        *cas_fail_count = 0;
+        return try_claim_empty_slot_nospin(active_threads, size, slot);
+      }
+    else
+      {
+        return try_claim_empty_slot_cas(active_threads, size, slot, cas_fail_count);
+      }
+  }
+
+  
   HOSTRPC_ANNOTATE void release_slot(uint32_t size, port_t i)
   {
     a.release_slot(size, i);
