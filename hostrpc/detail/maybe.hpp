@@ -13,8 +13,17 @@ struct HOSTRPC_CONSUMABLE_CLASS maybe
   // HOSTRPC_RETURN_UNKNOWN
 
   // Starts out with unknown type state
+ #if 0
   HOSTRPC_RETURN_UNKNOWN
   maybe(T payload, bool valid)
+    : payload(static_cast<T&&>(payload)), valid(valid)
+  {
+    unknown();
+  }
+  #endif
+
+  HOSTRPC_RETURN_UNKNOWN
+  maybe(T&& payload, bool valid)
     : payload(static_cast<T&&>(payload)), valid(valid)
   {
     unknown();

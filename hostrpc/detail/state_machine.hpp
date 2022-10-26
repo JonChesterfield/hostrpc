@@ -6,6 +6,7 @@
 #include "counters.hpp"
 #include "cxx.hpp"
 #include "typed_port_t.hpp"
+#include "maybe.hpp"
 
 namespace hostrpc
 {
@@ -151,6 +152,15 @@ struct state_machine_impl : public SZT, public Counter
     return rpc_open_typed_port_impl<0, 0, T>(active_threads, scan_from);
   }
 
+  #if 0
+  template <typename T>
+  HOSTRPC_ANNOTATE maybe<typed_port_t<0, 0>> rpc_try_open_typed_port_lo(
+      T active_threads, uint32_t scan_from = 0)
+  {
+    return rpc_try_open_typed_port_impl<0, 0, T>(active_threads, scan_from);
+  }
+  #endif
+  
   template <typename T>
   HOSTRPC_ANNOTATE typed_port_t<1, 1> rpc_open_typed_port_hi(
       T active_threads, uint32_t scan_from = 0)
@@ -520,7 +530,35 @@ struct state_machine_impl : public SZT, public Counter
     // available
     goto try_again;
   }
+
+  #if 0
+  template <unsigned I, unsigned O, typename T>  
+  HOSTRPC_ANNOTATE maybe<typed_port_t<I, O>> rpc_try_open_typed_port_impl(
+      T active_threads, uint32_t scan_from)
+  {
+    using RTy =  maybe<typed_port_t<I,O>>;
+    
+    static_assert(I == O, "");
+    constexpr port_state Req =
+        I == 0 ? port_state::low_values : port_state::high_values;
+
+    // fighting composition
+    port_t p = rpc_open_port<T, Req>(active_threads, scan_from, nullptr);
+    // ugly...
+    if (static_cast<uint32_t>(p) !=
+        static_cast<uint32_t>(port_state::unavailable))
+      {
+        return {typed_port_t<I, O>(static_cast<uint32_t>(p)), true};
+      }
+    else
+      {
+        return {typed_port_t<I, O>(static_cast<uint32_t>(0)), false};
+      }
+  }
+  #endif
 };
+
+
 
 template <typename WordT, typename SZT, typename Counter, bool InvertedInboxLoad>
 template <typename T>
