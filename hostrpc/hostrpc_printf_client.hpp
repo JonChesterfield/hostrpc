@@ -48,29 +48,28 @@ __PRINTF_API_EXTERNAL uint32_t __printf_print_start(const char *fmt);
 __PRINTF_API_EXTERNAL int __printf_print_end(uint32_t port);
 
 // simple types
-__PRINTF_API_EXTERNAL void __printf_pass_element_int32(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_int32(uint32_t port,
                                                        int32_t x);
-__PRINTF_API_EXTERNAL void __printf_pass_element_uint32(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_uint32(uint32_t port,
                                                         uint32_t x);
-__PRINTF_API_EXTERNAL void __printf_pass_element_int64(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_int64(uint32_t port,
                                                        int64_t x);
-__PRINTF_API_EXTERNAL void __printf_pass_element_uint64(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_uint64(uint32_t port,
                                                         uint64_t x);
-__PRINTF_API_EXTERNAL void __printf_pass_element_double(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_double(uint32_t port,
                                                         double x);
 
 // print the address of the argument on the gpu
-__PRINTF_API_EXTERNAL void __printf_pass_element_void(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_void(uint32_t port,
                                                       const void *x);
 
 // copy null terminated string starting at x, print the string
-__PRINTF_API_EXTERNAL void __printf_pass_element_cstr(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_cstr(uint32_t port,
                                                       const char *x);
 
 // implement %n specifier, may need one per sizeof target
-__PRINTF_API_EXTERNAL void __printf_pass_element_write_int64(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_write_int64(uint32_t port,
                                                              int64_t *x);
-
 template <typename T>
 __PRINTF_API_INTERNAL uint32_t __printf_print_start(T *client, const char *fmt)
 {
@@ -117,7 +116,7 @@ __PRINTF_API_INTERNAL int __printf_print_end(T *client, uint32_t uport)
 }
 
 template <typename T>
-__PRINTF_API_INTERNAL void __printf_pass_element_uint64(T *client,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_pass_element_uint64(T *client,
                                                         uint32_t uport,
                                                         uint64_t v)
 {
@@ -127,10 +126,11 @@ __PRINTF_API_INTERNAL void __printf_pass_element_uint64(T *client,
   __printf_pass_element_scalar_t inst(hostrpc_printf_pass_element_uint64, v);
   send_by_copy<__printf_pass_element_scalar_t> f(&inst);
   client->rpc_port_send(active_threads, port, f);
+  return port;
 }
 
 template <typename T>
-__PRINTF_API_INTERNAL void __printf_pass_element_double(T *client,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_pass_element_double(T *client,
                                                         uint32_t uport,
                                                         double v)
 {
@@ -140,10 +140,11 @@ __PRINTF_API_INTERNAL void __printf_pass_element_double(T *client,
   __printf_pass_element_scalar_t inst(hostrpc_printf_pass_element_double, v);
   send_by_copy<__printf_pass_element_scalar_t> f(&inst);
   client->rpc_port_send(active_threads, port, f);
+  return port;
 }
 
 template <typename T>
-__PRINTF_API_INTERNAL void __printf_pass_element_void(T *client, uint32_t uport,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_pass_element_void(T *client, uint32_t uport,
                                                       const void *v)
 {
   hostrpc::port_t port = static_cast<hostrpc::port_t>(uport);
@@ -155,10 +156,11 @@ __PRINTF_API_INTERNAL void __printf_pass_element_void(T *client, uint32_t uport,
   __printf_pass_element_scalar_t inst(hostrpc_printf_pass_element_uint64, c);
   send_by_copy<__printf_pass_element_scalar_t> f(&inst);
   client->rpc_port_send(active_threads, port, f);
+  return port;
 }
 
 template <typename T>
-__PRINTF_API_INTERNAL void __printf_pass_element_cstr(T *client, uint32_t uport,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_pass_element_cstr(T *client, uint32_t uport,
                                                       const char *str)
 {
   hostrpc::port_t port = static_cast<hostrpc::port_t>(uport);
@@ -186,10 +188,12 @@ __PRINTF_API_INTERNAL void __printf_pass_element_cstr(T *client, uint32_t uport,
     send_by_copy<__printf_pass_element_cstr_t> f(&inst);
     client->rpc_port_send(active_threads, port, f);
   }
+
+  return port;
 }
 
 template <typename T>
-__PRINTF_API_INTERNAL void __printf_pass_element_write_int64(T *client,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_pass_element_write_int64(T *client,
                                                              uint32_t uport,
                                                              int64_t *x)
 {
@@ -205,6 +209,7 @@ __PRINTF_API_INTERNAL void __printf_pass_element_write_int64(T *client,
   recv_by_copy<__printf_pass_element_write_t> r(&inst);
   client->rpc_port_recv(active_threads, port, r);
   *x = inst.payload;
+  return port;
 }
 
 #define HOSTRPC_PRINTF_INSTANTIATE_CLIENT(EXPR)                               \
@@ -220,21 +225,21 @@ __PRINTF_API_INTERNAL void __printf_pass_element_write_int64(T *client,
   }                                                                           \
                                                                               \
   /* These may want to be their own functions, for now delegate to u64 */     \
-  __PRINTF_API_EXTERNAL void __printf_pass_element_int32(uint32_t port,       \
+  __PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_int32(uint32_t port,       \
                                                          int32_t v)           \
   {                                                                           \
     int64_t w = v;                                                            \
     return __printf_pass_element_int64(port, w);                              \
   }                                                                           \
                                                                               \
-  __PRINTF_API_EXTERNAL void __printf_pass_element_uint32(uint32_t port,      \
+  __PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_uint32(uint32_t port,      \
                                                           uint32_t v)         \
   {                                                                           \
     uint64_t w = v;                                                           \
     return __printf_pass_element_uint64(port, w);                             \
   }                                                                           \
                                                                               \
-  __PRINTF_API_EXTERNAL void __printf_pass_element_int64(uint32_t port,       \
+  __PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_int64(uint32_t port,       \
                                                          int64_t v)           \
   {                                                                           \
     uint64_t c;                                                               \
@@ -242,34 +247,34 @@ __PRINTF_API_INTERNAL void __printf_pass_element_write_int64(T *client,
     return __printf_pass_element_uint64(port, c);                             \
   }                                                                           \
                                                                               \
-  __PRINTF_API_EXTERNAL void __printf_pass_element_uint64(uint32_t port,      \
+  __PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_uint64(uint32_t port,      \
                                                           uint64_t v)         \
   {                                                                           \
     return __printf_pass_element_uint64(EXPR, port, v);                       \
   }                                                                           \
                                                                               \
-  __PRINTF_API_EXTERNAL void __printf_pass_element_double(uint32_t port,      \
+  __PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_double(uint32_t port,      \
                                                           double v)           \
   {                                                                           \
     return __printf_pass_element_double(EXPR, port, v);                       \
   }                                                                           \
                                                                               \
-  __PRINTF_API_EXTERNAL void __printf_pass_element_void(uint32_t port,        \
+  __PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_void(uint32_t port,        \
                                                         const void *v)        \
   {                                                                           \
-    __printf_pass_element_void(EXPR, port, v);                                \
+    return __printf_pass_element_void(EXPR, port, v);                                \
   }                                                                           \
                                                                               \
-  __PRINTF_API_EXTERNAL void __printf_pass_element_cstr(uint32_t port,        \
+  __PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_cstr(uint32_t port,        \
                                                         const char *str)      \
   {                                                                           \
-    __printf_pass_element_cstr(EXPR, port, str);                              \
+    return __printf_pass_element_cstr(EXPR, port, str);                              \
   }                                                                           \
                                                                               \
-  __PRINTF_API_EXTERNAL void __printf_pass_element_write_int64(uint32_t port, \
+  __PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_write_int64(uint32_t port, \
                                                                int64_t *x)    \
   {                                                                           \
-    __printf_pass_element_write_int64(EXPR, port, x);                         \
+    return __printf_pass_element_write_int64(EXPR, port, x);                         \
   }
 
 #endif

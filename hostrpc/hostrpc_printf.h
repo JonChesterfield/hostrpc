@@ -3,6 +3,7 @@
 
 #include "platform/detect.hpp"
 #include "hostrpc_printf_api_macro.h"
+#include "base_types.hpp" // unfortunate but probably doesn't matter
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -15,6 +16,9 @@
 // Should be a function for C++, needs to be a macro in C
 // Rest of this header provides implementation details that are usefully
 // inlined into the application
+
+// Basically can't use this from C unless the typed_port abstraction is breached
+// On balance, more likely to spin printf in the compiler than a library anyway.
 
 #define __hostrpc_printf(FMT, ...)                       \
   {                                                      \
@@ -37,27 +41,27 @@ __PRINTF_API_EXTERNAL uint32_t __printf_print_start(const char *fmt);
 __PRINTF_API_EXTERNAL int __printf_print_end(uint32_t port);
 
 // simple types
-__PRINTF_API_EXTERNAL void __printf_pass_element_int32(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_int32(uint32_t port,
                                                        int32_t x);
-__PRINTF_API_EXTERNAL void __printf_pass_element_uint32(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_uint32(uint32_t port,
                                                         uint32_t x);
-__PRINTF_API_EXTERNAL void __printf_pass_element_int64(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_int64(uint32_t port,
                                                        int64_t x);
-__PRINTF_API_EXTERNAL void __printf_pass_element_uint64(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_uint64(uint32_t port,
                                                         uint64_t x);
-__PRINTF_API_EXTERNAL void __printf_pass_element_double(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_double(uint32_t port,
                                                         double x);
 
 // print the address of the argument on the gpu
-__PRINTF_API_EXTERNAL void __printf_pass_element_void(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_void(uint32_t port,
                                                       const void *x);
 
 // copy null terminated string starting at x, print the string
-__PRINTF_API_EXTERNAL void __printf_pass_element_cstr(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_cstr(uint32_t port,
                                                       const char *x);
 
 // implement %n specifier, may need one per sizeof target
-__PRINTF_API_EXTERNAL void __printf_pass_element_write_int64(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_write_int64(uint32_t port,
                                                              int64_t *x);
 
 
@@ -139,27 +143,27 @@ enum __printf_spec_t
 // Dispatch based on element type
 
 // Straightforward mapping from integer/double onto the lower calls
-__PRINTF_API_INTERNAL void __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
                                                   enum __printf_spec_t spec,
                                                   int x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   (void)spec;
   _Static_assert(sizeof(int) == sizeof(int32_t), "");
-  __printf_pass_element_int32(port, x);
+  return __printf_pass_element_int32(port, x);
 }
 
-__PRINTF_API_INTERNAL void __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
                                                   enum __printf_spec_t spec,
                                                   unsigned x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   (void)spec;
   _Static_assert(sizeof(unsigned) == sizeof(uint32_t), "");
-  __printf_pass_element_uint32(port, x);
+  return __printf_pass_element_uint32(port, x);
 }
 
-__PRINTF_API_INTERNAL void __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
                                                   enum __printf_spec_t spec,
                                                   long x)
 {
@@ -170,15 +174,15 @@ __PRINTF_API_INTERNAL void __printf_print_element(uint32_t port,
       "");
   if (sizeof(long) == sizeof(int32_t))
     {
-      __printf_pass_element_int32(port, (int32_t)x);
+      return __printf_pass_element_int32(port, (int32_t)x);
     }
   else if (sizeof(long) == sizeof(int64_t))
     {
-      __printf_pass_element_int64(port, (int64_t)x);
+      return __printf_pass_element_int64(port, (int64_t)x);
     }
 }
 
-__PRINTF_API_INTERNAL void __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
                                                   enum __printf_spec_t spec,
                                                   unsigned long x)
 {
@@ -189,46 +193,46 @@ __PRINTF_API_INTERNAL void __printf_print_element(uint32_t port,
                  "");
   if (sizeof(unsigned long) == sizeof(uint32_t))
     {
-      __printf_pass_element_uint32(port, (uint32_t)x);
+      return __printf_pass_element_uint32(port, (uint32_t)x);
     }
   else if (sizeof(unsigned long) == sizeof(uint64_t))
     {
-      __printf_pass_element_uint64(port, (uint64_t)x);
+      return __printf_pass_element_uint64(port, (uint64_t)x);
     }
 }
 
-__PRINTF_API_INTERNAL void __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
                                                   enum __printf_spec_t spec,
                                                   long long x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   (void)spec;
   _Static_assert(sizeof(long long) == sizeof(int64_t), "");
-  __printf_pass_element_int64(port, x);
+  return __printf_pass_element_int64(port, x);
 }
 
-__PRINTF_API_INTERNAL void __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
                                                   enum __printf_spec_t spec,
                                                   unsigned long long x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   (void)spec;
   _Static_assert(sizeof(unsigned long long) == sizeof(uint64_t), "");
-  __printf_pass_element_uint64(port, x);
+  return __printf_pass_element_uint64(port, x);
 }
 
-__PRINTF_API_INTERNAL void __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
                                                   enum __printf_spec_t spec,
                                                   double x)
 {
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   (void)spec;
-  __printf_pass_element_double(port, x);
+  return __printf_pass_element_double(port, x);
 }
 
 // char* and void* check the format string to distinguish copy string vs pointer
 // signed char* can also used with %n
-__PRINTF_API_INTERNAL void __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
                                                   enum __printf_spec_t spec,
                                                   const void *x)
 {
@@ -252,79 +256,84 @@ __PRINTF_API_INTERNAL void __printf_print_element(uint32_t port,
           // printf is UB anyway, so assume the argument is actually
           // a mutable char * to an int64_t that has been cast
           int64_t tmp;
-          __printf_pass_element_write_int64(port, &tmp);
+          auto r =__printf_pass_element_write_int64(port, &tmp);
           *(int64_t *)x =
               tmp;  // todo: can't assume this, doesn't work for %n & some-char
-          break;
+          return r; // todo: deal with move
         }
       case spec_none:
-        break;
+        return static_cast<hostrpc::port_t>(port);
     }
 }
 
 // todo: can these be patched directly to write int64
 #if 1
-__PRINTF_API_INTERNAL void __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
                                                   enum __printf_spec_t spec,
                                                   signed short *x)
 {
   (void)spec;
   // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
   int64_t tmp = 0;
-  __printf_print_element(port, spec, (const char *)&tmp);
+  auto r = __printf_print_element(port, spec, (const char *)&tmp);
   *x = (signed short)tmp;
+  return r;
 }
 
-__PRINTF_API_INTERNAL void __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
                                                   enum __printf_spec_t spec,
                                                   int *x)
 {
   (void)spec;
   // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
   int64_t tmp = 0;
-  __printf_print_element(port, spec, (const char *)&tmp);
+  auto r =__printf_print_element(port, spec, (const char *)&tmp);
   *x = (int)tmp;
+  return r;
 }
 
-__PRINTF_API_INTERNAL void __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
                                                   enum __printf_spec_t spec,
                                                   long *x)
 {
   (void)spec;
   // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
   int64_t tmp = 0;
-  __printf_print_element(port, spec, (const char *)&tmp);
+  auto r = __printf_print_element(port, spec, (const char *)&tmp);
   *x = (long)tmp;
+  return r;
 }
 
-__PRINTF_API_INTERNAL void __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
                                                   enum __printf_spec_t spec,
                                                   size_t *x)
 {
   (void)spec;
   // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
   int64_t tmp = 0;
-  __printf_print_element(port, spec, (const char *)&tmp);
+  auto r = __printf_print_element(port, spec, (const char *)&tmp);
   *x = (size_t)tmp;
+  return r;
 }
 
-__PRINTF_API_INTERNAL void __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
                                                   enum __printf_spec_t spec,
                                                   long long *x)
 {
   (void)spec;
   // (printf)("hit L%u [%s]", __LINE__, __PRETTY_FUNCTION__);
   int64_t tmp = 0;
-  __printf_print_element(port, spec, (const char *)&tmp);
+  auto r = __printf_print_element(port, spec, (const char *)&tmp);
   *x = (long long)tmp;
+  return r;
 }
 #endif
 
 #define __PRINTF_DISPATCH_INDIRECT(TYPE, VIA)           \
-  __PRINTF_API_INTERNAL void __printf_print_element(    \
+  __PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(    \
       uint32_t port, enum __printf_spec_t spec, TYPE x) \
   {                                                     \
-    __printf_print_element(port, spec, (VIA)x);         \
+    return __printf_print_element(port, spec, (VIA)x);         \
   }
 
 // Implement types that undergo argument promotion as promotions

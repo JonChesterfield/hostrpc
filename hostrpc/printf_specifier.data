@@ -31,7 +31,7 @@ static enum __printf_spec_t next_spec(const char *format)
   return next_specifier(format, __printf_strlen(format), &offset);
 }
 
-MODULE(specifier)
+static MODULE(specifier)
 {
   TEST("conversion_specifier")
   {

@@ -188,7 +188,7 @@ COMMONFLAGS="-Wall -Wextra -Werror=consumed -emit-llvm " # -DNDEBUG -Wno-type-li
 # cuda/openmp pass the host O flag through to ptxas, which crashes on debug info if > 0
 # there's a failure mode in trunk clang - 'remaining virtual register operands' - but it
 # resists changing the pipeline to llvm-link + llc, will have to debug it later
-X64FLAGS=" $OPTLEVEL -g -pthread " # nvptx can't handle debug info on x64 for O>0
+X64FLAGS=" $OPTLEVEL  -pthread " # nvptx can't handle debug info on x64 for O>0
 GCNFLAGS=" $OPTLEVEL -ffreestanding -fno-exceptions $AMDGPU"
 # atomic alignment objection seems reasonable - may want 32 wide atomics on nvptx
 # clang/ptx back end is crashing in llvm::DwarfDebug::constructCallSiteEntryDIEs
@@ -359,15 +359,15 @@ if (($have_nvptx)); then
 fi
 
 if (($have_amdgcn)); then
-  $CLANG -std=c11 $COMMONFLAGS $GCNFLAGS unit_tests/test_example.c -c -o obj/unit_tests/test_example.gcn.bc
+  $CLANGXX -std=c++14 $COMMONFLAGS $GCNFLAGS unit_tests/test_example.cpp -c -o obj/unit_tests/test_example.gcn.bc
   $LINK obj/unit_tests/test_example.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc amdgcn_loader_device.gcn.bc -o unit_tests/test_example.gcn.bc
   $CXX_GCN_LD unit_tests/test_example.gcn.bc -o unit_tests/test_example.gcn
 
-  $CLANG -std=c11 -I$HSAINC $COMMONFLAGS $X64FLAGS printf_test.c -c -o obj/printf_test.x64.bc
+  $CLANGXX -std=c++14 -I$HSAINC $COMMONFLAGS $X64FLAGS printf_test.cpp -c -o obj/printf_test.x64.bc
 
   $CXX_X64_LD obj/host_support.x64.bc obj/hostrpc_printf_enable_host.x64.bc obj/printf_test.x64.bc obj/incprintf.x64.bc -o printf_test.x64.exe -pthread
 
-  $CLANG -std=c11 $COMMONFLAGS $GCNFLAGS printf_test.c -c -o obj/printf_test.gcn.bc
+  $CLANGXX -std=c++14 $COMMONFLAGS $GCNFLAGS printf_test.cpp -c -o obj/printf_test.gcn.bc
   $LINK obj/printf_test.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc amdgcn_loader_device.gcn.bc -o printf_test.gcn.bc
   $CXX_GCN_LD printf_test.gcn.bc -o printf_test.gcn
 fi
@@ -524,7 +524,7 @@ if (($have_amdgcn)); then
 
     # hip presently fails to build, so the library will be missing
     set +e
-    $CLANGXX -I$HSAINC -std=c++11 -x hip demo.hip -o demo --offload-arch=$GCNGFX -Xclang -mlink-builtin-bitcode -Xclang obj/demo.hip.link.x64.bc -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 -L$HSALIBDIR -lhsa-runtime64 -Wl,-rpath=$HSALIBDIR -pthread -ldl
+    $CLANGXX -I$HSAINC -std=c++14 -x hip demo.hip -o demo --offload-arch=$GCNGFX -Xclang -mlink-builtin-bitcode -Xclang obj/demo.hip.link.x64.bc -L$HOME/rocm/aomp/hip -L$HOME/rocm/aomp/lib -lamdhip64 -L$HSALIBDIR -lhsa-runtime64 -Wl,-rpath=$HSALIBDIR -pthread -ldl
     set -e
     # ./demo hsa runtime presently segfaults in hip's library
 fi

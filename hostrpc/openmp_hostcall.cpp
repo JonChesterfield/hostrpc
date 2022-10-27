@@ -38,53 +38,53 @@ __PRINTF_API_EXTERNAL int __printf_print_end(uint32_t port)
 }
 
 // These may want to be their own functions, for now delegate to u64
-__PRINTF_API_EXTERNAL void __printf_pass_element_int32(uint32_t port, int32_t v)
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_int32(uint32_t port, int32_t v)
 {
   int64_t w = v;
   return __printf_pass_element_int64(port, w);
 }
 
-__PRINTF_API_EXTERNAL void __printf_pass_element_uint32(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_uint32(uint32_t port,
                                                         uint32_t v)
 {
   uint64_t w = v;
   return __printf_pass_element_uint64(port, w);
 }
 
-__PRINTF_API_EXTERNAL void __printf_pass_element_int64(uint32_t port, int64_t v)
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_int64(uint32_t port, int64_t v)
 {
   uint64_t c;
   __builtin_memcpy(&c, &v, 8);
   return __printf_pass_element_uint64(port, c);
 }
 
-__PRINTF_API_EXTERNAL void __printf_pass_element_uint64(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_uint64(uint32_t port,
                                                         uint64_t v)
 {
   return __printf_pass_element_uint64(get_client(), port, v);
 }
 
-__PRINTF_API_EXTERNAL void __printf_pass_element_double(uint32_t port, double v)
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_double(uint32_t port, double v)
 {
   return __printf_pass_element_double(get_client(), port, v);
 }
 
-__PRINTF_API_EXTERNAL void __printf_pass_element_void(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_void(uint32_t port,
                                                       const void *v)
 {
-  __printf_pass_element_void(get_client(), port, v);
+  return __printf_pass_element_void(get_client(), port, v);
 }
 
-__PRINTF_API_EXTERNAL void __printf_pass_element_cstr(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_cstr(uint32_t port,
                                                       const char *str)
 {
-  __printf_pass_element_cstr(get_client(), port, str);
+  return __printf_pass_element_cstr(get_client(), port, str);
 }
 
-__PRINTF_API_EXTERNAL void __printf_pass_element_write_int64(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_write_int64(uint32_t port,
                                                              int64_t *x)
 {
-  __printf_pass_element_write_int64(get_client(), port, x);
+  return __printf_pass_element_write_int64(get_client(), port, x);
 }
 
 struct fill
