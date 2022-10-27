@@ -17,8 +17,8 @@ kernel void __device_example(void) { example(); }
 // redundant parts of API / convenience hacks
 static void print_string(const char *str)
 {
-  uint32_t port = __printf_print_start("%s");
-  if (port == UINT32_MAX)
+  hostrpc::port_t port = __printf_print_start("%s");
+  if (port == hostrpc::port_t::unavailable)
     {
       return;
     }
@@ -31,7 +31,7 @@ extern "C" void example(void)
 {
   unsigned id = platform::get_lane_id();
 
-  uint32_t port = __printf_print_start(
+  hostrpc::port_t port = __printf_print_start(
       "some format %u too "
       "loffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
       "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"

@@ -27,7 +27,7 @@
     const char *__fmt = FMT;                             \
     const size_t __strlen = __printf_strlen(__fmt);      \
     (void)__strlen;                                      \
-    uint32_t __port = __printf_print_start(__fmt);       \
+    hostrpc::port_t __port = __printf_print_start(__fmt);      \
     size_t __spec_loc = 0;      \
     (void)__spec_loc;                                    \
     __PRINTF_DISPATCH_ARGS(__fmt, UNUSED, ##__VA_ARGS__) \
@@ -37,31 +37,30 @@
 // Functions implemented out of C header. printf resolves to multiple calls to
 // these. Some implemented on gcn. All should probably be implemented on
 // gcn/ptx/x64
-__PRINTF_API_EXTERNAL uint32_t __printf_print_start(const char *fmt);
-__PRINTF_API_EXTERNAL int __printf_print_end(uint32_t port);
-
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_print_start(const char *fmt);
+__PRINTF_API_EXTERNAL int __printf_print_end(hostrpc::port_t port);
 // simple types
-__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_int32(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_int32(hostrpc::port_t port,
                                                        int32_t x);
-__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_uint32(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_uint32(hostrpc::port_t port,
                                                         uint32_t x);
-__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_int64(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_int64(hostrpc::port_t port,
                                                        int64_t x);
-__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_uint64(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_uint64(hostrpc::port_t port,
                                                         uint64_t x);
-__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_double(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_double(hostrpc::port_t port,
                                                         double x);
 
 // print the address of the argument on the gpu
-__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_void(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_void(hostrpc::port_t port,
                                                       const void *x);
 
 // copy null terminated string starting at x, print the string
-__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_cstr(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_cstr(hostrpc::port_t port,
                                                       const char *x);
 
 // implement %n specifier, may need one per sizeof target
-__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_write_int64(uint32_t port,
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_write_int64(hostrpc::port_t port,
                                                              int64_t *x);
 
 
@@ -143,7 +142,7 @@ enum __printf_spec_t
 // Dispatch based on element type
 
 // Straightforward mapping from integer/double onto the lower calls
-__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(hostrpc::port_t port,
                                                   enum __printf_spec_t spec,
                                                   int x)
 {
@@ -153,7 +152,7 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
   return __printf_pass_element_int32(port, x);
 }
 
-__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(hostrpc::port_t port,
                                                   enum __printf_spec_t spec,
                                                   unsigned x)
 {
@@ -163,7 +162,7 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
   return __printf_pass_element_uint32(port, x);
 }
 
-__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(hostrpc::port_t port,
                                                   enum __printf_spec_t spec,
                                                   long x)
 {
@@ -182,7 +181,7 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
     }
 }
 
-__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(hostrpc::port_t port,
                                                   enum __printf_spec_t spec,
                                                   unsigned long x)
 {
@@ -201,7 +200,7 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
     }
 }
 
-__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(hostrpc::port_t port,
                                                   enum __printf_spec_t spec,
                                                   long long x)
 {
@@ -211,7 +210,7 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
   return __printf_pass_element_int64(port, x);
 }
 
-__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(hostrpc::port_t port,
                                                   enum __printf_spec_t spec,
                                                   unsigned long long x)
 {
@@ -221,7 +220,7 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
   return __printf_pass_element_uint64(port, x);
 }
 
-__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(hostrpc::port_t port,
                                                   enum __printf_spec_t spec,
                                                   double x)
 {
@@ -232,7 +231,7 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
 
 // char* and void* check the format string to distinguish copy string vs pointer
 // signed char* can also used with %n
-__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(hostrpc::port_t port,
                                                   enum __printf_spec_t spec,
                                                   const void *x)
 {
@@ -268,7 +267,7 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
 
 // todo: can these be patched directly to write int64
 #if 1
-__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(hostrpc::port_t port,
                                                   enum __printf_spec_t spec,
                                                   signed short *x)
 {
@@ -280,7 +279,7 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
   return r;
 }
 
-__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(hostrpc::port_t port,
                                                   enum __printf_spec_t spec,
                                                   int *x)
 {
@@ -292,7 +291,7 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
   return r;
 }
 
-__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(hostrpc::port_t port,
                                                   enum __printf_spec_t spec,
                                                   long *x)
 {
@@ -304,7 +303,7 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
   return r;
 }
 
-__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(hostrpc::port_t port,
                                                   enum __printf_spec_t spec,
                                                   size_t *x)
 {
@@ -316,7 +315,7 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
   return r;
 }
 
-__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(hostrpc::port_t port,
                                                   enum __printf_spec_t spec,
                                                   long long *x)
 {
@@ -331,7 +330,7 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(uint32_t port,
 
 #define __PRINTF_DISPATCH_INDIRECT(TYPE, VIA)           \
   __PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(    \
-      uint32_t port, enum __printf_spec_t spec, TYPE x) \
+      hostrpc::port_t port, enum __printf_spec_t spec, TYPE x) \
   {                                                     \
     return __printf_print_element(port, spec, (VIA)x);         \
   }
