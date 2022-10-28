@@ -20,8 +20,15 @@ struct HOSTRPC_CONSUMABLE_CLASS maybe
 
   HOSTRPC_RETURN_UNKNOWN
   HOSTRPC_ANNOTATE
-  maybe(T payload, bool valid)
-      : payload(static_cast<T &&>(payload)), valid(valid)
+  maybe() : valid(false)
+  {
+    unknown();
+  }
+
+  HOSTRPC_RETURN_UNKNOWN
+  HOSTRPC_ANNOTATE
+  maybe(T payload)
+      : payload(static_cast<T &&>(payload)), valid(true)
   {
     unknown();
   }

@@ -547,11 +547,11 @@ struct state_machine_impl : public SZT, public Counter
     if (static_cast<uint32_t>(p) !=
         static_cast<uint32_t>(port_state::unavailable))
       {
-        return {static_cast<uint32_t>(p), true};
+        return {static_cast<uint32_t>(p)};
       }
     else
       {
-        return {0, false};
+        return {};
       }
   }
 

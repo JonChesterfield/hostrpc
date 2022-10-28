@@ -8,12 +8,11 @@ using namespace hostrpc;
 // a static factory function with the annotation doesn't help either
 namespace {
   HOSTRPC_RETURN_UNKNOWN
-maybe<float> from_func(float x, bool v)
+maybe<float> from_func(float x)
 {
-  return maybe<float>(x, v);
+  return maybe<float>(x);
 }
 }
-
 
 MODULE(maybe)
 {
@@ -22,9 +21,25 @@ MODULE(maybe)
   CHECK(true);
   
   using maybe_t = maybe<uint32_t>;
+
+  TEST("default constructed")
+    {
+      maybe_t d;
+      d.unknown();
+      if (d)
+        {
+          CHECK(false); // not executed
+          d.unconsumed();
+          d.value();
+          d.consumed();
+        }
+      d.consumed();
+    }
+  
+  
   TEST("happy path, false")
   {
-    maybe_t i(12, false);
+    maybe_t i;
     i.unknown();
 
     if (i)
@@ -44,7 +59,7 @@ MODULE(maybe)
 
   TEST("happy path, true")
   {
-    maybe_t i(12, true);
+    maybe_t i(12);
     i.unknown();
 
     if (i)
@@ -64,19 +79,14 @@ MODULE(maybe)
 
   TEST("create and ignore is an error")
   {
-    // maybe_t i(12, false);
-    // maybe_t v(24, true);
-  }
-
-  TEST("fail to check it")
-  {
-    // maybe_t i(12, true);
-    // uint32_t v = i; (void)v;
+    // maybe_t i;
+    // maybe_t j {};
+    // maybe_t v(24);
   }
 
   TEST("check and don't use")
   {
-    maybe_t i(12, false);
+    maybe_t i;
     i.unknown();
     if (i)
       {
@@ -93,7 +103,7 @@ MODULE(maybe)
 
   TEST("converting to bool doesn't change state")
   {
-    maybe_t i(12, false);
+    maybe_t i;
     bool v = static_cast<bool>(i);
     i.unknown();
     if (v)
@@ -113,7 +123,7 @@ MODULE(maybe)
 #if 0
   TEST("const maybe")
     {
-      const maybe_t i(10, false);
+      const maybe_t i(10);
       if (i)
         {
           uint32_t u = i;(void)u;
@@ -125,7 +135,7 @@ MODULE(maybe)
 
   TEST("normal maybe")
   {
-    maybe_t i(10, false);
+    maybe_t i;
     if (i)
       {
         uint32_t u = i;
@@ -137,7 +147,7 @@ MODULE(maybe)
 
   TEST("from function")
     {
-      maybe<float> f = from_func(1.4, true);
+      maybe<float> f = from_func(1.4);
       f.unknown();
       if (f) { float tmp = f; (void)tmp; }
     }

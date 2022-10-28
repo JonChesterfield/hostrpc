@@ -127,28 +127,36 @@ MODULE(create_and_immediately_destroy)
 static MODULE(maybe)
 {
   using namespace hostrpc;
-  TEST("hack default")
+  TEST("maybe default")
     {
-      typed_port_t<0,1>::maybe val {{}, false};
+      typed_port_t<0,1>::maybe val;
+      val.unknown();
       if (val)
         {
+          val.unconsumed();
           typed_port_t<0, 1> tmp = val;
+          val.consumed();
+          tmp.unconsumed();
           drop(cxx::move(tmp));
-        }      
+          tmp.consumed();
+        }
+      val.consumed();
     }
 
-  TEST("hack non-default")
+  TEST("maybe non-default")
     {
-      typed_port_t<0,1>::maybe val {42, false};
+      typed_port_t<0,1>::maybe val {42};
+      val.unknown();
       if (val)
         {
+          val.unconsumed();
           typed_port_t<0, 1> tmp = val;
+          val.consumed();
           CHECK(tmp == 42);
           drop(cxx::move(tmp));
-        }      
+        }
+      val.consumed();
     }
-
-  
   
 }
 

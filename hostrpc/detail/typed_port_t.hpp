@@ -89,6 +89,10 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
 
   HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_DEAD ~typed_port_impl_t() {}
 
+  HOSTRPC_CALL_ON_DEAD HOSTRPC_ANNOTATE void consumed() const {}
+  HOSTRPC_CALL_ON_LIVE HOSTRPC_ANNOTATE void unconsumed() const {}
+  HOSTRPC_CALL_ON_UNKNOWN HOSTRPC_ANNOTATE void unknown() const {}
+
   // leaves value uninitialised, uses of the value are caught
   // by the typestate annotations
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_CONSUMED typed_port_impl_t() {}
