@@ -1,6 +1,6 @@
+#include "../detail/maybe.hpp"
 #include "../detail/state_machine.hpp"
 #include "EvilUnit.h"
-#include "../detail/maybe.hpp"
 
 namespace
 {
@@ -12,9 +12,11 @@ using typed_port_t = hostrpc::typed_port_impl_t<test_state_machine, I, O>;
 
 template <unsigned S>
 using partial_port_t = hostrpc::partial_port_impl_t<test_state_machine, S>;
-  
+
 struct test_state_machine
 {
+  static_assert(hostrpc::traits::traits_consistent<test_state_machine>());
+  
   template <unsigned I, unsigned O>
   static constexpr typed_port_t<I, O> make(uint32_t v)
   {
@@ -27,7 +29,6 @@ struct test_state_machine
     return {v, s};
   }
 
-  
   template <unsigned I, unsigned O>
   static constexpr void drop(typed_port_t<I, O>&& port)
   {
@@ -39,6 +40,16 @@ struct test_state_machine
   {
     port.drop();
   }
+
+  template <unsigned I, unsigned O>
+  static auto typed_to_partial(typed_port_t<I, O>&& port)
+  {
+    using info = hostrpc::traits::typed_to_partial_trait<test_state_machine,
+                                                         typed_port_t<I, O>>;
+    return typename info::type((uint32_t)port, info::state);
+  }
+
+  
 };
 
 template <unsigned I, unsigned O>
@@ -65,7 +76,6 @@ constexpr void drop(partial_port_t<S>&& port)
   return test_state_machine::drop(hostrpc::cxx::move(port));
 }
 
-  
 }  // namespace
 
 MODULE(create_and_immediately_destroy)
@@ -94,7 +104,7 @@ MODULE(create_and_immediately_destroy)
     auto tmp = partial_port_t<0>{};
     // uint32_t v = tmp; (void)v;
   }
-  
+
   TEST("non-default constructed can be converted to uint32 without consuming")
   {
     auto tmp = make<0, 0>(10);
@@ -111,13 +121,23 @@ MODULE(create_and_immediately_destroy)
     drop(cxx::move(tmp));
   }
 
-  
   TEST("move initialization ok")
   {
     typed_port_t<1, 1> var0 = make<1, 1>(12);
     CHECK(12 == var0);
 
     typed_port_t<1, 1> var1 = cxx::move(var0);
+    // CHECK(12 == var0);
+    CHECK(12 == var1);
+    drop(cxx::move(var1));
+  }
+
+  TEST("move initialization ok")
+  {
+    partial_port_t<1> var0 = make<1>(12, false);
+    CHECK(12 == var0);
+
+    partial_port_t<1> var1 = cxx::move(var0);
     // CHECK(12 == var0);
     CHECK(12 == var1);
     drop(cxx::move(var1));
@@ -170,41 +190,56 @@ MODULE(create_and_immediately_destroy)
   TEST("11") { drop(make<1, 1>(45)); }
 }
 
+static MODULE(conversions)
+{
+  TEST("typed to partial")
+  {
+    auto tmp = make<0, 0>(10);
+    auto partial =
+        test_state_machine::typed_to_partial(hostrpc::cxx::move(tmp));
+    CHECK(partial == 10);
+    drop(hostrpc::cxx::move(partial));
+  }
+}
 
 static MODULE(maybe)
 {
   using namespace hostrpc;
   TEST("maybe default")
-    {
-      typed_port_t<0,1>::maybe val;
-      val.unknown();
-      if (val)
-        {
-          val.unconsumed();
-          typed_port_t<0, 1> tmp = val;
-          val.consumed();
-          tmp.unconsumed();
-          drop(cxx::move(tmp));
-          tmp.consumed();
-        }
-      val.consumed();
-    }
+  {
+    typed_port_t<0, 1>::maybe val;
+    val.unknown();
+    if (val)
+      {
+        val.unconsumed();
+        typed_port_t<0, 1> tmp = val;
+        val.consumed();
+        tmp.unconsumed();
+        drop(cxx::move(tmp));
+        tmp.consumed();
+      }
+    val.consumed();
+  }
 
   TEST("maybe non-default")
-    {
-      typed_port_t<0,1>::maybe val {42};
-      val.unknown();
-      if (val)
-        {
-          val.unconsumed();
-          typed_port_t<0, 1> tmp = val;
-          val.consumed();
-          CHECK(tmp == 42);
-          drop(cxx::move(tmp));
-        }
-      val.consumed();
-    }
-  
+  {
+    typed_port_t<0, 1>::maybe val{42};
+    val.unknown();
+    if (val)
+      {
+        val.unconsumed();
+        typed_port_t<0, 1> tmp = val;
+        val.consumed();
+        CHECK(tmp == 42);
+        drop(cxx::move(tmp));
+      }
+    val.consumed();
+  }
 }
 
-MAIN_MODULE() { DEPENDS(create_and_immediately_destroy); DEPENDS(maybe);}
+MAIN_MODULE()
+{
+  DEPENDS(create_and_immediately_destroy);
+  DEPENDS(maybe);
+  DEPENDS(conversions);
+}

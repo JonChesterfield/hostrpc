@@ -182,13 +182,13 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   friend Friend;  // the state machine
   uint32_t value;
 
-  static_assert(traits::traits_consistent<Friend>());
 
   HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr typed_port_impl_t(uint32_t v)
       : value(v)
   {
     static_assert((I <= 1) && (O <= 1), "");
   }
+  HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE void drop() { kill(); }
 
 #if HOSTRPC_USE_TYPESTATE
   // so that cxx::move keeps track of the typestate
@@ -266,7 +266,6 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     return v;
   }
 
-  HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE void drop() { kill(); }
   typed_port_impl_t(const typed_port_impl_t &) = delete;
   typed_port_impl_t &operator=(const typed_port_impl_t &) = delete;
 };
@@ -285,6 +284,7 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
   {
     static_assert((S == 0) || (S == 1), "");
   }
+  HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE void drop() { kill(); }
 
 #if HOSTRPC_USE_TYPESTATE
   // so that cxx::move keeps track of the typestate
@@ -364,7 +364,6 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     return {v, s};
   }
 
-  HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE void drop() { kill(); }
   partial_port_impl_t(const partial_port_impl_t &) = delete;
   partial_port_impl_t &operator=(const partial_port_impl_t &) = delete;
 };

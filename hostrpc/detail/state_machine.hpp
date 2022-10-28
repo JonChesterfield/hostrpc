@@ -148,6 +148,14 @@ struct state_machine_impl : public SZT, public Counter
                                                             scan_from, which);
   }
 
+
+  // The state machine type can construct and drop ports.
+  // The non-default constructor and drop() methods are private to each.
+  // The equivalence of states is defined as traits in typed_ports.
+  static_assert(traits::traits_consistent<state_machine_impl>());
+
+
+  
   template <typename T>
   HOSTRPC_ANNOTATE typed_port_t<0, 0> rpc_open_typed_port_lo(
       T active_threads, uint32_t scan_from = 0)
