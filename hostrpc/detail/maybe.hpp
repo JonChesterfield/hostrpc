@@ -59,7 +59,7 @@ struct HOSTRPC_CONSUMABLE_CLASS maybe
 
  private:
   T payload;
-  bool valid;
+  const bool valid;
 
   // Copying or moving these types doesn't work very intuitively
   maybe(const maybe &other) = delete;

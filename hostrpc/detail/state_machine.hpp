@@ -38,6 +38,9 @@ struct state_machine_impl : public SZT, public Counter
   template <unsigned I, unsigned O>
   using typed_port_t = typed_port_impl_t<state_machine_impl, I, O>;
 
+  template <unsigned S>
+  using partial_port_t = partial_port_impl_t<state_machine_impl, S>;
+
   HOSTRPC_ANNOTATE constexpr size_t wordBits() const
   {
     return 8 * sizeof(Word);
