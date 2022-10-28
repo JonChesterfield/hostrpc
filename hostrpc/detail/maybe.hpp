@@ -15,6 +15,7 @@ struct HOSTRPC_CONSUMABLE_CLASS maybe
   // Warning: When returning an instance from a function, that
   // function also needs to be annotated with:
   // HOSTRPC_RETURN_UNKNOWN
+  // Otherwise the default is unconsumed which will usually error on the bool()
 
   // Starts out with unknown type state
 
@@ -42,7 +43,7 @@ struct HOSTRPC_CONSUMABLE_CLASS maybe
   HOSTRPC_SET_TYPESTATE(consumed)
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_ANNOTATE
-  U value() { return static_cast<T &&>(payload); }
+  U value() { return payload; }
 
   HOSTRPC_SET_TYPESTATE(consumed)
   HOSTRPC_CALL_ON_LIVE

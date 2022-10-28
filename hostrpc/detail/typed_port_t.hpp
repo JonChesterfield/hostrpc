@@ -6,6 +6,7 @@
 
 #include "cxx.hpp"
 #include "maybe.hpp"
+#include "tuple.hpp" // may be better to make maybe construction variadic
 
 namespace hostrpc
 {
@@ -276,24 +277,31 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
  private:
   friend Friend;  // the state machine
   uint32_t value;
-  const bool state;
+  bool state;
 
-  HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr partial_port_impl_t(uint32_t v,
+  HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES  partial_port_impl_t(uint32_t v,
                                                                      bool state)
       : value(v), state(state)
   {
     static_assert((S == 0) || (S == 1), "");
   }
+
+ HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES  partial_port_impl_t(cxx::tuple<uint32_t, bool> tup)
+ :value (tup.get<0>()),
+ state(tup.get<1>())
+ {
+ }
+ 
   HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE void drop() { kill(); }
 
 #if HOSTRPC_USE_TYPESTATE
   // so that cxx::move keeps track of the typestate
   friend HOSTRPC_ANNOTATE
-      HOSTRPC_CREATED_RES constexpr partial_port_impl_t<Friend, S>
+      HOSTRPC_CREATED_RES partial_port_impl_t<Friend, S>
       cxx::move(partial_port_impl_t<Friend, S> &&x HOSTRPC_CONSUMED_ARG);
 
   friend HOSTRPC_ANNOTATE
-      HOSTRPC_CREATED_RES constexpr partial_port_impl_t<Friend, S>
+      HOSTRPC_CREATED_RES partial_port_impl_t<Friend, S>
       cxx::move(partial_port_impl_t<Friend, S> &x HOSTRPC_CONSUMED_ARG);
 #endif
 
@@ -301,11 +309,11 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
   HOSTRPC_ANNOTATE HOSTRPC_SET_TYPESTATE(unconsumed) void def() const {}
 
  public:
-  using maybe = hostrpc::maybe<uint32_t, partial_port_impl_t<Friend, S>>;
+  using maybe = hostrpc::maybe<cxx::tuple<uint32_t,bool>,  partial_port_impl_t<Friend, S>>;
   friend maybe;
 
   // can convert it back to a uint32_t for indexing into structures
-  HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE constexpr operator uint32_t() const
+  HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE operator uint32_t() const
   {
     return value;
   }
@@ -315,7 +323,7 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
   HOSTRPC_CREATED_RES
   HOSTRPC_CALL_ON_DEAD
   partial_port_impl_t(partial_port_impl_t &&other HOSTRPC_CONSUMED_ARG)
-      : value(other.value)
+ : value(other.value), state(other.state)
   {
     other.kill();
     def();
@@ -327,6 +335,7 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
       partial_port_impl_t &&other HOSTRPC_CONSUMED_ARG)
   {
     value = other.value;
+    state = other.state;
     other.kill();
     def();
     return *this;
@@ -345,6 +354,20 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
   {
   }
 
+ template <bool OutboxState>
+ HOSTRPC_ANNOTATE
+ bool outbox()
+ {
+  return state == OutboxState;
+ }
+
+ template <bool InboxState>
+ HOSTRPC_ANNOTATE
+ bool inbox()
+ {
+  return (S == 1) ? outbox() : !outbox();
+ } 
+ 
  private:
   HOSTRPC_ANNOTATE static partial_port_impl_t HOSTRPC_CREATED_RES
   recreate(partial_port_impl_t &&x HOSTRPC_CONSUMED_ARG)

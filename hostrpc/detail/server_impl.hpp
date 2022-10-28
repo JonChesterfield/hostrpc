@@ -23,11 +23,9 @@ enum class server_state : uint8_t
 };
 
 template <typename WordT, typename SZT, typename Counter = counters::server>
-struct server_impl : public state_machine_impl<WordT, SZT, Counter,
-                                               true>
+struct server_impl : public state_machine_impl<WordT, SZT, Counter, true>
 {
-  using base =
-    state_machine_impl<WordT, SZT, Counter, true>;
+  using base = state_machine_impl<WordT, SZT, Counter, true>;
   using typename base::state_machine_impl;
 
   using Word = typename base::Word;
@@ -50,8 +48,7 @@ struct server_impl : public state_machine_impl<WordT, SZT, Counter,
   HOSTRPC_ANNOTATE server_impl() : base() {}
   HOSTRPC_ANNOTATE ~server_impl() = default;
   HOSTRPC_ANNOTATE server_impl(SZ sz, lock_t active, inbox_t inbox,
-                               outbox_t outbox,
-                               page_t* shared_buffer)
+                               outbox_t outbox, page_t* shared_buffer)
       : base(sz, active, inbox, outbox, shared_buffer)
   {
     constexpr size_t server_size = 32;
@@ -182,6 +179,8 @@ struct server : public server_impl<WordT, SZT, Counter>
   using base::server_impl;
   template <unsigned I, unsigned O>
   using typed_port_t = typename base::template typed_port_t<I, O>;
+  template <unsigned S>
+  using partial_port_t = typename base::template partial_port_t<S>;
 
   static_assert(cxx::is_trivially_copyable<base>::value, "");
 
@@ -230,28 +229,6 @@ struct server : public server_impl<WordT, SZT, Counter>
   }
 
  private:
-  template <typename T, typename Op, unsigned IandO, bool retValue>
-  struct noLambdasInOpenCL
-  {
-    server* self;
-    bool* result;
-    Op& op;
-
-    HOSTRPC_ANNOTATE noLambdasInOpenCL(server* self, bool* result, Op& op)
-        : self(self), result(result), op(op)
-    {
-    }
-
-    HOSTRPC_ANNOTATE typed_port_t<IandO, !IandO> operator()(
-        T active_threads, typed_port_t<IandO, IandO>&& port)
-    {
-      typed_port_t<IandO, !IandO> r = self->rpc_port_apply(
-          active_threads, cxx::move(port), cxx::forward<Op>(op));
-      *result = retValue;
-      return cxx::move(r);
-    }
-  };
-
   template <typename Operate, typename Clear, bool have_precondition,
             typename T>
   HOSTRPC_ANNOTATE bool rpc_handle_impl(T active_threads, Operate&& op,
@@ -261,17 +238,54 @@ struct server : public server_impl<WordT, SZT, Counter>
     bool result = false;
     // rpc_handle only reports 'true' on operate, garbage collection isn't
     // counted
-    auto On00 = noLambdasInOpenCL<T, Operate, 0, true>(this, &result, op);
-    auto On11 = noLambdasInOpenCL<T, Clear, 1, false>(this, &result, cl);
-    struct None
-    {
-      /*result initialised to false*/
-      HOSTRPC_ANNOTATE void operator()(T) {}
-    };
 
-    *location_arg = 1 + base::template rpc_with_opened_port(
-                            active_threads, *location_arg, cxx::move(On00),
-                            cxx::move(On11), None{});
+    typename partial_port_t<1>::maybe maybe_port =
+        base::template rpc_try_open_partial_port(active_threads, *location_arg);
+    if (maybe_port)  // else do nothing, result initialised to false
+      {
+        partial_port_t<1> pport = maybe_port.value();
+        constexpr bool OutboxGuess = false;
+        if (pport.template outbox<OutboxGuess>())
+          {
+            typename typed_port_t<0, 0>::maybe mport =
+                base::template partial_to_typed<OutboxGuess>(active_threads,
+                                                             cxx::move(pport));
+            if (mport)
+              {
+                typed_port_t<0, 0> port = mport.value();
+                typed_port_t<0, 1> res = base::template rpc_port_apply(
+                    active_threads, cxx::move(port), cxx::forward<Operate>(op));
+                *location_arg = 1 + static_cast<uint32_t>(res);
+                base::template rpc_close_port(active_threads, cxx::move(res));
+              }
+            else
+              {
+                __builtin_unreachable();
+              }
+            mport.consumed();
+          }
+        else
+          {
+            typename typed_port_t<1, 1>::maybe mport =
+                base::template partial_to_typed<!OutboxGuess>(active_threads,
+                                                              cxx::move(pport));
+            if (mport)
+              {
+                typed_port_t<1, 1> port = mport.value();
+                typed_port_t<1, 0> res = base::template rpc_port_apply(
+                    active_threads, cxx::move(port), cxx::forward<Clear>(cl));
+                *location_arg = 1 + static_cast<uint32_t>(res);
+                base::template rpc_close_port(active_threads, cxx::move(res));
+              }
+            else
+              {
+                __builtin_unreachable();
+              }
+            mport.consumed();
+          }
+        pport.consumed();
+      }
+    maybe_port.consumed();
 
     return result;
   }

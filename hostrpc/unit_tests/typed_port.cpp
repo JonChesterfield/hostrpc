@@ -16,7 +16,7 @@ using partial_port_t = hostrpc::partial_port_impl_t<test_state_machine, S>;
 struct test_state_machine
 {
   static_assert(hostrpc::traits::traits_consistent<test_state_machine>());
-  
+
   template <unsigned I, unsigned O>
   static constexpr typed_port_t<I, O> make(uint32_t v)
   {
@@ -24,9 +24,15 @@ struct test_state_machine
   }
 
   template <unsigned S>
-  static constexpr partial_port_t<S> make(uint32_t v, bool s)
+  static partial_port_t<S> make(uint32_t v, bool s)
   {
     return {v, s};
+  }
+
+  template <unsigned S>
+  static partial_port_t<S> make(hostrpc::cxx::tuple<uint32_t, bool> tup)
+  {
+    return {tup};
   }
 
   template <unsigned I, unsigned O>
@@ -42,14 +48,38 @@ struct test_state_machine
   }
 
   template <unsigned I, unsigned O>
-  static auto typed_to_partial(typed_port_t<I, O>&& port)
+  static
+      typename hostrpc::traits::typed_to_partial_trait<test_state_machine,
+                                                       typed_port_t<I, O>>::type
+      typed_to_partial(typed_port_t<I, O>&& port HOSTRPC_CONSUMED_ARG)
   {
-    using info = hostrpc::traits::typed_to_partial_trait<test_state_machine,
-                                                         typed_port_t<I, O>>;
-    return typename info::type((uint32_t)port, info::state);
+    uint32_t v = port;
+    port.kill();
+    return {v,
+            hostrpc::traits::typed_to_partial_trait<test_state_machine,
+                                                    typed_port_t<I, O>>::state};
   }
 
-  
+  template <bool OutboxState, unsigned S>
+  static HOSTRPC_RETURN_UNKNOWN hostrpc::maybe<
+      uint32_t, typename hostrpc::traits::partial_to_typed_trait<
+                    test_state_machine, partial_port_t<S>, OutboxState>::type>
+  partial_to_typed(partial_port_t<S>&& port HOSTRPC_CONSUMED_ARG)
+  {
+    uint32_t v = port.value;
+    bool state = port.state;
+
+    if (OutboxState == state)
+      {
+        port.kill();
+        return {v};
+      }
+    else
+      {
+        drop(hostrpc::cxx::move(port));
+        return {};
+      }
+  }
 };
 
 template <unsigned I, unsigned O>
@@ -68,6 +98,12 @@ template <unsigned S>
 partial_port_t<S> constexpr make(uint32_t v, bool s)
 {
   return test_state_machine::make<S>(v, s);
+}
+
+template <unsigned S>
+partial_port_t<S> make(hostrpc::cxx::tuple<uint32_t, bool> tup)
+{
+  return test_state_machine::make<S>(tup);
 }
 
 template <unsigned S>
@@ -118,6 +154,14 @@ MODULE(create_and_immediately_destroy)
     auto tmp = make<0>(10, true);
     CHECK(10 == tmp);
     CHECK(20 != tmp);
+    drop(cxx::move(tmp));
+  }
+
+  TEST("make partial from a tuple")
+  {
+    cxx::tuple<uint32_t, bool> tup = {12, false};
+    partial_port_t<1> tmp = make<1>(tup);
+    CHECK(tmp == 12);
     drop(cxx::move(tmp));
   }
 
@@ -199,6 +243,126 @@ static MODULE(conversions)
         test_state_machine::typed_to_partial(hostrpc::cxx::move(tmp));
     CHECK(partial == 10);
     drop(hostrpc::cxx::move(partial));
+  }
+
+  TEST("typed to partial")
+  {
+    auto tmp = make<1, 1>(10);
+    auto partial =
+        test_state_machine::typed_to_partial(hostrpc::cxx::move(tmp));
+    CHECK(partial == 10);
+    drop(hostrpc::cxx::move(partial));
+  }
+
+  TEST("partial to typed, S0, directly drop")
+  {
+    for (int i = 0; i < 2; i++)
+      {
+        bool state = i;
+
+        partial_port_t<0> start = make<0>(3, state);
+        typed_port_t<0, 1>::maybe typed =
+            test_state_machine::partial_to_typed<true>(
+                hostrpc::cxx::move(start));
+
+        if (typed)
+          {
+            auto v = typed.value();
+            drop(hostrpc::cxx::move(v));
+          }
+      }
+  }
+
+  TEST("partial to typed, S 0")
+  {
+    for (int i = 0; i < 2; i++)
+      {
+        bool state = i;
+
+        partial_port_t<0> start = make<0>(20, state);
+        partial_port_t<0> regen;
+
+        if (start.outbox<true>())
+          {
+            typed_port_t<0, 1>::maybe typed =
+                test_state_machine::partial_to_typed<true>(
+                    hostrpc::cxx::move(start));
+            if (typed)
+              {
+                typed_port_t<0, 1> port = typed.value();
+                regen = test_state_machine::typed_to_partial(
+                    hostrpc::cxx::move(port));
+              }
+            else
+              {
+                __builtin_unreachable();
+              }
+          }
+        else
+          {
+            typed_port_t<1, 0>::maybe typed =
+                test_state_machine::partial_to_typed<false>(
+                    hostrpc::cxx::move(start));
+            if (typed)
+              {
+                typed_port_t<1, 0> port = typed.value();
+                regen = test_state_machine::typed_to_partial(
+                    hostrpc::cxx::move(port));
+              }
+            else
+              {
+                __builtin_unreachable();
+              }
+          }
+        CHECK(regen == 20);
+        drop(hostrpc::cxx::move(regen));
+      }
+  }
+
+  TEST("partial to typed, S 1")
+  {
+    for (int i = 0; i < 2; i++)
+      {
+        bool state = i;
+
+        partial_port_t<1> start = make<1>(30, state);
+        partial_port_t<1> regen;
+
+        if (start.outbox<true>())
+          {
+            typed_port_t<1, 1>::maybe typed =
+                test_state_machine::partial_to_typed<true>(
+                    hostrpc::cxx::move(start));
+            if (typed)
+              {
+                typed_port_t<1, 1> port = typed.value();
+                regen = test_state_machine::typed_to_partial(
+                    hostrpc::cxx::move(port));
+              }
+            else
+              {
+                __builtin_unreachable();
+              }
+          }
+        else
+          {
+            typed_port_t<0, 0>::maybe typed =
+                test_state_machine::partial_to_typed<false>(
+                    hostrpc::cxx::move(start));
+            if (typed)
+              {
+                typed_port_t<0, 0> port = typed.value();
+                regen = test_state_machine::typed_to_partial(
+                    hostrpc::cxx::move(port));
+              }
+            else
+              {
+                __builtin_unreachable();
+              }
+          }
+        CHECK(regen == 30);
+        drop(hostrpc::cxx::move(regen));
+      }
   }
 }
 
