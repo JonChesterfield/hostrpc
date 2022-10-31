@@ -114,6 +114,7 @@ struct ptx
   }
 };
 
+#ifdef _OPENMP
 template <int device_num>
 struct openmp_target
 {
@@ -121,7 +122,7 @@ struct openmp_target
   template <size_t align>
   using local_allocator_t = allocator::openmp_device<align, device_num>;
   template <size_t align>
-  using shared_allocator_t = allocator::openmp_shared<align>;
+  using shared_allocator_t = allocator::openmp_shared<align, device_num>;
 
   openmp_target() {}
 
@@ -137,7 +138,8 @@ struct openmp_target
     return {};
   }
 };
-
+#endif
+  
 // shared memory allocator type for pairs of architectures
 
 template <typename X, typename Y>
@@ -208,13 +210,14 @@ struct pair<x64, gcn>
   gcn y;
 };
 
-template <int device_num>
+#ifdef _OPENMP
+  template <int device_num>
 struct pair<x64, openmp_target<device_num>>
 {
   pair(x64 x_, openmp_target<device_num> y_) : x(x_), y(y_) {}
 
   template <size_t align>
-  using shared_allocator_t = allocator::openmp_shared<align>;
+  using shared_allocator_t = allocator::openmp_shared<align, device_num>;
 
   template <size_t align>
   shared_allocator_t<align> shared_allocator()
@@ -226,6 +229,7 @@ struct pair<x64, openmp_target<device_num>>
   x64 x;
   openmp_target<device_num> y;
 };
+#endif
 
 template <typename Local, typename Remote>
 struct allocators

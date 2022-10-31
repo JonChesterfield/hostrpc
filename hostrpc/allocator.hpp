@@ -160,24 +160,6 @@ struct hsa : public interface<Align, hsa<Align>>
   }
 };
 
-#if 0  // presently unused
-template <size_t Align>
-struct hsa_shared : public interface<Align, hsa_shared<Align>>
-{
-  using typename interface<Align, hsa_shared<Align>>::raw;
-
-  HOSTRPC_ANNOTATE hsa_shared() { static_assert(Align <= 4096, ""); }
-  HOSTRPC_ANNOTATE raw allocate(size_t N)
-  {
-    return {hsa_impl::allocate_fine_grain(N)};
-  }
-  HOSTRPC_ANNOTATE static status destroy(raw *x)
-  {
-    return (hsa_impl::deallocate(x->ptr) == 0) ? success : failure;
-  }
-};
-#endif
-
 namespace cuda_impl
 {
 // caller gets to align the result
@@ -258,6 +240,7 @@ struct cuda_shared : public interface<Align, cuda_shared<Align>>
   }
 };
 
+#ifdef _OPENMP
 namespace openmp_impl
 {
 HOSTRPC_ANNOTATE void *allocate_device(int device_num, size_t bytes);
@@ -283,14 +266,31 @@ struct openmp_device : public interface<Align, openmp_device<Align, device_num>>
   openmp_device() {}
   HOSTRPC_ANNOTATE raw allocate(size_t N)
   {
-    size_t adj = N + Align - 1;
-    return {openmp_impl::allocate_device(device_num, adj)};
+    size_t bytes = N + Align - 1;
+    bytes = 4 * ((bytes+3)/4);
+
+    void * res = omp_target_alloc(bytes, device_num);
+    size_t words = bytes / sizeof(uint32_t);
+
+    uint32_t *r = (uint32_t *)res;
+    
+#pragma omp target map(to : words) map(tofrom : r [0:words]) is_device_ptr(res) device(device_num)
+  {
+
+    for (size_t i = 0; i < words; i++)
+      {
+        r[i] = 0;
+      }
   }
+    
+  return {res};
+  }
+  
   HOSTRPC_ANNOTATE static status destroy(raw *x)
   {
-    return (openmp_impl::deallocate_device(device_num, x->ptr) == 0) ? success
-                                                                     : failure;
-  }
+    omp_target_free(x->ptr, device_num);
+    return success;
+  } 
 
   HOSTRPC_ANNOTATE static local_t local_ptr(const raw &) { return {0}; }
   HOSTRPC_ANNOTATE static remote_t remote_ptr(const raw &x)
@@ -299,10 +299,13 @@ struct openmp_device : public interface<Align, openmp_device<Align, device_num>>
   }
 };
 
-template <size_t Align>
-struct openmp_shared : public interface<Align, openmp_shared<Align>>
+
+extern "C" void * llvm_omp_target_alloc_host(size_t, int);
+
+template <size_t Align, int device_num>
+struct openmp_shared : public interface<Align, openmp_shared<Align, device_num>>
 {
-  using Base = interface<Align, openmp_shared<Align>>;
+  using Base = interface<Align, openmp_shared<Align, device_num>>;
   using typename Base::local_t;
   using typename Base::raw;
   using typename Base::remote_t;
@@ -312,12 +315,19 @@ struct openmp_shared : public interface<Align, openmp_shared<Align>>
 
   HOSTRPC_ANNOTATE raw allocate(size_t N)
   {
-    size_t adj = N + Align - 1;
-    return {openmp_impl::allocate_shared(adj)};
+    //
+    //omp_target_free(hst_ptr, device);
+    size_t bytes = N + Align - 1;
+    bytes = 4 * ((bytes+3)/4);
+
+    void * res = llvm_omp_target_alloc_host(bytes, device_num);
+    
+    return {res};
   }
   HOSTRPC_ANNOTATE static status destroy(raw *x)
   {
-    return (openmp_impl::deallocate_shared(x->ptr) == 0) ? success : failure;
+    omp_target_free(x->ptr, device_num);
+    return success;
   }
 
   HOSTRPC_ANNOTATE static local_t local_ptr(const raw &x)
@@ -326,14 +336,11 @@ struct openmp_shared : public interface<Align, openmp_shared<Align>>
   }
   HOSTRPC_ANNOTATE static remote_t remote_ptr(const raw &x)
   {
-    if (!x.ptr)
-      {
-        return {0};
-      }
-    void *dev = openmp_impl::device_ptr_from_host_ptr(x.ptr);
-    return {align_pointer_up(dev, Align)};
+    return {align_pointer_up(x.ptr, Align)};
   }
 };
+
+#endif
 
 // Store multiple raw pointers with sufficient type information
 // to deallocate them later
