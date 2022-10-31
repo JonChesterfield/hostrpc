@@ -27,6 +27,8 @@ using sizeType = hostrpc::size_runtime<uint32_t>;
 using client_type = hostrpc::x64_gcn_type<sizeType>::client_type;
 static client_type *get_client();
 
+#if 0
+// Need to hack the printf specific stuff out of this to get a drop in replacement for rocm
 __PRINTF_API_EXTERNAL hostrpc::port_t __printf_print_start(const char *fmt)
 {
   return __printf_print_start(get_client(), fmt);
@@ -86,6 +88,7 @@ __PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_write_int64(hostrpc:
 {
   return __printf_pass_element_write_int64(get_client(), port, x);
 }
+#endif
 
 struct fill
 {

@@ -55,6 +55,16 @@ struct recv_by_copy
 __PRINTF_API_EXTERNAL hostrpc::port_t  __printf_print_start(const char *fmt);
 __PRINTF_API_EXTERNAL int __printf_print_end(hostrpc::port_t port);
 
+
+// copy null terminated string starting at x, print the string
+template <typename T, unsigned I, unsigned O>
+__PRINTF_API_INTERNAL
+typename T:: template typed_port_t<I, !O>
+__printf_pass_element_cstr(T *client,
+                           typename T:: template typed_port_t<I, O> && tport,
+                           const char *str);
+
+
 // simple types
 __PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_int32(hostrpc::port_t port,
                                                        int32_t x);
@@ -72,9 +82,6 @@ __PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_void(hostrpc::port_t
                                                       const void *x);
 
 // copy null terminated string starting at x, print the string
-template <typename F, unsigned I, unsigned O>
-__PRINTF_API_EXTERNAL  hostrpc::port_t __printf_pass_element_cstr(hostrpc::typed_port_impl_t<F,I,O> && port,
-                                                      const char *x);
 
 // implement %n specifier, may need one per sizeof target
 __PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_write_int64(hostrpc::port_t port,
@@ -95,13 +102,20 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_print_start(T *client, const char
 
   typename T::template typed_port_t<0, 1> tport2 =
     client->rpc_port_send(active_threads, hostrpc::cxx::move(tport), f);
+
+  typename T::template typed_port_t<1, 1> tport3 =
+    client->rpc_port_wait(active_threads, hostrpc::cxx::move(tport2));
+
+  typename T::template typed_port_t<1, 0> tport4 =
+    client->rpc_port_discard_result(active_threads, hostrpc::cxx::move(tport3));
+
+  typename T::template typed_port_t<0, 0> tport5 =
+    client->rpc_port_wait(active_threads, hostrpc::cxx::move(tport4));
   
+  typename T::template typed_port_t<0, 1> tport6 =
+    __printf_pass_element_cstr<T, 0, 0>(client, hostrpc::cxx::move(tport5), fmt);
 
-  hostrpc::port_t port =
-    __printf_pass_element_cstr(hostrpc::cxx::move(tport2), fmt);
-
-  return port;
-  //return __printf_pass_element_cstr(port, fmt);
+  return port_escape(hostrpc::cxx::move(tport6));
 
 }
 
@@ -166,10 +180,12 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_pass_element_void(T *client, host
   return port;
 }
 
-template <typename T>
-__PRINTF_API_INTERNAL hostrpc::port_t __printf_pass_element_cstr(T *client,
-                                                                 typename T:: typed_port_t && tport,
-                                                                 const char *str)
+template <typename T, unsigned I, unsigned O>
+__PRINTF_API_INTERNAL
+typename T:: template typed_port_t<I, !O>
+__printf_pass_element_cstr(T *client,
+                           typename T:: template typed_port_t<I, O> && tport,
+                           const char *str) 
 {
   hostrpc::port_t port = port_escape(hostrpc::cxx::move(tport));
   assert(port != hostrpc::port_t::unavailable);
@@ -197,7 +213,8 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_pass_element_cstr(T *client,
     client->rpc_port_send(active_threads, port, f);
   }
 
-  return port;
+
+  return static_cast<uint32_t>(port);
 }
 
 template <typename T>
@@ -272,8 +289,8 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_pass_element_write_int64(T *clien
     return __printf_pass_element_void(EXPR, port, v);                                \
   }                                                                           \
                                      \
- template <unsigned I, unsigned O>                         \
-  __PRINTF_API_EXTERNAL   hostrpc::port_t __printf_pass_element_cstr(TYPE::typed_port_t<I, O> && port, \
+  template <unsigned I, unsigned O>                          \
+  __PRINTF_API_EXTERNAL  TYPE::typed_port_t< I, !O> __printf_pass_element_cstr(TYPE::typed_port_t<I, O> && port, \
                                                         const char *str)      \
   {                                                                           \
     return __printf_pass_element_cstr(EXPR, port, str);                              \

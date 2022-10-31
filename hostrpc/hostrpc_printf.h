@@ -56,10 +56,13 @@ __PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_double(hostrpc::port
 __PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_void(hostrpc::port_t port,
                                                       const void *x);
 
+#if 0
 // copy null terminated string starting at x, print the string
 template <typename F, unsigned I, unsigned O>
-__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_cstr(hostrpc::typed_port_impl_t<F,I,O> && port,
-                                                      const char *x);
+__PRINTF_API_EXTERNAL hostrpc::typed_port_impl_t<F,I,!O>
+  __printf_pass_element_cstr(hostrpc::typed_port_impl_t<F,I,O> && port,
+                             const char *x);
+#endif
 
 // implement %n specifier, may need one per sizeof target
 __PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_write_int64(hostrpc::port_t port,

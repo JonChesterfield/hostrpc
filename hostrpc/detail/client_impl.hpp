@@ -271,6 +271,14 @@ struct client_impl : public state_machine_impl<WordT, SZT, Counter,
                                      [](hostrpc::port_t, page_t *) {});
   }
 
+  template <typename T>
+  HOSTRPC_ANNOTATE typed_port_t<1,0> rpc_port_discard_result(T active_threads, typed_port_t<1,1> && port)
+  {
+    return base::template rpc_port_apply(active_threads, hostrpc::cxx::move(port),
+                                     [](hostrpc::port_t, page_t *) {});
+  }
+
+  
   template <typename Use, typename T>
   HOSTRPC_ANNOTATE void rpc_port_recv(T active_threads, port_t port, Use &&use)
   {

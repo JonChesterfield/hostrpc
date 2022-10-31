@@ -296,15 +296,18 @@ if (($have_amdgcn)); then
 fi
 
 if (($have_amdgcn)); then
-$CXX_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.code.bc
-$CXXCL_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.kern.bc
-$LINK obj/x64_gcn_debug.gcn.code.bc obj/x64_gcn_debug.gcn.kern.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc -o obj/x64_gcn_debug.gcn.bc
-$CXX_GCN_LD obj/x64_gcn_debug.gcn.bc -o x64_gcn_debug.gcn.so
+    if false; then
+        # Currently disabled as it pokes at printf internals that are changing
+        $CXX_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.code.bc
+        $CXXCL_GCN x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.gcn.kern.bc
+        $LINK obj/x64_gcn_debug.gcn.code.bc obj/x64_gcn_debug.gcn.kern.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc -o obj/x64_gcn_debug.gcn.bc
+        $CXX_GCN_LD obj/x64_gcn_debug.gcn.bc -o x64_gcn_debug.gcn.so
 
-$CXX_X64 -I$HSAINC x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.x64.bc
+        $CXX_X64 -I$HSAINC x64_gcn_debug.cpp -c -o obj/x64_gcn_debug.x64.bc
 
-$CXX obj/x64_gcn_debug.x64.bc obj/hsa_support.x64.bc obj/hostrpc_printf_enable_amdgpu.x64.bc $LDFLAGS -o x64_gcn_debug.exe
-
+        $CXX obj/x64_gcn_debug.x64.bc obj/hsa_support.x64.bc obj/hostrpc_printf_enable_amdgpu.x64.bc $LDFLAGS -o x64_gcn_debug.exe
+    fi
+    
 # Ideally would have a test case that links the x64 and gcn bitcode, but can't work out
 # how to do that. I think mlink-builtin-bitcode used to be architecture aware, but
 # currently it cheerfully links gcn and x64 bitcode together to make a thing that

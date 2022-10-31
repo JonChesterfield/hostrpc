@@ -184,6 +184,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   uint32_t value;
 
 
+ public: // temporary
   HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr typed_port_impl_t(uint32_t v)
       : value(v)
   {
@@ -224,9 +225,8 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   void disown()
   {
     kill();
-  }
+  }    
 
-  
   // move construct and assign are available
   HOSTRPC_ANNOTATE
   HOSTRPC_CREATED_RES

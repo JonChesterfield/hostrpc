@@ -31,4 +31,4 @@ struct global
 
 }  // namespace
 
-HOSTRPC_PRINTF_INSTANTIATE_CLIENT(&(global_instance.state->p->client));
+HOSTRPC_PRINTF_INSTANTIATE_CLIENT(global::type::client_type, &(global_instance.state->p->client));

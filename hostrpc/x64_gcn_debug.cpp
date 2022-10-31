@@ -1,3 +1,4 @@
+#error "Not currently compiling, changes to printf in flight"
 #if defined __OPENCL__
 // called by test
 void example(void);
