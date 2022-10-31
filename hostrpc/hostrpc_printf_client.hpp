@@ -39,6 +39,14 @@ struct recv_by_copy
   }
 };
 
+  template <typename F, unsigned I, unsigned O>
+  hostrpc::port_t port_escape(hostrpc::typed_port_impl_t<F, I, O> && port)
+  {
+    uint32_t v = port;
+    port.disown();
+    return static_cast<hostrpc::port_t>(v);
+ }
+
 }  // namespace
 
 // Functions implemented out of header. printf resolves to multiple calls to
@@ -64,7 +72,8 @@ __PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_void(hostrpc::port_t
                                                       const void *x);
 
 // copy null terminated string starting at x, print the string
-__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_cstr(hostrpc::port_t port,
+template <typename F, unsigned I, unsigned O>
+__PRINTF_API_EXTERNAL  hostrpc::port_t __printf_pass_element_cstr(hostrpc::typed_port_impl_t<F,I,O> && port,
                                                       const char *x);
 
 // implement %n specifier, may need one per sizeof target
@@ -73,23 +82,26 @@ __PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_write_int64(hostrpc:
 template <typename T>
 __PRINTF_API_INTERNAL hostrpc::port_t __printf_print_start(T *client, const char *fmt)
 {
-  auto active_threads = platform::active_threads();
-  hostrpc::port_t port = client->rpc_open_port(active_threads);
+  auto active_threads = platform::active_threads(); // warning, not valid on volta
+  // TODO: Check a port is eventually available
+  // Otherwise need to report failure via the return value from printf
 
-  while (port == hostrpc::port_t::unavailable)
-    {
-      // TODO: Check a port is eventually available
-      // Otherwise need to report failure via the return value from printf
-      port = client->rpc_open_port(active_threads);
-    }
+  typename
+    T::template typed_port_t<0, 0> tport = client->template rpc_open_typed_port<0,0>(active_threads);
 
-  {
-    __printf_print_start_t inst;
-    send_by_copy<__printf_print_start_t> f(&inst);
-    client->rpc_port_send(active_threads, port, f);
-  }
 
-  return __printf_pass_element_cstr(port, fmt);
+  __printf_print_start_t inst;
+  send_by_copy<__printf_print_start_t> f(&inst);
+
+  typename T::template typed_port_t<0, 1> tport2 =
+    client->rpc_port_send(active_threads, hostrpc::cxx::move(tport), f);
+  
+
+  hostrpc::port_t port =
+    __printf_pass_element_cstr(hostrpc::cxx::move(tport2), fmt);
+
+  return port;
+  //return __printf_pass_element_cstr(port, fmt);
 
 }
 
@@ -155,9 +167,11 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_pass_element_void(T *client, host
 }
 
 template <typename T>
-__PRINTF_API_INTERNAL hostrpc::port_t __printf_pass_element_cstr(T *client, hostrpc::port_t port,
-                                                      const char *str)
+__PRINTF_API_INTERNAL hostrpc::port_t __printf_pass_element_cstr(T *client,
+                                                                 typename T:: typed_port_t && tport,
+                                                                 const char *str)
 {
+  hostrpc::port_t port = port_escape(hostrpc::cxx::move(tport));
   assert(port != hostrpc::port_t::unavailable);
   auto active_threads = platform::active_threads();
   uint64_t L = __printf_strlen(str);
@@ -205,7 +219,7 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_pass_element_write_int64(T *clien
   return port;
 }
 
-#define HOSTRPC_PRINTF_INSTANTIATE_CLIENT(EXPR)                               \
+#define HOSTRPC_PRINTF_INSTANTIATE_CLIENT(TYPE, EXPR)                    \
                                                                               \
   __PRINTF_API_EXTERNAL hostrpc::port_t __printf_print_start(const char *fmt) \
   {                                                                           \
@@ -257,8 +271,9 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_pass_element_write_int64(T *clien
   {                                                                           \
     return __printf_pass_element_void(EXPR, port, v);                                \
   }                                                                           \
-                                                                              \
-  __PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_cstr(hostrpc::port_t port,        \
+                                     \
+ template <unsigned I, unsigned O>                         \
+  __PRINTF_API_EXTERNAL   hostrpc::port_t __printf_pass_element_cstr(TYPE::typed_port_t<I, O> && port, \
                                                         const char *str)      \
   {                                                                           \
     return __printf_pass_element_cstr(EXPR, port, str);                              \

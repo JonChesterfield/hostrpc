@@ -218,6 +218,15 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     return value;
   }
 
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+  void disown()
+  {
+    kill();
+  }
+
+  
   // move construct and assign are available
   HOSTRPC_ANNOTATE
   HOSTRPC_CREATED_RES

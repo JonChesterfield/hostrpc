@@ -4,6 +4,7 @@
 #include "platform/detect.hpp"
 #include "hostrpc_printf_api_macro.h"
 #include "base_types.hpp" // unfortunate but probably doesn't matter
+#include "detail/typed_port_t.hpp"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -56,7 +57,8 @@ __PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_void(hostrpc::port_t
                                                       const void *x);
 
 // copy null terminated string starting at x, print the string
-__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_cstr(hostrpc::port_t port,
+template <typename F, unsigned I, unsigned O>
+__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_cstr(hostrpc::typed_port_impl_t<F,I,O> && port,
                                                       const char *x);
 
 // implement %n specifier, may need one per sizeof target
@@ -69,7 +71,7 @@ __PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_write_int64(hostrpc:
 
 #define __PRINTF_WRAP(FMT, POS, X)                                             \
   __spec_loc = __printf_next_specifier_location(__fmt, __strlen, __spec_loc);  \
-  __printf_print_element(__port, __printf_specifier_classify(FMT, __spec_loc), \
+  __port = __printf_print_element(__port, __printf_specifier_classify(FMT, __spec_loc), \
                          X);
 #define __PRINTF_WRAP1(FMT, U)
 #define __PRINTF_WRAP2(FMT, U, X) __PRINTF_WRAP(FMT, 0, X)
@@ -238,8 +240,12 @@ __PRINTF_API_INTERNAL hostrpc::port_t __printf_print_element(hostrpc::port_t por
   // (printf)("hit L%u [%s]\n", __LINE__, __PRETTY_FUNCTION__);
   switch (spec)
     {
+#if 0 // todo
       case spec_string:
         return __printf_pass_element_cstr(port, (const char *)x);
+#else
+      case spec_string:
+#endif
       case spec_normal:
         return __printf_pass_element_void(port, (const void *)x);
       case spec_output:

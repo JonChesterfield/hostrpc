@@ -193,11 +193,34 @@ struct state_machine_impl : public SZT, public Counter
       }
   }
 
+  template <unsigned I, unsigned O, typename T>
+  HOSTRPC_ANNOTATE typed_port_t<I, O> rpc_open_typed_port(
+      T active_threads, uint32_t scan_from = 0)
+  {
+    static_assert(I == 0,"");
+    return rpc_open_typed_port_impl<I, O, T>(active_threads, scan_from);
+  }
+
   template <typename T>
   HOSTRPC_ANNOTATE typed_port_t<0, 0> rpc_open_typed_port_lo(
       T active_threads, uint32_t scan_from = 0)
   {
     return rpc_open_typed_port_impl<0, 0, T>(active_threads, scan_from);
+  }
+  
+  template <typename T>
+  HOSTRPC_ANNOTATE typed_port_t<1, 1> rpc_open_typed_port_hi(
+      T active_threads, uint32_t scan_from = 0)
+  {
+    return rpc_open_typed_port_impl<1, 1, T>(active_threads, scan_from);
+  }
+
+  template <unsigned I, unsigned O, typename T>
+  HOSTRPC_ANNOTATE typename typed_port_t<I, O>::maybe
+  rpc_try_open_typed_port(T active_threads, uint32_t scan_from = 0)
+  {
+    static_assert(I == 0,"");
+    return rpc_try_open_typed_port_impl<I, O, T>(active_threads, scan_from);
   }
 
   template <typename T>
@@ -208,12 +231,13 @@ struct state_machine_impl : public SZT, public Counter
   }
 
   template <typename T>
-  HOSTRPC_ANNOTATE typed_port_t<1, 1> rpc_open_typed_port_hi(
-      T active_threads, uint32_t scan_from = 0)
+  HOSTRPC_ANNOTATE typename typed_port_t<1, 1>::maybe
+  rpc_try_open_typed_port_hi(T active_threads, uint32_t scan_from = 0)
   {
-    return rpc_open_typed_port_impl<1, 1, T>(active_threads, scan_from);
+    return rpc_try_open_typed_port_impl<1, 1, T>(active_threads, scan_from);
   }
 
+  
   template <typename T>
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN
       maybe<cxx::tuple<uint32_t, bool>, partial_port_t<1>>

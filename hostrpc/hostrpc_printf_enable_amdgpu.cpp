@@ -15,7 +15,9 @@ __attribute__((visibility("default")))
 hostrpc::x64_gcn_type<hostrpc::size_runtime<uint32_t>>::client_type
     hostrpc_x64_gcn_debug_client[1];
 
-HOSTRPC_PRINTF_INSTANTIATE_CLIENT(&hostrpc_x64_gcn_debug_client[0])
+// Makes function instantiation simpler
+HOSTRPC_PRINTF_INSTANTIATE_CLIENT(hostrpc::x64_gcn_type<hostrpc::size_runtime<uint32_t>>::client_type,
+                                  &hostrpc_x64_gcn_debug_client[0])
 
 #endif
 

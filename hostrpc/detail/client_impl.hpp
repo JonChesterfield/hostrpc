@@ -178,15 +178,30 @@ struct client_impl : public state_machine_impl<WordT, SZT, Counter,
     base::template rpc_close_port(active_threads, cxx::move(port));
   }
 
+  template <unsigned I, unsigned O, typename T>
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename typed_port_t<I, O>::maybe rpc_try_open_typed_port(
+      T active_threads, uint32_t scan_from = 0)
+  {
+    static_assert(I == O, "");
+    return base::template rpc_try_open_typed_port<I, O, T>(active_threads, scan_from);
+  }
 
+  template <unsigned I, unsigned O, typename T>
+  HOSTRPC_ANNOTATE typed_port_t<I, O> rpc_open_typed_port(
+      T active_threads, uint32_t scan_from = 0)
+  {
+    static_assert(I == O, "");
+    return base::template rpc_open_typed_port<I, O, T>(active_threads, scan_from);
+  }
+  
   template <typename T>
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename typed_port_t<0, 0>::maybe rpc_try_open_typed_port_lo(
       T active_threads, uint32_t scan_from = 0)
   {
-    return base::template rpc_try_open_typed_port_lo(active_threads, scan_from);
+    return base::template rpc_try_open_typed_port<0, 0, T>(active_threads, scan_from);
   }
 
-  #if 1
+#if 1
   // Would like to delete these.
   // printf_client.hpp makes that challenging as it's all written in terms of raw uint32_t
   // It includes interesting use cases like multiple calls to send one after another on the same port
@@ -282,9 +297,9 @@ struct client : public client_impl<WordT, SZT, Counter>
   using base::client_impl;
   template <unsigned I, unsigned O>
   using typed_port_t = typename base::template typed_port_t<I, O>;
-
+  
   static_assert(cxx::is_trivially_copyable<base>::value, "");
-
+  
   template <typename T, typename Fill>
   HOSTRPC_ANNOTATE bool rpc_invoke_async(T active_threads, Fill &&fill) noexcept
   {
