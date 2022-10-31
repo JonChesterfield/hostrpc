@@ -211,6 +211,33 @@ struct client_impl : public state_machine_impl<WordT, SZT, Counter,
     return base::rpc_open_port_lo(active_threads);
   }
 
+  template <typename T, unsigned I, unsigned O>
+  HOSTRPC_ANNOTATE typed_port_t<0,0> rpc_port_wait_until_available(T active_threads,
+                                                                   typed_port_t<I,O> && port)
+  {
+    if constexpr (I == 0 && O == 0)
+    {
+      return cxx::move(port);
+    }
+
+    if constexpr (I == 0 && O == 1)
+    {
+      auto tmp = rpc_port_wait_for_result(active_threads, cxx::move(port));
+      return rpc_port_wait_until_available<T, 1, 1>(active_threads, cxx::move(tmp));
+    }
+
+    if constexpr (I == 1 && O == 1)
+    {
+      auto tmp = rpc_port_discard_result(active_threads, cxx::move(port));
+      return rpc_port_wait_until_available<T, 1, 0>(active_threads, cxx::move(tmp));
+    }
+
+    if constexpr (I == 1 && O == 0)
+    {
+      return base::rpc_port_wait(active_threads, cxx::move(port));
+    }                   
+  }
+  
   template <typename T>
   HOSTRPC_ANNOTATE void rpc_port_wait_until_available(T active_threads,
                                                       port_t port)

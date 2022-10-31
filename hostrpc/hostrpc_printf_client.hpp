@@ -184,37 +184,58 @@ template <typename T, unsigned I, unsigned O>
 __PRINTF_API_INTERNAL
 typename T:: template typed_port_t<I, !O>
 __printf_pass_element_cstr(T *client,
-                           typename T:: template typed_port_t<I, O> && tport,
+                           typename T:: template typed_port_t<I, O> && port,
                            const char *str) 
 {
-  hostrpc::port_t port = port_escape(hostrpc::cxx::move(tport));
-  assert(port != hostrpc::port_t::unavailable);
   auto active_threads = platform::active_threads();
   uint64_t L = __printf_strlen(str);
 
   const constexpr size_t w = __printf_pass_element_cstr_t::width;
 
+  typename  T::template typed_port_t<0, 0> ready =
+    client->rpc_port_wait_until_available(active_threads, hostrpc::cxx::move(port));
+  ready.unconsumed();
+        
   // this appears to behave poorly when different threads make different numbers
   // of calls
   uint64_t chunks = L / w;
   uint64_t remainder = L - (chunks * w);
+
+  ready.unconsumed();
+
+  if (chunks != 0)   
   for (uint64_t c = 0; c < chunks; c++)
     {
+      ready.unconsumed();
       __printf_pass_element_cstr_t inst(&str[c * w], w);
       send_by_copy<__printf_pass_element_cstr_t> f(&inst);
-      client->rpc_port_send(active_threads, port, f);
+      ready.unconsumed();
+        typename  T::template typed_port_t<0, 1>  tmp = client->rpc_port_send(active_threads, hostrpc::cxx::move(ready), f);
+      tmp.unconsumed();
+      ready.consumed();
+      ready =
+        client->rpc_port_wait_until_available(active_threads,
+                                              hostrpc::cxx::move(tmp  ));
+      ready.unconsumed();
     }
+  ready.unconsumed();
 
   // remainder < width, possibly zero. sending even when zero ensures null
   // terminated.
   {
     __printf_pass_element_cstr_t inst(&str[chunks * w], remainder);
     send_by_copy<__printf_pass_element_cstr_t> f(&inst);
-    client->rpc_port_send(active_threads, port, f);
+    auto tmp =
+    client->rpc_port_send(active_threads, hostrpc::cxx::move(ready), f);
+      ready =
+        client->rpc_port_wait_until_available(active_threads,
+                                              hostrpc::cxx::move(tmp  ));
+    
   }
 
-
-  return static_cast<uint32_t>(port);
+  uint32_t r = ready;
+  ready.disown();
+  return r;
 }
 
 template <typename T>
