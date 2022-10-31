@@ -38,6 +38,7 @@
 // Functions implemented out of C header. printf resolves to multiple calls to
 // these. Some implemented on gcn. All should probably be implemented on
 // gcn/ptx/x64
+
 __PRINTF_API_EXTERNAL hostrpc::port_t __printf_print_start(const char *fmt);
 __PRINTF_API_EXTERNAL int __printf_print_end(hostrpc::port_t port);
 // simple types
