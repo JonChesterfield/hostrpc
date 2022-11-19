@@ -9,6 +9,8 @@
 #include <link.h>
 #include <memory>
 
+#include <cstdarg>
+
 enum
 {
   verbose = 0,

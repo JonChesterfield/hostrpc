@@ -101,9 +101,9 @@ MSGPACKINCLUDE="thirdparty/msgpack"
 if [[ -d $MSGPACKINCLUDE ]]
 then
     echo "Using existing msgpack"
-    cd $MSGPACKINCLUDE
-    git pull
-    cd -
+    #cd $MSGPACKINCLUDE
+    #git pull
+    #cd -
 else
     echo "Cloning msgpack"
     git clone https://github.com/jonchesterfield/msgpack.git $MSGPACKINCLUDE
@@ -214,7 +214,7 @@ CXX_X64_LD="$CXX"
 CXX_GCN_LD="$CXX $GCNFLAGS"
 
 if [ ! -f obj/catch.o ]; then
-    time $CXX -O3 thirdparty/catch.cpp -c -o obj/catch.o
+    time $CXX -O3 -fPIE thirdparty/catch.cpp -c -o obj/catch.o
 fi
 
 # Code running on the host can link in host, hsa or cuda support library.
