@@ -22,12 +22,13 @@ enum class server_state : uint8_t
   result_with_thread = 0b111,
 };
 
-template <typename WordT, typename SZT, typename Counter = counters::server>
-struct server_impl : public state_machine_impl<WordT, SZT, Counter, true>
+template <typename BufferElementT, typename WordT, typename SZT, typename Counter = counters::server>
+struct server_impl : public state_machine_impl<BufferElementT, WordT, SZT, Counter, true>
 {
-  using base = state_machine_impl<WordT, SZT, Counter, true>;
+  using base = state_machine_impl<BufferElementT, WordT, SZT, Counter, true>;
   using typename base::state_machine_impl;
 
+  using BufferElement = typename base::BufferElement;
   using Word = typename base::Word;
   using SZ = typename base::SZ;
   using lock_t = typename base::lock_t;
@@ -48,7 +49,7 @@ struct server_impl : public state_machine_impl<WordT, SZT, Counter, true>
   HOSTRPC_ANNOTATE server_impl() : base() {}
   HOSTRPC_ANNOTATE ~server_impl() = default;
   HOSTRPC_ANNOTATE server_impl(SZ sz, lock_t active, inbox_t inbox,
-                               outbox_t outbox, page_t* shared_buffer)
+                               outbox_t outbox, BufferElement* shared_buffer)
       : base(sz, active, inbox, outbox, shared_buffer)
   {
     constexpr size_t server_size = 32;
@@ -96,7 +97,7 @@ struct server_impl : public state_machine_impl<WordT, SZT, Counter, true>
   {
     struct Clear
     {
-      HOSTRPC_ANNOTATE void operator()(uint32_t, hostrpc::page_t*){};
+      HOSTRPC_ANNOTATE void operator()(uint32_t, BufferElement*){};
     };
     return rpc_open_port_impl<Clear, false>(active_threads, Clear{},
                                             location_arg);
@@ -172,10 +173,10 @@ struct server_impl : public state_machine_impl<WordT, SZT, Counter, true>
   }
 };
 
-template <typename WordT, typename SZT, typename Counter = counters::server>
-struct server : public server_impl<WordT, SZT, Counter>
+template <typename BufferElementT, typename WordT, typename SZT, typename Counter = counters::server>
+struct server : public server_impl<BufferElementT, WordT, SZT, Counter>
 {
-  using base = server_impl<WordT, SZT, Counter>;
+  using base = server_impl<BufferElementT, WordT, SZT, Counter>;
   using base::server_impl;
   template <unsigned I, unsigned O>
   using typed_port_t = typename base::template typed_port_t<I, O>;
@@ -206,7 +207,7 @@ struct server : public server_impl<WordT, SZT, Counter>
     auto active_threads = platform::active_threads();
     struct Clear
     {
-      HOSTRPC_ANNOTATE void operator()(uint32_t, hostrpc::page_t*){};
+      HOSTRPC_ANNOTATE void operator()(uint32_t, BufferElementT*){};
     };
     return rpc_handle_impl<Operate, Clear, false>(
         active_threads, cxx::forward<Operate>(op), Clear{}, location);

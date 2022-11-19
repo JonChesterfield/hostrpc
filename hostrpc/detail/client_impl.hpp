@@ -16,7 +16,8 @@ namespace hostrpc
 {
 struct fill_nop
 {
-  HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, page_t *) {}
+  template <typename BufferElement>
+  HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, BufferElement *) {}
   fill_nop() = default;
   fill_nop(const fill_nop &) = delete;
   fill_nop(fill_nop &&) = delete;
@@ -24,7 +25,8 @@ struct fill_nop
 
 struct use_nop
 {
-  HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, page_t *) {}
+  template <typename BufferElement>
+  HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, BufferElement *) {}
   use_nop() = default;
   use_nop(const use_nop &) = delete;
   use_nop(use_nop &&) = delete;
@@ -49,14 +51,15 @@ enum class client_state : uint8_t
 // garbage that is, can't claim the slot for a new thread is that a sufficient
 // criteria for the slot to be awaiting gc?
 
-template <typename WordT, typename SZT, typename Counter = counters::client>
-struct client_impl : public state_machine_impl<WordT, SZT, Counter,
+template <typename BufferElementT, typename WordT, typename SZT, typename Counter = counters::client>
+struct client_impl : public state_machine_impl<BufferElementT, WordT, SZT, Counter,
                                                false>
 {
   using base =
-    state_machine_impl<WordT, SZT, Counter, false>;
+    state_machine_impl<BufferElementT, WordT, SZT, Counter, false>;
   using typename base::state_machine_impl;
 
+  using BufferElement = typename base::BufferElement;
   using Word = typename base::Word;
   using SZ = typename base::SZ;
   using lock_t = typename base::lock_t;
@@ -70,7 +73,7 @@ struct client_impl : public state_machine_impl<WordT, SZT, Counter,
   HOSTRPC_ANNOTATE ~client_impl() = default;
   HOSTRPC_ANNOTATE client_impl(SZ sz, lock_t active, inbox_t inbox,
                                outbox_t outbox,
-                               page_t *shared_buffer)
+                               BufferElement *shared_buffer)
 
       : base(sz, active, inbox, outbox, shared_buffer)
   {
@@ -295,14 +298,14 @@ struct client_impl : public state_machine_impl<WordT, SZT, Counter,
   HOSTRPC_ANNOTATE void rpc_port_discard_result(T active_threads, port_t port)
   {
     base::template rpc_port_apply_hi(active_threads, port,
-                                     [](hostrpc::port_t, page_t *) {});
+                                     [](hostrpc::port_t, BufferElement *) {});
   }
 
   template <typename T>
   HOSTRPC_ANNOTATE typed_port_t<1,0> rpc_port_discard_result(T active_threads, typed_port_t<1,1> && port)
   {
     return base::template rpc_port_apply(active_threads, hostrpc::cxx::move(port),
-                                     [](hostrpc::port_t, page_t *) {});
+                                     [](hostrpc::port_t, BufferElement *) {});
   }
 
   
@@ -325,10 +328,10 @@ struct client_impl : public state_machine_impl<WordT, SZT, Counter,
   #endif
 };
 
-template <typename WordT, typename SZT, typename Counter = counters::client>
-struct client : public client_impl<WordT, SZT, Counter>
+template <typename BufferElementT, typename WordT, typename SZT, typename Counter = counters::client>
+struct client : public client_impl<BufferElementT, WordT, SZT, Counter>
 {
-  using base = client_impl<WordT, SZT, Counter>;
+  using base = client_impl<BufferElementT, WordT, SZT, Counter>;
   using base::client_impl;
   template <unsigned I, unsigned O>
   using typed_port_t = typename base::template typed_port_t<I, O>;

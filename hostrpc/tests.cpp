@@ -90,9 +90,10 @@ TEST_CASE("set up single word system")
   x64_alloc_deleter store;
 
   using Word = uint64_t;
-  using client_type = client<Word, SZ>;
+  using BufferElement = page_t;
+  using client_type = client<BufferElement, Word, SZ>;
 
-  using server_type = server<Word, SZ>;
+  using server_type = server<BufferElement, Word, SZ>;
 
   auto send = x64_alloc<client_type::mailbox_t>(N, &store);
   auto recv = x64_alloc<client_type::mailbox_t>(N, &store);

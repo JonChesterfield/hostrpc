@@ -20,10 +20,25 @@ namespace hostrpc
 // inbox != outbox:
 //   waiting on other agent
 
-template <typename WordT, typename SZT, typename Counter,
+// WordT is a property of the architecture - some unsigned integer used as the
+// building block of bitmaps. No particular reason why it needs to be the same
+// for different bitmaps or for different ends of the machine, though that is
+// currently assumed to be the case
+
+// SZT is either a hostrpc::size_runtime or a hostrpc::size_compiletime, which
+// is an application choice based on how specialised it wants to be
+
+// Counter is a probably obsolete debugging hook, better erased
+
+// InvertedInboxLoad is a way for a client/server pair to configure themselves
+
+
+  
+template <typename BufferElementT, typename WordT, typename SZT, typename Counter,
           bool InvertedInboxLoad>
 struct state_machine_impl : public SZT, public Counter
 {
+  using BufferElement = BufferElementT;
   using Word = WordT;
   using SZ = SZT;
   using lock_t = lock_bitmap<Word>;
@@ -51,24 +66,28 @@ struct state_machine_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE uint32_t size() const { return SZ::value(); }
   HOSTRPC_ANNOTATE uint32_t words() const { return size() / wordBits(); }
 
-  page_t* shared_buffer;
+  BufferElement* shared_buffer;
   lock_t active;
 
   inbox_t inbox;
   outbox_t outbox;
 
-  static_assert(cxx::is_trivially_copyable<page_t*>::value, "");
+  // Require that instances of this class can be trivially copied
+  static_assert(cxx::is_trivially_copyable<BufferElement*>::value, "");
   static_assert(cxx::is_trivially_copyable<lock_t>::value, "");
   static_assert(cxx::is_trivially_copyable<inbox_t>::value, "");
   static_assert(cxx::is_trivially_copyable<outbox_t>::value, "");
 
+  // Also need to check somewhere that the contents of the shared buffer is copyable
+  static_assert(cxx::is_trivially_copyable<BufferElement>::value, "");
+  
   HOSTRPC_ANNOTATE state_machine_impl()
       : SZ{}, Counter{}, active{}, inbox{}, outbox{}
   {
   }
   HOSTRPC_ANNOTATE ~state_machine_impl() = default;
   HOSTRPC_ANNOTATE state_machine_impl(SZ sz, lock_t active, inbox_t inbox,
-                                      outbox_t outbox, page_t* shared_buffer)
+                                      outbox_t outbox, BufferElement* shared_buffer)
       : SZ{sz},
         Counter{},
         shared_buffer(shared_buffer),
@@ -623,11 +642,11 @@ struct state_machine_impl : public SZT, public Counter
   }
 };
 
-template <typename WordT, typename SZT, typename Counter,
+template <typename BufferElementT, typename WordT, typename SZT, typename Counter,
           bool InvertedInboxLoad>
 template <typename T>
 HOSTRPC_ANNOTATE void
-state_machine_impl<WordT, SZT, Counter, InvertedInboxLoad>::rpc_close_port(
+state_machine_impl<BufferElementT, WordT, SZT, Counter, InvertedInboxLoad>::rpc_close_port(
     T active_threads,
     port_t port)  // Require != port_t::unavailable
 {
@@ -642,13 +661,13 @@ state_machine_impl<WordT, SZT, Counter, InvertedInboxLoad>::rpc_close_port(
     }
 }
 
-template <typename WordT, typename SZT, typename Counter,
+template <typename BufferElementT, typename WordT, typename SZT, typename Counter,
           bool InvertedInboxLoad>
 template <typename T,
-          typename state_machine_impl<WordT, SZT, Counter,
+          typename state_machine_impl<BufferElementT, WordT, SZT, Counter,
                                       InvertedInboxLoad>::port_state Req>
 HOSTRPC_ANNOTATE void state_machine_impl<
-    WordT, SZT, Counter,
+  BufferElementT, WordT, SZT, Counter,
     InvertedInboxLoad>::rpc_port_wait_until_state(T active_threads, port_t port,
                                                   port_state* which)
 {

@@ -289,14 +289,16 @@ struct client_server_pair_t
   using Allocators = arch::allocators<ClientArch_, ServerArch_>;
   using Word = typename Allocators::word_type;
 
+  using BufferElement = page_t;
+  
   using AllocBuffer =
-      typename Allocators::template shared_allocator_t<alignof(page_t)>;
+      typename Allocators::template shared_allocator_t<alignof(BufferElement)>;
   using AllocInboxOutbox = typename Allocators::template shared_allocator_t<64>;
   using AllocLocal = typename Allocators::template local_allocator_t<64>;
   using AllocRemote = typename Allocators::template remote_allocator_t<64>;
 
-  using client_type = client<Word, SZ, client_counter>;
-  using server_type = server<Word, SZ, server_counter>;
+  using client_type = client<BufferElement, Word, SZ, client_counter>;
+  using server_type = server<BufferElement, Word, SZ, server_counter>;
 
   using storage_type = allocator::store_impl<AllocBuffer, AllocInboxOutbox,
                                              AllocLocal, AllocRemote>;
@@ -317,7 +319,7 @@ struct client_server_pair_t
 
   HOSTRPC_ANNOTATE client_server_pair_t(SZ sz, ClientArch c, ServerArch s)
       : storage(host_client(
-            Allocators(c, s).template shared_allocator<alignof(page_t)>(),
+            Allocators(c, s).template shared_allocator<alignof(BufferElement)>(),
             Allocators(c, s).template shared_allocator<64>(),
             Allocators(c, s).template local_allocator<64>(),
             Allocators(c, s).template remote_allocator<64>(), sz, &server,

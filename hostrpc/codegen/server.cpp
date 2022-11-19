@@ -30,7 +30,7 @@ struct clear_direct
 };
 }  // namespace hostrpc
 
-using server_type_direct = hostrpc::server<uint64_t, SZ>;
+using server_type_direct = hostrpc::server<hostrpc::page_t, uint64_t, SZ>;
 
 extern "C" HOSTRPC_ANNOTATE void server_instance_direct(
     server_type_direct::inbox_t inbox, server_type_direct::outbox_t outbox,

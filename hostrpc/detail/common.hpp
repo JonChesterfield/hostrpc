@@ -392,12 +392,10 @@ struct slot_bitmap
   // assumes slot available
   HOSTRPC_ANNOTATE void claim_slot(uint32_t size, port_t i)
   {
-    (void)size;
     assert(static_cast<uint32_t>(i) < size);
-    uint32_t w = index_to_element<Word>(i);
-    uint32_t subindex = index_to_subindex<Word>(i);
-    assert(!bits::nthbitset(load_word<false>(size, w), subindex));
+    assert(!bits::nthbitset(load_word<false>(size, index_to_element<Word>(i)), index_to_subindex<Word>(i)));
     bool before = set_slot<true>(size, i);
+    (void)before;
     assert(before == false);
   }
 
