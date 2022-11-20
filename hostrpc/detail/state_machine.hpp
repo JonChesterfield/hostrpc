@@ -32,10 +32,8 @@ namespace hostrpc
 
 // InvertedInboxLoad is a way for a client/server pair to configure themselves
 
-
-  
-template <typename BufferElementT, typename WordT, typename SZT, typename Counter,
-          bool InvertedInboxLoad>
+template <typename BufferElementT, typename WordT, typename SZT,
+          typename Counter, bool InvertedInboxLoad>
 struct state_machine_impl : public SZT, public Counter
 {
   using BufferElement = BufferElementT;
@@ -78,16 +76,18 @@ struct state_machine_impl : public SZT, public Counter
   static_assert(cxx::is_trivially_copyable<inbox_t>::value, "");
   static_assert(cxx::is_trivially_copyable<outbox_t>::value, "");
 
-  // Also need to check somewhere that the contents of the shared buffer is copyable
+  // Also need to check somewhere that the contents of the shared buffer is
+  // copyable
   static_assert(cxx::is_trivially_copyable<BufferElement>::value, "");
-  
+
   HOSTRPC_ANNOTATE state_machine_impl()
       : SZ{}, Counter{}, active{}, inbox{}, outbox{}
   {
   }
   HOSTRPC_ANNOTATE ~state_machine_impl() = default;
   HOSTRPC_ANNOTATE state_machine_impl(SZ sz, lock_t active, inbox_t inbox,
-                                      outbox_t outbox, BufferElement* shared_buffer)
+                                      outbox_t outbox,
+                                      BufferElement* shared_buffer)
       : SZ{sz},
         Counter{},
         shared_buffer(shared_buffer),
@@ -135,22 +135,6 @@ struct state_machine_impl : public SZT, public Counter
     either_low_or_high = 3,
   };
 
-  // port_t::unavailable on failure
-  // scan_from can be any uint32_t, it gets % size of the buffer
-  // a reasonable guess is a previously used port_t cast to uint32_t and +1
-
-
-  // open a port with inbox == outbox, writes which type was opened iff passed a
-  // port_state
-  template <typename T>
-  HOSTRPC_ANNOTATE port_t rpc_open_untyped_port(T active_threads,
-                                        uint32_t scan_from = 0,
-                                        port_state* which = nullptr)
-  {
-    return rpc_open_untyped_port<T, port_state::either_low_or_high>(active_threads,
-                                                            scan_from, which);
-  }
-
   // The state machine type can construct and drop ports.
   // The non-default constructor and drop() methods are private to each.
   // The equivalence of states is defined as traits in typed_ports.
@@ -166,10 +150,9 @@ struct state_machine_impl : public SZT, public Counter
                                      OutboxState>;
 
   template <unsigned I, unsigned O>
-  HOSTRPC_ANNOTATE
-  HOSTRPC_CREATED_RES
-  typename typed_to_partial_trait<I, O>::type typed_to_partial(
-      typed_port_t<I, O>&& port HOSTRPC_CONSUMED_ARG)
+  HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES
+      typename typed_to_partial_trait<I, O>::type
+      typed_to_partial(typed_port_t<I, O>&& port HOSTRPC_CONSUMED_ARG)
   {
     uint32_t v = port;
     port.kill();  // don't close it, port lives on in the return value
@@ -177,11 +160,10 @@ struct state_machine_impl : public SZT, public Counter
   }
 
   template <bool OutboxState, unsigned S, typename T>
-  HOSTRPC_ANNOTATE
-  HOSTRPC_RETURN_UNKNOWN
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN
       maybe<uint32_t, typename partial_to_typed_trait<S, OutboxState>::type>
-           partial_to_typed(
-              T active_threads, partial_port_t<S>&& port HOSTRPC_CONSUMED_ARG)
+      partial_to_typed(T active_threads,
+                       partial_port_t<S>&& port HOSTRPC_CONSUMED_ARG)
   {
     uint32_t v = port.value;
     bool state = port.state;
@@ -199,9 +181,8 @@ struct state_machine_impl : public SZT, public Counter
   }
 
   template <unsigned I, unsigned O>
-  HOSTRPC_ANNOTATE
-  static
-  uint32_t unsafe_port_escape(typed_port_t<I,O>&&port HOSTRPC_CONSUMED_ARG)
+  HOSTRPC_ANNOTATE static uint32_t unsafe_port_escape(
+      typed_port_t<I, O>&& port HOSTRPC_CONSUMED_ARG)
   {
     uint32_t v = port;
     port.kill();
@@ -209,39 +190,58 @@ struct state_machine_impl : public SZT, public Counter
   }
 
   template <unsigned I, unsigned O>
-  HOSTRPC_ANNOTATE
-  HOSTRPC_CREATED_RES
-  static
-  typed_port_t<I,O> unsafe_port_create(uint32_t value)
+  HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES static typed_port_t<I, O>
+  unsafe_port_create(uint32_t value)
   {
     return {value};
   }
-  
+
   template <unsigned I, unsigned O, typename T>
   HOSTRPC_ANNOTATE typed_port_t<I, O> rpc_open_typed_port(
       T active_threads, uint32_t scan_from = 0)
   {
-    static_assert(I == 0,"");
-    return rpc_open_typed_port_impl<I, O, T>(active_threads, scan_from);
+    static_assert(I == O, "");
+    for (;;)
+      {
+        auto r = rpc_try_open_typed_port<I, O, T>(active_threads, scan_from);
+        if (r)
+          {
+            return r.value();
+          }
+      }
   }
 
   template <unsigned I, unsigned O, typename T>
-  HOSTRPC_ANNOTATE typename typed_port_t<I, O>::maybe
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename typed_port_t<I, O>::maybe
   rpc_try_open_typed_port(T active_threads, uint32_t scan_from = 0)
   {
-    static_assert(I == 0,"");
-    return rpc_try_open_typed_port_impl<I, O, T>(active_threads, scan_from);
+    static_assert(I == O, "");
+    constexpr port_state Req =
+        I == 0 ? port_state::low_values : port_state::high_values;
+
+    port_t p =
+        rpc_open_untyped_port<T, Req>(active_threads, scan_from, nullptr);
+    // ugly...
+    if (static_cast<uint32_t>(p) != static_cast<uint32_t>(port_t::unavailable))
+      {
+        return {static_cast<uint32_t>(p)};
+      }
+    else
+      {
+        return {};
+      }
   }
-  
+
   template <typename T>
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN
       maybe<cxx::tuple<uint32_t, bool>, partial_port_t<1>>
       rpc_try_open_partial_port(T active_threads, uint32_t scan_from)
   {
     port_state ps;
-    // todo: inline open_untyped_port into this to lose the assert and enum noise
-    port_t p = rpc_open_untyped_port<T, port_state::either_low_or_high>(active_threads,
-                                                                scan_from, &ps);
+    // todo: inline open_untyped_port into this to lose the assert and enum
+    // noise
+    port_t p = rpc_open_untyped_port<T, port_state::either_low_or_high>(
+        active_threads, scan_from, &ps);
 
     if (ps == port_state::unavailable)
       {
@@ -265,37 +265,8 @@ struct state_machine_impl : public SZT, public Counter
   // Can only wait on the inbox to change state as this thread will not change
   // the outbox during the busy wait
   template <typename T, port_state Req>
-  HOSTRPC_ANNOTATE void rpc_port_wait_until_state(T active_threads, port_t port,
-                                                  port_state* which = nullptr);
-
-  template <typename T, typename Op>
-  HOSTRPC_ANNOTATE void rpc_port_apply_lo(T active_threads, port_t port,
-                                          Op&& op)
-  {
-    assert(loadPortState(port) == port_state::low_values);
-    rpc_port_apply_given_state<T, Op, port_state::low_values>(
-        active_threads, port, cxx::forward<Op>(op));
-  }
-
-  template <typename T, typename Op>
-  HOSTRPC_ANNOTATE void rpc_port_apply_hi(T active_threads, port_t port,
-                                          Op&& op)
-  {
-    assert(loadPortState(port) == port_state::high_values);
-    rpc_port_apply_given_state<T, Op, port_state::high_values>(
-        active_threads, port, cxx::forward<Op>(op));
-  }
-
-  template <typename T, typename Op>
-  HOSTRPC_ANNOTATE void rpc_port_apply(T active_threads, port_t port, Op&& op)
-  {
-#ifdef NDEBUG
-    port_state s = loadPortState(port);
-    assert((s == port_state::low_values) || (s == port_state::high_values));
-#endif
-    rpc_port_apply_given_state<T, Op, port_state::either_low_or_high_values>(
-        active_threads, port, cxx::forward<Op>(op));
-  }
+  HOSTRPC_ANNOTATE void rpc_port_wait_until_state(T active_threads,
+                                                  port_t port);
 
   // Apply will leave input unchanged and toggle output
   // passed <0, 0> returns <0, 1>, i.e. output changed
@@ -342,7 +313,6 @@ struct state_machine_impl : public SZT, public Counter
     return typed_port_t<!I, !I>(raw);
   }
 
-
   template <unsigned S, typename T>
   HOSTRPC_ANNOTATE void rpc_close_port(T active_threads,
                                        partial_port_t<S>&& port)
@@ -363,7 +333,7 @@ struct state_machine_impl : public SZT, public Counter
     // Don't need to know the exact port state in order to close
     rpc_close_port(active_threads, typed_to_partial(cxx::move(port)));
   }
-  
+
  private:
   HOSTRPC_ANNOTATE
   port_state loadPortState(port_t port)
@@ -454,8 +424,9 @@ struct state_machine_impl : public SZT, public Counter
   }
 
   template <typename T, port_state Req>
-  HOSTRPC_ANNOTATE port_t rpc_open_untyped_port(T active_threads, uint32_t scan_from,
-                                        port_state* which)
+  HOSTRPC_ANNOTATE port_t rpc_open_untyped_port(T active_threads,
+                                                uint32_t scan_from,
+                                                port_state* which)
   {
     static_assert(Req != port_state::unavailable, "");
     const uint32_t size = this->size();
@@ -536,7 +507,8 @@ struct state_machine_impl : public SZT, public Counter
                                                    port_t port, Op&& op)
   {
     assert(port != port_t::unavailable);
-    static_assert(Req != port_state::unavailable, "");
+    static_assert(
+        Req == port_state::low_values || Req == port_state::high_values, "");
     const uint32_t size = this->size();
 
     op(port, &shared_buffer[static_cast<uint32_t>(port)]);
@@ -570,58 +542,22 @@ struct state_machine_impl : public SZT, public Counter
           }
       }
   }
-
-  template <unsigned I, unsigned O, typename T>
-  HOSTRPC_RETURN_UNKNOWN HOSTRPC_ANNOTATE typename typed_port_t<I, O>::maybe
-  rpc_try_open_typed_port_impl(T active_threads, uint32_t scan_from)
-  {
-    static_assert(I == O, "");
-    constexpr port_state Req =
-        I == 0 ? port_state::low_values : port_state::high_values;
-
-    port_t p = rpc_open_untyped_port<T, Req>(active_threads, scan_from, nullptr);
-    // ugly...
-    if (static_cast<uint32_t>(p) != static_cast<uint32_t>(port_t::unavailable))
-      {
-        return {static_cast<uint32_t>(p)};
-      }
-    else
-      {
-        return {};
-      }
-  }
-
-  template <unsigned I, unsigned O, typename T>
-  HOSTRPC_ANNOTATE typed_port_t<I, O> rpc_open_typed_port_impl(
-      T active_threads, uint32_t scan_from)
-  {
-    static_assert(I == O, "");
-    for (;;)
-      {
-        auto r =
-            rpc_try_open_typed_port_impl<I, O, T>(active_threads, scan_from);
-        if (r)
-          {
-            return r.value();
-          }
-      }
-  }
 };
 
-template <typename BufferElementT, typename WordT, typename SZT, typename Counter,
-          bool InvertedInboxLoad>
+template <typename BufferElementT, typename WordT, typename SZT,
+          typename Counter, bool InvertedInboxLoad>
 template <typename T,
           typename state_machine_impl<BufferElementT, WordT, SZT, Counter,
                                       InvertedInboxLoad>::port_state Req>
 HOSTRPC_ANNOTATE void state_machine_impl<
-  BufferElementT, WordT, SZT, Counter,
-    InvertedInboxLoad>::rpc_port_wait_until_state(T active_threads, port_t port,
-                                                  port_state* which)
+    BufferElementT, WordT, SZT, Counter,
+    InvertedInboxLoad>::rpc_port_wait_until_state(T active_threads,
+                                                  port_t untyped_port)
 {
   (void)active_threads;
   const uint32_t size = this->size();
-  const uint32_t w = index_to_element<Word>(port);
-  const uint32_t subindex = index_to_subindex<Word>(port);
+  const uint32_t w = index_to_element<Word>(untyped_port);
+  const uint32_t subindex = index_to_subindex<Word>(untyped_port);
 
   Word i = inbox.load_word(size, w);
   Word o = outbox.load_word(size, w);
@@ -629,17 +565,17 @@ HOSTRPC_ANNOTATE void state_machine_impl<
   // current thread assumed to hold lock, thus lock is held
   assert(bits::nthbitset(active.load_word(size, w), subindex));
 
+  static_assert(Req == port_state::low_values || Req == port_state::high_values,
+                "");
   platform::fence_acquire();
 
   bool out = bits::nthbitset(o, subindex);
   bool in = bits::nthbitset(i, subindex);
 
-  static_assert(Req != port_state::unavailable, "");
   switch (Req)
     {
       case port_state::low_values:
         {
-        lo:;
           // waiting for outbox to change means deadlock
           assert(out == false);
           while (in)
@@ -652,7 +588,6 @@ HOSTRPC_ANNOTATE void state_machine_impl<
         }
       case port_state::high_values:
         {
-        hi:;
           assert(out == true);
           while (in == false)
             {
@@ -661,25 +596,6 @@ HOSTRPC_ANNOTATE void state_machine_impl<
             }
           platform::fence_acquire();
           break;
-        }
-      case port_state::either_low_or_high:
-        {
-          if (out)
-            {
-              if (which)
-                {
-                  *which = port_state::high_values;
-                }
-              goto hi;
-            }
-          else
-            {
-              if (which)
-                {
-                  *which = port_state::low_values;
-                }
-              goto lo;
-            }
         }
     }
 }
