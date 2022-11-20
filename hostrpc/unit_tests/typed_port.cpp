@@ -38,13 +38,13 @@ struct test_state_machine
   template <unsigned I, unsigned O>
   static constexpr void drop(typed_port_t<I, O>&& port)
   {
-    port.drop();
+    port.kill();
   }
 
   template <unsigned S>
   static constexpr void drop(partial_port_t<S>&& port)
   {
-    port.drop();
+    port.kill();
   }
 
   template <unsigned I, unsigned O>
@@ -401,9 +401,33 @@ static MODULE(maybe)
   }
 }
 
+// annotating a non-const & with this typestate works, and gives you a function
+// that can mutate the argument provided it leaves it in unconsumed state
+template <typename F, unsigned I, unsigned O>
+uint32_t raw_without_destroy(
+    hostrpc::typed_port_impl_t<F, I, O> const& copy HOSTRPC_CONST_REF_ARG)
+{
+  uint32_t r = static_cast<uint32_t>(copy);
+  return r;
+}
+
+static MODULE(const_reference)
+{
+  using namespace hostrpc;
+  TEST("convert to raw without destroying it")
+  {
+    typed_port_t<0, 1> val = make<0, 1>(10);
+    val.unconsumed();
+    uint32_t should_fail = raw_without_destroy(val);
+    CHECK(should_fail == 10);
+    drop(cxx::move(val));
+  }
+}
+
 MAIN_MODULE()
 {
   DEPENDS(create_and_immediately_destroy);
-  DEPENDS(maybe);
   DEPENDS(conversions);
+  DEPENDS(maybe);
+  DEPENDS(const_reference);
 }

@@ -428,14 +428,11 @@ struct slot_bitmap
     else
       {
         // cas, indirectly
-    Word mask = ~bits::setnthbit((Word)0, subindex);
-    Word before = fetch_and(w, mask);
-    assert(bits::nthbitset(before, subindex));
-    (void)before;
-
+        Word mask = ~bits::setnthbit((Word)0, subindex);
+        Word before = fetch_and(w, mask);
+        assert(bits::nthbitset(before, subindex));
+        (void)before;
       }
-    
-    
   }
 
   HOSTRPC_ANNOTATE void toggle_slot(uint32_t size, port_t i)

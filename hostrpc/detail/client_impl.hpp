@@ -236,6 +236,8 @@ struct client_impl : public state_machine_impl<BufferElementT, WordT, SZT, Count
 template <typename BufferElementT, typename WordT, typename SZT, typename Counter = counters::client>
 struct client : public client_impl<BufferElementT, WordT, SZT, Counter>
 {
+  // TODO: Write directly in terms of state machine? Credible chance that any program which wants
+  // more control than the invoke/invoke_async api will do better with the raw state_machine.
   using base = client_impl<BufferElementT, WordT, SZT, Counter>;
   using base::client_impl;
   template <unsigned I, unsigned O>
