@@ -375,6 +375,9 @@ if (($have_amdgcn)); then
   $CXX_GCN_LD printf_test.gcn.bc -o printf_test.gcn
 fi
 
+$CXX_X64 unit_tests/maybe.cpp -c -o obj/unit_tests/maybe.x64.bc
+$CXX_X64_LD obj/unit_tests/maybe.x64.bc -o unit_tests/maybe.x64.exe
+./unit_tests/maybe.x64.exe
 
 $CXX_X64 unit_tests/common.cpp -c -o obj/unit_tests/common.x64.bc
 $CXX_X64_LD obj/unit_tests/common.x64.bc -o unit_tests/common.x64.exe
@@ -383,12 +386,6 @@ $CXX_X64_LD obj/unit_tests/common.x64.bc -o unit_tests/common.x64.exe
 $CXX_X64 unit_tests/typed_port.cpp -c -o obj/unit_tests/typed_port.x64.bc
 $CXX_X64_LD obj/unit_tests/typed_port.x64.bc -o unit_tests/typed_port.x64.exe
 ./unit_tests/typed_port.x64.exe
-
-
-$CXX_X64 unit_tests/maybe.cpp -c -o obj/unit_tests/maybe.x64.bc
-$CXX_X64_LD obj/unit_tests/maybe.x64.bc -o unit_tests/maybe.x64.exe
-./unit_tests/maybe.x64.exe
-
 
 if (($have_amdgcn)); then
 $CXX_GCN unit_tests/common.cpp -c -o obj/unit_tests/common.gcn.bc

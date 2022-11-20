@@ -6,10 +6,11 @@
 
 namespace hostrpc
 {
-
-// By default stores a T and returns the same type, but if desired
-// can store a different type and construct it on request
-template <typename T, typename U = T>
+// Stores a T and constructs a U from it on request, if available
+// Non-default construction is only permitted by U. This makes the
+// class less usable in exchange for preventing out of thin air
+// construction of U via this class.
+template <typename T, typename U>
 struct HOSTRPC_CONSUMABLE_CLASS maybe
 {
   // Warning: When returning an instance from a function, that
@@ -21,19 +22,19 @@ struct HOSTRPC_CONSUMABLE_CLASS maybe
 
   HOSTRPC_RETURN_UNKNOWN
   HOSTRPC_ANNOTATE
-  maybe() : valid(false)
-  {
-    unknown();
-  }
+  maybe() : valid(false) { unknown(); }
+
+ private:
+  friend U;
 
   HOSTRPC_RETURN_UNKNOWN
   HOSTRPC_ANNOTATE
-  maybe(T payload)
-      : payload(static_cast<T &&>(payload)), valid(true)
+  maybe(T payload) : payload(static_cast<T &&>(payload)), valid(true)
   {
     unknown();
   }
 
+ public:
   // Branch on the value, the true side will be 'unconsumed'
   HOSTRPC_CALL_ON_UNKNOWN
   HOSTRPC_ANNOTATE
@@ -49,7 +50,7 @@ struct HOSTRPC_CONSUMABLE_CLASS maybe
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_ANNOTATE
   operator U() { return value(); }
-  
+
   // Errors if the above pattern is not followed
   HOSTRPC_CALL_ON_DEAD HOSTRPC_ANNOTATE ~maybe() {}
 

@@ -177,7 +177,8 @@ struct state_machine_impl : public SZT, public Counter
     if (OutboxState == state)
       {
         port.kill();
-        return {v};
+        typename partial_to_typed_trait<S, OutboxState>::type new_port(v);
+        return new_port;
       }
     else
       {
@@ -235,7 +236,9 @@ struct state_machine_impl : public SZT, public Counter
     if (got != port_state::unavailable)
       {
         assert(got == Requested);
-        return {static_cast<uint32_t>(maybe_port)};
+        typed_port_t<I,O> new_port(static_cast<uint32_t>(maybe_port));
+        new_port.unconsumed();
+        return new_port;
       }
     else
       {
@@ -265,10 +268,15 @@ struct state_machine_impl : public SZT, public Counter
           return {};
 
         case port_state::low_values:
-          return {{static_cast<uint32_t>(maybe_port), false}};
-
+          {
+            partial_port_t<1> new_port (static_cast<uint32_t>(maybe_port), false);
+            return new_port;
+          }
         case port_state::high_values:
-          return {{static_cast<uint32_t>(maybe_port), true}};
+          {
+            partial_port_t<1> new_port (static_cast<uint32_t>(maybe_port), true);
+          return new_port;
+          }
       }
   }
 

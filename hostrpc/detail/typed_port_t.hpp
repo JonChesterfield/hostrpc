@@ -6,6 +6,7 @@
 
 #include "cxx.hpp"
 #include "maybe.hpp"
+#include "either.hpp"
 #include "tuple.hpp"  // may be better to make maybe construction variadic
 
 namespace hostrpc
@@ -183,10 +184,11 @@ template <typename Friend, unsigned I, unsigned O>
 class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
 {
  private:
+  using SelfType = typed_port_impl_t<Friend, I, O>;
   friend Friend;  // the state machine
   uint32_t value;
 
-  HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr typed_port_impl_t(uint32_t v)
+  HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES typed_port_impl_t(uint32_t v)
       : value(v)
   {
     static_assert((I <= 1) && (O <= 1), "");
@@ -207,8 +209,6 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   HOSTRPC_ANNOTATE HOSTRPC_SET_TYPESTATE(unconsumed) void def() const {}
 
  public:
-  using maybe = hostrpc::maybe<uint32_t, typed_port_impl_t<Friend, I, O>>;
-  friend maybe;
 
   static constexpr unsigned InboxState = I;
   static constexpr unsigned OutboxState = O;
@@ -219,6 +219,45 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     return value;
   }
 
+  // non-default maybe can only be constructed by the second template parameter,
+  // i.e. by this class. The only method that does so is operator that consumes
+  // the port. Thus this instance can be converted to a maybe and then retrieved.
+  using maybe = hostrpc::maybe<uint32_t, SelfType>;
+  friend maybe;
+
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+  HOSTRPC_RETURN_UNKNOWN
+  operator maybe()
+  {
+    uint32_t v = *this;
+    kill();
+    return {v};
+  }
+
+  // either_builder can only be constructed by the first template parameter, i.e. by
+  // this class. The only method that does so consumes the port.
+  // either is only constructed from either_builder, which consumes the builder.
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+  operator hostrpc::either_builder<SelfType, typed_port_impl_t<Friend, I, !O>, uint32_t>()
+  {
+    uint32_t v = *this;
+    kill();
+    return {v};    
+  }
+
+  // if either is constructed by normal(), the ==true path is live and will
+  // return (a maybe that returns) SelfType.
+  // if either is cosntructed by invert(), the ==false path is live and will
+  // return (a maybe that returns) SelfType.
+  // The dynamically dead path will call the other constructor, which is a
+  // friend here to allow the dead path to typecheck.
+  friend hostrpc::either<SelfType, typed_port_impl_t<Friend, I, !O>, uint32_t>;
+  friend hostrpc::either<typed_port_impl_t<Friend, I, !O>, SelfType, uint32_t>;
+  
   // move construct and assign are available
   HOSTRPC_ANNOTATE
   HOSTRPC_CREATED_RES
@@ -276,6 +315,7 @@ template <typename Friend, unsigned S>
 class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
 {
  private:
+ using SelfType = partial_port_impl_t<Friend, S>;
   friend Friend;  // the state machine
   uint32_t value;
   bool state;
@@ -306,14 +346,26 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
   HOSTRPC_ANNOTATE HOSTRPC_SET_TYPESTATE(unconsumed) void def() const {}
 
  public:
-  using maybe = hostrpc::maybe<cxx::tuple<uint32_t, bool>,
-                               partial_port_impl_t<Friend, S>>;
-  friend maybe;
 
   // can convert it back to a uint32_t for indexing into structures
   HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE operator uint32_t() const
   {
     return value;
+  }
+
+  using maybe = hostrpc::maybe<cxx::tuple<uint32_t, bool>,
+                               SelfType>;
+  friend maybe;
+
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+  HOSTRPC_RETURN_UNKNOWN
+  operator maybe()
+  {
+    cxx::tuple<uint32_t, bool> tup = {value, state};
+    kill();
+    return {tup};
   }
 
   // move construct and assign are available

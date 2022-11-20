@@ -1,17 +1,39 @@
 #include "EvilUnit.h"
 #include "../detail/maybe.hpp"
-#include <stdint.h>
+#include <cstdint>
 
 using namespace hostrpc;
 
 // shouldn't have to qualify this, but nevermind. Close enough
 // a static factory function with the annotation doesn't help either
 namespace {
-  HOSTRPC_RETURN_UNKNOWN
-maybe<float> from_func(float x)
+
+template <typename T>
+struct make
 {
-  return maybe<float>(x);
+  make(T value) : value(value) {}
+
+  HOSTRPC_RETURN_UNKNOWN
+  maybe<T, make<T>>
+  static create(T value)
+  {
+    return {value};
+  }
+
+  
+  operator T() { return value; }
+private:
+  T value;
+};
+
+
+  HOSTRPC_RETURN_UNKNOWN
+  maybe<float,make<float>> from_func(float x)
+{
+  return make<float>::create(x);
 }
+
+  
 }
 
 MODULE(maybe)
@@ -19,8 +41,9 @@ MODULE(maybe)
   // tests are all looking for clean compilation, force some print output
   // as the test framework writes nothing if zero checks exist
   CHECK(true);
-  
-  using maybe_t = maybe<uint32_t>;
+
+  using make_t = make<uint32_t>;
+  using maybe_t = maybe<uint32_t, make_t>;
 
   TEST("default constructed")
     {
@@ -45,7 +68,7 @@ MODULE(maybe)
     if (i)
       {
         i.unconsumed();
-        uint32_t value = i;
+        make_t value = i;
         (void)value;
         i.consumed();
       }
@@ -59,13 +82,13 @@ MODULE(maybe)
 
   TEST("happy path, true")
   {
-    maybe_t i(12);
+    maybe_t i = make_t::create(12);
     i.unknown();
 
     if (i)
       {
         i.unconsumed();
-        uint32_t value = i;
+        make_t value = i;
         (void)value;
         i.consumed();
       }
@@ -95,7 +118,7 @@ MODULE(maybe)
     i.unknown();
     if (i)
       {
-        uint32_t d = i;
+        make_t d = i;
         (void)d;
       }
     i.consumed();
@@ -114,7 +137,7 @@ MODULE(maybe)
 
     if (i)
       {
-        uint32_t d = i;
+        make_t d = i;
         (void)d;
       }
     i.consumed();
@@ -138,7 +161,7 @@ MODULE(maybe)
     maybe_t i;
     if (i)
       {
-        uint32_t u = i;
+        make_t u = i;
         (void)u;
         i.consumed();
       }
@@ -147,9 +170,9 @@ MODULE(maybe)
 
   TEST("from function")
     {
-      maybe<float> f = from_func(1.4);
+      auto f = from_func(1.4);
       f.unknown();
-      if (f) { float tmp = f; (void)tmp; }
+      if (f) { make<float> tmp = f; (void)tmp; }
     }
 }
 

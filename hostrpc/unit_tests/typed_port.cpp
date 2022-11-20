@@ -1,3 +1,4 @@
+#include "../detail/either.hpp"
 #include "../detail/maybe.hpp"
 #include "../detail/state_machine.hpp"
 #include "EvilUnit.h"
@@ -72,7 +73,10 @@ struct test_state_machine
     if (OutboxState == state)
       {
         port.kill();
-        return {v};
+        typename hostrpc::traits::partial_to_typed_trait<
+            test_state_machine, partial_port_t<S>, OutboxState>::type
+            new_port(v);
+        return new_port;
       }
     else
       {
@@ -385,20 +389,7 @@ static MODULE(maybe)
     val.consumed();
   }
 
-  TEST("maybe non-default")
-  {
-    typed_port_t<0, 1>::maybe val{42};
-    val.unknown();
-    if (val)
-      {
-        val.unconsumed();
-        typed_port_t<0, 1> tmp = val;
-        val.consumed();
-        CHECK(tmp == 42);
-        drop(cxx::move(tmp));
-      }
-    val.consumed();
-  }
+  // can't construct a non-default one directly
 }
 
 // annotating a non-const & with this typestate works, and gives you a function
@@ -424,10 +415,66 @@ static MODULE(const_reference)
   }
 }
 
+hostrpc::either<typed_port_t<0, 1>, typed_port_t<0, 0>, uint32_t> maybe_apply(
+    bool act, typed_port_t<0, 0>&& port HOSTRPC_CONSUMED_ARG)
+{
+  port.unconsumed();
+  if (act)
+    {
+      port.unconsumed();
+      typed_port_t<0, 1> tmp2 = make<0, 1>(static_cast<uint32_t>(port));
+      drop(hostrpc::cxx::move(port));
+      port.consumed();
+      hostrpc::either_builder<typed_port_t<0, 1>, typed_port_t<0, 0>, uint32_t>
+          b(tmp2);
+      b.unconsumed();
+      return b.normal();
+    }
+  else
+    {
+      port.unconsumed();
+      hostrpc::either_builder<typed_port_t<0, 0>, typed_port_t<0, 1>, uint32_t>
+          b(port);
+      port.consumed();
+      b.unconsumed();
+      return b.invert();
+    }
+}
+
+static MODULE(either)
+{
+  using namespace hostrpc;
+
+  TEST(".")
+  {
+    typed_port_t<0, 0> val = make<0, 0>(10);
+    auto e = maybe_apply(false, cxx::move(val));
+    if (e)
+      {
+        typed_port_t<0, 1>::maybe p = e.on_true();
+        if (p)
+          {
+            typed_port_t<0, 1> t = p;
+            drop(cxx::move(t));
+          }
+      }
+    else
+      {
+        typed_port_t<0, 0>::maybe p = e.on_false();
+        if (p)
+          {
+            typed_port_t<0, 0> t = p;
+            drop(cxx::move(t));
+          }
+      }
+  }
+}
+
 MAIN_MODULE()
 {
   DEPENDS(create_and_immediately_destroy);
   DEPENDS(conversions);
   DEPENDS(maybe);
   DEPENDS(const_reference);
+  DEPENDS(either);
 }
