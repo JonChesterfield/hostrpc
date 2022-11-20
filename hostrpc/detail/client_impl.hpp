@@ -108,35 +108,37 @@ struct client_impl : public state_machine_impl<BufferElementT, WordT, SZT, Count
 
   HOSTRPC_ANNOTATE client_counters get_counters() { return Counter::get(); }
 
-  template <typename Op, typename T>
-  HOSTRPC_ANNOTATE typed_port_t<0, 1> rpc_port_send_given_available(
-      T active_threads, typed_port_t<0, 0> &&port, Op &&op)
+  template <typename T>
+  HOSTRPC_ANNOTATE typed_port_t<0, 0> rpc_open_typed_port(
+      T active_threads, uint32_t scan_from = 0)
   {
-    // TODO: given_available is implicit in type now
-    return base::template rpc_port_apply(active_threads, cxx::move(port),
-                                         cxx::forward<Op>(op));
+    constexpr unsigned I = 0;
+    constexpr unsigned O = 0;
+    return base::template rpc_open_typed_port<I, O, T>(active_threads, scan_from);
+  }
+  
+  template <typename T>
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename typed_port_t<0, 0>::maybe rpc_try_open_typed_port(
+      T active_threads, uint32_t scan_from = 0)
+  {
+    constexpr unsigned I = 0;
+    constexpr unsigned O = 0;
+    return base::template rpc_try_open_typed_port<I, O, T>(active_threads, scan_from);
   }
 
-  template <typename Op, typename T, unsigned I>
-  HOSTRPC_ANNOTATE typed_port_t<0, 1> rpc_port_send(T active_threads,
-                                                    typed_port_t<I, 0> &&port,
-                                                    Op &&op)
+  template <typename T, unsigned I, unsigned O>
+  HOSTRPC_ANNOTATE void rpc_close_port(T active_threads,
+                                       typed_port_t<I, O> &&port)
   {
-    // we know outbox is low (so we can send), but don't know whether inbox is
-    // yet
+    base::template rpc_close_port(active_threads, cxx::move(port));
+  }
 
-    typed_port_t<0, 0> ready;
-    if constexpr (I == 1)
-      {
-        ready = base::template rpc_port_wait(active_threads, cxx::move(port));
-      }
-    else
-      {
-        ready = cxx::move(port);
-      }
-
-    return rpc_port_send_given_available(active_threads, cxx::move(ready),
-                                         cxx::forward<Op>(op));
+  
+  template <typename T>
+  HOSTRPC_ANNOTATE typed_port_t<0, 0> rpc_port_wait_until_available(
+      T active_threads, typed_port_t<1, 0> &&port)
+  {
+    return base::template rpc_port_wait(active_threads, cxx::move(port));
   }
 
   template <typename T>
@@ -146,17 +148,38 @@ struct client_impl : public state_machine_impl<BufferElementT, WordT, SZT, Count
     return base::template rpc_port_wait(active_threads, cxx::move(port));
   }
 
+  template <typename Op, typename T, unsigned I>
+  HOSTRPC_ANNOTATE typed_port_t<0, 1> rpc_port_send(T active_threads,
+                                                    typed_port_t<I, 0> &&port,
+                                                    Op &&op)
+  {
+    // can only try to send with a low outbox, but can wait for inbox to clear
+
+    typed_port_t<0, 0> ready;
+    if constexpr (I == 1)
+      {
+        ready = rpc_port_wait_until_available(active_threads, cxx::move(port));
+      }
+    else
+      {
+        ready = cxx::move(port);
+      }
+
+    return base::template rpc_port_apply(active_threads, cxx::move(ready),
+                                         cxx::forward<Op>(op));
+  }
+
+
   template <typename Use, typename T, unsigned I>
   HOSTRPC_ANNOTATE typed_port_t<1, 0> rpc_port_recv(T active_threads,
                                                     typed_port_t<I, 1> &&port,
                                                     Use &&use)
   {
-    // we know outbox is high (so we can recv), but don't know whether inbox is
-    // yet
+    // can only try to recv with a high outbox, but can wait for the inbox
     typed_port_t<1, 1> ready;
     if constexpr (I == 0)
       {
-        ready = base::template rpc_port_wait(active_threads, cxx::move(port));
+        ready = rpc_port_wait_for_result(active_threads, cxx::move(port));
       }
     else
       {
@@ -167,51 +190,17 @@ struct client_impl : public state_machine_impl<BufferElementT, WordT, SZT, Count
                                          cxx::forward<Use>(use));
   }
 
+
+
+
   template <typename T>
-  HOSTRPC_ANNOTATE typed_port_t<0, 0> rpc_port_wait_until_available(
-      T active_threads, typed_port_t<1, 0> &&port)
+  HOSTRPC_ANNOTATE typed_port_t<1,0> rpc_port_discard_result(T active_threads, typed_port_t<1,1> && port)
   {
-    return base::template rpc_port_wait(active_threads, cxx::move(port));
-  }
-
-  template <typename T, unsigned I, unsigned O>
-  HOSTRPC_ANNOTATE void rpc_close_port(T active_threads,
-                                       typed_port_t<I, O> &&port)
-  {
-    base::template rpc_close_port(active_threads, cxx::move(port));
-  }
-
-  template <unsigned I, unsigned O, typename T>
-  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename typed_port_t<I, O>::maybe rpc_try_open_typed_port(
-      T active_threads, uint32_t scan_from = 0)
-  {
-    static_assert(I == O, "");
-    return base::template rpc_try_open_typed_port<I, O, T>(active_threads, scan_from);
-  }
-
-  template <unsigned I, unsigned O, typename T>
-  HOSTRPC_ANNOTATE typed_port_t<I, O> rpc_open_typed_port(
-      T active_threads, uint32_t scan_from = 0)
-  {
-    static_assert(I == O, "");
-    return base::template rpc_open_typed_port<I, O, T>(active_threads, scan_from);
-  }
-  
-  template <typename T>
-  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename typed_port_t<0, 0>::maybe rpc_try_open_typed_port_lo(
-      T active_threads, uint32_t scan_from = 0)
-  {
-    return base::template rpc_try_open_typed_port<0, 0, T>(active_threads, scan_from);
-  }
-
-#if 1
-  // Would like to delete these.
-  // printf_client.hpp makes that challenging as it's all written in terms of raw uint32_t
-  // It includes interesting use cases like multiple calls to send one after another on the same port
-  template <typename T>
-  HOSTRPC_ANNOTATE port_t rpc_open_port(T active_threads)
-  {
-    return base::rpc_open_port_lo(active_threads);
+    return rpc_port_recv(active_threads,  hostrpc::cxx::move(port),
+                                     [](hostrpc::port_t, BufferElement *) {});
+    
+    return base::template rpc_port_apply(active_threads, hostrpc::cxx::move(port),
+                                     [](hostrpc::port_t, BufferElement *) {});
   }
 
   template <typename T, unsigned I, unsigned O>
@@ -239,93 +228,9 @@ struct client_impl : public state_machine_impl<BufferElementT, WordT, SZT, Count
     {
       return base::rpc_port_wait(active_threads, cxx::move(port));
     }                   
-  }
+  }  
   
-  template <typename T>
-  HOSTRPC_ANNOTATE void rpc_port_wait_until_available(T active_threads,
-                                                      port_t port)
-  {
-    typename base::port_state s;
-    base::template rpc_port_wait_until_state<
-        T, base::port_state::either_low_or_high>(active_threads, port, &s);
 
-    if (s == base::port_state::high_values)
-      {
-        rpc_port_discard_result(active_threads, port);
-        base::template rpc_port_wait_until_state<T,
-                                                 base::port_state::low_values>(
-            active_threads, port);
-      }
-  }
-
-  template <typename Op, typename T>
-  HOSTRPC_ANNOTATE void rpc_port_send(T active_threads, port_t port, Op &&op)
-  {
-    // If the port has just been opened, we know it is available to
-    // submit work to. In general, send might be called while the
-    // state machine is elsewhere, so conservatively progress it
-    // until the slot is empty.
-    // There is a potential bug here if 'use' is being used to
-    // reset the state, instead of the server clean, as 'use'
-    // is not being called, but that might be deemed a API misuse
-    // as the callee could have used recv() explicitly instead of
-    // dropping the result
-    rpc_port_wait_until_available(active_threads, port);  // expensive
-    rpc_port_send_given_available<Op>(active_threads, port,
-                                      cxx::forward<Op>(op));
-  }
-
-  template <typename Op, typename T>
-  HOSTRPC_ANNOTATE void rpc_port_send_given_available(T active_threads,
-                                                      port_t port, Op &&op)
-  {
-    base::template rpc_port_apply_lo(active_threads, port,
-                                     cxx::forward<Op>(op));
-  }
-
-  template <typename T>
-  HOSTRPC_ANNOTATE void rpc_port_wait_for_result(T active_threads, port_t port)
-  {
-    // assumes output live
-    assert(bits::nthbitset(
-        base::outbox.load_word(this->size(), index_to_element<Word>(port)),
-        index_to_subindex<Word>(port)));
-    base::template rpc_port_wait_until_state<T, base::port_state::high_values>(
-        active_threads, port);
-  }
-
-  template <typename T>
-  HOSTRPC_ANNOTATE void rpc_port_discard_result(T active_threads, port_t port)
-  {
-    base::template rpc_port_apply_hi(active_threads, port,
-                                     [](hostrpc::port_t, BufferElement *) {});
-  }
-
-  template <typename T>
-  HOSTRPC_ANNOTATE typed_port_t<1,0> rpc_port_discard_result(T active_threads, typed_port_t<1,1> && port)
-  {
-    return base::template rpc_port_apply(active_threads, hostrpc::cxx::move(port),
-                                     [](hostrpc::port_t, BufferElement *) {});
-  }
-
-  
-  template <typename Use, typename T>
-  HOSTRPC_ANNOTATE void rpc_port_recv(T active_threads, port_t port, Use &&use)
-  {
-    rpc_port_wait_for_result(active_threads, port);
-    base::template rpc_port_apply_hi(active_threads, port,
-                                     cxx::forward<Use>(use));
-  }
-
-  template <typename T>
-  HOSTRPC_ANNOTATE void rpc_close_port(
-      T active_threads,
-      port_t port)  // Require != port_t::unavailable, not already closed
-  {
-    base::rpc_close_port(active_threads, port);
-  }
-
-  #endif
 };
 
 template <typename BufferElementT, typename WordT, typename SZT, typename Counter = counters::client>
@@ -343,7 +248,7 @@ struct client : public client_impl<BufferElementT, WordT, SZT, Counter>
   {
     auto ApplyFill = hostrpc::make_apply<Fill>(cxx::forward<Fill>(fill));
 
-    if (auto maybe = base::rpc_try_open_typed_port_lo(active_threads))
+    if (auto maybe = base::rpc_try_open_typed_port(active_threads))
       {
         auto send = base::rpc_port_send(active_threads, maybe.value(), cxx::move(ApplyFill));
         base::rpc_close_port(active_threads, cxx::move(send));
@@ -366,7 +271,7 @@ struct client : public client_impl<BufferElementT, WordT, SZT, Counter>
     auto ApplyFill = hostrpc::make_apply<Fill>(cxx::forward<Fill>(fill));
     auto ApplyUse = hostrpc::make_apply<Use>(cxx::forward<Use>(use));
     
-    if (auto maybe = base::rpc_try_open_typed_port_lo(active_threads))
+    if (auto maybe = base::rpc_try_open_typed_port(active_threads))
       {
         auto send = base::rpc_port_send(active_threads, maybe.value(), cxx::move(ApplyFill));
         auto recv = base::rpc_port_recv(active_threads, cxx::move(send), cxx::move(ApplyUse));

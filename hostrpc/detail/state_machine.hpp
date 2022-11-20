@@ -139,32 +139,15 @@ struct state_machine_impl : public SZT, public Counter
   // scan_from can be any uint32_t, it gets % size of the buffer
   // a reasonable guess is a previously used port_t cast to uint32_t and +1
 
-  // open a port with inbox == outbox == 0
-  template <typename T>
-  HOSTRPC_ANNOTATE port_t rpc_open_port_lo(T active_threads,
-                                           uint32_t scan_from = 0)
-  {
-    return rpc_open_port<T, port_state::low_values>(active_threads, scan_from,
-                                                    nullptr);
-  }
-
-  // open a port with inbox == outbox == 1
-  template <typename T>
-  HOSTRPC_ANNOTATE port_t rpc_open_port_hi(T active_threads,
-                                           uint32_t scan_from = 0)
-  {
-    return rpc_open_port<T, port_state::high_values>(active_threads, scan_from,
-                                                     nullptr);
-  }
 
   // open a port with inbox == outbox, writes which type was opened iff passed a
   // port_state
   template <typename T>
-  HOSTRPC_ANNOTATE port_t rpc_open_port(T active_threads,
+  HOSTRPC_ANNOTATE port_t rpc_open_untyped_port(T active_threads,
                                         uint32_t scan_from = 0,
                                         port_state* which = nullptr)
   {
-    return rpc_open_port<T, port_state::either_low_or_high>(active_threads,
+    return rpc_open_untyped_port<T, port_state::either_low_or_high>(active_threads,
                                                             scan_from, which);
   }
 
@@ -183,7 +166,9 @@ struct state_machine_impl : public SZT, public Counter
                                      OutboxState>;
 
   template <unsigned I, unsigned O>
-  HOSTRPC_ANNOTATE typename typed_to_partial_trait<I, O>::type typed_to_partial(
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CREATED_RES
+  typename typed_to_partial_trait<I, O>::type typed_to_partial(
       typed_port_t<I, O>&& port HOSTRPC_CONSUMED_ARG)
   {
     uint32_t v = port;
@@ -192,9 +177,10 @@ struct state_machine_impl : public SZT, public Counter
   }
 
   template <bool OutboxState, unsigned S, typename T>
+  HOSTRPC_ANNOTATE
   HOSTRPC_RETURN_UNKNOWN
       maybe<uint32_t, typename partial_to_typed_trait<S, OutboxState>::type>
-          HOSTRPC_ANNOTATE partial_to_typed(
+           partial_to_typed(
               T active_threads, partial_port_t<S>&& port HOSTRPC_CONSUMED_ARG)
   {
     uint32_t v = port.value;
@@ -212,26 +198,31 @@ struct state_machine_impl : public SZT, public Counter
       }
   }
 
+  template <unsigned I, unsigned O>
+  HOSTRPC_ANNOTATE
+  static
+  uint32_t unsafe_port_escape(typed_port_t<I,O>&&port HOSTRPC_CONSUMED_ARG)
+  {
+    uint32_t v = port;
+    port.kill();
+    return v;
+  }
+
+  template <unsigned I, unsigned O>
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CREATED_RES
+  static
+  typed_port_t<I,O> unsafe_port_create(uint32_t value)
+  {
+    return {value};
+  }
+  
   template <unsigned I, unsigned O, typename T>
   HOSTRPC_ANNOTATE typed_port_t<I, O> rpc_open_typed_port(
       T active_threads, uint32_t scan_from = 0)
   {
     static_assert(I == 0,"");
     return rpc_open_typed_port_impl<I, O, T>(active_threads, scan_from);
-  }
-
-  template <typename T>
-  HOSTRPC_ANNOTATE typed_port_t<0, 0> rpc_open_typed_port_lo(
-      T active_threads, uint32_t scan_from = 0)
-  {
-    return rpc_open_typed_port_impl<0, 0, T>(active_threads, scan_from);
-  }
-  
-  template <typename T>
-  HOSTRPC_ANNOTATE typed_port_t<1, 1> rpc_open_typed_port_hi(
-      T active_threads, uint32_t scan_from = 0)
-  {
-    return rpc_open_typed_port_impl<1, 1, T>(active_threads, scan_from);
   }
 
   template <unsigned I, unsigned O, typename T>
@@ -241,21 +232,6 @@ struct state_machine_impl : public SZT, public Counter
     static_assert(I == 0,"");
     return rpc_try_open_typed_port_impl<I, O, T>(active_threads, scan_from);
   }
-
-  template <typename T>
-  HOSTRPC_ANNOTATE typename typed_port_t<0, 0>::maybe
-  rpc_try_open_typed_port_lo(T active_threads, uint32_t scan_from = 0)
-  {
-    return rpc_try_open_typed_port_impl<0, 0, T>(active_threads, scan_from);
-  }
-
-  template <typename T>
-  HOSTRPC_ANNOTATE typename typed_port_t<1, 1>::maybe
-  rpc_try_open_typed_port_hi(T active_threads, uint32_t scan_from = 0)
-  {
-    return rpc_try_open_typed_port_impl<1, 1, T>(active_threads, scan_from);
-  }
-
   
   template <typename T>
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN
@@ -263,8 +239,8 @@ struct state_machine_impl : public SZT, public Counter
       rpc_try_open_partial_port(T active_threads, uint32_t scan_from)
   {
     port_state ps;
-    // todo: inline open_port into this to lose the assert and enum noise
-    port_t p = rpc_open_port<T, port_state::either_low_or_high>(active_threads,
+    // todo: inline open_untyped_port into this to lose the assert and enum noise
+    port_t p = rpc_open_untyped_port<T, port_state::either_low_or_high>(active_threads,
                                                                 scan_from, &ps);
 
     if (ps == port_state::unavailable)
@@ -285,11 +261,6 @@ struct state_machine_impl : public SZT, public Counter
         return {{static_cast<uint32_t>(p), true}};
       }
   }
-
-  template <typename T>
-  HOSTRPC_ANNOTATE void rpc_close_port(
-      T active_threads,
-      port_t port);  // Require != port_t::unavailable, not already closed
 
   // Can only wait on the inbox to change state as this thread will not change
   // the outbox during the busy wait
@@ -371,24 +342,11 @@ struct state_machine_impl : public SZT, public Counter
     return typed_port_t<!I, !I>(raw);
   }
 
-  template <unsigned I, unsigned O, typename T>
-  HOSTRPC_ANNOTATE void rpc_close_port(T active_threads,
-                                       typed_port_t<I, O>&& port)
-  {
-    const uint32_t size = this->size();
-    const port_t slot = static_cast<port_t>(static_cast<uint32_t>(port));
-    if (platform::is_master_lane(active_threads))
-      {
-        active.release_slot(size, slot);
-      }
-    port.drop();
-  }
 
   template <unsigned S, typename T>
   HOSTRPC_ANNOTATE void rpc_close_port(T active_threads,
                                        partial_port_t<S>&& port)
   {
-    // implement typed one in terms of this?
     const uint32_t size = this->size();
     const port_t slot = static_cast<port_t>(static_cast<uint32_t>(port));
     if (platform::is_master_lane(active_threads))
@@ -398,6 +356,14 @@ struct state_machine_impl : public SZT, public Counter
     port.drop();
   }
 
+  template <unsigned I, unsigned O, typename T>
+  HOSTRPC_ANNOTATE void rpc_close_port(T active_threads,
+                                       typed_port_t<I, O>&& port)
+  {
+    // Don't need to know the exact port state in order to close
+    rpc_close_port(active_threads, typed_to_partial(cxx::move(port)));
+  }
+  
  private:
   HOSTRPC_ANNOTATE
   port_state loadPortState(port_t port)
@@ -488,7 +454,7 @@ struct state_machine_impl : public SZT, public Counter
   }
 
   template <typename T, port_state Req>
-  HOSTRPC_ANNOTATE port_t rpc_open_port(T active_threads, uint32_t scan_from,
+  HOSTRPC_ANNOTATE port_t rpc_open_untyped_port(T active_threads, uint32_t scan_from,
                                         port_state* which)
   {
     static_assert(Req != port_state::unavailable, "");
@@ -613,7 +579,7 @@ struct state_machine_impl : public SZT, public Counter
     constexpr port_state Req =
         I == 0 ? port_state::low_values : port_state::high_values;
 
-    port_t p = rpc_open_port<T, Req>(active_threads, scan_from, nullptr);
+    port_t p = rpc_open_untyped_port<T, Req>(active_threads, scan_from, nullptr);
     // ugly...
     if (static_cast<uint32_t>(p) != static_cast<uint32_t>(port_t::unavailable))
       {
@@ -641,25 +607,6 @@ struct state_machine_impl : public SZT, public Counter
       }
   }
 };
-
-template <typename BufferElementT, typename WordT, typename SZT, typename Counter,
-          bool InvertedInboxLoad>
-template <typename T>
-HOSTRPC_ANNOTATE void
-state_machine_impl<BufferElementT, WordT, SZT, Counter, InvertedInboxLoad>::rpc_close_port(
-    T active_threads,
-    port_t port)  // Require != port_t::unavailable
-{
-  const uint32_t size = this->size();
-  // warning: something needs to release() the buffer element before
-  // dropping this lock
-
-  assert(port != port_t::unavailable);
-  if (platform::is_master_lane(active_threads))
-    {
-      active.release_slot(size, port);
-    }
-}
 
 template <typename BufferElementT, typename WordT, typename SZT, typename Counter,
           bool InvertedInboxLoad>
