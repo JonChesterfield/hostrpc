@@ -81,8 +81,8 @@ MODULE(bitmap)
       {
         for (uint32_t i = 0; i < words; i++)
           {
-            CHECK(baseline.load_word<false>(sz, i) == 0);
-            CHECK(inverted.load_word<true>(sz, i) == 0);
+            CHECK(baseline.load_word(sz, i) == 0);
+            CHECK(~inverted.load_word(sz, i) == 0);
             CHECK(bypass_load(&baseline_storage[i]) == 0);
             CHECK(bypass_load(&inverted_storage[i]) == m1);
           }
@@ -97,7 +97,7 @@ MODULE(bitmap)
         for (uint32_t i = 0; i < sz; i++)
           {
             hostrpc::port_t p = static_cast<hostrpc::port_t>(i);
-            ok &= baseline.read_bit<false>(sz, p) == 0;
+            ok &= baseline.read_bit(sz, p) == 0;
           }
         CHECK(ok);
       }
@@ -115,7 +115,7 @@ MODULE(bitmap)
           }
         for (uint32_t i = 0; i < words; i++)
           {
-            ok &= (baseline.load_word<false>(sz, i) == m1);
+            ok &= (baseline.load_word(sz, i) == m1);
             ok &= (bypass_load(&baseline_storage[i]) == m1);
           }
         for (uint32_t i = 0; i < sz; i++)
@@ -125,7 +125,7 @@ MODULE(bitmap)
           }
         for (uint32_t i = 0; i < words; i++)
           {
-            ok &= (baseline.load_word<false>(sz, i) == 0);
+            ok &= (baseline.load_word(sz, i) == 0);
             ok &= (bypass_load(&baseline_storage[i]) == 0);
           }
         CHECK(ok);
@@ -141,16 +141,16 @@ MODULE(bitmap)
           {
             hostrpc::port_t p = static_cast<hostrpc::port_t>(i);
 
-            ok &= baseline.read_bit<false>(sz, p) == 0;
+            ok &= baseline.read_bit(sz, p) == 0;
             baseline.claim_slot(sz, p);
-            ok &= baseline.read_bit<false>(sz, p) == 1;
+            ok &= baseline.read_bit(sz, p) == 1;
             baseline.release_slot(sz, p);
-            ok &= baseline.read_bit<false>(sz, p) == 0;
+            ok &= baseline.read_bit(sz, p) == 0;
             baseline.toggle_slot(sz, p);
-            ok &= baseline.read_bit<false>(sz, p) == 1;
+            ok &= baseline.read_bit(sz, p) == 1;
             baseline.toggle_slot(sz, p);
-            ok &= baseline.read_bit<false>(sz, p) == 0;
-         }
+            ok &= baseline.read_bit(sz, p) == 0;
+          }
         CHECK(ok);
       }
   }
@@ -162,15 +162,15 @@ MODULE(bitmap)
         for (uint32_t i = 0; i < words; i++)
           {
             Word bl;
-            CHECK(baseline.load_word<false>(sz, i) == 0);
+            CHECK(baseline.load_word(sz, i) == 0);
             while (!baseline.cas(i, 0, m1, &bl))
               ;
             CHECK(bl == 0);
-            CHECK(baseline.load_word<false>(sz, i) == m1);
+            CHECK(baseline.load_word(sz, i) == m1);
             while (!baseline.cas(i, m1, 0, &bl))
               ;
             CHECK(bl == m1);
-            CHECK(baseline.load_word<false>(sz, i) == 0);
+            CHECK(baseline.load_word(sz, i) == 0);
           }
       }
   }

@@ -280,7 +280,6 @@ template <typename Word>
 using message_bitmap = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
                                    properties::fine_grain<Word>>;
 
-
 template <typename WordT, size_t scope, typename PropT>
 struct slot_bitmap
 {
@@ -304,7 +303,6 @@ struct slot_bitmap
   Ty *underlying;
 
  public:
-
   // allocate in coarse grain memory can be followed by placement new of
   // the default constructor, which means the default constructor can't write
   // anything
@@ -318,11 +316,10 @@ struct slot_bitmap
   }
   HOSTRPC_ANNOTATE ~slot_bitmap() = default;
 
-  template <bool Inverted>
   HOSTRPC_ANNOTATE bool read_bit(uint32_t size, port_t i) const
   {
     uint32_t w = index_to_element<Word>(i);
-    Word d = load_word<Inverted>(size, w);
+    Word d = load_word(size, w);
     return bits::nthbitset(d, index_to_subindex<Word>(i));
   }
 
@@ -348,7 +345,8 @@ struct slot_bitmap
 #endif
   }
 
-  // claim / release / toggle assume this is the only possible writer to that index
+  // claim / release / toggle assume this is the only possible writer to that
+  // index
 
   // Returns value of bit before writing true to it
   template <bool KnownClearBefore>
@@ -361,24 +359,23 @@ struct slot_bitmap
     (void)size;
     if (KnownClearBefore)
       {
-        assert(!bits::nthbitset(load_word<false>(size, w), subindex));
+        assert(!bits::nthbitset(load_word(size, w), subindex));
       }
-    
+
     if (Prop::hasFetchOp())
       {
         Word mask = bits::setnthbit((Word)0, subindex);
 
         Ty *addr = &underlying[w];
-        Word before = 
-        platform::atomic_fetch_or<Word, __ATOMIC_ACQ_REL, scope>(addr,
-                                                                 mask);
+        Word before = platform::atomic_fetch_or<Word, __ATOMIC_ACQ_REL, scope>(
+            addr, mask);
         return bits::nthbitset(before, subindex);
       }
     else if (KnownClearBefore && Prop::hasAddOp())
       {
         Word addend = (Word)1 << subindex;
         Word before = fetch_add(w, addend);
-        return bits::nthbitset(before, subindex);       
+        return bits::nthbitset(before, subindex);
       }
     else
       {
@@ -388,12 +385,13 @@ struct slot_bitmap
         return bits::nthbitset(before, subindex);
       }
   }
-  
+
   // assumes slot available
   HOSTRPC_ANNOTATE void claim_slot(uint32_t size, port_t i)
   {
     assert(static_cast<uint32_t>(i) < size);
-    assert(!bits::nthbitset(load_word<false>(size, index_to_element<Word>(i)), index_to_subindex<Word>(i)));
+    assert(!bits::nthbitset(load_word(size, index_to_element<Word>(i)),
+                            index_to_subindex<Word>(i)));
     bool before = set_slot<true>(size, i);
     (void)before;
     assert(before == false);
@@ -406,17 +404,17 @@ struct slot_bitmap
     assert(static_cast<uint32_t>(i) < size);
     uint32_t w = index_to_element<Word>(i);
     uint32_t subindex = index_to_subindex<Word>(i);
-    assert(bits::nthbitset(load_word<false>(size, w), subindex));
+    assert(bits::nthbitset(load_word(size, w), subindex));
 
-    static_assert(Prop::hasCasOp(),"");
-        
+    static_assert(Prop::hasCasOp(), "");
+
     if (Prop::hasFetchOp())
       {
-    // and with everything other than the slot set
-    Word mask = ~bits::setnthbit((Word)0, subindex);
-    Word before = fetch_and(w, mask);
-    assert(bits::nthbitset(before, subindex));
-    (void)before;
+        // and with everything other than the slot set
+        Word mask = ~bits::setnthbit((Word)0, subindex);
+        Word before = fetch_and(w, mask);
+        assert(bits::nthbitset(before, subindex));
+        (void)before;
       }
     else if (Prop::hasAddOp())
       {
@@ -442,7 +440,7 @@ struct slot_bitmap
     uint32_t w = index_to_element<Word>(i);
     uint32_t subindex = index_to_subindex<Word>(i);
 #ifndef NDEBUG
-    bool bit_before = bits::nthbitset(load_word<false>(size, w), subindex);
+    bool bit_before = bits::nthbitset(load_word(size, w), subindex);
 #endif
     // xor with only the slot set
     Word mask = bits::setnthbit((Word)0, subindex);
@@ -452,32 +450,25 @@ struct slot_bitmap
     (void)before;
   }
 
-  template <bool Inverted>
   HOSTRPC_ANNOTATE Word load_word(uint32_t size, uint32_t w) const
   {
     (void)size;
     assert(w < (size / (8 * sizeof(Word))));
     Ty *addr = &underlying[w];
-    Word res = platform::atomic_load<Word, __ATOMIC_RELAXED, scope>(addr);
-    if (Inverted)
-      {
-        res = ~res;
-      }
-    return res;
+    return platform::atomic_load<Word, __ATOMIC_RELAXED, scope>(addr);
   }
 
   HOSTRPC_ANNOTATE bool cas(Word element, Word expect, Word replace,
                             Word *loaded)
   {
     Ty *addr = &underlying[element];
-    return
-        platform::atomic_compare_exchange_weak<Word, __ATOMIC_ACQ_REL, scope>(
-            addr, expect, replace, loaded);
-
+    return platform::atomic_compare_exchange_weak<Word, __ATOMIC_ACQ_REL,
+                                                  scope>(addr, expect, replace,
+                                                         loaded);
   }
 
   // returns value from before the and/or
-  // these are used on memory visible fromi all svm devices
+  // these are used on memory visible from all svm devices
 
  private:
   template <typename Op>
@@ -567,13 +558,14 @@ struct slot_bitmap
   HOSTRPC_ANNOTATE Word fetch_add(uint32_t element, Word value)
   {
     Ty *addr = &underlying[element];
-    return platform::atomic_fetch_add<Word, __ATOMIC_ACQ_REL, scope>(addr, value);
+    return platform::atomic_fetch_add<Word, __ATOMIC_ACQ_REL, scope>(addr,
+                                                                     value);
   }
-  
 };
 
 template <typename Word>
-using mailbox_bitmap = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES, typename properties::fine_grain<Word>>;
+using mailbox_bitmap = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
+                                   typename properties::fine_grain<Word>>;
 
 template <typename WordT, bool Inverted>
 struct inbox_bitmap
@@ -581,25 +573,21 @@ struct inbox_bitmap
   using Word = WordT;
   using mailbox_t = mailbox_bitmap<Word>;
   using Ty = typename mailbox_t::Prop::Ty;
-  
-private:
+
+ private:
   mailbox_t a;
 
-public:
-
+ public:
   HOSTRPC_ANNOTATE inbox_bitmap() /*: a(nullptr)*/ {}
   HOSTRPC_ANNOTATE inbox_bitmap(mailbox_t d) : a(d) {}
   HOSTRPC_ANNOTATE ~inbox_bitmap() = default;
 
-  
-  HOSTRPC_ANNOTATE void dump(uint32_t size) const
-  {
-    a.dump(size);
-  }
+  HOSTRPC_ANNOTATE void dump(uint32_t size) const { a.dump(size); }
 
   HOSTRPC_ANNOTATE Word load_word(uint32_t size, uint32_t w) const
   {
-    return a.template load_word<Inverted>(size, w);
+    Word tmp = a.load_word(size, w);
+    return Inverted ? ~tmp : tmp;
   }
 };
 
@@ -609,20 +597,16 @@ struct outbox_bitmap
   using Word = WordT;
   using mailbox_t = mailbox_bitmap<Word>;
   using Ty = typename mailbox_t::Prop::Ty;
-  
-private:
+
+ private:
   mailbox_t a;
 
-public:
-
+ public:
   HOSTRPC_ANNOTATE outbox_bitmap() /*: a(nullptr)*/ {}
   HOSTRPC_ANNOTATE outbox_bitmap(mailbox_t d) : a(d) {}
   HOSTRPC_ANNOTATE ~outbox_bitmap() = default;
 
-  HOSTRPC_ANNOTATE void dump(uint32_t size) const
-  {
-    a.dump(size);
-  }
+  HOSTRPC_ANNOTATE void dump(uint32_t size) const { a.dump(size); }
 
   HOSTRPC_ANNOTATE void claim_slot(uint32_t size, port_t i)
   {
@@ -641,49 +625,77 @@ public:
 
   HOSTRPC_ANNOTATE Word load_word(uint32_t size, uint32_t w) const
   {
-    return a.template load_word<false>(size, w);
+    return a.load_word(size, w);
   }
-  
 };
 
 template <typename Word>
 struct lock_bitmap
 {
-  using bitmap_t = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_DEVICE, typename properties::device_local<Word>>;
+  using bitmap_t = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_DEVICE,
+                               typename properties::device_local<Word>>;
 
   using Prop = typename bitmap_t::Prop;
   using Ty = typename Prop::Ty;
   static_assert(Prop::hasFetchOp(), "");
   static_assert(Prop::hasCasOp(), "");
 
-private:
+ private:
   bitmap_t a;
-  
-public:
 
+ public:
   HOSTRPC_ANNOTATE lock_bitmap() /*: a(nullptr)*/ {}
   HOSTRPC_ANNOTATE lock_bitmap(Ty *d) : a(d) {}
   HOSTRPC_ANNOTATE ~lock_bitmap() = default;
 
-  HOSTRPC_ANNOTATE void dump(uint32_t size) const
-  {
-    a.dump(size);
-  }
+  HOSTRPC_ANNOTATE void dump(uint32_t size) const { a.dump(size); }
 
   template <typename T>
-  HOSTRPC_ANNOTATE bool try_claim_empty_slot_nospin(T active_threads, uint32_t size,
+  HOSTRPC_ANNOTATE bool try_claim_empty_slot(T active_threads, uint32_t size,
+                                             uint32_t slot,
+                                             uint64_t *cas_fail_count)
+  {
+    if (Prop::hasFetchOp())
+      {
+        *cas_fail_count = 0;
+        return try_claim_empty_slot_nospin(active_threads, size, slot);
+      }
+    else
+      {
+        return try_claim_empty_slot_cas(active_threads, size, slot,
+                                        cas_fail_count);
+      }
+  }
+
+  HOSTRPC_ANNOTATE void release_slot(uint32_t size, port_t i)
+  {
+    a.release_slot(size, i);
+  }
+
+  HOSTRPC_ANNOTATE Word load_word(uint32_t size, uint32_t w) const
+  {
+    return a.load_word(size, w);
+  }
+
+ private:
+  template <typename T>
+  HOSTRPC_ANNOTATE bool try_claim_empty_slot_nospin(T active_threads,
+                                                    uint32_t size,
                                                     uint32_t slot)
   {
-    // requires hasFetchOp for correctness, need to refactor that    
+    // requires hasFetchOp for correctness, need to refactor that
+    // specifically this needs to hit fetchOr, not fetchAdd
     assert(slot < size);
 
     uint32_t before = 0;
     if (platform::is_master_lane(active_threads))
       {
-        before = a.template set_slot<false>(size, static_cast<port_t>(slot)) ? 1u : 0u;
+        before = a.template set_slot<false>(size, static_cast<port_t>(slot))
+                     ? 1u
+                     : 0u;
       }
     before = platform::broadcast_master(active_threads, before);
-    
+
     if (before)
       {
         // was already locked
@@ -692,15 +704,14 @@ public:
     else
       {
         return true;
-      }   
+      }
   }
 
-  
   // cas, true on success
   template <typename T>
-  HOSTRPC_ANNOTATE bool try_claim_empty_slot_cas(T active_threads, uint32_t size,
-                                             uint32_t slot,
-                                             uint64_t *cas_fail_count)
+  HOSTRPC_ANNOTATE bool try_claim_empty_slot_cas(T active_threads,
+                                                 uint32_t size, uint32_t slot,
+                                                 uint64_t *cas_fail_count)
   {
     assert(slot < size);
     uint32_t w = index_to_element<Word>(slot);
@@ -753,37 +764,7 @@ public:
         d = unexpected_contents;
       }
   }
-
-
-  template <typename T>
-  HOSTRPC_ANNOTATE bool try_claim_empty_slot(T active_threads, uint32_t size,
-                                             uint32_t slot,
-                                             uint64_t *cas_fail_count)
-  {
-    if (Prop::hasFetchOp())
-      {
-        *cas_fail_count = 0;
-        return try_claim_empty_slot_nospin(active_threads, size, slot);
-      }
-    else
-      {
-        return try_claim_empty_slot_cas(active_threads, size, slot, cas_fail_count);
-      }
-  }
-
-  
-  HOSTRPC_ANNOTATE void release_slot(uint32_t size, port_t i)
-  {
-    a.release_slot(size, i);
-  }
-
-  HOSTRPC_ANNOTATE Word load_word(uint32_t size, uint32_t w) const
-  {
-    return a.template load_word<false>(size, w);
-  }
-  
 };
-
 
 // each platform defines platform::native_width(), presently either 1|32|64
 // the application provides a function of type void (*)(port_t, page_t*) and
@@ -815,32 +796,32 @@ template <typename T, size_t N>
 class classify_callback_type
 {
   template <typename U>
-  static constexpr decltype(cxx::declval<U>().operator()(
-                                cxx::declval<hostrpc::port_t>(),
-                                cxx::declval<hostrpc::page_t *>()),
-                            callback_type())
+  static constexpr decltype(
+      cxx::declval<U>().operator()(cxx::declval<hostrpc::port_t>(),
+                                   cxx::declval<hostrpc::page_t *>()),
+      callback_type())
   test(int)
   {
     return callback_type::to_page;
   }
 
   template <typename U>
-  static constexpr decltype(cxx::declval<U>().operator()(
-                                cxx::declval<hostrpc::port_t>(),
-                                cxx::declval<uint32_t>(),
-                                cxx::declval<uint64_t *>()),
-                            callback_type())
+  static constexpr decltype(
+      cxx::declval<U>().operator()(cxx::declval<hostrpc::port_t>(),
+                                   cxx::declval<uint32_t>(),
+                                   cxx::declval<uint64_t *>()),
+      callback_type())
   test(int)
   {
     return callback_type::to_line;
   }
 
   template <typename U>
-  static constexpr decltype(cxx::declval<U>().operator()(
-                                cxx::declval<hostrpc::port_t>(),
-                                cxx::declval<uint32_t>(),
-                                cxx::declval<uint64_t (&)[N]>()),
-                            callback_type())
+  static constexpr decltype(
+      cxx::declval<U>().operator()(cxx::declval<hostrpc::port_t>(),
+                                   cxx::declval<uint32_t>(),
+                                   cxx::declval<uint64_t (&)[N]>()),
+      callback_type())
   test(int)
   {
     return callback_type::to_line;
