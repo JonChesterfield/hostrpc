@@ -184,7 +184,7 @@ NVGPU="--target=nvptx64-nvidia-cuda -march=$PTXGFX $PTX_VER -Xclang -fconvergent
 
 CUDALINK="--cuda-path=/usr/local/cuda  -L/usr/local/cuda/lib64/ -lcuda -lcudart_static -ldl -lrt -pthread"
 
-COMMONFLAGS="-Wall -Wextra -Werror=consumed -emit-llvm " # -DNDEBUG -Wno-type-limits "
+COMMONFLAGS="-Wall -Wextra -Werror=consumed -Wno-enum-constexpr-conversion -emit-llvm " # -DNDEBUG -Wno-type-limits "
 # cuda/openmp pass the host O flag through to ptxas, which crashes on debug info if > 0
 # there's a failure mode in trunk clang - 'remaining virtual register operands' - but it
 # resists changing the pipeline to llvm-link + llc, will have to debug it later
