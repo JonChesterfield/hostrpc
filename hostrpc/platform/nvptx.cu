@@ -47,14 +47,6 @@ static uint32_t get_lane_id()
 }
 
 DEVICE
-void debug_func(const char *file, unsigned int line, const char *func,
-                unsigned long long value)
-{
-  uint32_t lane_id = get_lane_id();
-  printf("Debug[%u] %s: %s: %d: %llu\n", lane_id, file, func, line, value);
-}
-
-DEVICE
 void assert_fail(const char *str, const char *file, unsigned int line,
                  const char *func)
 {

@@ -113,11 +113,6 @@ inline HOSTRPC_ANNOTATE bool is_master_lane(T active_threads)
 }
 }  // namespace
 
-// all true is used by assert
-// there's a problem related to convergent modelling here so there's a risk
-// 'assert' introduces miscompilation
-HOSTRPC_ANNOTATE uint32_t all_true(uint32_t);
-
 // related functions derived from the above
 namespace
 {
@@ -134,8 +129,6 @@ broadcast_master(T active_threads, uint64_t x)
 }
 
 }  // namespace
-
-#define debug(X) platform::detail::debug_func(__FILE__, __LINE__, __func__, X)
 
 // atomics may also be overloaded on different address spaces for some platforms
 // implemented for a slight superset of the subset of T that are presently in
@@ -255,18 +248,7 @@ hostrpc_inline_printf()
 // the assert when any lane is false avoids this.
 // May be better to write assert to disguise the branching so that it does not
 // change the CFG
-#define assert_str(x) assert_str_1(x)
-#define assert_str_1(x) #x
-
-#if 1
 #define assert(x) (void)(x)
-#else
-#define assert(x)                                                          \
-  ((void)(platform::all_true(x) ||                                         \
-          (platform::detail::assert_fail("L:" assert_str(__LINE__) " " #x, \
-                                         __FILE__, __LINE__, __func__),    \
-           0)))
-#endif
 
 #endif
 
@@ -284,10 +266,7 @@ namespace amdgcn
 {
 namespace detail
 {
-HOSTRPC_ANNOTATE inline void debug_func(const char *, unsigned int,
-                                        const char *, uint64_t)
-{ /*unimplemented*/
-}
+
 HOSTRPC_ANNOTATE __attribute__((always_inline)) inline void assert_fail(
     const char *str, const char *, unsigned int line, const char *)
 {
@@ -311,9 +290,6 @@ namespace detail
 static_assert(sizeof(uint64_t) == sizeof(unsigned long long),
               "yet they mangle differently");
 
-HOSTRPC_ANNOTATE void debug_func(const char *, unsigned int, const char *,
-                                 unsigned long long);
-
 HOSTRPC_ANNOTATE void assert_fail(const char *str, const char *,
                                   unsigned int line, const char *);
 }  // namespace detail
@@ -333,15 +309,8 @@ namespace platform
 namespace host
 {
 
-HOSTRPC_ANNOTATE inline uint32_t all_true(uint32_t x) { return x; }
-
 namespace detail
 {
-HOSTRPC_ANNOTATE inline void debug_func(const char *, unsigned int,
-                                        const char *, uint64_t)
-{ /*unimplemented*/
-}
-
 HOSTRPC_ANNOTATE __attribute__((always_inline)) inline void assert_fail(
     const char *str, const char *file, unsigned int line, const char *func)
 {
@@ -373,33 +342,6 @@ namespace platform
 namespace amdgcn
 {
 
-HOSTRPC_ANNOTATE static int optimizationBarrierHack(int in_val)
-{
-  int out_val;
-  __asm__ volatile("; ockl ballot hoisting hack %0"
-                   : "=v"(out_val)
-                   : "0"(in_val));
-  return out_val;
-}
-
-HOSTRPC_ANNOTATE __attribute__((always_inline)) inline uint32_t all_true(
-    uint32_t x)
-{
-  // may be able to avoid reading exec here, depends what
-  // uicmp does with inactive lanes
-  // warning: ockl uses a compiler fence here to avoid hoisting across BB
-  // but introducing that raises an error:
-  // error: Illegal instruction detected:
-  // VOP* instruction violates constant bus restriction
-  // renamable $vcc = V_CMP_NE_U64_e64 $exec, killed $vcc, implicit $exec
-
-  // return x until the above is sorted out
-  return x;
-
-  x = optimizationBarrierHack(x);
-  return __builtin_amdgcn_uicmp((int)x, 0, 33) == __builtin_amdgcn_read_exec();
-}
-
 #define HOSTRPC_PLATFORM_ATOMIC_ADDRSPACE_ATTRIBUTE
 #include "platform/atomic.inc"
 
@@ -428,11 +370,6 @@ namespace detail
 // platform functions out of line.
 
 }  // namespace detail
-
-HOSTRPC_ANNOTATE inline uint32_t all_true(uint32_t x)
-{
-  return __nvvm_vote_all_sync(UINT32_MAX, x);
-}
 
 // The cuda/ptx compiler lowers opencl intrinsics to IR atomics if compiling as
 // cuda. If compiling as C++, it leaves them as external function calls. As
@@ -613,11 +550,6 @@ namespace platform
 {
 // Functions implemented for each platform
 
-HOSTRPC_ANNOTATE inline uint32_t all_true(uint32_t x)
-{
-  return HOSTRPC_IMPL_NS::all_true(x);
-}
-
 namespace detail
 {
 HOSTRPC_ANNOTATE __attribute__((always_inline)) inline void assert_fail(
@@ -625,14 +557,6 @@ HOSTRPC_ANNOTATE __attribute__((always_inline)) inline void assert_fail(
 {
   HOSTRPC_IMPL_NS::detail::assert_fail(str, file, line, func);
 }
-
-HOSTRPC_ANNOTATE
-inline void debug_func(const char *file, unsigned int line, const char *func,
-                       uint64_t value)
-{
-  HOSTRPC_IMPL_NS::detail::debug_func(file, line, func, value);
-}
-
 }  // namespace detail
 
 // atomics may also be overloaded on different address spaces for some platforms
