@@ -188,7 +188,8 @@ COMMONFLAGS="-Wall -Wextra -Werror=consumed -Wno-enum-constexpr-conversion -emit
 # cuda/openmp pass the host O flag through to ptxas, which crashes on debug info if > 0
 # there's a failure mode in trunk clang - 'remaining virtual register operands' - but it
 # resists changing the pipeline to llvm-link + llc, will have to debug it later
-X64FLAGS=" $OPTLEVEL  -pthread " # nvptx can't handle debug info on x64 for O>0
+# note, -gdwarf-4 if valgrind doesn't recognise the format
+X64FLAGS=" $OPTLEVEL -pthread " # nvptx can't handle debug info on x64 for O>0
 GCNFLAGS=" $OPTLEVEL -ffreestanding -fno-exceptions $AMDGPU"
 # atomic alignment objection seems reasonable - may want 32 wide atomics on nvptx
 # clang/ptx back end is crashing in llvm::DwarfDebug::constructCallSiteEntryDIEs

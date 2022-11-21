@@ -477,14 +477,12 @@ struct state_machine_impl : public SZT, public Counter
 
     if (available)
       {
+        // error if *which is not assigned
         if (Req == port_state::either_low_or_high)
           {
             assert(bits::nthbitset(i, idx) == bits::nthbitset(o, idx));
-            if (which != nullptr)
-              {
-                *which = bits::nthbitset(i, idx) ? port_state::high_values
-                                                 : port_state::low_values;
-              }
+            *which = bits::nthbitset(i, idx) ? port_state::high_values
+              : port_state::low_values;
           }
         if (Req == port_state::low_values)
           {
@@ -588,10 +586,7 @@ struct state_machine_impl : public SZT, public Counter
         // Counter::missed_lock_on_word(active_threads);
       }
 
-    if ((Req == port_state::either_low_or_high) && (which != nullptr))
-      {
-        *which = port_state::unavailable;
-      }
+    *which = port_state::unavailable;
     return port_t::unavailable;
   }
 
