@@ -22,73 +22,9 @@ using sizeType = hostrpc::size_runtime<uint32_t>;
 
 #if HOSTRPC_AMDGCN
 #pragma omp declare target
-#include "hostrpc_printf_client.hpp"
 
 using client_type = hostrpc::x64_gcn_type<sizeType>::client_type;
 static client_type *get_client();
-
-#if 0
-// Need to hack the printf specific stuff out of this to get a drop in replacement for rocm
-__PRINTF_API_EXTERNAL hostrpc::port_t __printf_print_start(const char *fmt)
-{
-  return __printf_print_start(get_client(), fmt);
-}
-
-__PRINTF_API_EXTERNAL int __printf_print_end(hostrpc::port_t port)
-{
-  return __printf_print_end(get_client(), port);
-}
-
-// These may want to be their own functions, for now delegate to u64
-__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_int32(hostrpc::port_t port, int32_t v)
-{
-  int64_t w = v;
-  return __printf_pass_element_int64(port, w);
-}
-
-__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_uint32(hostrpc::port_t port,
-                                                        uint32_t v)
-{
-  uint64_t w = v;
-  return __printf_pass_element_uint64(port, w);
-}
-
-__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_int64(hostrpc::port_t port, int64_t v)
-{
-  uint64_t c;
-  __builtin_memcpy(&c, &v, 8);
-  return __printf_pass_element_uint64(port, c);
-}
-
-__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_uint64(hostrpc::port_t port,
-                                                        uint64_t v)
-{
-  return __printf_pass_element_uint64(get_client(), port, v);
-}
-
-__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_double(hostrpc::port_t port, double v)
-{
-  return __printf_pass_element_double(get_client(), port, v);
-}
-
-__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_void(hostrpc::port_t port,
-                                                      const void *v)
-{
-  return __printf_pass_element_void(get_client(), port, v);
-}
-
-__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_cstr(hostrpc::port_t port,
-                                                      const char *str)
-{
-  return __printf_pass_element_cstr(get_client(), port, str);
-}
-
-__PRINTF_API_EXTERNAL hostrpc::port_t __printf_pass_element_write_int64(hostrpc::port_t port,
-                                                             int64_t *x)
-{
-  return __printf_pass_element_write_int64(get_client(), port, x);
-}
-#endif
 
 struct fill
 {
@@ -169,10 +105,11 @@ static client_type *get_client()
           :);
 
   // and that the result of hostrpc_assign_buffer, if zero is failure, else
-  // it's written into a point in the implicit arguments where the GPU can
+  // it's written into a pointer in the implicit arguments where the GPU can
   // retrieve it from
   // size_t* argptr = (size_t *)__builtin_amdgcn_implicitarg_ptr();
   // result is found in argptr[3]
+  // todo: does code object version change this?
 
   size_t *argptr = (size_t *)__builtin_amdgcn_implicitarg_ptr();
   return (client_type *)argptr[3];
