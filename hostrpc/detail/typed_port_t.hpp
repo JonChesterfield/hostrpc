@@ -5,8 +5,8 @@
 #include "typestate.hpp"
 
 #include "cxx.hpp"
-#include "maybe.hpp"
 #include "either.hpp"
+#include "maybe.hpp"
 #include "tuple.hpp"  // may be better to make maybe construction variadic
 
 namespace hostrpc
@@ -188,8 +188,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   friend Friend;  // the state machine
   uint32_t value;
 
-  HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES typed_port_impl_t(uint32_t v)
-      : value(v)
+  HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES typed_port_impl_t(uint32_t v) : value(v)
   {
     static_assert((I <= 1) && (O <= 1), "");
   }
@@ -209,7 +208,6 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   HOSTRPC_ANNOTATE HOSTRPC_SET_TYPESTATE(unconsumed) void def() const {}
 
  public:
-
   static constexpr unsigned InboxState = I;
   static constexpr unsigned OutboxState = O;
 
@@ -221,9 +219,25 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
 
   // non-default maybe can only be constructed by the second template parameter,
   // i.e. by this class. The only method that does so is operator that consumes
-  // the port. Thus this instance can be converted to a maybe and then retrieved.
+  // the port. Thus this instance can be converted to a maybe and then
+  // retrieved.
   using maybe = hostrpc::maybe<uint32_t, SelfType>;
   friend maybe;
+
+  template <bool InboxSet, bool OutboxSet>
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN static maybe make(uint32_t v)
+  {
+    constexpr unsigned ReqInbox = InboxSet ? 1 : 0;
+    constexpr unsigned ReqOutbox = OutboxSet ? 1 : 0;
+    if (I == ReqInbox && O == ReqOutbox)
+      {
+        return {v};
+      }
+    else
+      {
+        return {};
+      }
+  }
 
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
@@ -236,17 +250,18 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     return {v};
   }
 
-  // either_builder can only be constructed by the first template parameter, i.e. by
-  // this class. The only method that does so consumes the port.
-  // either is only constructed from either_builder, which consumes the builder.
+  // either_builder can only be constructed by the first template parameter,
+  // i.e. by this class. The only method that does so consumes the port. either
+  // is only constructed from either_builder, which consumes the builder.
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
-  operator hostrpc::either_builder<SelfType, typed_port_impl_t<Friend, I, !O>, uint32_t>()
+  operator hostrpc::either_builder<SelfType, typed_port_impl_t<Friend, I, !O>,
+                                   uint32_t>()
   {
     uint32_t v = *this;
     kill();
-    return {v};    
+    return {v};
   }
 
   // if either is constructed by normal(), the ==true path is live and will
@@ -257,7 +272,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   // friend here to allow the dead path to typecheck.
   friend hostrpc::either<SelfType, typed_port_impl_t<Friend, I, !O>, uint32_t>;
   friend hostrpc::either<typed_port_impl_t<Friend, I, !O>, SelfType, uint32_t>;
-  
+
   // move construct and assign are available
   HOSTRPC_ANNOTATE
   HOSTRPC_CREATED_RES
@@ -315,7 +330,7 @@ template <typename Friend, unsigned S>
 class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
 {
  private:
- using SelfType = partial_port_impl_t<Friend, S>;
+  using SelfType = partial_port_impl_t<Friend, S>;
   friend Friend;  // the state machine
   uint32_t value;
   bool state;
@@ -346,16 +361,29 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
   HOSTRPC_ANNOTATE HOSTRPC_SET_TYPESTATE(unconsumed) void def() const {}
 
  public:
-
   // can convert it back to a uint32_t for indexing into structures
   HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE operator uint32_t() const
   {
     return value;
   }
 
-  using maybe = hostrpc::maybe<cxx::tuple<uint32_t, bool>,
-                               SelfType>;
+  using maybe = hostrpc::maybe<cxx::tuple<uint32_t, bool>, SelfType>;
   friend maybe;
+
+  template <bool InboxSet, bool OutboxSet>
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN static maybe make(uint32_t v)
+  {
+    constexpr unsigned ReqSame = (InboxSet == OutboxSet) ? 1 : 0;
+    if (ReqSame == S)
+      {
+        cxx::tuple<uint32_t, bool> tup = {v, OutboxSet};
+        return {tup};
+      }
+    else
+      {
+        return {};
+      }
+  }
 
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE

@@ -494,6 +494,41 @@ struct state_machine_impl : public SZT, public Counter
     return r & ~a & mask;
   }
 
+  template <typename PortType>
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename PortType::maybe
+  try_construct_port(bool inbox_high, bool outbox_high, uint32_t slot)
+  {
+    // The make functions branch on a compile time constant
+    if (inbox_high)
+      {
+        constexpr bool I = true;
+        if (outbox_high)
+          {
+            constexpr bool O = true;
+            return PortType::template make<I, O>(slot);
+          }
+        else
+          {
+            constexpr bool O = false;
+            return PortType::template make<I, O>(slot);
+          }
+      }
+    else
+      {
+        constexpr bool I = false;
+        if (outbox_high)
+          {
+            constexpr bool O = true;
+            return PortType::template make<I, O>(slot);
+          }
+        else
+          {
+            constexpr bool O = false;
+            return PortType::template make<I, O>(slot);
+          }
+      }
+  }
+
   template <typename PortType, typename T>
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename PortType::maybe
   try_open_typed_port(T active_threads, uint32_t scan_from)
@@ -542,43 +577,19 @@ struct state_machine_impl : public SZT, public Counter
 
                 if (available)
                   {
+                    // then the idx bit is set, for the typed_port_t instances
+                    // this uniquely determines outbox_high and inbox_high
+
                     // Success. Got a port with the right mailbox settings.
 
-                    const bool inbox_high = bits::nthbitset(i, idx);
-                    const bool inbox_low = !inbox_high;
-                    const bool outbox_high = bits::nthbitset(o, idx);
-                    const bool outbox_low = !outbox_high;
-                    (void)inbox_low;
-                    (void)outbox_low;
-
-                    // Not totally pleased with the dispatching logic here
-                    // Could construct a maybe:: instance through the traits and
-                    // unwrap it
-                    if constexpr (port_trait<PortType>::partial())
+                    // Branches are redundant here
+                    
+                    typename PortType::maybe maybe = try_construct_port<PortType>(
+                        bits::nthbitset(i, idx), bits::nthbitset(o, idx), slot);
+                    if (maybe)
                       {
-                        PortType tmp(slot, outbox_high);
-                        return tmp;
-                      }
-                    else
-                      {
-                        if (outbox_high)
-                          {
-                            if constexpr (port_trait<PortType>::
-                                              template accepts_outbox<true>())
-                              {
-                                typed_port_t<1, 1> tmp(slot);
-                                return tmp;
-                              }
-                          }
-                        else
-                          {
-                            if constexpr (port_trait<PortType>::
-                                              template accepts_outbox<false>())
-                              {
-                                typed_port_t<0, 0> tmp(slot);
-                                return tmp;
-                              }
-                          }
+                        PortType new_port = maybe;
+                        return new_port;
                       }
                   }
                 else
