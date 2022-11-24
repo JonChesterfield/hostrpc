@@ -132,15 +132,6 @@ struct state_machine_impl : public SZT, public Counter
 #endif
   }
 
-  // -> true if successfully opened port, false if failed
-  enum class port_state : uint8_t
-  {
-    unavailable = 0,
-    low_values = 1,
-    high_values = 2,
-    either_low_or_high = 3,
-  };
-
   // The state machine type can construct and drop ports.
   // The non-default constructor and drop() methods are private to each.
   // The equivalence of states is defined as traits in typed_ports.
@@ -214,12 +205,13 @@ struct state_machine_impl : public SZT, public Counter
     {
       return 0;
     }
+    template <bool Outbox>
+    HOSTRPC_ANNOTATE static constexpr bool accepts_outbox()
+    {
+      return false;
+    }
 
     HOSTRPC_ANNOTATE static constexpr bool partial() { return false; }
-    HOSTRPC_ANNOTATE static constexpr port_state temporary()
-    {
-      return port_state::unavailable;
-    }
   };
 
   template <>
@@ -230,11 +222,12 @@ struct state_machine_impl : public SZT, public Counter
     {
       return ~i & ~o;
     }
-    HOSTRPC_ANNOTATE static constexpr bool partial() { return false; }
-    HOSTRPC_ANNOTATE static constexpr port_state temporary()
+    template <bool Outbox>
+    HOSTRPC_ANNOTATE static constexpr bool accepts_outbox()
     {
-      return port_state::low_values;
+      return Outbox == 0;
     }
+    HOSTRPC_ANNOTATE static constexpr bool partial() { return false; }
   };
   template <>
   struct port_trait<typed_port_t<1, 1>>
@@ -244,11 +237,12 @@ struct state_machine_impl : public SZT, public Counter
     {
       return i & o;
     }
-    HOSTRPC_ANNOTATE static constexpr bool partial() { return false; }
-    HOSTRPC_ANNOTATE static constexpr port_state temporary()
+    template <bool Outbox>
+    HOSTRPC_ANNOTATE static constexpr bool accepts_outbox()
     {
-      return port_state::high_values;
+      return Outbox == 1;
     }
+    HOSTRPC_ANNOTATE static constexpr bool partial() { return false; }
   };
   template <>
   struct port_trait<partial_port_t<1>>
@@ -258,11 +252,12 @@ struct state_machine_impl : public SZT, public Counter
     {
       return ~(i ^ o);
     }
-    HOSTRPC_ANNOTATE static constexpr bool partial() { return true; }
-    HOSTRPC_ANNOTATE static constexpr port_state temporary()
+    template <bool>
+    HOSTRPC_ANNOTATE static constexpr bool accepts_outbox()
     {
-      return port_state::either_low_or_high;
+      return true;
     }
+    HOSTRPC_ANNOTATE static constexpr bool partial() { return true; }
   };
 
   template <typename T>
@@ -348,7 +343,7 @@ struct state_machine_impl : public SZT, public Counter
     // if bitmap is templated on state machine, could pass a typed port
     // representation here and get compile time checking of the comments
     // 'assumes slot taken' and similar
-    if constexpr (IandO == 1)
+    if (IandO == 1)
       {
         if (platform::is_master_lane(active_threads))
           {
@@ -484,32 +479,6 @@ struct state_machine_impl : public SZT, public Counter
       }
   }
 
-  template <port_state Req>
-  static constexpr HOSTRPC_ANNOTATE Word available_bitmap(Word i, Word o)
-  {
-    switch (Req)
-      {
-        case port_state::low_values:
-          {
-            return ~i & ~o;
-          }
-        case port_state::high_values:
-          {
-            return i & o;
-          }
-        case port_state::either_low_or_high:
-          {
-            // both 0 or both 1
-            return ~(i ^ o);
-          }
-        case port_state::unavailable:
-          {
-            // different
-            return i ^ o;
-          }
-      }
-  }
-
   template <typename PortType>
   HOSTRPC_ANNOTATE Word find_candidate_available_bitmap(uint32_t w, Word mask)
   {
@@ -529,11 +498,6 @@ struct state_machine_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename PortType::maybe
   try_open_typed_port(T active_threads, uint32_t scan_from)
   {
-    constexpr port_state Req = port_trait<PortType>::temporary();
-    static_assert(Req != port_state::unavailable, "");
-
-    port_state res_stack;
-
     const uint32_t size = this->size();
     const uint32_t words = this->words();
     const uint32_t location = scan_from % size;
@@ -555,26 +519,21 @@ struct state_machine_impl : public SZT, public Counter
       {
         uint32_t w = (element + wc) % words;
         Word available = find_candidate_available_bitmap<PortType>(w, mask);
-        if (available == 0)
-          {
-            // Counter::no_candidate_bitmap(active_threads);
-          }
         while (available != 0)
           {
             // tries each bit in incrementing order, clearing them on failure
             const uint32_t idx = bits::ctz(available);
             assert(bits::nthbitset(available, idx));
             const uint32_t slot = wordBits() * w + idx;
+            assert(slot < size);
+
             uint64_t cas_fail_count = 0;
             if (active.try_claim_empty_slot(active_threads, size, slot,
                                             &cas_fail_count))
               {
-                // Counter::cas_lock_fail(active_threads, cas_fail_count);
-
                 // Got the lock. Is the slot still available?
 
                 static_assert(port_openable<PortType>(), "");
-                const uint32_t size = this->size();
                 Word i = inbox.load_word(size, w);
                 Word o = outbox.load_word(size, w);
                 platform::fence_acquire();
@@ -583,6 +542,8 @@ struct state_machine_impl : public SZT, public Counter
 
                 if (available)
                   {
+                    // Success. Got a port with the right mailbox settings.
+
                     const bool inbox_high = bits::nthbitset(i, idx);
                     const bool inbox_low = !inbox_high;
                     const bool outbox_high = bits::nthbitset(o, idx);
@@ -590,52 +551,34 @@ struct state_machine_impl : public SZT, public Counter
                     (void)inbox_low;
                     (void)outbox_low;
 
-                    // error if res_stack is not assigned
-                    if (Req == port_state::either_low_or_high)
-                      {
-                        assert(inbox_high == outbox_high);
-                        res_stack = inbox_high ? port_state::high_values
-                                               : port_state::low_values;
-                      }
-                    if (Req == port_state::low_values)
-                      {
-                        assert(inbox_low);
-                        assert(outbox_low);
-                        res_stack = port_state::low_values;
-                      }
-                    if (Req == port_state::high_values)
-                      {
-                        assert(inbox_high);
-                        assert(outbox_high);
-                        res_stack = port_state::high_values;
-                      }
-                  }
-
-                if (available)
-                  {
-                    // Success. Got a port with the right mailbox settings.
-                    assert(slot < size);
-                    port_t port = static_cast<port_t>(slot);
-
-                    uint32_t p = static_cast<uint32_t>(port);
-
+                    // Not totally pleased with the dispatching logic here
+                    // Could construct a maybe:: instance through the traits and
+                    // unwrap it
                     if constexpr (port_trait<PortType>::partial())
                       {
-                        if (res_stack == port_state::low_values)
-                          {
-                            PortType tmp(p, false);
-                            return tmp;
-                          }
-                        else
-                          {
-                            PortType tmp(p, true);
-                            return tmp;
-                          }
+                        PortType tmp(slot, outbox_high);
+                        return tmp;
                       }
                     else
                       {
-                        PortType tmp(p);
-                        return tmp;
+                        if (outbox_high)
+                          {
+                            if constexpr (port_trait<PortType>::
+                                              template accepts_outbox<true>())
+                              {
+                                typed_port_t<1, 1> tmp(slot);
+                                return tmp;
+                              }
+                          }
+                        else
+                          {
+                            if constexpr (port_trait<PortType>::
+                                              template accepts_outbox<false>())
+                              {
+                                typed_port_t<0, 0> tmp(slot);
+                                return tmp;
+                              }
+                          }
                       }
                   }
                 else
@@ -647,20 +590,14 @@ struct state_machine_impl : public SZT, public Counter
                       }
                   }
               }
-            else
-              {
-                // Counter::missed_lock_on_candidate_bitmap(active_threads);
-              }
 
             // don't try the same slot repeatedly
             available = bits::clearnthbit(available, idx);
           }
 
         mask = ~((Word)0);
-        // Counter::missed_lock_on_word(active_threads);
       }
 
-    res_stack = port_state::unavailable;
     return {};
   }
 };
