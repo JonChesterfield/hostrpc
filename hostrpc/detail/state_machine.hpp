@@ -525,13 +525,15 @@ struct state_machine_impl : public SZT, public Counter
     return r & ~a & mask;
   }
 
-  template <typename T, typename PortType>
-  HOSTRPC_ANNOTATE port_t rpc_open_untyped_port(T active_threads,
-                                                uint32_t scan_from,
-                                                port_state* which)
+  template <typename PortType, typename T>
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename PortType::maybe
+  try_open_typed_port(T active_threads, uint32_t scan_from)
   {
     constexpr port_state Req = port_trait<PortType>::temporary();
     static_assert(Req != port_state::unavailable, "");
+
+    port_state res_stack;
+
     const uint32_t size = this->size();
     const uint32_t words = this->words();
     const uint32_t location = scan_from % size;
@@ -588,33 +590,53 @@ struct state_machine_impl : public SZT, public Counter
                     (void)inbox_low;
                     (void)outbox_low;
 
-                    // error if *which is not assigned
+                    // error if res_stack is not assigned
                     if (Req == port_state::either_low_or_high)
                       {
                         assert(inbox_high == outbox_high);
-                        *which =
-                          inbox_high ? port_state::high_values : port_state::low_values;
+                        res_stack = inbox_high ? port_state::high_values
+                                               : port_state::low_values;
                       }
                     if (Req == port_state::low_values)
                       {
                         assert(inbox_low);
                         assert(outbox_low);
-                        *which = port_state::low_values;
+                        res_stack = port_state::low_values;
                       }
                     if (Req == port_state::high_values)
                       {
                         assert(inbox_high);
                         assert(outbox_high);
-                        *which = port_state::high_values;
+                        res_stack = port_state::high_values;
                       }
                   }
 
-                
                 if (available)
                   {
                     // Success. Got a port with the right mailbox settings.
                     assert(slot < size);
-                    return static_cast<port_t>(slot);
+                    port_t port = static_cast<port_t>(slot);
+
+                    uint32_t p = static_cast<uint32_t>(port);
+
+                    if constexpr (port_trait<PortType>::partial())
+                      {
+                        if (res_stack == port_state::low_values)
+                          {
+                            PortType tmp(p, false);
+                            return tmp;
+                          }
+                        else
+                          {
+                            PortType tmp(p, true);
+                            return tmp;
+                          }
+                      }
+                    else
+                      {
+                        PortType tmp(p);
+                        return tmp;
+                      }
                   }
                 else
                   {
@@ -638,53 +660,8 @@ struct state_machine_impl : public SZT, public Counter
         // Counter::missed_lock_on_word(active_threads);
       }
 
-    *which = port_state::unavailable;
-    return port_t::unavailable;
-  }
-
-  template <typename PortType, typename T>
-  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename PortType::maybe
-  try_open_typed_port(T active_threads, uint32_t scan_from)
-  {
-    static_assert(port_openable<PortType>(), "");
-
-    constexpr port_state Requested = port_trait<PortType>::temporary();
-
-    port_state res;
-    port_t port =
-      rpc_open_untyped_port<T, PortType>(active_threads, scan_from, &res);
-
-    if (res == port_state::unavailable)
-      {
-        return {};
-      }
-
-    if ((Requested == port_state::low_values) ||
-        (Requested == port_state::high_values))
-      {
-        assert(res == Requested);
-      }
-    assert(res != port_state::either_low_or_high);
-    uint32_t p = static_cast<uint32_t>(port);
-
-    if constexpr (port_trait<PortType>::partial())
-      {
-        if (res == port_state::low_values)
-          {
-            PortType tmp(p, false);
-            return tmp;
-          }
-        else
-          {
-            PortType tmp(p, true);
-            return tmp;
-          }
-      }
-    else
-      {
-        PortType tmp(p);
-        return tmp;
-      }
+    res_stack = port_state::unavailable;
+    return {};
   }
 };
 
