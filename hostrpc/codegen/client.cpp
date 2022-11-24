@@ -20,6 +20,19 @@ client_instance_invoke_direct(client_type& c)
     }
 }
 
+
+extern "C" __attribute__((flatten)) HOSTRPC_ANNOTATE void
+client_open_any_port(client_type &c)
+{
+  using namespace hostrpc;
+ auto active_threads = platform::active_threads();
+ client_type::typed_port_t<0, 0>::maybe p0 = c.rpc_try_open_typed_port(active_threads);
+ if (p0)
+   {
+     c.rpc_close_port(active_threads, p0.value());
+   }
+}
+
 extern "C" __attribute__((always_inline)) HOSTRPC_ANNOTATE void
 client_instance_invoke_via_typed_port_runtime(client_type& c)
 {

@@ -205,13 +205,6 @@ struct state_machine_impl : public SZT, public Counter
     {
       return 0;
     }
-    template <bool Outbox>
-    HOSTRPC_ANNOTATE static constexpr bool accepts_outbox()
-    {
-      return false;
-    }
-
-    HOSTRPC_ANNOTATE static constexpr bool partial() { return false; }
   };
 
   template <>
@@ -222,12 +215,6 @@ struct state_machine_impl : public SZT, public Counter
     {
       return ~i & ~o;
     }
-    template <bool Outbox>
-    HOSTRPC_ANNOTATE static constexpr bool accepts_outbox()
-    {
-      return Outbox == 0;
-    }
-    HOSTRPC_ANNOTATE static constexpr bool partial() { return false; }
   };
   template <>
   struct port_trait<typed_port_t<1, 1>>
@@ -237,12 +224,6 @@ struct state_machine_impl : public SZT, public Counter
     {
       return i & o;
     }
-    template <bool Outbox>
-    HOSTRPC_ANNOTATE static constexpr bool accepts_outbox()
-    {
-      return Outbox == 1;
-    }
-    HOSTRPC_ANNOTATE static constexpr bool partial() { return false; }
   };
   template <>
   struct port_trait<partial_port_t<1>>
@@ -252,12 +233,6 @@ struct state_machine_impl : public SZT, public Counter
     {
       return ~(i ^ o);
     }
-    template <bool>
-    HOSTRPC_ANNOTATE static constexpr bool accepts_outbox()
-    {
-      return true;
-    }
-    HOSTRPC_ANNOTATE static constexpr bool partial() { return true; }
   };
 
   template <typename T>
@@ -499,34 +474,20 @@ struct state_machine_impl : public SZT, public Counter
   try_construct_port(bool inbox_high, bool outbox_high, uint32_t slot)
   {
     // The make functions branch on a compile time constant
-    if (inbox_high)
+    // Ports can only be opened in inbox==outbox state
+    // TODO: Check codegen.
+
+    if (inbox_high & outbox_high)
       {
-        constexpr bool I = true;
-        if (outbox_high)
-          {
-            constexpr bool O = true;
-            return PortType::template make<I, O>(slot);
-          }
-        else
-          {
-            constexpr bool O = false;
-            return PortType::template make<I, O>(slot);
-          }
+        return PortType::template make<true, true>(slot);
       }
-    else
+
+    if (!inbox_high & !outbox_high)
       {
-        constexpr bool I = false;
-        if (outbox_high)
-          {
-            constexpr bool O = true;
-            return PortType::template make<I, O>(slot);
-          }
-        else
-          {
-            constexpr bool O = false;
-            return PortType::template make<I, O>(slot);
-          }
+        return PortType::template make<false, false>(slot);
       }
+
+    return {};
   }
 
   template <typename PortType, typename T>
@@ -566,31 +527,18 @@ struct state_machine_impl : public SZT, public Counter
             if (active.try_claim_empty_slot(active_threads, size, slot,
                                             &cas_fail_count))
               {
-                // Got the lock. Is the slot still available?
-
+                // Got the lock. Is the slot still available for this type of
+                // port? Need to reload now their values are locked to find out.
                 static_assert(port_openable<PortType>(), "");
                 Word i = inbox.load_word(size, w);
                 Word o = outbox.load_word(size, w);
                 platform::fence_acquire();
-                Word r = available_bitmap<PortType>(i, o);
-                bool available = bits::nthbitset(r, idx);
 
-                if (available)
+                typename PortType::maybe maybe = try_construct_port<PortType>(
+                    bits::nthbitset(i, idx), bits::nthbitset(o, idx), slot);
+                if (maybe)
                   {
-                    // then the idx bit is set, for the typed_port_t instances
-                    // this uniquely determines outbox_high and inbox_high
-
-                    // Success. Got a port with the right mailbox settings.
-
-                    // Branches are redundant here
-                    
-                    typename PortType::maybe maybe = try_construct_port<PortType>(
-                        bits::nthbitset(i, idx), bits::nthbitset(o, idx), slot);
-                    if (maybe)
-                      {
-                        PortType new_port = maybe;
-                        return new_port;
-                      }
+                    return maybe.value();
                   }
                 else
                   {
@@ -603,6 +551,8 @@ struct state_machine_impl : public SZT, public Counter
               }
 
             // don't try the same slot repeatedly
+            // todo: can do better than this - use the new information from the
+            // inbox/outbox loads
             available = bits::clearnthbit(available, idx);
           }
 
