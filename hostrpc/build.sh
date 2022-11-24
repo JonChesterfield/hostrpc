@@ -122,9 +122,11 @@ fi
 CXXVER='-std=c++17'
 OPTLEVEL='-O2'
 
+if false; then
 set +e
 $RDIR/bin/clang++ -W -Wno-deprecated-copy -Wno-missing-field-initializers -Wno-inline-new-delete -Wno-unused-parameter $CXXVER -ffreestanding -I $HOME/relacy/ minimal.cpp -stdlib=libc++ -o minimal.out
 set -e
+fi
 
 echo "Using toolchain at $RDIR, GCNGFX=$GCNGFX, PTXGFX=$PTXGFX"
 

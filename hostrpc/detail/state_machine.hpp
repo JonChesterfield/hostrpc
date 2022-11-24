@@ -510,121 +510,10 @@ struct state_machine_impl : public SZT, public Counter
       }
   }
 
-  template <port_state Req>
-  HOSTRPC_ANNOTATE bool is_slot_still_available(uint32_t w, uint32_t idx,
-                                                port_state* which)
-  {
-    static_assert(Req != port_state::unavailable, "");
-    const uint32_t size = this->size();
-    Word i = inbox.load_word(size, w);
-    Word o = outbox.load_word(size, w);
-    platform::fence_acquire();
-    Word r = available_bitmap<Req>(i, o);
-    bool available = bits::nthbitset(r, idx);
-
-    if (available)
-      {
-        const bool inbox_high = bits::nthbitset(i, idx);
-        const bool inbox_low = !inbox_high;
-        const bool outbox_high = bits::nthbitset(o, idx);
-        const bool outbox_low = !outbox_high;
-        (void)inbox_low;
-        (void)outbox_low;
-
-        // error if *which is not assigned
-        if (Req == port_state::either_low_or_high)
-          {
-            assert(inbox_high == outbox_high);
-            *which =
-                inbox_high ? port_state::high_values : port_state::low_values;
-          }
-        if (Req == port_state::low_values)
-          {
-            assert(inbox_low);
-            assert(outbox_low);
-            *which = port_state::low_values;
-          }
-        if (Req == port_state::high_values)
-          {
-            assert(inbox_high);
-            assert(outbox_high);
-            *which = port_state::high_values;
-          }
-      }
-
-    return available;
-  }
-
-  template <port_state Req>
+  template <typename PortType>
   HOSTRPC_ANNOTATE Word find_candidate_available_bitmap(uint32_t w, Word mask)
   {
-    static_assert(Req != port_state::unavailable, "");
-    const uint32_t size = this->size();
-    Word i = inbox.load_word(size, w);
-    Word o = outbox.load_word(size, w);
-    Word a = active.load_word(size, w);
-    platform::fence_acquire();
-
-    Word r = available_bitmap<Req>(i, o);
-    return r & ~a & mask;
-  }
-
-  template <typename T>
-  HOSTRPC_ANNOTATE bool is_slot_still_available(uint32_t w, uint32_t idx,
-                                                port_state* which)
-  {
-    static_assert(port_openable<T>(), "");
-    const uint32_t size = this->size();
-    Word i = inbox.load_word(size, w);
-    Word o = outbox.load_word(size, w);
-    platform::fence_acquire();
-    Word r = available_bitmap<T>(i, o);
-    bool available = bits::nthbitset(r, idx);
-
-    // not optimally named
-    // confirms whether slot is still available, but also needs to
-    // record whether the outbox is low or high in order to construct
-    // a partial typed port
-
-    constexpr port_state Req = port_trait<T>::temporary();
-
-    if (available)
-      {
-        const bool inbox_high = bits::nthbitset(i, idx);
-        const bool inbox_low = !inbox_high;
-        const bool outbox_high = bits::nthbitset(o, idx);
-        const bool outbox_low = !outbox_high;
-        (void)inbox_low;
-        (void)outbox_low;
-
-        // error if *which is not assigned
-        if (Req == port_state::either_low_or_high)
-          {
-            assert(inbox_high == outbox_high);
-            *which =
-                inbox_high ? port_state::high_values : port_state::low_values;
-          }
-        if (Req == port_state::low_values)
-          {
-            assert(inbox_low);
-            assert(outbox_low);
-            *which = port_state::low_values;
-          }
-        if (Req == port_state::high_values)
-          {
-            assert(inbox_high);
-            assert(outbox_high);
-            *which = port_state::high_values;
-          }
-      }
-
-    return available;
-  }
-
-  template <typename T>
-  HOSTRPC_ANNOTATE Word find_candidate_available_bitmap(uint32_t w, Word mask)
-  {
-    static_assert(port_openable<T>(), "");
+    static_assert(port_openable<PortType>(), "");
 
     const uint32_t size = this->size();
     Word i = inbox.load_word(size, w);
@@ -632,15 +521,16 @@ struct state_machine_impl : public SZT, public Counter
     Word a = active.load_word(size, w);
     platform::fence_acquire();
 
-    Word r = available_bitmap<T>(i, o);
+    Word r = available_bitmap<PortType>(i, o);
     return r & ~a & mask;
   }
 
-  template <typename T, port_state Req>
+  template <typename T, typename PortType>
   HOSTRPC_ANNOTATE port_t rpc_open_untyped_port(T active_threads,
                                                 uint32_t scan_from,
                                                 port_state* which)
   {
+    constexpr port_state Req = port_trait<PortType>::temporary();
     static_assert(Req != port_state::unavailable, "");
     const uint32_t size = this->size();
     const uint32_t words = this->words();
@@ -662,7 +552,7 @@ struct state_machine_impl : public SZT, public Counter
     for (uint32_t wc = 0; wc < words + 1; wc++)
       {
         uint32_t w = (element + wc) % words;
-        Word available = find_candidate_available_bitmap<Req>(w, mask);
+        Word available = find_candidate_available_bitmap<PortType>(w, mask);
         if (available == 0)
           {
             // Counter::no_candidate_bitmap(active_threads);
@@ -680,8 +570,47 @@ struct state_machine_impl : public SZT, public Counter
                 // Counter::cas_lock_fail(active_threads, cas_fail_count);
 
                 // Got the lock. Is the slot still available?
-                // TODO: Inline this method here, want direct access to whether outbox was low or high
-                if (is_slot_still_available<Req>(w, idx, which))
+
+                static_assert(port_openable<PortType>(), "");
+                const uint32_t size = this->size();
+                Word i = inbox.load_word(size, w);
+                Word o = outbox.load_word(size, w);
+                platform::fence_acquire();
+                Word r = available_bitmap<PortType>(i, o);
+                bool available = bits::nthbitset(r, idx);
+
+                if (available)
+                  {
+                    const bool inbox_high = bits::nthbitset(i, idx);
+                    const bool inbox_low = !inbox_high;
+                    const bool outbox_high = bits::nthbitset(o, idx);
+                    const bool outbox_low = !outbox_high;
+                    (void)inbox_low;
+                    (void)outbox_low;
+
+                    // error if *which is not assigned
+                    if (Req == port_state::either_low_or_high)
+                      {
+                        assert(inbox_high == outbox_high);
+                        *which =
+                          inbox_high ? port_state::high_values : port_state::low_values;
+                      }
+                    if (Req == port_state::low_values)
+                      {
+                        assert(inbox_low);
+                        assert(outbox_low);
+                        *which = port_state::low_values;
+                      }
+                    if (Req == port_state::high_values)
+                      {
+                        assert(inbox_high);
+                        assert(outbox_high);
+                        *which = port_state::high_values;
+                      }
+                  }
+
+                
+                if (available)
                   {
                     // Success. Got a port with the right mailbox settings.
                     assert(slot < size);
@@ -723,7 +652,7 @@ struct state_machine_impl : public SZT, public Counter
 
     port_state res;
     port_t port =
-        rpc_open_untyped_port<T, Requested>(active_threads, scan_from, &res);
+      rpc_open_untyped_port<T, PortType>(active_threads, scan_from, &res);
 
     if (res == port_state::unavailable)
       {
