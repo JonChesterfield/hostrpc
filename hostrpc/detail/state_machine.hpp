@@ -375,7 +375,7 @@ struct state_machine_impl : public SZT, public Counter
   {
     // TODO: Probably better to implement typed apply in terms of partial
     // instead of partial apply in terms of typed
-    if (port.template outbox<true>())
+    if (port.outbox_state() == true)
       {
         typename typed_port_t<1, 1>::maybe mt =
             partial_to_typed<true>(active_threads, cxx::move(port));

@@ -286,7 +286,7 @@ static MODULE(conversions)
         partial_port_t<0> start = make<0>(20, state);
         partial_port_t<0> regen;
 
-        if (start.outbox<true>())
+        if (start.outbox_state() == true)
           {
             typed_port_t<0, 1>::maybe typed =
                 test_state_machine::partial_to_typed<true>(
@@ -332,7 +332,7 @@ static MODULE(conversions)
         partial_port_t<1> start = make<1>(30, state);
         partial_port_t<1> regen;
 
-        if (start.outbox<true>())
+        if (start.outbox_state() == true)
           {
             typed_port_t<1, 1>::maybe typed =
                 test_state_machine::partial_to_typed<true>(

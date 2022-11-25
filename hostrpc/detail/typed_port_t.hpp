@@ -205,8 +205,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   HOSTRPC_ANNOTATE HOSTRPC_SET_TYPESTATE(unconsumed) void def() const {}
 
  public:
-  static constexpr unsigned InboxState = I;
-  static constexpr unsigned OutboxState = O;
+
 
   // can convert it back to a uint32_t for indexing into structures
   HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE operator uint32_t() const
@@ -214,6 +213,10 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     return value;
   }
 
+ // non-constexpr member functions to match partial_port_impl_t
+ HOSTRPC_ANNOTATE bool outbox_state() const { return O; }
+ HOSTRPC_ANNOTATE bool inbox_state() const { return I; }
+  
   // non-default maybe can only be constructed by the second template parameter,
   // i.e. by this class. The only method that does so is operator that consumes
   // the port. Thus this instance can be converted to a maybe and then
@@ -447,17 +450,9 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
   {
   }
 
-  template <bool OutboxState>
-  HOSTRPC_ANNOTATE bool outbox()
-  {
-    return state == OutboxState;
-  }
+ HOSTRPC_ANNOTATE bool outbox_state() const { return state; }
+ HOSTRPC_ANNOTATE bool inbox_state() const { return (S==1) ? outbox_state() : !outbox_state(); }
 
-  template <bool InboxState>
-  HOSTRPC_ANNOTATE bool inbox()
-  {
-    return (S == 1) ? outbox() : !outbox();
-  }
 
  private:
   HOSTRPC_ANNOTATE static partial_port_impl_t HOSTRPC_CREATED_RES

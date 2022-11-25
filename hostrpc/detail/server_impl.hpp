@@ -159,7 +159,7 @@ struct server : public server_impl<BufferElementT, WordT, SZT, Counter>
       {
         partial_port_t<1> pport = maybe_port.value();
         constexpr bool OutboxGuess = false;
-        if (pport.template outbox<OutboxGuess>())
+        if (pport.outbox_state() == OutboxGuess)
           {
             typename typed_port_t<0, 0>::maybe mport =
                 base::template partial_to_typed<OutboxGuess>(active_threads,
