@@ -17,7 +17,9 @@ namespace hostrpc
 struct fill_nop
 {
   template <typename BufferElement>
-  HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, BufferElement *) {}
+  HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, BufferElement *)
+  {
+  }
   fill_nop() = default;
   fill_nop(const fill_nop &) = delete;
   fill_nop(fill_nop &&) = delete;
@@ -26,7 +28,9 @@ struct fill_nop
 struct use_nop
 {
   template <typename BufferElement>
-  HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, BufferElement *) {}
+  HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, BufferElement *)
+  {
+  }
   use_nop() = default;
   use_nop(const use_nop &) = delete;
   use_nop(use_nop &&) = delete;
@@ -51,12 +55,12 @@ enum class client_state : uint8_t
 // garbage that is, can't claim the slot for a new thread is that a sufficient
 // criteria for the slot to be awaiting gc?
 
-template <typename BufferElementT, typename WordT, typename SZT, typename Counter = counters::client>
-struct client_impl : public state_machine_impl<BufferElementT, WordT, SZT, Counter,
-                                               false>
+template <typename BufferElementT, typename WordT, typename SZT,
+          typename Counter = counters::client>
+struct client_impl
+    : public state_machine_impl<BufferElementT, WordT, SZT, Counter, false>
 {
-  using base =
-    state_machine_impl<BufferElementT, WordT, SZT, Counter, false>;
+  using base = state_machine_impl<BufferElementT, WordT, SZT, Counter, false>;
   using typename base::state_machine_impl;
 
   using BufferElement = typename base::BufferElement;
@@ -72,8 +76,7 @@ struct client_impl : public state_machine_impl<BufferElementT, WordT, SZT, Count
   HOSTRPC_ANNOTATE client_impl() : base() {}
   HOSTRPC_ANNOTATE ~client_impl() = default;
   HOSTRPC_ANNOTATE client_impl(SZ sz, lock_t active, inbox_t inbox,
-                               outbox_t outbox,
-                               BufferElement *shared_buffer)
+                               outbox_t outbox, BufferElement *shared_buffer)
 
       : base(sz, active, inbox, outbox, shared_buffer)
   {
@@ -114,16 +117,18 @@ struct client_impl : public state_machine_impl<BufferElementT, WordT, SZT, Count
   {
     constexpr unsigned I = 0;
     constexpr unsigned O = 0;
-    return base::template rpc_open_typed_port<I, O, T>(active_threads, scan_from);
+    return base::template rpc_open_typed_port<I, O, T>(active_threads,
+                                                       scan_from);
   }
-  
+
   template <typename T>
-  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename typed_port_t<0, 0>::maybe rpc_try_open_typed_port(
-      T active_threads, uint32_t scan_from = 0)
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename typed_port_t<0, 0>::maybe
+  rpc_try_open_typed_port(T active_threads, uint32_t scan_from = 0)
   {
     constexpr unsigned I = 0;
     constexpr unsigned O = 0;
-    return base::template rpc_try_open_typed_port<I, O, T>(active_threads, scan_from);
+    return base::template rpc_try_open_typed_port<I, O, T>(active_threads,
+                                                           scan_from);
   }
 
   template <typename T, unsigned I, unsigned O>
@@ -133,7 +138,6 @@ struct client_impl : public state_machine_impl<BufferElementT, WordT, SZT, Count
     base::template rpc_close_port(active_threads, cxx::move(port));
   }
 
-  
   template <typename T>
   HOSTRPC_ANNOTATE typed_port_t<0, 0> rpc_port_wait_until_available(
       T active_threads, typed_port_t<1, 0> &&port)
@@ -169,7 +173,6 @@ struct client_impl : public state_machine_impl<BufferElementT, WordT, SZT, Count
                                          cxx::forward<Op>(op));
   }
 
-
   template <typename Use, typename T, unsigned I>
   HOSTRPC_ANNOTATE typed_port_t<1, 0> rpc_port_recv(T active_threads,
                                                     typed_port_t<I, 1> &&port,
@@ -190,61 +193,58 @@ struct client_impl : public state_machine_impl<BufferElementT, WordT, SZT, Count
                                          cxx::forward<Use>(use));
   }
 
-
-
-
   template <typename T>
-  HOSTRPC_ANNOTATE typed_port_t<1,0> rpc_port_discard_result(T active_threads, typed_port_t<1,1> && port)
+  HOSTRPC_ANNOTATE typed_port_t<1, 0> rpc_port_discard_result(
+      T active_threads, typed_port_t<1, 1> &&port)
   {
-    return rpc_port_recv(active_threads,  hostrpc::cxx::move(port),
-                                     [](hostrpc::port_t, BufferElement *) {});
-    
-    return base::template rpc_port_apply(active_threads, hostrpc::cxx::move(port),
-                                     [](hostrpc::port_t, BufferElement *) {});
+    return rpc_port_recv(active_threads, hostrpc::cxx::move(port),
+                         [](hostrpc::port_t, BufferElement *) {});
   }
 
   template <typename T, unsigned I, unsigned O>
-  HOSTRPC_ANNOTATE typed_port_t<0,0> rpc_port_wait_until_available(T active_threads,
-                                                                   typed_port_t<I,O> && port)
+  HOSTRPC_ANNOTATE typed_port_t<0, 0> rpc_port_wait_until_available(
+      T active_threads, typed_port_t<I, O> &&port)
   {
     if constexpr (I == 0 && O == 0)
-    {
-      return cxx::move(port);
-    }
+      {
+        return cxx::move(port);
+      }
 
     if constexpr (I == 0 && O == 1)
-    {
-      auto tmp = rpc_port_wait_for_result(active_threads, cxx::move(port));
-      return rpc_port_wait_until_available<T, 1, 1>(active_threads, cxx::move(tmp));
-    }
+      {
+        auto tmp = rpc_port_wait_for_result(active_threads, cxx::move(port));
+        return rpc_port_wait_until_available<T, 1, 1>(active_threads,
+                                                      cxx::move(tmp));
+      }
 
     if constexpr (I == 1 && O == 1)
-    {
-      auto tmp = rpc_port_discard_result(active_threads, cxx::move(port));
-      return rpc_port_wait_until_available<T, 1, 0>(active_threads, cxx::move(tmp));
-    }
+      {
+        auto tmp = rpc_port_discard_result(active_threads, cxx::move(port));
+        return rpc_port_wait_until_available<T, 1, 0>(active_threads,
+                                                      cxx::move(tmp));
+      }
 
     if constexpr (I == 1 && O == 0)
-    {
-      return base::rpc_port_wait(active_threads, cxx::move(port));
-    }                   
-  }  
-  
-
+      {
+        return base::rpc_port_wait(active_threads, cxx::move(port));
+      }
+  }
 };
 
-template <typename BufferElementT, typename WordT, typename SZT, typename Counter = counters::client>
+template <typename BufferElementT, typename WordT, typename SZT,
+          typename Counter = counters::client>
 struct client : public client_impl<BufferElementT, WordT, SZT, Counter>
 {
-  // TODO: Write directly in terms of state machine? Credible chance that any program which wants
-  // more control than the invoke/invoke_async api will do better with the raw state_machine.
+  // TODO: Write directly in terms of state machine? Credible chance that any
+  // program which wants more control than the invoke/invoke_async api will do
+  // better with the raw state_machine.
   using base = client_impl<BufferElementT, WordT, SZT, Counter>;
   using base::client_impl;
   template <unsigned I, unsigned O>
   using typed_port_t = typename base::template typed_port_t<I, O>;
-  
+
   static_assert(cxx::is_trivially_copyable<base>::value, "");
-  
+
   template <typename T, typename Fill>
   HOSTRPC_ANNOTATE bool rpc_invoke_async(T active_threads, Fill &&fill) noexcept
   {
@@ -252,13 +252,14 @@ struct client : public client_impl<BufferElementT, WordT, SZT, Counter>
 
     if (auto maybe = base::rpc_try_open_typed_port(active_threads))
       {
-        auto send = base::rpc_port_send(active_threads, maybe.value(), cxx::move(ApplyFill));
+        auto send = base::rpc_port_send(active_threads, maybe.value(),
+                                        cxx::move(ApplyFill));
         base::rpc_close_port(active_threads, cxx::move(send));
         return true;
       }
     else
       {
-       return false;
+        return false;
       }
   }
 
@@ -272,18 +273,20 @@ struct client : public client_impl<BufferElementT, WordT, SZT, Counter>
   {
     auto ApplyFill = hostrpc::make_apply<Fill>(cxx::forward<Fill>(fill));
     auto ApplyUse = hostrpc::make_apply<Use>(cxx::forward<Use>(use));
-    
+
     if (auto maybe = base::rpc_try_open_typed_port(active_threads))
       {
-        auto send = base::rpc_port_send(active_threads, maybe.value(), cxx::move(ApplyFill));
-        auto recv = base::rpc_port_recv(active_threads, cxx::move(send), cxx::move(ApplyUse));
+        auto send = base::rpc_port_send(active_threads, maybe.value(),
+                                        cxx::move(ApplyFill));
+        auto recv = base::rpc_port_recv(active_threads, cxx::move(send),
+                                        cxx::move(ApplyUse));
         base::rpc_close_port(active_threads, cxx::move(recv));
         return true;
       }
     else
       {
         return false;
-      }   
+      }
   }
 
   // TODO: Probably want one of these convenience functions for each rpc_invoke,

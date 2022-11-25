@@ -60,8 +60,6 @@ struct state_machine_impl : public SZT, public Counter
   template <unsigned S>
   using partial_port_t = partial_port_impl_t<state_machine_impl, S>;
 
-  using unknown_port_t = unknown_port_impl_t<state_machine_impl>;
-
   HOSTRPC_ANNOTATE constexpr size_t wordBits() const
   {
     return 8 * sizeof(Word);
@@ -141,11 +139,6 @@ struct state_machine_impl : public SZT, public Counter
   using typed_to_partial_trait =
       traits::typed_to_partial_trait<state_machine_impl, typed_port_t<I, O>>;
 
-  template <unsigned S, bool OutboxState>
-  using partial_to_typed_trait =
-      traits::partial_to_typed_trait<state_machine_impl, partial_port_t<S>,
-                                     OutboxState>;
-
   template <unsigned I, unsigned O>
   HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES
       typename typed_to_partial_trait<I, O>::type
@@ -155,6 +148,11 @@ struct state_machine_impl : public SZT, public Counter
     port.kill();  // don't close it, port lives on in the return value
     return {v, typed_to_partial_trait<I, O>::state};
   }
+
+  template <unsigned S, bool OutboxState>
+  using partial_to_typed_trait =
+      traits::partial_to_typed_trait<state_machine_impl, partial_port_t<S>,
+                                     OutboxState>;
 
   template <bool OutboxState, unsigned S, typename T>
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN
@@ -206,7 +204,6 @@ struct state_machine_impl : public SZT, public Counter
       return 0;
     }
   };
-
   template <>
   struct port_trait<typed_port_t<0, 0>>
   {
@@ -240,7 +237,6 @@ struct state_machine_impl : public SZT, public Counter
   {
     return port_trait<T>::available_bitmap(i, o);
   }
-
   template <typename T>
   HOSTRPC_ANNOTATE static constexpr bool port_openable()
   {
@@ -263,6 +259,16 @@ struct state_machine_impl : public SZT, public Counter
   static_assert(available_bitmap<partial_port_t<1>>(~0, ~0) == ~0);
 
   template <unsigned I, unsigned O, typename T>
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename typed_port_t<I, O>::maybe
+  rpc_try_open_typed_port(T active_threads, uint32_t scan_from = 0)
+  {
+    static_assert(port_openable<typed_port_t<I, O>>(), "");
+    static_assert(I == O, "");
+
+    return try_open_typed_port<typed_port_t<I, O>>(active_threads, scan_from);
+  }
+
+  template <unsigned I, unsigned O, typename T>
   HOSTRPC_ANNOTATE typed_port_t<I, O> rpc_open_typed_port(
       T active_threads, uint32_t scan_from = 0)
   {
@@ -278,23 +284,49 @@ struct state_machine_impl : public SZT, public Counter
       }
   }
 
-  template <unsigned I, unsigned O, typename T>
-  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename typed_port_t<I, O>::maybe
-  rpc_try_open_typed_port(T active_threads, uint32_t scan_from = 0)
+  template <unsigned S, typename T>
+  HOSTRPC_ANNOTATE void rpc_close_port(T active_threads,
+                                       partial_port_t<S>&& port)
   {
-    static_assert(port_openable<typed_port_t<I, O>>(), "");
-    static_assert(I == O, "");
+    const uint32_t size = this->size();
+    const port_t slot = static_cast<port_t>(static_cast<uint32_t>(port));
+    if (platform::is_master_lane(active_threads))
+      {
+        active.release_slot(size, slot);
+      }
 
-    return try_open_typed_port<typed_port_t<I, O>>(active_threads, scan_from);
+    port.kill();
   }
 
   template <typename T>
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN
       maybe<cxx::tuple<uint32_t, bool>, partial_port_t<1>>
-      rpc_try_open_partial_port(T active_threads, uint32_t scan_from)
+      rpc_try_open_partial_port(T active_threads, uint32_t scan_from = 0)
   {
     static_assert(port_openable<partial_port_t<1>>(), "");
     return try_open_typed_port<partial_port_t<1>>(active_threads, scan_from);
+  }
+
+  template <typename T>
+  HOSTRPC_ANNOTATE partial_port_t<1> rpc_open_partial_port(
+      T active_threads, uint32_t scan_from = 0)
+  {
+    static_assert(port_openable<partial_port_t<1>>(), "");
+    for (;;)
+      {
+        auto r = rpc_try_open_partial_port(active_threads, scan_from);
+        if (r)
+          {
+            return r.value();
+          }
+      }
+  }
+
+  template <unsigned I, unsigned O, typename T>
+  HOSTRPC_ANNOTATE void rpc_close_port(T active_threads,
+                                       typed_port_t<I, O>&& port)
+  {
+    rpc_close_port(active_threads, typed_to_partial(cxx::move(port)));
   }
 
   // Apply will leave input unchanged and toggle output
@@ -336,6 +368,152 @@ struct state_machine_impl : public SZT, public Counter
     return typed_port_t<IandO, !IandO>(raw);
   }
 
+  template <typename T, typename Op>
+  HOSTRPC_ANNOTATE partial_port_t<0> rpc_port_apply(T active_threads,
+                                                    partial_port_t<1>&& port,
+                                                    Op&& op)
+  {
+    // TODO: Probably better to implement typed apply in terms of partial
+    // instead of partial apply in terms of typed
+    if (port.template outbox<true>())
+      {
+        typename typed_port_t<1, 1>::maybe mt =
+            partial_to_typed<true>(active_threads, cxx::move(port));
+        if (mt)
+          {
+            return typed_to_partial(rpc_port_apply(active_threads, mt.value(),
+                                                   cxx::forward<Op>(op)));
+          }
+        else
+          {
+            __builtin_unreachable();
+          }
+      }
+    else
+      {
+        typename typed_port_t<0, 0>::maybe mt =
+            partial_to_typed<false>(active_threads, cxx::move(port));
+        if (mt)
+          {
+            return typed_to_partial(rpc_port_apply(active_threads, mt.value(),
+                                                   cxx::forward<Op>(op)));
+          }
+        else
+          {
+            __builtin_unreachable();
+          }
+      }
+  }
+
+  // Can only wait on the inbox to change state as this thread will not change
+  // the outbox during the busy wait (sleep? callback? try/test-wait?)
+  template <unsigned I, typename T>
+  HOSTRPC_ANNOTATE typed_port_t<!I, !I> rpc_port_wait(
+      T active_threads, typed_port_t<I, !I>&& port)
+  {
+#if 1
+    // can only wait on the inbox to change
+    (void)active_threads;
+    static_assert(I == 0 || I == 1, "");
+
+    uint32_t raw = static_cast<uint32_t>(port);
+
+    const uint32_t size = this->size();
+    const uint32_t w = index_to_element<Word>(raw);
+    const uint32_t subindex = index_to_subindex<Word>(raw);
+
+    bool in = (I == 1);
+
+    while (in == (I == 1))
+      {
+        // until inbox changes
+        in = bits::nthbitset(inbox.load_word(size, w), subindex);
+      }
+
+    platform::fence_acquire();
+    return typed_port_t<!I, !I>(raw);
+#else
+    // wait can be implemented in terms of query
+    // calling wait vs the following inlined showed identical codegen,
+    // implementing wait as the following seems to miss a loop optimisation
+    // but the change is very minor
+
+    for (;;)
+      {
+        auto an_either = rpc_port_query(active_threads, cxx::move(port));
+        if (an_either)
+          {
+            auto a_maybe = an_either.on_true();
+            if (a_maybe)
+              {
+                auto a = a_maybe.value();
+                port = cxx::move(a);
+              }
+            else
+              {
+                __builtin_unreachable();
+              }
+          }
+        else
+          {
+            auto a_maybe = an_either.on_false();
+            if (a_maybe)
+              {
+                auto a = a_maybe.value();
+                return cxx::move(a);
+              }
+            else
+              {
+                __builtin_unreachable();
+              }
+          }
+      }
+
+#endif
+  }
+
+  // Corresponding version for partial requires either on partial which is not
+  // yet implemented
+
+  template <unsigned I, typename T>
+  HOSTRPC_ANNOTATE either<
+      /* might want return values swapped over */
+      typed_port_t<I, !I>,  /* no change */
+      typed_port_t<!I, !I>, /* inbox changed */
+      uint32_t>
+  rpc_port_query(T active_threads, typed_port_t<I, !I>&& port)
+  {
+    (void)active_threads;
+    static_assert(I == 0 || I == 1, "");
+
+    uint32_t raw = static_cast<uint32_t>(port);
+
+    const uint32_t size = this->size();
+    const uint32_t w = index_to_element<Word>(raw);
+    const uint32_t subindex = index_to_subindex<Word>(raw);
+
+    bool in = bits::nthbitset(inbox.load_word(size, w), subindex);
+
+    if (in == (I == 1))
+      {
+        either_builder<typed_port_t<I, !I>, typed_port_t<!I, !I>, uint32_t> b(
+            port);
+        // nothing changed
+        return b.normal();
+      }
+    else
+      {
+        // loaded a different value, change detected
+        typed_port_t<!I, !I> n(port);
+
+        either_builder<typed_port_t<!I, !I>, typed_port_t<I, !I>, uint32_t> b(
+            n);
+
+        platform::fence_acquire();
+        return b.invert();
+      }
+  }
+
   template <unsigned I, typename T>
   HOSTRPC_ANNOTATE bool rpc_port_inbox_has_changed(
       T active_threads, typed_port_t<I, !I> const& port HOSTRPC_CONST_REF_ARG)
@@ -357,118 +535,7 @@ struct state_machine_impl : public SZT, public Counter
     return inbox_set != I;
   }
 
-  // Can only wait on the inbox to change state as this thread will not change
-  // the outbox during the busy wait (sleep? callback? try/test-wait?)
-
-  template <unsigned I, typename T>
-  HOSTRPC_ANNOTATE typed_port_t<!I, !I> rpc_port_wait(
-      T active_threads, typed_port_t<I, !I>&& port)
-  {
-    // can only wait on the inbox to change
-    (void)active_threads;
-    static_assert(I == 0 || I == 1, "");
-    uint32_t raw = static_cast<uint32_t>(port);
-
-    const uint32_t size = this->size();
-    const uint32_t w = index_to_element<Word>(raw);
-    const uint32_t subindex = index_to_subindex<Word>(raw);
-
-    Word i = inbox.load_word(size, w);
-    Word o = outbox.load_word(size, w);
-
-    // waiting for outbox to change would mean deadlock
-
-    // current thread assumed to hold lock, thus lock is held
-    assert(bits::nthbitset(active.load_word(size, w), subindex));
-
-    platform::fence_acquire();  // dead, I think
-
-    bool out = bits::nthbitset(o, subindex);
-    bool in = bits::nthbitset(i, subindex);
-
-    if (I == 1)
-      {
-        assert(out == false);
-        (void)out;
-        while (in == true)
-          {
-            Word i = inbox.load_word(size, w);
-            in = bits::nthbitset(i, subindex);
-          }
-        platform::fence_acquire();
-      }
-    else
-      {
-        assert(out == true);
-        (void)out;
-        while (in == false)
-          {
-            Word i = inbox.load_word(size, w);
-            in = bits::nthbitset(i, subindex);
-          }
-        platform::fence_acquire();
-      }
-
-    return typed_port_t<!I, !I>(raw);
-  }
-
-  template <unsigned S, typename T>
-  HOSTRPC_ANNOTATE void rpc_close_port(T active_threads,
-                                       partial_port_t<S>&& port)
-  {
-    rpc_close_port(active_threads, as_unknown(port));
-    port.kill();
-  }
-
-  template <unsigned I, unsigned O, typename T>
-  HOSTRPC_ANNOTATE void rpc_close_port(T active_threads,
-                                       typed_port_t<I, O>&& port)
-  {
-    rpc_close_port(active_threads, as_unknown(port));
-    port.kill();
-  }
-
  private:
-  template <unsigned I, unsigned O>
-  HOSTRPC_ANNOTATE unknown_port_t
-  as_unknown(typed_port_t<I, O> const& port HOSTRPC_CONST_REF_ARG)
-  {
-    return {port.value};
-  }
-
-  template <unsigned S>
-  HOSTRPC_ANNOTATE unknown_port_t
-  as_unknown(partial_port_t<S> const& port HOSTRPC_CONST_REF_ARG)
-  {
-    return {port.value};
-  }
-
-  template <typename T>
-  HOSTRPC_ANNOTATE void rpc_close_port(T active_threads, unknown_port_t port)
-  {
-    const uint32_t size = this->size();
-    const port_t slot = static_cast<port_t>(static_cast<uint32_t>(port));
-    if (platform::is_master_lane(active_threads))
-      {
-        active.release_slot(size, slot);
-      }
-  }
-
-  template <typename PortType>
-  HOSTRPC_ANNOTATE Word find_candidate_available_bitmap(uint32_t w, Word mask)
-  {
-    static_assert(port_openable<PortType>(), "");
-
-    const uint32_t size = this->size();
-    Word i = inbox.load_word(size, w);
-    Word o = outbox.load_word(size, w);
-    Word a = active.load_word(size, w);
-    platform::fence_acquire();
-
-    Word r = available_bitmap<PortType>(i, o);
-    return r & ~a & mask;
-  }
-
   template <typename PortType>
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename PortType::maybe
   try_construct_port(bool inbox_high, bool outbox_high, uint32_t slot)
@@ -514,7 +581,21 @@ struct state_machine_impl : public SZT, public Counter
     for (uint32_t wc = 0; wc < words + 1; wc++)
       {
         uint32_t w = (element + wc) % words;
-        Word available = find_candidate_available_bitmap<PortType>(w, mask);
+#if 0
+        // Equivalent but slower
+        // Taken locks have bits set in active, need a clear bit to open a port
+        Word available = ~active.load_word(size, w);
+        available &= mask;
+        platform::fence_acquire();
+#else
+        Word i = inbox.load_word(size, w);
+        Word o = outbox.load_word(size, w);
+        Word a = active.load_word(size, w);
+        platform::fence_acquire();
+        Word r = available_bitmap<PortType>(i, o);
+        Word available = r & ~a & mask;
+#endif
+
         while (available != 0)
           {
             // tries each bit in incrementing order, clearing them on failure
@@ -523,9 +604,7 @@ struct state_machine_impl : public SZT, public Counter
             const uint32_t slot = wordBits() * w + idx;
             assert(slot < size);
 
-            uint64_t cas_fail_count = 0;
-            if (active.try_claim_empty_slot(active_threads, size, slot,
-                                            &cas_fail_count))
+            if (active.try_claim_empty_slot(active_threads, size, slot))
               {
                 // Got the lock. Is the slot still available for this type of
                 // port? Need to reload now their values are locked to find out.
@@ -548,11 +627,10 @@ struct state_machine_impl : public SZT, public Counter
                         active.release_slot(size, static_cast<port_t>(slot));
                       }
                   }
+
+                available &= port_trait<PortType>::available_bitmap(i, o);
               }
 
-            // don't try the same slot repeatedly
-            // todo: can do better than this - use the new information from the
-            // inbox/outbox loads
             available = bits::clearnthbit(available, idx);
           }
 

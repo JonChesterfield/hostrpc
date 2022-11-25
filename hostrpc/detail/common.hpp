@@ -652,18 +652,15 @@ struct lock_bitmap
 
   template <typename T>
   HOSTRPC_ANNOTATE bool try_claim_empty_slot(T active_threads, uint32_t size,
-                                             uint32_t slot,
-                                             uint64_t *cas_fail_count)
+                                             uint32_t slot)
   {
     if (Prop::hasFetchOp())
       {
-        *cas_fail_count = 0;
         return try_claim_empty_slot_nospin(active_threads, size, slot);
       }
     else
       {
-        return try_claim_empty_slot_cas(active_threads, size, slot,
-                                        cas_fail_count);
+        return try_claim_empty_slot_cas(active_threads, size, slot);
       }
   }
 
@@ -710,8 +707,7 @@ struct lock_bitmap
   // cas, true on success
   template <typename T>
   HOSTRPC_ANNOTATE bool try_claim_empty_slot_cas(T active_threads,
-                                                 uint32_t size, uint32_t slot,
-                                                 uint64_t *cas_fail_count)
+                                                 uint32_t size, uint32_t slot)
   {
     assert(slot < size);
     uint32_t w = index_to_element<Word>(slot);
@@ -720,7 +716,6 @@ struct lock_bitmap
     Word d = load_word(size, w);
 
     // printf("Slot %lu, w %lu, subindex %lu, d %lu\n", i, w, subindex, d);
-    uint64_t local_fail_count = 0;
     for (;;)
       {
         // if the bit was already set then we've lost the race
@@ -730,7 +725,6 @@ struct lock_bitmap
         Word proposed = bits::setnthbit(d, subindex);
         if (proposed == d)
           {
-            *cas_fail_count = *cas_fail_count + local_fail_count;
             return false;
           }
 
@@ -749,11 +743,9 @@ struct lock_bitmap
         if (r)
           {
             // success, got the lock, and active word was set to proposed
-            *cas_fail_count = *cas_fail_count + local_fail_count;
             return true;
           }
 
-        local_fail_count++;
         // cas failed. reasons:
         // we lost the slot
         // another slot in the same word changed

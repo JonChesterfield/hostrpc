@@ -39,6 +39,7 @@ struct HOSTRPC_CONSUMABLE_CLASS either_builder
 
  private:
   From payload;
+  HOSTRPC_ANNOTATE
   either_builder(From payload) : payload(payload) {}
 };
 

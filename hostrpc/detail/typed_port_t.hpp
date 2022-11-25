@@ -22,9 +22,6 @@ class typed_port_impl_t;
 template <typename Friend, unsigned S>
 class partial_port_impl_t;
 
-template <typename Friend>
-class unknown_port_impl_t;
-
 // Typed port knows the exact state of inbox and outbox at a given point in time
 // Partial port knows whether inbox == outbox, called Stable / S here, and
 // tracks what the the inbox/outbox state is using a runtime boolean.
@@ -264,15 +261,33 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     return {v};
   }
 
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+  operator hostrpc::either_builder<SelfType, typed_port_impl_t<Friend, !I, O>,
+                                   uint32_t>()
+  {
+    uint32_t v = *this;
+    kill();
+    return {v};
+  }
+
+  
   // if either is constructed by normal(), the ==true path is live and will
   // return (a maybe that returns) SelfType.
   // if either is cosntructed by invert(), the ==false path is live and will
   // return (a maybe that returns) SelfType.
   // The dynamically dead path will call the other constructor, which is a
   // friend here to allow the dead path to typecheck.
+  
+  // construction with outbox changed
   friend hostrpc::either<SelfType, typed_port_impl_t<Friend, I, !O>, uint32_t>;
   friend hostrpc::either<typed_port_impl_t<Friend, I, !O>, SelfType, uint32_t>;
 
+  // construction with inbox changed
+  friend hostrpc::either<SelfType, typed_port_impl_t<Friend, !I, O>, uint32_t>;
+  friend hostrpc::either<typed_port_impl_t<Friend, !I, O>, SelfType, uint32_t>;
+  
   // move construct and assign are available
   HOSTRPC_ANNOTATE
   HOSTRPC_CREATED_RES
@@ -500,30 +515,6 @@ HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr partial_port_impl_t<F, S> move(
 
 }  // namespace cxx
 #endif
-
-template <typename Friend>
-class unknown_port_impl_t
-{
- private:
-  friend Friend;  // the state machine
-  uint32_t value;
-
-  HOSTRPC_ANNOTATE
-  unknown_port_impl_t(uint32_t v) : value(v) {}
-
-  HOSTRPC_ANNOTATE
-  unknown_port_impl_t(const unknown_port_impl_t &) = delete;
-  HOSTRPC_ANNOTATE
-  unknown_port_impl_t &operator=(const unknown_port_impl_t &) = delete;
-  HOSTRPC_ANNOTATE
-  unknown_port_impl_t(unknown_port_impl_t &&) = delete;
-  HOSTRPC_ANNOTATE
-  unknown_port_impl_t &operator=(unknown_port_impl_t &&) = delete;
-
- public:
-  HOSTRPC_ANNOTATE
-  operator uint32_t() const { return value; }
-};
 
 }  // namespace hostrpc
 

@@ -168,6 +168,7 @@ LLC="$RDIR/bin/llc"
 DIS="$RDIR/bin/llvm-dis"
 LINK="$RDIR/bin/llvm-link"
 OPT="$RDIR/bin/opt"
+EXTRACT="$RDIR/bin/llvm-extract"
 
 #CLANG="g++"
 #LINK="ld -r"
@@ -431,10 +432,17 @@ if true; then
 # and provide an example of the generated IR
 $CXX_X64 $CXXVER -DNDEBUG codegen/client.cpp -S -o codegen/client.x64.ll
 $CXX_X64 $CXXVER -DNDEBUG codegen/server.cpp -S -o codegen/server.x64.ll
+$CXX_X64 $CXXVER -DNDEBUG codegen/state_machine.cpp -S -o codegen/state_machine.x64.ll
+
+$EXTRACT codegen/state_machine.x64.ll -func typed_port_via_wait -S -o codegen/first.ll
+$EXTRACT codegen/state_machine.x64.ll -func typed_port_via_query -S -o codegen/second.ll
+
 $CXX_GCN $CXXVER -DNDEBUG codegen/client.cpp -S -o codegen/client.gcn.ll
 $CXX_GCN $CXXVER -DNDEBUG codegen/server.cpp -S -o codegen/server.gcn.ll
+$CXX_GCN $CXXVER -DNDEBUG codegen/state_machine.cpp -S -o codegen/state_machine.gcn.ll
 $CXX_PTX $CXXVER -DNDEBUG codegen/client.cpp -S -o codegen/client.ptx.ll
 $CXX_PTX $CXXVER -DNDEBUG codegen/server.cpp -S -o codegen/server.ptx.ll
+$CXX_PTX $CXXVER -DNDEBUG codegen/state_machine.cpp -S -o codegen/state_machine.ptx.ll
 
 $CXX_X64 $CXXVER codegen/foo_cxx.cpp -S -o codegen/foo_cxx.x64.ll
 $CXX_GCN $CXXVER codegen/foo_cxx.cpp -S -o codegen/foo_cxx.gcn.ll

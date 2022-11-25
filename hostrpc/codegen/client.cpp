@@ -5,8 +5,8 @@
 
 using SZ = hostrpc::size_compiletime<128>;
 
-using client_type =
-  hostrpc::client<hostrpc::page_t, uint64_t, SZ, hostrpc::counters::client_nop>;
+using client_type = hostrpc::client<hostrpc::page_t, uint64_t, SZ,
+                                    hostrpc::counters::client_nop>;
 
 extern "C" __attribute__((noinline)) HOSTRPC_ANNOTATE void
 client_instance_invoke_direct(client_type& c)
@@ -20,17 +20,55 @@ client_instance_invoke_direct(client_type& c)
     }
 }
 
-
-extern "C" __attribute__((flatten)) HOSTRPC_ANNOTATE void
-client_open_any_port(client_type &c)
+extern "C" __attribute__((flatten)) HOSTRPC_ANNOTATE void client_open_any_port(
+    client_type& c)
 {
   using namespace hostrpc;
- auto active_threads = platform::active_threads();
- client_type::typed_port_t<0, 0>::maybe p0 = c.rpc_try_open_typed_port(active_threads);
- if (p0)
-   {
-     c.rpc_close_port(active_threads, p0.value());
-   }
+  auto active_threads = platform::active_threads();
+  client_type::typed_port_t<0, 0>::maybe p0 =
+      c.rpc_try_open_typed_port(active_threads);
+  if (p0)
+    {
+      c.rpc_close_port(active_threads, p0.value());
+    }
+}
+
+extern "C" __attribute__((flatten)) HOSTRPC_ANNOTATE void client_compiling_either(
+    client_type& c)
+{
+  using namespace hostrpc;
+
+  auto active_threads = platform::active_threads();
+  client_type::typed_port_t<0, 0>::maybe p0 =
+    c.rpc_try_open_typed_port(active_threads);
+  
+  if (p0)
+    {
+      client_type::typed_port_t<0, 0> p00(p0);
+      client_type::typed_port_t<0, 1> p01 = c.rpc_port_send(active_threads,
+                                                            cxx::move(p00),
+                                                            [](hostrpc::port_t, hostrpc::page_t *) {});
+      
+      auto an_either = c.rpc_port_query<0,decltype(active_threads)>(active_threads, cxx::move(p01));
+      if (an_either)
+        {
+          auto a_maybe = an_either.on_true();
+          if (a_maybe)
+            {
+              auto a = a_maybe.value();
+              c.rpc_close_port(active_threads, cxx::move(a));
+            }
+        }
+      else
+        {
+          auto a_maybe = an_either.on_false();
+          if (a_maybe)
+            {
+              auto a = a_maybe.value();
+              c.rpc_close_port(active_threads, cxx::move(a));
+            }
+        }
+    }
 }
 
 extern "C" __attribute__((always_inline)) HOSTRPC_ANNOTATE void
@@ -107,7 +145,6 @@ extern "C" HOSTRPC_ANNOTATE void reference(client_type& c)
 }
 namespace hostrpc
 {
-
 // Would like to be able to pass either
 // void operator()(port_t, uint32_t call_number, uint64_t *)
 // or
