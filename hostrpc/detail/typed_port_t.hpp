@@ -239,6 +239,22 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
       }
   }
 
+
+  // Trust instances of this type with inbox/outbox inverted but not both
+  friend typed_port_impl_t<Friend, I, !O>;
+
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+  typed_port_impl_t<Friend, I, !O>
+  invert_outbox()
+  {   
+    uint32_t v = *this;
+    kill();
+    return {v};
+  }
+
+  
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
@@ -403,6 +419,20 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
       }
   }
 
+
+  friend partial_port_impl_t<Friend, !S>;
+
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+  partial_port_impl_t<Friend, !S>
+  invert_outbox()
+  {
+    cxx::tuple<uint32_t, bool> tup = {value, !state};
+    kill();
+    return {tup};
+  }
+ 
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)

@@ -336,36 +336,10 @@ struct state_machine_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE typed_port_t<IandO, !IandO> rpc_port_apply(
       T active_threads, typed_port_t<IandO, IandO>&& port, Op&& op)
   {
-    const uint32_t size = this->size();
-
-    uint32_t raw = static_cast<uint32_t>(port);
-    op(static_cast<port_t>(raw), &shared_buffer[raw]);
-    platform::fence_release();
-
     static_assert(IandO == 0 || IandO == 1, "");
-
-    // Toggle the outbox slot
-    // partial port implementation probably calls outbox.toggle here
-
-    // if bitmap is templated on state machine, could pass a typed port
-    // representation here and get compile time checking of the comments
-    // 'assumes slot taken' and similar
-    if (IandO == 1)
-      {
-        if (platform::is_master_lane(active_threads))
-          {
-            outbox.release_slot(size, static_cast<port_t>(raw));
-          }
-      }
-    else
-      {
-        if (platform::is_master_lane(active_threads))
-          {
-            outbox.claim_slot(size, static_cast<port_t>(raw));
-          }
-      }
-
-    return typed_port_t<IandO, !IandO>(raw);
+    return apply_typed_port<typed_port_t<IandO, !IandO>,
+                            typed_port_t<IandO, IandO>, T>(
+        active_threads, cxx::move(port), cxx::forward<Op>(op));
   }
 
   template <typename T, typename Op>
@@ -373,36 +347,8 @@ struct state_machine_impl : public SZT, public Counter
                                                     partial_port_t<1>&& port,
                                                     Op&& op)
   {
-    // TODO: Probably better to implement typed apply in terms of partial
-    // instead of partial apply in terms of typed
-    if (port.outbox_state() == true)
-      {
-        typename typed_port_t<1, 1>::maybe mt =
-            partial_to_typed<true>(active_threads, cxx::move(port));
-        if (mt)
-          {
-            return typed_to_partial(rpc_port_apply(active_threads, mt.value(),
-                                                   cxx::forward<Op>(op)));
-          }
-        else
-          {
-            __builtin_unreachable();
-          }
-      }
-    else
-      {
-        typename typed_port_t<0, 0>::maybe mt =
-            partial_to_typed<false>(active_threads, cxx::move(port));
-        if (mt)
-          {
-            return typed_to_partial(rpc_port_apply(active_threads, mt.value(),
-                                                   cxx::forward<Op>(op)));
-          }
-        else
-          {
-            __builtin_unreachable();
-          }
-      }
+    return apply_typed_port<partial_port_t<0>, partial_port_t<1>, T>(
+        active_threads, cxx::move(port), cxx::forward<Op>(op));
   }
 
   // Can only wait on the inbox to change state as this thread will not change
@@ -638,6 +584,45 @@ struct state_machine_impl : public SZT, public Counter
       }
 
     return {};
+  }
+
+  template <typename PortRes, typename PortArg, typename T, typename Op>
+  HOSTRPC_ANNOTATE PortRes apply_typed_port(T active_threads, PortArg&& port,
+                                            Op&& op)
+  {
+    // Might need a better name than this
+    // Looking for static assert that inbox == outbox
+    static_assert(port_trait<PortArg>::openable(), "");
+    static_assert(!port_trait<PortRes>::openable(), "");
+
+    const uint32_t size = this->size();
+
+    uint32_t raw = static_cast<uint32_t>(port);
+    op(static_cast<port_t>(raw), &shared_buffer[raw]);
+    platform::fence_release();
+
+    // Toggle the outbox slot
+    // partial port implementation could call outbox.toggle here
+
+    // could pass a typed port representation here and get compile time checking
+    // of the comments 'assumes slot taken' and similar
+
+    if (port.outbox_state() == true)
+      {
+        if (platform::is_master_lane(active_threads))
+          {
+            outbox.release_slot(size, static_cast<port_t>(raw));
+          }
+      }
+    else
+      {
+        if (platform::is_master_lane(active_threads))
+          {
+            outbox.claim_slot(size, static_cast<port_t>(raw));
+          }
+      }
+
+    return port.invert_outbox();
   }
 };
 
