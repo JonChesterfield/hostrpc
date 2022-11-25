@@ -264,7 +264,6 @@ struct state_machine_impl : public SZT, public Counter
   {
     static_assert(port_openable<typed_port_t<I, O>>(), "");
     static_assert(I == O, "");
-
     return try_open_typed_port<typed_port_t<I, O>>(active_threads, scan_from);
   }
 
@@ -274,14 +273,7 @@ struct state_machine_impl : public SZT, public Counter
   {
     static_assert(port_openable<typed_port_t<I, O>>(), "");
     static_assert(I == O, "");
-    for (;;)
-      {
-        auto r = rpc_try_open_typed_port<I, O, T>(active_threads, scan_from);
-        if (r)
-          {
-            return r.value();
-          }
-      }
+    return rpc_open_typed_port<I, O, T>(active_threads, scan_from);
   }
 
   template <unsigned S, typename T>
@@ -312,14 +304,7 @@ struct state_machine_impl : public SZT, public Counter
       T active_threads, uint32_t scan_from = 0)
   {
     static_assert(port_openable<partial_port_t<1>>(), "");
-    for (;;)
-      {
-        auto r = rpc_try_open_partial_port(active_threads, scan_from);
-        if (r)
-          {
-            return r.value();
-          }
-      }
+    return open_typed_port<partial_port_t<1>>(active_threads, scan_from);
   }
 
   template <unsigned I, unsigned O, typename T>
@@ -337,6 +322,7 @@ struct state_machine_impl : public SZT, public Counter
       T active_threads, typed_port_t<IandO, IandO>&& port, Op&& op)
   {
     static_assert(IandO == 0 || IandO == 1, "");
+
     return apply_typed_port<typed_port_t<IandO, !IandO>,
                             typed_port_t<IandO, IandO>, T>(
         active_threads, cxx::move(port), cxx::forward<Op>(op));
@@ -368,15 +354,18 @@ struct state_machine_impl : public SZT, public Counter
     const uint32_t w = index_to_element<Word>(raw);
     const uint32_t subindex = index_to_subindex<Word>(raw);
 
-    bool in = (I == 1);
+    constexpr bool req = I == 1;
+    bool in = req;
 
-    while (in == (I == 1))
+    while (in == req)
       {
         // until inbox changes
         in = bits::nthbitset(inbox.load_word(size, w), subindex);
       }
 
     platform::fence_acquire();
+    // return port.invert_inbox(); // should be fine here but trips up clang's
+    // consumed checking
     return typed_port_t<!I, !I>(raw);
 #else
     // wait can be implemented in terms of query
@@ -504,9 +493,25 @@ struct state_machine_impl : public SZT, public Counter
   }
 
   template <typename PortType, typename T>
+  HOSTRPC_ANNOTATE PortType open_typed_port(T active_threads,
+                                            uint32_t scan_from)
+  {
+    static_assert(port_openable<PortType>(), "");
+    for (;;)
+      {
+        auto r = try_open_typed_port<PortType, T>(active_threads, scan_from);
+        if (r)
+          {
+            return r.value();
+          }
+      }
+  }
+
+  template <typename PortType, typename T>
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename PortType::maybe
   try_open_typed_port(T active_threads, uint32_t scan_from)
   {
+    static_assert(port_openable<PortType>(), "");
     const uint32_t size = this->size();
     const uint32_t words = this->words();
     const uint32_t location = scan_from % size;
@@ -622,7 +627,8 @@ struct state_machine_impl : public SZT, public Counter
           }
       }
 
-    return port.invert_outbox();
+    return port.invert_outbox();  // might cause problems with clang's consumed
+                                  // checking
   }
 };
 

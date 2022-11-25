@@ -242,9 +242,11 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
 
   // Trust instances of this type with inbox/outbox inverted but not both
   friend typed_port_impl_t<Friend, I, !O>;
+  friend typed_port_impl_t<Friend, !I, O>;
 
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_CREATED_RES
   HOSTRPC_SET_TYPESTATE(consumed)
   typed_port_impl_t<Friend, I, !O>
   invert_outbox()
@@ -254,6 +256,17 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     return {v};
   }
 
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_CREATED_RES
+  HOSTRPC_SET_TYPESTATE(consumed)
+  typed_port_impl_t<Friend, !I, O>
+  invert_inbox()
+  {   
+    uint32_t v = *this;
+    kill();
+    return {v};
+  }
   
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
@@ -424,11 +437,26 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
 
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_CREATED_RES
   HOSTRPC_SET_TYPESTATE(consumed)
   partial_port_impl_t<Friend, !S>
   invert_outbox()
   {
+    // Inverts outbox and inverts S
     cxx::tuple<uint32_t, bool> tup = {value, !state};
+    kill();
+    return {tup};
+  }
+
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_CREATED_RES 
+  HOSTRPC_SET_TYPESTATE(consumed)
+  partial_port_impl_t<Friend, !S>
+  invert_inbox()
+  {
+    // No change to outbox, inverts S
+    cxx::tuple<uint32_t, bool> tup = {value, state};
     kill();
     return {tup};
   }
