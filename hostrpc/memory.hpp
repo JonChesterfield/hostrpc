@@ -16,7 +16,7 @@ namespace hostrpc
 // will be reinterpret_cast.
 
 template <typename T>
-T* careful_array_cast(void* data, size_t N)
+T* careful_array_cast(void* data, size_t N) // N elements of T
 {
   // allocation functions return void*, but casting that to a T* is not strictly
   // sufficient to satisfy the C++ object model. One should placement new
@@ -41,7 +41,7 @@ T* careful_array_cast(void* data, size_t N)
 }
 
 template <typename T>
-T careful_cast_to_bitmap(void* memory, size_t size)
+T careful_cast_to_bitmap(void* memory, size_t size) // N elements of T::Ty, likely Word
 {
   typename T::Ty* m = hostrpc::careful_array_cast<typename T::Ty>(memory, size);
   return {m};

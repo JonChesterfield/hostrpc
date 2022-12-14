@@ -198,6 +198,9 @@ GCNFLAGS=" $OPTLEVEL -ffreestanding -fno-exceptions $AMDGPU"
 # clang/ptx back end is crashing in llvm::DwarfDebug::constructCallSiteEntryDIEs
 NVPTXFLAGS=" $OPTLEVEL -ffreestanding -fno-exceptions -Wno-atomic-alignment -emit-llvm $NVGPU "
 
+OPENMP_FLAGS_AMDGPU="-fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GCNGFX"
+OPENMP_FLAGS_NVPTX="-fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=$PTXGFX"
+
 CXX_X64="$CLANGXX $CXXVER $COMMONFLAGS $X64FLAGS"
 CXX_GCN="$CLANGXX $CXXVER $COMMONFLAGS $GCNFLAGS"
 
@@ -468,15 +471,15 @@ $CLANGXX -x hip --cuda-gpu-arch=$GCNGFX -nogpulib -nogpuinc $CXXVER $CODEGENOPTL
 # so can't test that here
 
 # This ignores -S for some reason
-$CLANGXX $CODEGENOPTLEVEL -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GCNGFX codegen/foo.omp.cpp -c -emit-llvm --cuda-device-only -o codegen/foo.omp.gcn.bc && $DIS codegen/foo.omp.gcn.bc && rm codegen/foo.omp.gcn.bc
+$CLANGXX $CODEGENOPTLEVEL -target x86_64-pc-linux-gnu $OPENMP_FLAGS_AMDGPU codegen/foo.omp.cpp -c -emit-llvm --cuda-device-only -o codegen/foo.omp.gcn.bc && $DIS codegen/foo.omp.gcn.bc && rm codegen/foo.omp.gcn.bc
 
 # ignores host-only, so the IR has a binary gfx pasted at the top
-$CLANGXX $CODEGENOPTLEVEL  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GCNGFX  codegen/foo.omp.cpp -S -emit-llvm --cuda-host-only -o codegen/foo.omp.gcn-x64.ll
+$CLANGXX $CODEGENOPTLEVEL  -target x86_64-pc-linux-gnu $OPENMP_FLAGS_AMDGPU codegen/foo.omp.cpp -S -emit-llvm --cuda-host-only -o codegen/foo.omp.gcn-x64.ll
 
 
-$CLANGXX $CODEGENOPTLEVEL  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=$PTXGFX  codegen/foo.omp.cpp -c -emit-llvm -S --cuda-device-only -o codegen/foo.omp.ptx.ll
+$CLANGXX $CODEGENOPTLEVEL  -target x86_64-pc-linux-gnu $OPENMP_FLAGS_NVPTX codegen/foo.omp.cpp -c -emit-llvm -S --cuda-device-only -o codegen/foo.omp.ptx.ll
 
-$CLANGXX $CODEGENOPTLEVEL  -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=$PTXGFX  codegen/foo.omp.cpp -c -emit-llvm -S --cuda-host-only -o codegen/foo.omp.ptx-x64.ll
+$CLANGXX $CODEGENOPTLEVEL  -target x86_64-pc-linux-gnu $OPENMP_FLAGS_NVPTX codegen/foo.omp.cpp -c -emit-llvm -S --cuda-host-only -o codegen/foo.omp.ptx-x64.ll
 
 # OpenCL compilation model is essentially that of c++
 $CLANGXX $XOPENCL -S -emit-llvm codegen/foo_cxx.cpp -S -o codegen/foo.cl.x64.ll
@@ -557,12 +560,12 @@ fi
 if (($have_amdgcn)); then
     $LINK obj/openmp_support.x64.bc obj/hsa_support.x64.bc obj/syscall.x64.bc -o obj/demo_bitcode_gcn.omp.bc
 
+    # The easy fix for this might be to put everything into a header
     # openmp was taking an excessive amount of time to compile
     # this now fails to compile (fairly quickly), looks like mlink-builtin-bitcode is mixing
     # the two ISAs in a single module
     set +e
-    $CLANGXX $CXXVER -I$HSAINC $OPTLEVEL -target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GCNGFX -mcpu=$GCNGFX -DDEMO_AMDGCN=1 demo_openmp.cpp \
-         -Xclang -mlink-builtin-bitcode -Xclang obj/demo_bitcode_gcn.omp.bc -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR && ./demo_openmp_gcn
+    $CLANGXX $CXXVER -I$HSAINC $OPTLEVEL -target x86_64-pc-linux-gnu $OPENMP_FLAGS_AMDGPU -DDEMO_AMDGCN=1 demo_openmp.cpp  -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR && ./demo_openmp_gcn
     set -e
 fi
 

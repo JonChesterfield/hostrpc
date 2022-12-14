@@ -289,6 +289,44 @@ struct client : public client_impl<BufferElementT, WordT, SZT, Counter>
       }
   }
 
+  template <typename T, typename Fill>
+  HOSTRPC_ANNOTATE bool rpc_invoke_async_noapply(T active_threads, Fill &&fill) noexcept
+  {
+    if (auto maybe = base::rpc_try_open_typed_port(active_threads))
+      {
+        auto send = base::rpc_port_send(active_threads, maybe.value(),
+                                        cxx::move(fill));
+        base::rpc_close_port(active_threads, cxx::move(send));
+        return true;
+      }
+    else
+      {
+        return false;
+      }
+  }
+
+  
+  template <typename T, typename Fill, typename Use>
+  HOSTRPC_ANNOTATE bool rpc_invoke_noapply(T active_threads, Fill &&fill,
+                                   Use &&use) noexcept
+  {
+
+    if (auto maybe = base::rpc_try_open_typed_port(active_threads))
+      {
+        auto send = base::rpc_port_send(active_threads, maybe.value(),
+                                        cxx::move(fill));
+        auto recv = base::rpc_port_recv(active_threads, cxx::move(send),
+                                        cxx::move(use));
+        base::rpc_close_port(active_threads, cxx::move(recv));
+        return true;
+      }
+    else
+      {
+        return false;
+      }
+  }
+
+  
   // TODO: Probably want one of these convenience functions for each rpc_invoke,
   // but perhaps not on volta
 

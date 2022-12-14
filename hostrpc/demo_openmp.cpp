@@ -1,65 +1,36 @@
-#define HOSTRPC_HAVE_STDIO 1
-#include <stdio.h>
-
-#include <omp.h>
-
 
 #pragma omp declare target
 
-#include "allocator.hpp"
-#include "base_types.hpp"
-#include "client_server_pair.hpp"
+#include "detail/client_impl.hpp"
+#include "detail/server_impl.hpp"
+#include "memory.hpp"
 
-#if HOSTRPC_HOST
-// Easier than linking host bitcode for x64
-#include "allocator_host_libc.cpp"
-#endif
-
-namespace hostrpc
+struct BufferElement
 {
-template <typename SZ, int device_num>
-using x64_device_type_base =
-    client_server_pair_t<SZ, arch::x64, arch::openmp_target<device_num> >;
-
-template <typename SZ, int device_num>
-struct x64_device_type : public x64_device_type_base<SZ, device_num>
-{
-  using base = x64_device_type_base<SZ, device_num>;
-  HOSTRPC_ANNOTATE x64_device_type(SZ sz) : base(sz, {}, {}) {}
+  uint64_t data[64];
 };
-}  // namespace hostrpc
+inline void *operator new(size_t, BufferElement *p) { return p; }
 
-template <typename C>
-static bool invoke(C *client, uint64_t x[8])
+using WordType = uint32_t;
+
+enum
 {
-  auto fill = [&](hostrpc::port_t, hostrpc::page_t *page) -> void {
-    hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
-    line->element[0] = x[0];
-    line->element[1] = x[1];
-    line->element[2] = x[2];
-    line->element[3] = x[3];
-    line->element[4] = x[4];
-    line->element[5] = x[5];
-    line->element[6] = x[6];
-    line->element[7] = x[7];
-  };
+  slots = 128,  // number of slots, usually in bits
+  slots_bytes = slots / 8,
+  slots_words = slots_bytes / sizeof(WordType),
+};
 
-  auto use = [&](hostrpc::port_t, hostrpc::page_t *page) -> void {
-    hostrpc::cacheline_t *line = &page->cacheline[platform::get_lane_id()];
-    x[0] = line->element[0];
-    x[1] = line->element[1];
-    x[2] = line->element[2];
-    x[3] = line->element[3];
-    x[4] = line->element[4];
-    x[5] = line->element[5];
-    x[6] = line->element[6];
-    x[7] = line->element[7];
-  };
-
-  return client->template rpc_invoke(fill, use);
-}
+using demo_client =
+    hostrpc::client<BufferElement, uint32_t, hostrpc::size_compiletime<slots>>;
+using demo_server =
+    hostrpc::server<BufferElement, uint32_t, hostrpc::size_compiletime<slots>>;
 
 #pragma omp end declare target
+demo_client client;
+#pragma omp declare target to(client)
+demo_server server;
+
+#include <stdio.h>
 
 #include <omp.h>
 
@@ -67,81 +38,112 @@ static bool invoke(C *client, uint64_t x[8])
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
+
 #include <x86_64-linux-gnu/asm/unistd_64.h>
 
-using SZ = hostrpc::size_compiletime<1920>;
-constexpr static int device_num = 0;
-
-using base_type = hostrpc::x64_device_type<SZ, device_num>;
-
-struct operate_test
-{
-  void operator()(hostrpc::port_t port, hostrpc::page_t *page)
-  {
-    fprintf(stderr, "Invoked operate\n");
-    for (unsigned i = 0; i < 64; i++)
-      {
-        operator()(port, i, &page->cacheline[i]);
-      }
-  }
-
-  void operator()(hostrpc::port_t, unsigned index, hostrpc::cacheline_t *line)
-  {
-#if HOSTRPC_HOST
-    // hostrpc::syscall_on_cache_line(index, line);
-#endif
-  }
-};
-
-struct clear_test
-{
-  void operator()(hostrpc::port_t, hostrpc::page_t *page)
-  {
-    for (unsigned c = 0; c < 64; c++)
-      {
-        hostrpc::cacheline_t &line = page->cacheline[c];
-        line.element[0] = 0;
-      }
-  }
-};
-
-base_type::server_type global_server;
-
-#pragma omp declare target
-base_type::client_type global_client;
-#pragma omp end declare target
+extern "C" void *llvm_omp_target_alloc_host(size_t, int);
 
 int main()
 {
-  SZ sz;
-  base_type p(sz);
+  // GPU locks
 
-  if (!p.valid())
-    {
-      fprintf(stderr, "%s: Failed to allocate\n", __func__);
-      return 1;
-    }
+  // todo: force these things to be properly aligned (or fail if they aren't)
+  void *gpu_locks = omp_target_alloc(slots_bytes, 0);
+  void *host_locks = aligned_alloc(64, slots_bytes);
+
+  void *client_inbox = llvm_omp_target_alloc_host(slots_bytes, 0);
+  void *client_outbox = llvm_omp_target_alloc_host(slots_bytes, 0);
+
+  void *shared_buffer =
+      llvm_omp_target_alloc_host(slots * sizeof(BufferElement), 0);
+
+  memset(host_locks, 0, slots_bytes);
+  memset(client_inbox, 0, slots_bytes);
+  memset(client_outbox, 0, slots_bytes);
+  memset(shared_buffer, 0, slots_bytes);
   
-  global_server = p.server;
-  global_client = p.client;
-    
-#pragma omp target data map(to: global_client)
-    {}
+  client = demo_client(
+      {},
+      hostrpc::careful_cast_to_bitmap<demo_client::lock_t>(gpu_locks,
+                                                           slots_words),
+      hostrpc::careful_cast_to_bitmap<demo_client::inbox_t>(client_inbox,
+                                                            slots_words),
+      hostrpc::careful_cast_to_bitmap<demo_client::outbox_t>(client_outbox,
+                                                             slots_words),
+      hostrpc::careful_array_cast<BufferElement>(shared_buffer, slots));
+#pragma omp target update to(client)
 
-#pragma omp parallel num_threads(4)
-    {
-      printf("on the host\n");
+  server = demo_server(
+      {},
+      hostrpc::careful_cast_to_bitmap<demo_server::lock_t>(host_locks,
+                                                           slots_words),
+      hostrpc::careful_cast_to_bitmap<demo_server::inbox_t>(client_outbox,
+                                                            slots_words),
+      hostrpc::careful_cast_to_bitmap<demo_server::outbox_t>(client_inbox,
+                                                             slots_words),
+      hostrpc::careful_array_cast<BufferElement>(shared_buffer, slots));
 
-#if 0
-#pragma omp target device(0)
-    {
-      auto inv = [&](uint64_t x[8]) -> bool {
-        return invoke<base_type::client_type>(global_client, x);
-      };
 
-    inv({1,2,3});
-    }
-#endif
-    }
-    
+#pragma omp parallel num_threads(2)
+  {
+    unsigned id = omp_get_thread_num();
+    printf("on the host, thread %u\n", id);
+
+    if (id == 0)
+      {
+
+#pragma omp target
+        {
+          auto thrds = platform::active_threads();
+
+          bool r = client.rpc_invoke_async_noapply(
+              thrds,
+              [](hostrpc::port_t, BufferElement *data) {
+                auto me = platform::get_lane_id();
+                data->data[me] = me * me + 5;
+              });
+
+
+        }
+        
+      }
+    else
+      {
+
+      again:;
+        bool r = 
+        server.rpc_handle(
+            [](hostrpc::port_t, BufferElement *data) {
+              fprintf(stderr, "Server got work to do:\n");
+              for (unsigned i = 0; i < 64; i++)
+                {
+                  fprintf(stderr, "data[%u] = %lu\n", i, data->data[i]);
+                }
+            },
+            [](hostrpc::port_t, BufferElement *data) {
+              fprintf(stderr, "Server cleaning up");
+              for (unsigned i = 0; i < 64; i++)
+                {
+                  data->data[i] = 0;
+                }
+            });
+
+        if (!r) {
+          for (unsigned i = 0; i < 10000; i++)
+            platform::sleep_briefly();
+          fprintf(stderr, "no work, again\n");
+          goto again;
+        }
+        else {
+          fprintf(stderr, "Server returned true\n");
+        }
+      }
+  }
+
+  omp_target_free(gpu_locks, 0);
+  free(host_locks);
+  omp_target_free(client_inbox, 0);
+  omp_target_free(client_outbox, 0);
+  omp_target_free(shared_buffer, 0);
 }
