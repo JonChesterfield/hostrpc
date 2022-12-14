@@ -41,7 +41,7 @@ template <typename Friend>
 struct typed_to_partial_trait<Friend, typed_port_impl_t<Friend, 0, 0>>
 {
   using type = partial_port_impl_t<Friend, 1>;
-  static constexpr bool state = false;
+  static constexpr bool state() { return false; }
 };
 
 // <0, 1> -> S == 0, state == true
@@ -49,7 +49,7 @@ template <typename Friend>
 struct typed_to_partial_trait<Friend, typed_port_impl_t<Friend, 0, 1>>
 {
   using type = partial_port_impl_t<Friend, 0>;
-  static constexpr bool state = true;
+  static constexpr bool state() { return true; }
 };
 
 // <1, 1> -> S == 1, state == true
@@ -57,7 +57,7 @@ template <typename Friend>
 struct typed_to_partial_trait<Friend, typed_port_impl_t<Friend, 1, 1>>
 {
   using type = partial_port_impl_t<Friend, 1>;
-  static constexpr bool state = true;
+  static constexpr bool state() { return true; }
 };
 
 // <1, 0> -> S == 0, state == false
@@ -65,7 +65,7 @@ template <typename Friend>
 struct typed_to_partial_trait<Friend, typed_port_impl_t<Friend, 1, 0>>
 {
   using type = partial_port_impl_t<Friend, 0>;
-  static constexpr bool state = false;
+  static constexpr bool state() { return false; }
 };
 
 // equal and outbox true
@@ -115,11 +115,11 @@ struct check_from_typed
   using partial_info = typed_to_partial_trait<Friend, typed_port_t>;
 
   using typed_info = partial_to_typed_trait<Friend, typename partial_info::type,
-                                            partial_info::state>;
+                                            partial_info::state()>;
 
   static constexpr bool consistent()
   {
-    return is_same<typed_port_t, typename typed_info::type>()/*::value*/;
+    return is_same<typed_port_t, typename typed_info::type>() /*::value*/;
   }
 };
 
@@ -136,8 +136,8 @@ struct check_from_partial
 
   static constexpr bool consistent()
   {
-    return is_same<partial_port_t, typename partial_info::type>()/*::value*/
-      &&  partial_info::state == state;
+    return is_same<partial_port_t, typename partial_info::type>() /*::value*/
+           && partial_info::state() == state;
   }
 };
 
@@ -205,18 +205,16 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   HOSTRPC_ANNOTATE HOSTRPC_SET_TYPESTATE(unconsumed) void def() const {}
 
  public:
-
-
   // can convert it back to a uint32_t for indexing into structures
   HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE operator uint32_t() const
   {
     return value;
   }
 
- // non-constexpr member functions to match partial_port_impl_t
- HOSTRPC_ANNOTATE bool outbox_state() const { return O; }
- HOSTRPC_ANNOTATE bool inbox_state() const { return I; }
-  
+  // non-constexpr member functions to match partial_port_impl_t
+  HOSTRPC_ANNOTATE bool outbox_state() const { return O; }
+  HOSTRPC_ANNOTATE bool inbox_state() const { return I; }
+
   // non-default maybe can only be constructed by the second template parameter,
   // i.e. by this class. The only method that does so is operator that consumes
   // the port. Thus this instance can be converted to a maybe and then
@@ -239,7 +237,6 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
       }
   }
 
-
   // Trust instances of this type with inbox/outbox inverted but not both
   friend typed_port_impl_t<Friend, I, !O>;
   friend typed_port_impl_t<Friend, !I, O>;
@@ -248,9 +245,8 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_CREATED_RES
   HOSTRPC_SET_TYPESTATE(consumed)
-  typed_port_impl_t<Friend, I, !O>
-  invert_outbox()
-  {   
+  typed_port_impl_t<Friend, I, !O> invert_outbox()
+  {
     uint32_t v = *this;
     kill();
     return {v};
@@ -260,14 +256,13 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_CREATED_RES
   HOSTRPC_SET_TYPESTATE(consumed)
-  typed_port_impl_t<Friend, !I, O>
-  invert_inbox()
-  {   
+  typed_port_impl_t<Friend, !I, O> invert_inbox()
+  {
     uint32_t v = *this;
     kill();
     return {v};
   }
-  
+
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
@@ -304,14 +299,13 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     return {v};
   }
 
-  
   // if either is constructed by normal(), the ==true path is live and will
   // return (a maybe that returns) SelfType.
   // if either is cosntructed by invert(), the ==false path is live and will
   // return (a maybe that returns) SelfType.
   // The dynamically dead path will call the other constructor, which is a
   // friend here to allow the dead path to typecheck.
-  
+
   // construction with outbox changed
   friend hostrpc::either<SelfType, typed_port_impl_t<Friend, I, !O>, uint32_t>;
   friend hostrpc::either<typed_port_impl_t<Friend, I, !O>, SelfType, uint32_t>;
@@ -319,7 +313,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   // construction with inbox changed
   friend hostrpc::either<SelfType, typed_port_impl_t<Friend, !I, O>, uint32_t>;
   friend hostrpc::either<typed_port_impl_t<Friend, !I, O>, SelfType, uint32_t>;
-  
+
   // move construct and assign are available
   HOSTRPC_ANNOTATE
   HOSTRPC_CREATED_RES
@@ -432,15 +426,13 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
       }
   }
 
-
   friend partial_port_impl_t<Friend, !S>;
 
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_CREATED_RES
   HOSTRPC_SET_TYPESTATE(consumed)
-  partial_port_impl_t<Friend, !S>
-  invert_outbox()
+  partial_port_impl_t<Friend, !S> invert_outbox()
   {
     // Inverts outbox and inverts S
     cxx::tuple<uint32_t, bool> tup = {value, !state};
@@ -450,17 +442,16 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
 
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
-  HOSTRPC_CREATED_RES 
+  HOSTRPC_CREATED_RES
   HOSTRPC_SET_TYPESTATE(consumed)
-  partial_port_impl_t<Friend, !S>
-  invert_inbox()
+  partial_port_impl_t<Friend, !S> invert_inbox()
   {
     // No change to outbox, inverts S
     cxx::tuple<uint32_t, bool> tup = {value, state};
     kill();
     return {tup};
   }
- 
+
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
@@ -508,9 +499,11 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
   {
   }
 
- HOSTRPC_ANNOTATE bool outbox_state() const { return state; }
- HOSTRPC_ANNOTATE bool inbox_state() const { return (S==1) ? outbox_state() : !outbox_state(); }
-
+  HOSTRPC_ANNOTATE bool outbox_state() const { return state; }
+  HOSTRPC_ANNOTATE bool inbox_state() const
+  {
+    return (S == 1) ? outbox_state() : !outbox_state();
+  }
 
  private:
   HOSTRPC_ANNOTATE static partial_port_impl_t HOSTRPC_CREATED_RES

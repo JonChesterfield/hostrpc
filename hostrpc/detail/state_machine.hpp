@@ -146,7 +146,7 @@ struct state_machine_impl : public SZT, public Counter
   {
     uint32_t v = port;
     port.kill();  // don't close it, port lives on in the return value
-    return {v, typed_to_partial_trait<I, O>::state};
+    return {v, typed_to_partial_trait<I, O>::state()};
   }
 
   template <unsigned S, bool OutboxState>

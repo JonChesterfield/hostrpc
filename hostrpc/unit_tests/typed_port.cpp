@@ -58,7 +58,7 @@ struct test_state_machine
     port.kill();
     return {v,
             hostrpc::traits::typed_to_partial_trait<test_state_machine,
-                                                    typed_port_t<I, O>>::state};
+            typed_port_t<I, O>>::state()};
   }
 
   template <bool OutboxState, unsigned S>
