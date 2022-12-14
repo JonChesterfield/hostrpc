@@ -75,14 +75,14 @@ struct state_machine_impl : public SZT, public Counter
   outbox_t outbox;
 
   // Require that instances of this class can be trivially copied
-  static_assert(cxx::is_trivially_copyable<BufferElement*>::value, "");
-  static_assert(cxx::is_trivially_copyable<lock_t>::value, "");
-  static_assert(cxx::is_trivially_copyable<inbox_t>::value, "");
-  static_assert(cxx::is_trivially_copyable<outbox_t>::value, "");
+  static_assert(cxx::is_trivially_copyable<BufferElement*>()/*::value*/, "");
+  static_assert(cxx::is_trivially_copyable<lock_t>()/*::value*/, "");
+  static_assert(cxx::is_trivially_copyable<inbox_t>()/*::value*/, "");
+  static_assert(cxx::is_trivially_copyable<outbox_t>()/*::value*/, "");
 
   // Also need to check somewhere that the contents of the shared buffer is
   // copyable
-  static_assert(cxx::is_trivially_copyable<BufferElement>::value, "");
+  static_assert(cxx::is_trivially_copyable<BufferElement>()/*::value*/, "");
 
   HOSTRPC_ANNOTATE state_machine_impl()
       : SZ{}, Counter{}, active{}, inbox{}, outbox{}

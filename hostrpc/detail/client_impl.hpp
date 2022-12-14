@@ -243,7 +243,7 @@ struct client : public client_impl<BufferElementT, WordT, SZT, Counter>
   template <unsigned I, unsigned O>
   using typed_port_t = typename base::template typed_port_t<I, O>;
 
-  static_assert(cxx::is_trivially_copyable<base>::value, "");
+  static_assert(cxx::is_trivially_copyable<base>()/*::value*/, "");
 
   template <typename T, typename Fill>
   HOSTRPC_ANNOTATE bool rpc_invoke_async(T active_threads, Fill &&fill) noexcept

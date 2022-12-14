@@ -96,7 +96,7 @@ struct server : public server_impl<BufferElementT, WordT, SZT, Counter>
   template <unsigned S>
   using partial_port_t = typename base::template partial_port_t<S>;
 
-  static_assert(cxx::is_trivially_copyable<base>::value, "");
+  static_assert(cxx::is_trivially_copyable<base>()/*::value*/, "");
 
   // rpc_handle return true if it handled one task, does not attempt multiple.
 

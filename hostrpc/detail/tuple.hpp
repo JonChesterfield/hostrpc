@@ -67,7 +67,7 @@ struct tuple<T>
   HOSTRPC_ANNOTATE
   tuple(T t) : value(t) {}
 
-  static_assert(is_trivially_copyable<T>::value,
+  static_assert(is_trivially_copyable<T>()/*::value*/,
                 "Require trivially copyable type");
 
   using type = tuple<T>;

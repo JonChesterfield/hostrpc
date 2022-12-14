@@ -119,7 +119,7 @@ struct check_from_typed
 
   static constexpr bool consistent()
   {
-    return is_same<typed_port_t, typename typed_info::type>::value;
+    return is_same<typed_port_t, typename typed_info::type>()/*::value*/;
   }
 };
 
@@ -136,8 +136,8 @@ struct check_from_partial
 
   static constexpr bool consistent()
   {
-    return is_same<partial_port_t, typename partial_info::type>::value &&
-           partial_info::state == state;
+    return is_same<partial_port_t, typename partial_info::type>()/*::value*/
+      &&  partial_info::state == state;
   }
 };
 

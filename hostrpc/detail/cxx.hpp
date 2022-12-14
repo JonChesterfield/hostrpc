@@ -54,13 +54,18 @@ decltype(cxx_declval<T>(0)) declval() noexcept;
 template <class T, T v>
 struct integral_constant
 {
-  static constexpr const T value = v;
+  // There should be a static member called value, but OpenMP is presently
+  // discarding it on the GPU on higher optimisation levels. Working around by
+  // changing the operators to return v instead of value and replacing
+  // ::value with ()/*::value*/
+  // static constexpr const T value = v;
   typedef T value_type;
   typedef integral_constant type;
-  constexpr operator value_type() const noexcept { return value; }
-  constexpr value_type operator()() const noexcept { return value; }
+  constexpr operator value_type() const noexcept { return v; }
+  constexpr value_type operator()() const noexcept { return v; }
 };
-
+// template <class T, T __v> onstexpr const T integral_constant<T, __v>::value;
+  
 template <class T>
 struct is_trivially_copyable
     : public integral_constant<bool, __is_trivially_copyable(T)>
