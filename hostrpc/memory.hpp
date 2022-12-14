@@ -6,8 +6,11 @@
 #include <stdint.h>
 
 // TODO: Put these somewhere else  or include <new> and restrict to HOST
+// Can't use placement new with volatile. Not clear how that's supposed to work.
 inline void* operator new(size_t, _Atomic(uint32_t)* p) { return p; }
 inline void* operator new(size_t, _Atomic(uint64_t)* p) { return p; }
+inline void* operator new(size_t, uint32_t* p) { return p; }
+inline void* operator new(size_t, uint64_t* p) { return p; }
 inline void* operator new(size_t, hostrpc::page_t* p) { return p; }
 
 namespace hostrpc

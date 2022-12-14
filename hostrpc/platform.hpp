@@ -40,7 +40,13 @@ struct ocl_atomic<uint32_t>
 #define HOSTRPC_ATOMIC(X) typename platform::ocl_atomic<X>::type
 #else
 #if HOSTRPC_NVPTX
+
+#if _OPENMP
+#define HOSTRPC_ATOMIC(X) X
+#else
+// cuda
 #define HOSTRPC_ATOMIC(X) volatile _Atomic(X)
+#endif
 #else
 #define HOSTRPC_ATOMIC(X) _Atomic(X)
 #endif
@@ -360,6 +366,98 @@ namespace amdgcn
 
 namespace platform
 {
+
+#ifdef _OPENMP
+
+namespace nvptx
+{
+
+template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE T atomic_load( HOSTRPC_ATOMIC(T) const *addr)
+{
+  static_assert(platform::detail::atomic_params_load<memorder, scope>(), "");
+
+  return __atomic_fetch_add(const_cast<HOSTRPC_ATOMIC(T)*>(addr), T(0), memorder);
+}
+
+template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE void atomic_store(
+  HOSTRPC_ATOMIC(T) * addr,
+    T value)
+{
+  static_assert(platform::detail::atomic_params_store<memorder, scope>(), "");
+  _atomic_store_n(addr, value, memorder);
+}
+
+template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE T atomic_fetch_add(
+     HOSTRPC_ATOMIC(T) * addr,
+    T value)
+{
+  static_assert(
+      platform::detail::atomic_params_readmodifywrite<memorder, scope>(), "");
+  return __atomic_fetch_add(addr, value, memorder);
+}
+
+template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE T atomic_fetch_sub(
+     HOSTRPC_ATOMIC(T) * addr,
+    T value)
+{
+  static_assert(
+      platform::detail::atomic_params_readmodifywrite<memorder, scope>(), "");
+  return __atomic_fetch_sub(addr, value, memorder);
+}
+
+template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE T atomic_fetch_and(
+     HOSTRPC_ATOMIC(T) * addr,
+    T value)
+{
+  static_assert(
+      platform::detail::atomic_params_readmodifywrite<memorder, scope>(), "");
+  return __atomic_fetch_and(addr, value, memorder);
+}
+
+template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE T atomic_fetch_or(
+     HOSTRPC_ATOMIC(T) * addr,
+    T value)
+{
+  static_assert(
+      platform::detail::atomic_params_readmodifywrite<memorder, scope>(), "");
+  return __atomic_fetch_or(addr, value, memorder);
+}
+
+
+  template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE T atomic_fetch_xor(
+     HOSTRPC_ATOMIC(T) * addr,
+    T value)
+{
+  static_assert(
+      platform::detail::atomic_params_readmodifywrite<memorder, scope>(), "");
+  return __atomic_fetch_xor(addr, value, memorder);
+}
+
+template <typename T, size_t memorder, size_t scope>
+HOSTRPC_ANNOTATE bool atomic_compare_exchange_weak(
+    HOSTRPC_ATOMIC(T) * addr,
+    T expected, T desired, T *loaded)
+{
+  static_assert(
+      platform::detail::atomic_params_readmodifywrite<memorder, scope>(), "");
+  bool r = __atomic_compare_exchange(addr, &expected, &desired, false,
+                                                 memorder, memorder);
+  *loaded = expected;
+  return r;
+}
+
+}
+  
+
+#else // try to get something working though cuda, not very well tested
+  
 namespace nvptx
 {
 
@@ -531,6 +629,9 @@ HOSTRPC_ANNOTATE bool atomic_compare_exchange_weak(HOSTRPC_ATOMIC(T) * addr,
 }
 
 }  // namespace nvptx
+
+
+#endif
 }  // namespace platform
 #endif  // HOSTRPC_NVPTX
 
