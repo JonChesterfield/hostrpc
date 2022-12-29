@@ -201,6 +201,7 @@ NVPTXFLAGS=" $OPTLEVEL -ffreestanding -fno-exceptions -Wno-atomic-alignment -emi
 OPENMP_FLAGS_AMDGPU="-fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$GCNGFX"
 OPENMP_FLAGS_NVPTX="-fopenmp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=$PTXGFX"
 
+
 CXX_X64="$CLANGXX $CXXVER $COMMONFLAGS $X64FLAGS"
 CXX_GCN="$CLANGXX $CXXVER $COMMONFLAGS $GCNFLAGS"
 
@@ -223,6 +224,19 @@ CXX_GCN_LD="$CXX $GCNFLAGS"
 if [ ! -f obj/catch.o ]; then
     time $CXX -O3 -fPIE thirdparty/catch.cpp -c -o obj/catch.o
 fi
+
+
+
+# Temporary patch. Just try to run the openmp demo
+if (($have_amdgcn)); then
+  $CLANGXX $CXXVER $OPTLEVEL -fopenmp --offload-arch=$GCNGFX  demo_openmp.cpp  -o demo_openmp_gcn &&  ./demo_openmp_gcn
+fi
+
+if (($have_nvptx)); then
+  $CLANGXX $CXXVER $OPTLEVEL -fopenmp --offload-arch=$PTXGFX  demo_openmp.cpp  -o demo_openmp_ptx &&  ./demo_openmp_ptx
+fi
+
+exit 0
 
 # Code running on the host can link in host, hsa or cuda support library.
 # Fills in gaps in the cuda/hsa libs, implements allocators
