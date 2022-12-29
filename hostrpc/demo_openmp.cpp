@@ -81,6 +81,8 @@ int main()
                                                              slots_words),
       hostrpc::careful_array_cast<BufferElement>(shared_buffer, slots));
 
+  
+  
 #pragma omp parallel num_threads(2)
   {
     unsigned id = omp_get_thread_num();
@@ -92,7 +94,7 @@ int main()
         {
           auto thrds = platform::active_threads();
 
-          bool r = client.rpc_invoke_async_noapply(
+          bool r = client.rpc_invoke_noapply(
               thrds, [](hostrpc::port_t, BufferElement *data) {
                 auto me = platform::get_lane_id();
                 data->data[me] = me * me + 5;
@@ -101,10 +103,14 @@ int main()
       }
     else
       {
+        bool got_work = false;
+        bool got_cleanup = false;
+          
       again:;
         bool r = server.rpc_handle(
             [](hostrpc::port_t, BufferElement *data) {
               fprintf(stderr, "Server got work to do:\n");
+              got_work = true;
               for (unsigned i = 0; i < 64; i++)
                 {
                   fprintf(stderr, "data[%u] = %lu\n", i, data->data[i]);
@@ -112,6 +118,7 @@ int main()
             },
             [](hostrpc::port_t, BufferElement *data) {
               fprintf(stderr, "Server cleaning up");
+              got_cleanup = true;
               for (unsigned i = 0; i < 64; i++)
                 {
                   data->data[i] = 0;
@@ -121,12 +128,12 @@ int main()
         if (!r)
           {
             for (unsigned i = 0; i < 10000; i++) platform::sleep_briefly();
-            fprintf(stderr, "no work, again\n");
+            fprintf(stderr, "Sever [%u][%u ]no work\n", got_work, got_cleanup);
             goto again;
           }
         else
           {
-            fprintf(stderr, "Server returned true\n");
+            fprintf(stderr, "Server [%u][%u]returned true\n", got_work, got_cleanup);
           }
       }
   }

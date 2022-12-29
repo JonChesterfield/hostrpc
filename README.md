@@ -1,18 +1,25 @@
 # hostrpc
 Remote procedure calls within a shared address space. Expecting 'remote' to mean across pcie.
 
+## Implementation status
+
+Alpha. Works for me. May work for you if held carefully. Core algorithm believed correct, test code and surrounding infra less solid.
+Doesn't have build scripts. Need to rework some nvidia specific atomic hacks to get the entire implementation header-only.
+
+
 ## Assumptions
-- host may be any of x64, amdgcn, pre-volta nvptx64
-- client may be any of x64, amdgcn, pre-volta nvptx64
-- implementation may be cuda, hip, openmp or freestanding c++
+- host may be any of x64, amdgcn, nvptx64
+- client may be any of x64, amdgcn, nvptx64
+- implementation may be openmp, opencl, cuda, hip or freestanding c++
 - client scheduler is not fair under contention
 - host scheduler is fair under contention
 - cas/faa over pci-e is expensive
 - zero acceptable probability of deadlock
 
+
 Opencl c++, powerpc, arch64 are intended to work but not yet tested.
-Volta nvptx needs refactoring to pass control flow masks around.
-Across network, as opposed to across pcie, should be implementable
+Volta nvptx needs control flow masks passed around. This impacts the API for other targets.
+Across network, as opposed to across pcie, should be implementable.
 
 ## Interface
 
