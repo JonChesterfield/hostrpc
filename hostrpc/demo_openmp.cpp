@@ -37,10 +37,8 @@ demo_server server;
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
 
-#include <x86_64-linux-gnu/asm/unistd_64.h>
 
 extern "C" void *llvm_omp_target_alloc_host(size_t, int);
 
