@@ -39,7 +39,6 @@ demo_server server;
 #include <stdlib.h>
 #include <string.h>
 
-
 extern "C" void *llvm_omp_target_alloc_host(size_t, int);
 
 int main()
@@ -60,7 +59,7 @@ int main()
   memset(client_inbox, 0, slots_bytes);
   memset(client_outbox, 0, slots_bytes);
   memset(shared_buffer, 0, slots_bytes);
-  
+
   client = demo_client(
       {},
       hostrpc::careful_cast_to_bitmap<demo_client::lock_t>(gpu_locks,
@@ -82,7 +81,6 @@ int main()
                                                              slots_words),
       hostrpc::careful_array_cast<BufferElement>(shared_buffer, slots));
 
-
 #pragma omp parallel num_threads(2)
   {
     unsigned id = omp_get_thread_num();
@@ -90,28 +88,21 @@ int main()
 
     if (id == 0)
       {
-
 #pragma omp target
         {
           auto thrds = platform::active_threads();
 
           bool r = client.rpc_invoke_async_noapply(
-              thrds,
-              [](hostrpc::port_t, BufferElement *data) {
+              thrds, [](hostrpc::port_t, BufferElement *data) {
                 auto me = platform::get_lane_id();
                 data->data[me] = me * me + 5;
               });
-
-
         }
-        
       }
     else
       {
-
       again:;
-        bool r = 
-        server.rpc_handle(
+        bool r = server.rpc_handle(
             [](hostrpc::port_t, BufferElement *data) {
               fprintf(stderr, "Server got work to do:\n");
               for (unsigned i = 0; i < 64; i++)
@@ -127,15 +118,16 @@ int main()
                 }
             });
 
-        if (!r) {
-          for (unsigned i = 0; i < 10000; i++)
-            platform::sleep_briefly();
-          fprintf(stderr, "no work, again\n");
-          goto again;
-        }
-        else {
-          fprintf(stderr, "Server returned true\n");
-        }
+        if (!r)
+          {
+            for (unsigned i = 0; i < 10000; i++) platform::sleep_briefly();
+            fprintf(stderr, "no work, again\n");
+            goto again;
+          }
+        else
+          {
+            fprintf(stderr, "Server returned true\n");
+          }
       }
   }
 
