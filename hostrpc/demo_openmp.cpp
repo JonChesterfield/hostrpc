@@ -43,12 +43,18 @@ extern "C" void *llvm_omp_target_alloc_host(size_t, int);
 
 int main()
 {
+#define FORCE_ONTO_HOST 1
+  
   // GPU locks
 
   // todo: force these things to be properly aligned (or fail if they aren't)
+#if FORCE_ONTO_HOST
+  void *gpu_locks = aligned_alloc(slots_bytes, 0);
+#else
   void *gpu_locks = omp_target_alloc(slots_bytes, 0);
+#endif
   void *host_locks = aligned_alloc(64, slots_bytes);
-
+  
   void *client_inbox = llvm_omp_target_alloc_host(slots_bytes, 0);
   void *client_outbox = llvm_omp_target_alloc_host(slots_bytes, 0);
 
@@ -90,15 +96,23 @@ int main()
 
     if (id == 0)
       {
-#pragma omp target
+#if FORCE_ONTO_HOST
+#else
+        #pragma omp target
+#endif
+        
         {
           auto thrds = platform::active_threads();
 
           bool r = client.rpc_invoke_noapply(
-              thrds, [](hostrpc::port_t, BufferElement *data) {
-                auto me = platform::get_lane_id();
-                data->data[me] = me * me + 5;
-              });
+               thrds,
+               [](hostrpc::port_t, BufferElement *data) {
+                 auto me = platform::get_lane_id();
+                 data->data[me] = me * me + 5;
+               },
+               [](hostrpc::port_t, BufferElement *data){});
+
+
         }
       }
     else
@@ -108,7 +122,7 @@ int main()
           
       again:;
         bool r = server.rpc_handle(
-            [](hostrpc::port_t, BufferElement *data) {
+            [&](hostrpc::port_t, BufferElement *data) {
               fprintf(stderr, "Server got work to do:\n");
               got_work = true;
               for (unsigned i = 0; i < 64; i++)
@@ -116,8 +130,8 @@ int main()
                   fprintf(stderr, "data[%u] = %lu\n", i, data->data[i]);
                 }
             },
-            [](hostrpc::port_t, BufferElement *data) {
-              fprintf(stderr, "Server cleaning up");
+            [&](hostrpc::port_t, BufferElement *data) {
+              fprintf(stderr, "Server cleaning up\n");
               got_cleanup = true;
               for (unsigned i = 0; i < 64; i++)
                 {
@@ -128,17 +142,27 @@ int main()
         if (!r)
           {
             for (unsigned i = 0; i < 10000; i++) platform::sleep_briefly();
-            fprintf(stderr, "Sever [%u][%u ]no work\n", got_work, got_cleanup);
-            goto again;
+            fprintf(stderr, "Server [%u][%u] no work\n", got_work, got_cleanup);
+            if (got_work && got_cleanup)
+              {
+              }
+            else
+              {
+                goto again;
+              }
           }
         else
           {
-            fprintf(stderr, "Server [%u][%u]returned true\n", got_work, got_cleanup);
+            fprintf(stderr, "Server [%u][%u] returned true\n", got_work, got_cleanup);
           }
       }
   }
 
+#if FORCE_ONTO_HOST
+  free(gpu_locks);
+#else
   omp_target_free(gpu_locks, 0);
+#endif
   free(host_locks);
   omp_target_free(client_inbox, 0);
   omp_target_free(client_outbox, 0);
