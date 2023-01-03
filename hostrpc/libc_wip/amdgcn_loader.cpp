@@ -10,6 +10,12 @@
 #include "../raiifile.hpp"
 #include "../launch.hpp"
 
+#include "crt.hpp"
+#include <string.h>
+
+
+demo_server server;
+
 namespace
 {
 std::vector<size_t> offsets_into_strtab(int argc, char **argv)
@@ -112,9 +118,50 @@ static int main_with_hsa(int argc, char **argv)
   int app_argc = argc - 1;
   char **app_argv = &argv[1];
 
+
+
+  auto gpu_locks = hsa::allocate(coarse_grained_region, slots_bytes);
+
+  void *host_locks = aligned_alloc(64, slots_bytes); // todo: stop leaking this
+
+  auto client_inbox = hsa::allocate(fine_grained_region, slots_bytes);
+  auto client_outbox = hsa::allocate(fine_grained_region, slots_bytes);
+  auto shared_buffer = hsa::allocate(fine_grained_region, slots * sizeof(BufferElement));
+    
+
+
+  if (!gpu_locks ||
+      !client_inbox ||
+      !client_outbox ||
+      !shared_buffer)
+    {
+        fprintf(stderr, "Failed to allocate rpc buffer\n");
+        exit(1);
+
+    }
+
+  // they're probably zero anyway. todo: check the hsa docs for the gpu one, it's more annoying to zero
+  memset(host_locks, 0, slots_bytes);
+  memset(client_inbox.get(), 0, slots_bytes);
+  memset(client_outbox.get(), 0, slots_bytes);
+  memset(shared_buffer.get(), 0, slots_bytes * sizeof(BufferElement));
+
+
+  server = demo_server(
+      {},
+      hostrpc::careful_cast_to_bitmap<demo_server::lock_t>(host_locks,
+                                                           slots_words),
+      hostrpc::careful_cast_to_bitmap<demo_server::inbox_t>(client_outbox.get(),
+                                                            slots_words),
+      hostrpc::careful_cast_to_bitmap<demo_server::outbox_t>(client_inbox.get(),
+                                                             slots_words),
+      hostrpc::careful_array_cast<BufferElement>(shared_buffer.get(), slots));
+
+  
   // arguments must be in kernarg memory, which is constant
   // opencl doesn't accept char** as a type and returns void
   // combined, choosing to pass arguments as:
+  // void* rpc_buffer[4]
   // int argc
   // int padding
   // void * to_argv
@@ -124,12 +171,12 @@ static int main_with_hsa(int argc, char **argv)
   // don't match those I see from an opencl kernel. The first 24 bytes are
   // consistently used for offset_x, offset_y, offset_z. Zero those.
   // opencl and atmi both think the implicit structure is 80 long.
-
+  
   size_t implicit_offset_size = 24;
   size_t extra_implicit_size = 80 - implicit_offset_size;
 
   // implicit offset needs to be 8 byte aligned, which it w/ 24 bytes explicit
-  size_t bytes_for_kernarg = 24 + implicit_offset_size + extra_implicit_size;
+  size_t bytes_for_kernarg = rpc_buffer_kernarg_size + 24 + implicit_offset_size + extra_implicit_size;
 
   auto offsets = offsets_into_strtab(app_argc, app_argv);
   size_t bytes_for_argv = 8 * app_argc;
@@ -143,10 +190,12 @@ static int main_with_hsa(int argc, char **argv)
       hsa::allocate(fine_grained_region,
                     bytes_for_argv + bytes_for_strtab + bytes_for_return);
 
+  size_t strtab_start_offset = bytes_for_argv;
+  
   const char *strtab_start =
-      static_cast<char *>(mutable_alloc.get()) + bytes_for_argv;
+      static_cast<char *>(mutable_alloc.get()) + strtab_start_offset;
   const char *result_location = static_cast<char *>(mutable_alloc.get()) +
-                                bytes_for_argv + bytes_for_strtab;
+                                strtab_start_offset + bytes_for_strtab;
 
   auto kernarg_alloc = hsa::allocate(kernarg_region, bytes_for_kernarg);
   if (!mutable_alloc || !kernarg_alloc)
@@ -195,6 +244,15 @@ static int main_with_hsa(int argc, char **argv)
   {
     char *kernarg = (char *)kernarg_alloc.get();
 
+    void *rpc_pointers[4] = {
+                             gpu_locks.get(),
+                             client_inbox.get(),
+                             client_outbox.get(),
+                             shared_buffer.get(),
+    };
+    memcpy(kernarg, &rpc_pointers, sizeof(rpc_pointers));
+    
+    
     // argc
     memcpy(kernarg, &app_argc, 4);
     kernarg += 4;
@@ -296,6 +354,36 @@ static int main_with_hsa(int argc, char **argv)
     {
       // TODO: Polling is better than waiting here as it lets the initial
       // dispatch spawn a graph
+
+      bool r = server.rpc_handle(
+          [&](hostrpc::port_t, BufferElement *data) {
+            fprintf(stderr, "Server got work to do:\n");
+            for (unsigned i = 0; i < 64; i++)
+              {
+                auto ith = data->cacheline[i];
+                fprintf(stderr, "data[%u] = {%lu, %lu...}\n", i, ith.element[0],
+                        ith.element[1]);
+              }
+          },
+          [&](hostrpc::port_t, BufferElement *data) {
+            fprintf(stderr, "Server cleaning up\n");
+            for (unsigned i = 0; i < 64; i++)
+              {
+                data->cacheline[i].element[0] = 0;
+              }
+          });
+
+      if (r)
+        {
+          // did something
+          printf("server did something\n");
+        }
+      else
+        {
+          // found no work, could sleep here
+          printf("no work found\n");
+          for (unsigned i = 0; i < 10000; i++) platform::sleep_briefly();                      
+        }
     }
   while (hsa_signal_wait_acquire(packet->completion_signal,
                                  HSA_SIGNAL_CONDITION_EQ, 0, 5000 /*000000*/,

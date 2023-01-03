@@ -293,7 +293,7 @@ if (($have_amdgcn)); then
     $CXX_X64_LD $LDFLAGS obj/$DIR.bc -o $DIR/amdgcn_loader.exe
 
 
-    $CLANG $GCNFLAGS $DIR/crt.c -emit-llvm -c -o obj/$DIR/crt.gcn.bc 
+    $CLANGXX $GCNFLAGS $DIR/crt.cpp -emit-llvm -c -o obj/$DIR/crt.gcn.bc 
 
     $CLANG $GCNFLAGS $DIR/demo.c -emit-llvm -c -o obj/$DIR/demo.gcn.bc 
 

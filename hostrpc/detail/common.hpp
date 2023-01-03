@@ -264,10 +264,13 @@ template <typename Word>
 struct device_local : base<true, true, true>
 {
   using Ty = __attribute__((aligned(64)))
+#if 0
+    // Freestanding c++ is refusing to cast a void * to a pointer to this, drop the annotation entirely for now
 #if defined(__AMDGCN__) && !defined(__HIP__) && !defined(_OPENMP)
   // HIP errors on this, may want to mark the variable __device__
   // OpenMP is marking the pointer with this in _host_ code and then falling over
   __attribute__((address_space(1)))
+#endif
 #endif
   HOSTRPC_ATOMIC(Word);
 };
