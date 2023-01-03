@@ -27,27 +27,32 @@ extern "C"
 void __libc_write_stderr(const char* str) {
   auto active_threads =   platform::active_threads(); 
 
-  if (auto maybe = client.template rpc_try_open_typed_port(active_threads))
-    {
-      auto send = client.template rpc_port_send(
-          active_threads, maybe.value(),
-          [=](hostrpc::port_t, BufferElement *data) {
-            auto me = platform::get_lane_id();
-            enum
-            {
-              width = 48
-            };
-
-            data->cacheline[me].element[0] = 1;
-            data->cacheline[me].element[7] = 0;
-
-            __builtin_memcpy(&data->cacheline[me].element[1], str, width);
-          });
-
-      client.template rpc_close_port(active_threads, hostrpc::cxx::move(send));
-    }
+  auto maybe = client.template rpc_open_typed_port(active_threads);
+    
+  auto send = client.template rpc_port_send(
+                                            active_threads, hostrpc::cxx::move(maybe),
+                                            [=](hostrpc::port_t, BufferElement *data) {
+                                              auto me = platform::get_lane_id();
+                                              enum
+                                              {
+                                               width = 48
+                                              };
+                                              #if 0
+                                              data->cacheline[me].element[0] = 1;
+                                              data->cacheline[me].element[7] = 0;
+                                              
+                                              __builtin_memcpy(&data->cacheline[me].element[1], str, width);
+                                              #endif
+                                            });
 
 
+  auto recv = client.template rpc_port_recv(active_threads, hostrpc::cxx::move(send),
+                                  [=](hostrpc::port_t, BufferElement *data) {});
+
+  
+  
+  client.template rpc_close_port(active_threads, hostrpc::cxx::move(recv));
+  
 }
 
 __attribute__((amdgpu_kernel))

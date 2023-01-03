@@ -156,7 +156,6 @@ static int main_with_hsa(int argc, char **argv)
       hostrpc::careful_cast_to_bitmap<demo_server::outbox_t>(client_inbox.get(),
                                                              slots_words),
       hostrpc::careful_array_cast<BufferElement>(shared_buffer.get(), slots));
-
   
   // arguments must be in kernarg memory, which is constant
   // opencl doesn't accept char** as a type and returns void
@@ -251,7 +250,7 @@ static int main_with_hsa(int argc, char **argv)
                              shared_buffer.get(),
     };
     memcpy(kernarg, &rpc_pointers, sizeof(rpc_pointers));
-    
+    kernarg += sizeof(rpc_pointers);
     
     // argc
     memcpy(kernarg, &app_argc, 4);
