@@ -227,16 +227,19 @@ fi
 
 
 
-# Temporary patch. Just try to run the openmp demo
+# Temporary patch. Just try to run the openmp demo. Hangs on gfx10.
+if false; then
 if (($have_amdgcn)); then
   $CLANGXX $CXXVER $OPTLEVEL -fopenmp --offload-arch=$GCNGFX  demo_openmp.cpp  -o demo_openmp_gcn &&  ./demo_openmp_gcn
+  exit 0
+fi
 fi
 
 if (($have_nvptx)); then
   $CLANGXX $CXXVER $OPTLEVEL -fopenmp --offload-arch=$PTXGFX  demo_openmp.cpp  -o demo_openmp_ptx &&  ./demo_openmp_ptx
+  exit 0
 fi
 
-exit 0
 
 # Code running on the host can link in host, hsa or cuda support library.
 # Fills in gaps in the cuda/hsa libs, implements allocators
@@ -280,6 +283,23 @@ $CXX_X64 openmp_plugins.cpp -c -o obj/openmp_plugins.x64.bc
 $LINK obj/allocator_openmp.x64.bc obj/openmp_plugins.x64.bc -o obj/openmp_support.x64.bc
 
 # currently standalone
+
+
+if (($have_amdgcn)); then
+    DIR=libc_wip
+    mkdir -p obj/$DIR
+    $CXX_X64 -I$HSAINC $DIR/amdgcn_loader.cpp -c -o obj/$DIR/amdgcn_loader.x64.bc
+    $LINK obj/$DIR/amdgcn_loader.x64.bc obj/msgpack.x64.bc obj/find_metadata.x64.bc -o obj/$DIR.bc
+    $CXX_X64_LD $LDFLAGS obj/$DIR.bc -o $DIR/amdgcn_loader.exe
+
+
+    $CLANG $GCNFLAGS $DIR/crt.c -emit-llvm -c -o obj/$DIR/crt.gcn.bc
+    $CLANG $GCNFLAGS $DIR/demo.c obj/$DIR/crt.gcn.bc -o $DIR/demo.gcn
+
+    ./$DIR/amdgcn_loader.exe $DIR/demo.gcn
+    
+    exit 0
+fi
 
 if (($have_amdgcn)); then
     $CXX_GCN hostrpc_printf_enable_amdgpu.cpp $OPTLEVEL -c -o obj/hostrpc_printf_enable_amdgpu.gcn.bc
@@ -579,7 +599,7 @@ if (($have_amdgcn)); then
     # this now fails to compile (fairly quickly), looks like mlink-builtin-bitcode is mixing
     # the two ISAs in a single module
     set +e
-    $CLANGXX $CXXVER -I$HSAINC $OPTLEVEL -target x86_64-pc-linux-gnu $OPENMP_FLAGS_AMDGPU -DDEMO_AMDGCN=1 demo_openmp.cpp  -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR && ./demo_openmp_gcn
+    $CLANGXX $CXXVER -I$HSAINC $OPTLEVEL -target x86_64-pc-linux-gnu $OPENMP_FLAGS_AMDGPU -DDEMO_AMDGCN=1 demo_openmp.cpp  -o demo_openmp_gcn -pthread -ldl $HSALIB -Wl,-rpath=$HSALIBDIR # && ./demo_openmp_gcn # hanging
     set -e
 fi
 
