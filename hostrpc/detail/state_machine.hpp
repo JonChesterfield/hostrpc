@@ -264,7 +264,7 @@ struct state_machine_impl : public SZT, public Counter
   {
     static_assert(port_openable<typed_port_t<I, O>>(), "");
     static_assert(I == O, "");
-    return try_open_typed_port<typed_port_t<I, O>>(active_threads, scan_from);
+    return try_open_typed_port<typed_port_t<I, O>, T>(active_threads, scan_from);
   }
 
   template <unsigned I, unsigned O, typename T>
@@ -273,7 +273,7 @@ struct state_machine_impl : public SZT, public Counter
   {
     static_assert(port_openable<typed_port_t<I, O>>(), "");
     static_assert(I == O, "");
-    return rpc_open_typed_port<I, O, T>(active_threads, scan_from);
+    return open_typed_port<typed_port_t<I, O>, T>(active_threads, scan_from);
   }
 
   template <unsigned S, typename T>
