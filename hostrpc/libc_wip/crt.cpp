@@ -1,20 +1,19 @@
 #include "crt.hpp"
 
-
-demo_client client;
+static __libc_rpc_client client;
 
 static void init_client(void * gpu_locks,
                  void * client_inbox,
                  void * client_outbox,
                  void * shared_buffer)
 {
-  client = demo_client(
+  client = __libc_rpc_client(
       {},
-      hostrpc::careful_cast_to_bitmap<demo_client::lock_t>(gpu_locks,
+      hostrpc::careful_cast_to_bitmap<__libc_rpc_client::lock_t>(gpu_locks,
                                                            slots_words),
-      hostrpc::careful_cast_to_bitmap<demo_client::inbox_t>(client_inbox,
+      hostrpc::careful_cast_to_bitmap<__libc_rpc_client::inbox_t>(client_inbox,
                                                             slots_words),
-      hostrpc::careful_cast_to_bitmap<demo_client::outbox_t>(client_outbox,
+      hostrpc::careful_cast_to_bitmap<__libc_rpc_client::outbox_t>(client_outbox,
                                                              slots_words),
       hostrpc::careful_array_cast<BufferElement>(shared_buffer, slots));
 }
@@ -25,6 +24,11 @@ int main(int, char**);
 
 extern "C"
 void __libc_write_stderr(const char* str) {
+  // Can extend to > 7*8 bytes. Involves strlen followed by repeated
+  // calls to rpc_port_send then rpc_port_wait_until_available and accumulating
+  // the result on the host. Main challenge is getting it to pass the consumed checker,
+  // see hostrpc_printf_client.hpp __printf_pass_element_cstr for a working example.
+  
   auto active_threads =   platform::active_threads(); 
 
   auto maybe = client.template rpc_open_typed_port(active_threads);
@@ -35,12 +39,11 @@ void __libc_write_stderr(const char* str) {
                                               auto me = platform::get_lane_id();
                                               enum
                                               {
-                                               width = 48
+                                               w = 7 * 8,
                                               };
-                                              data->cacheline[me].element[0] = 1;
-                                              data->cacheline[me].element[7] = 0;
+                                              data->cacheline[me].element[0] = print_to_stderr;
                                               
-                                              __builtin_memcpy(&data->cacheline[me].element[1], str, width);
+                                              __builtin_memcpy(&data->cacheline[me].element[1], str, w);
                                             });
 
 
@@ -69,7 +72,6 @@ void __start(void) // int, void*, int*
   void * rpc_pointers[4];
   __builtin_memcpy(&rpc_pointers, kernarg, sizeof(rpc_pointers));
   kernarg+= sizeof(rpc_pointers);
-
   init_client(rpc_pointers[0],
               rpc_pointers[1],
               rpc_pointers[2],
@@ -90,9 +92,10 @@ void __start(void) // int, void*, int*
 
   // also a pointer into mutable memory, wavefront_size wide
   int* result;
-  __builtin_memcpy(&argv, kernarg, 8);
+  __builtin_memcpy(&result, kernarg, 8);
     kernarg += 8;
   
   int rc = main(argc, argv);
-  (void)rc;
+  result[platform::get_lane_id()] = rc;
+  return;
 }

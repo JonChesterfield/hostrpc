@@ -14,7 +14,7 @@
 #include <string.h>
 
 
-demo_server server;
+static __libc_rpc_server server;
 
 namespace
 {
@@ -75,6 +75,8 @@ static void callbackQueue(hsa_status_t status, hsa_queue_t *source, void *)
 
 static int main_with_hsa(int argc, char **argv)
 {
+  enum {number_gpu_threads = 1};
+  
   const bool verbose = false;
   if (argc < 2)
     {
@@ -147,13 +149,13 @@ static int main_with_hsa(int argc, char **argv)
   memset(shared_buffer.get(), 0, slots_bytes * sizeof(BufferElement));
 
 
-  server = demo_server(
+  server = __libc_rpc_server(
       {},
-      hostrpc::careful_cast_to_bitmap<demo_server::lock_t>(host_locks,
+      hostrpc::careful_cast_to_bitmap<__libc_rpc_server::lock_t>(host_locks,
                                                            slots_words),
-      hostrpc::careful_cast_to_bitmap<demo_server::inbox_t>(client_outbox.get(),
+      hostrpc::careful_cast_to_bitmap<__libc_rpc_server::inbox_t>(client_outbox.get(),
                                                             slots_words),
-      hostrpc::careful_cast_to_bitmap<demo_server::outbox_t>(client_inbox.get(),
+      hostrpc::careful_cast_to_bitmap<__libc_rpc_server::outbox_t>(client_inbox.get(),
                                                              slots_words),
       hostrpc::careful_array_cast<BufferElement>(shared_buffer.get(), slots));
   
@@ -180,8 +182,15 @@ static int main_with_hsa(int argc, char **argv)
   auto offsets = offsets_into_strtab(app_argc, app_argv);
   size_t bytes_for_argv = 8 * app_argc;
   size_t bytes_for_strtab = (offsets.back() + 3) & ~size_t{3};
+
+  
   size_t number_return_values =
       hsa::agent_get_info_wavefront_size(kernel_agent);
+  if (number_gpu_threads < number_return_values)
+    {
+      number_return_values = number_gpu_threads;
+    }
+  
   size_t bytes_for_return = sizeof(int) * number_return_values;
 
   // Always allocates > 0 because of the return slot
@@ -304,8 +313,8 @@ static int main_with_hsa(int argc, char **argv)
   uint32_t wavefront_size = hsa::agent_get_info_wavefront_size(kernel_agent);
   hsa::initialize_packet_defaults(wavefront_size, packet);
 
-  packet->workgroup_size_x = 1;
-  packet->grid_size_x = 1;
+  packet->workgroup_size_x = number_gpu_threads; // assuming single warp for now
+  packet->grid_size_x = packet->workgroup_size_x;
    
   uint64_t kernel_address = find_entry_address(ex);
   packet->kernel_object = kernel_address;
@@ -315,7 +324,9 @@ static int main_with_hsa(int argc, char **argv)
     memcpy(&packet->kernarg_address, &raw_kernarg_alloc, 8);
   }
 
-  auto rc = hsa_signal_create(1, 0, NULL, &packet->completion_signal);
+  hsa_signal_t completion_signal;
+  auto rc = hsa_signal_create(1, 0, NULL, &completion_signal);
+  packet->completion_signal = completion_signal;
   if (rc != HSA_STATUS_SUCCESS)
     {
       fprintf(stderr, "Can't make signal\n");
@@ -357,9 +368,6 @@ static int main_with_hsa(int argc, char **argv)
       bool r = server.rpc_handle(
           [&](hostrpc::port_t, BufferElement *data) {
             fprintf(stderr, "Server got work to do:\n");
-            for (unsigned i = 0; i < 64; i++)
-              {
-                auto ith = data->cacheline[i];
 
             for (unsigned i = 0; i < 64; i++)
               {
@@ -367,24 +375,24 @@ static int main_with_hsa(int argc, char **argv)
                 uint64_t opcode = ith.element[0];
                 switch(opcode)
                   {
-                  case 0:
-                  default: 
+                  case no_op:
+                  default:
                     continue;
-                  case 1:
-                    char buf[48];
-                    memcpy(buf, &ith.element[1], 48);
+                  case print_to_stderr:
+                    enum {w = 7 * 8};
+                    char buf[w];
+                    memcpy(buf, &ith.element[1], w);
+                    buf[w-1] = '\0';
                     fprintf(stderr, "%s", buf);
                     break;
                   }
-              }
-
               }
           },
           [&](hostrpc::port_t, BufferElement *data) {
             fprintf(stderr, "Server cleaning up\n");
             for (unsigned i = 0; i < 64; i++)
               {
-                data->cacheline[i].element[0] = 0;
+                data->cacheline[i].element[0] = no_op;
               }
           });
 
@@ -400,7 +408,7 @@ static int main_with_hsa(int argc, char **argv)
           for (unsigned i = 0; i < 10000; i++) platform::sleep_briefly();                      
         }
     }
-  while (hsa_signal_wait_acquire(packet->completion_signal,
+  while (hsa_signal_wait_acquire(completion_signal,
                                  HSA_SIGNAL_CONDITION_EQ, 0, 5000 /*000000*/,
                                  HSA_WAIT_STATE_ACTIVE) != 0);
 
@@ -411,7 +419,7 @@ static int main_with_hsa(int argc, char **argv)
   int result[number_return_values];
   memcpy(&result, result_location, sizeof(int) * number_return_values);
 
-  hsa_signal_destroy(packet->completion_signal);
+  hsa_signal_destroy(completion_signal);
   hsa_queue_destroy(queue);
 
   bool results_match = true;
@@ -436,7 +444,7 @@ static int main_with_hsa(int argc, char **argv)
       fprintf(stderr, "Queue: %lx\n", v);
       for (size_t i = 0; i < number_return_values; i++)
         {
-          fprintf(stderr, "rc[%zu] = %x\n", i, result[i]);
+          fprintf(stderr, "rc[%zu] = %d\n", i, result[i]);
         }
     }
 

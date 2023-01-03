@@ -6,6 +6,11 @@
 #include "../memory.hpp"
 
 
+enum opcodes {
+              no_op = 0,
+              print_to_stderr = 1,
+};
+
 struct cacheline_t
 {
   alignas(64) uint64_t element[8];
@@ -26,6 +31,7 @@ inline void *operator new(size_t, BufferElement *p) { return p; }
 
 using WordType = uint32_t;
 
+// todo: width of this structure should be a function of architecture
 enum
 {
   slots = 128,  // number of slots, usually in bits
@@ -35,19 +41,10 @@ enum
 
 enum {rpc_buffer_kernarg_size = 4 * 8}; // bytes used to pass pointers
 
-using demo_client =
+using __libc_rpc_client =
     hostrpc::client<BufferElement, uint32_t, hostrpc::size_compiletime<slots>>;
-using demo_server =
+using __libc_rpc_server =
     hostrpc::server<BufferElement, uint32_t, hostrpc::size_compiletime<slots>>;
 
-
-// maybe saner than the individual offsets used at present
-struct arg_type
-{
-  int argc;
-  char ** argv; // pointers into strtab
-
-  char strtab[];
-};
 
 #endif
