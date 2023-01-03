@@ -293,9 +293,21 @@ if (($have_amdgcn)); then
     $CXX_X64_LD $LDFLAGS obj/$DIR.bc -o $DIR/amdgcn_loader.exe
 
 
-    $CLANG $GCNFLAGS $DIR/crt.c -emit-llvm -c -o obj/$DIR/crt.gcn.bc
-    $CLANG $GCNFLAGS $DIR/demo.c obj/$DIR/crt.gcn.bc -o $DIR/demo.gcn
+    $CLANG $GCNFLAGS $DIR/crt.c -emit-llvm -c -o obj/$DIR/crt.gcn.bc 
 
+    $CLANG $GCNFLAGS $DIR/demo.c -emit-llvm -c -o obj/$DIR/demo.gcn.bc 
+
+    $CLANG $GCNFLAGS $DIR/demo.c obj/$DIR/crt.gcn.bc -o $DIR/demo.gcn
+    ../dump_kernels.exe $DIR/demo.gcn # no kernels! fail
+
+    # swap the arguments
+    $CLANG $GCNFLAGS obj/$DIR/crt.gcn.bc $DIR/demo.c -o $DIR/demo.gcn
+    ../dump_kernels.exe $DIR/demo.gcn # fine, though hangs when the .c tries to call back into the crt
+
+    # linking the IR then passing it to clang in one blob both emits kernels and generates code that actually runs
+    $LINK obj/$DIR/crt.gcn.bc obj/$DIR/demo.gcn.bc -o obj/$DIR/combined.gcn.bc
+    $CLANG $GCNFLAGS obj/$DIR/combined.gcn.bc -o $DIR/demo.gcn
+    
     ./$DIR/amdgcn_loader.exe $DIR/demo.gcn
     
     exit 0

@@ -92,6 +92,8 @@ static int main_with_hsa(int argc, char **argv)
       return 1;
     }
 
+  printf("Loaded executable\n");
+  
   // probably need to populate some of the implicit args for intrinsics to work
   hsa_region_t kernarg_region = hsa::region_kernarg(kernel_agent);
   hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
@@ -279,6 +281,7 @@ static int main_with_hsa(int argc, char **argv)
       exit(1);
     }
 
+  printf("Going to try to launch a kernel\n");
   hsa::packet_store_release((uint32_t *)packet,
                             hsa::header(HSA_PACKET_TYPE_KERNEL_DISPATCH),
                             hsa::kernel_dispatch_setup());
