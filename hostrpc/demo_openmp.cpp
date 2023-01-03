@@ -86,7 +86,10 @@ bool write_to_stderr(const char *str)
             __builtin_memcpy(&data->cacheline[me].element[1], str, width);
           });
 
-      client.template rpc_close_port(active_threads, hostrpc::cxx::move(send));
+
+      auto recv = client.template rpc_port_recv(active_threads, hostrpc::cxx::move(send), [](hostrpc::port_t, BufferElement*) {});
+
+      client.template rpc_close_port(active_threads, hostrpc::cxx::move(recv));
 
       return true;
     }
@@ -132,7 +135,7 @@ int main()
   memset(host_locks, 0, slots_bytes);
   memset(client_inbox, 0, slots_bytes);
   memset(client_outbox, 0, slots_bytes);
-  memset(shared_buffer, 0, slots_bytes);
+  memset(shared_buffer, 0, slots_bytes * sizeof(BufferElement));
 
   client = demo_client(
       {},
@@ -168,18 +171,8 @@ int main()
 #endif
 
         {
-#if 0
-          auto thrds = platform::active_threads();
-          bool r = client.rpc_invoke_noapply(
-               thrds,
-               [](hostrpc::port_t, BufferElement *data) {
-                 auto me = platform::get_lane_id();
-                 data->cacheline[me].element[0] = me * me + 5;
-               },
-               [](hostrpc::port_t, BufferElement *data){});
-#else
-          write_to_stderr("some string literal");
-#endif
+
+          write_to_stderr("some string literal\n");
         }
       }
     else
@@ -195,8 +188,12 @@ int main()
               for (unsigned i = 0; i < 64; i++)
                 {
                   auto ith = data->cacheline[i];
-                  fprintf(stderr, "data[%u] = {%lu, %lu...}\n", i,
-                          ith.element[0], ith.element[1]);
+                  if (ith.element[0] == 1)
+                    {
+                      char buf[48];
+                      memcpy(&buf[0], &ith.element[1], 48);
+                      fprintf(stderr, "data[%u] = %s", i, buf);
+                    }
                 }
             },
             [&](hostrpc::port_t, BufferElement *data) {

@@ -227,17 +227,13 @@ fi
 
 
 
-# Temporary patch. Just try to run the openmp demo. Hangs on gfx10.
-if false; then
+# Run the openmp demo first.
 if (($have_amdgcn)); then
   $CLANGXX $CXXVER $OPTLEVEL -fopenmp --offload-arch=$GCNGFX  demo_openmp.cpp  -o demo_openmp_gcn &&  ./demo_openmp_gcn
-  exit 0
-fi
 fi
 
 if (($have_nvptx)); then
   $CLANGXX $CXXVER $OPTLEVEL -fopenmp --offload-arch=$PTXGFX  demo_openmp.cpp  -o demo_openmp_ptx &&  ./demo_openmp_ptx
-  exit 0
 fi
 
 
@@ -306,6 +302,7 @@ if (($have_amdgcn)); then
 
     # linking the IR then passing it to clang in one blob both emits kernels and generates code that actually runs
     $LINK obj/$DIR/crt.gcn.bc obj/$DIR/demo.gcn.bc -o obj/$DIR/combined.gcn.bc
+    $DIS obj/$DIR/combined.gcn.bc
     $CLANG $GCNFLAGS obj/$DIR/combined.gcn.bc -o $DIR/demo.gcn
     
     ./$DIR/amdgcn_loader.exe $DIR/demo.gcn

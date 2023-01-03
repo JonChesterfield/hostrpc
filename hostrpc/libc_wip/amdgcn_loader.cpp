@@ -360,8 +360,24 @@ static int main_with_hsa(int argc, char **argv)
             for (unsigned i = 0; i < 64; i++)
               {
                 auto ith = data->cacheline[i];
-                fprintf(stderr, "data[%u] = {%lu, %lu...}\n", i, ith.element[0],
-                        ith.element[1]);
+
+            for (unsigned i = 0; i < 64; i++)
+              {
+                auto ith = data->cacheline[i];
+                uint64_t opcode = ith.element[0];
+                switch(opcode)
+                  {
+                  case 0:
+                  default: 
+                    continue;
+                  case 1:
+                    char buf[48];
+                    memcpy(buf, &ith.element[1], 48);
+                    fprintf(stderr, "%s", buf);
+                    break;
+                  }
+              }
+
               }
           },
           [&](hostrpc::port_t, BufferElement *data) {

@@ -37,12 +37,10 @@ void __libc_write_stderr(const char* str) {
                                               {
                                                width = 48
                                               };
-                                              #if 0
                                               data->cacheline[me].element[0] = 1;
                                               data->cacheline[me].element[7] = 0;
                                               
                                               __builtin_memcpy(&data->cacheline[me].element[1], str, width);
-                                              #endif
                                             });
 
 
