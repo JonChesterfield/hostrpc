@@ -5,10 +5,22 @@
 #include "detail/server_impl.hpp"
 #include "memory.hpp"
 
+struct cacheline_t
+{
+  alignas(64) uint64_t element[8];
+};
+static_assert(sizeof(cacheline_t) == 64, "");
+
 struct BufferElement
 {
-  uint64_t data[64];
+  enum
+  {
+    width = 64
+  };
+  alignas(4096) cacheline_t cacheline[width];
 };
+static_assert(sizeof(BufferElement) == 4096, "");
+
 inline void *operator new(size_t, BufferElement *p) { return p; }
 
 using WordType = uint32_t;
@@ -30,6 +42,62 @@ demo_client client;
 #pragma omp declare target to(client)
 demo_server server;
 
+#pragma omp begin declare target  // device_type(nohost)
+
+size_t __printf_strlen(const char *str)
+{
+  // unreliable at O0
+  if (__builtin_constant_p(str))
+    {
+      return __builtin_strlen(str);
+    }
+  else
+    {
+      for (size_t i = 0;; i++)
+        {
+          if (str[i] == '\0')
+            {
+              return i;
+            }
+        }
+    }
+}
+
+bool write_to_stderr(const char *str)
+{
+  auto active_threads =
+      platform::active_threads();  // warning, not valid on volta
+  // uint64_t L = __printf_strlen(str);
+
+  if (auto maybe = client.template rpc_try_open_typed_port(active_threads))
+    {
+      auto send = client.template rpc_port_send(
+          active_threads, maybe.value(),
+          [=](hostrpc::port_t, BufferElement *data) {
+            auto me = platform::get_lane_id();
+            enum
+            {
+              width = 48
+            };
+
+            data->cacheline[me].element[0] = 1;
+            data->cacheline[me].element[7] = 0;
+
+            __builtin_memcpy(&data->cacheline[me].element[1], str, width);
+          });
+
+      client.template rpc_close_port(active_threads, hostrpc::cxx::move(send));
+
+      return true;
+    }
+  else
+    {
+      return false;
+    }
+}
+
+#pragma omp end declare target
+
 #include <stdio.h>
 
 #include <omp.h>
@@ -44,7 +112,7 @@ extern "C" void *llvm_omp_target_alloc_host(size_t, int);
 int main()
 {
 #define FORCE_ONTO_HOST 1
-  
+
   // GPU locks
 
   // todo: force these things to be properly aligned (or fail if they aren't)
@@ -54,7 +122,7 @@ int main()
   void *gpu_locks = omp_target_alloc(slots_bytes, 0);
 #endif
   void *host_locks = aligned_alloc(64, slots_bytes);
-  
+
   void *client_inbox = llvm_omp_target_alloc_host(slots_bytes, 0);
   void *client_outbox = llvm_omp_target_alloc_host(slots_bytes, 0);
 
@@ -87,8 +155,6 @@ int main()
                                                              slots_words),
       hostrpc::careful_array_cast<BufferElement>(shared_buffer, slots));
 
-  
-  
 #pragma omp parallel num_threads(2)
   {
     unsigned id = omp_get_thread_num();
@@ -98,28 +164,29 @@ int main()
       {
 #if FORCE_ONTO_HOST
 #else
-        #pragma omp target
+#pragma omp target
 #endif
-        
-        {
-          auto thrds = platform::active_threads();
 
+        {
+#if 0
+          auto thrds = platform::active_threads();
           bool r = client.rpc_invoke_noapply(
                thrds,
                [](hostrpc::port_t, BufferElement *data) {
                  auto me = platform::get_lane_id();
-                 data->data[me] = me * me + 5;
+                 data->cacheline[me].element[0] = me * me + 5;
                },
                [](hostrpc::port_t, BufferElement *data){});
-
-
+#else
+          write_to_stderr("some string literal");
+#endif
         }
       }
     else
       {
         bool got_work = false;
         bool got_cleanup = false;
-          
+
       again:;
         bool r = server.rpc_handle(
             [&](hostrpc::port_t, BufferElement *data) {
@@ -127,7 +194,9 @@ int main()
               got_work = true;
               for (unsigned i = 0; i < 64; i++)
                 {
-                  fprintf(stderr, "data[%u] = %lu\n", i, data->data[i]);
+                  auto ith = data->cacheline[i];
+                  fprintf(stderr, "data[%u] = {%lu, %lu...}\n", i,
+                          ith.element[0], ith.element[1]);
                 }
             },
             [&](hostrpc::port_t, BufferElement *data) {
@@ -135,7 +204,7 @@ int main()
               got_cleanup = true;
               for (unsigned i = 0; i < 64; i++)
                 {
-                  data->data[i] = 0;
+                  data->cacheline[i].element[0] = 0;
                 }
             });
 
@@ -153,7 +222,8 @@ int main()
           }
         else
           {
-            fprintf(stderr, "Server [%u][%u] returned true\n", got_work, got_cleanup);
+            fprintf(stderr, "Server [%u][%u] returned true\n", got_work,
+                    got_cleanup);
           }
       }
   }
