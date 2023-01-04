@@ -5,14 +5,14 @@
 
 #include <unistd.h>
 
+#include "hsa_ext_amd.h"
 
 #include "../hsa.hpp"
-#include "../raiifile.hpp"
 #include "../launch.hpp"
+#include "../raiifile.hpp"
 
 #include "crt.hpp"
 #include <string.h>
-
 
 static __libc_rpc_server server;
 
@@ -58,7 +58,6 @@ uint64_t find_entry_address(hsa::executable &ex)
 
 }  // namespace
 
-
 static void callbackQueue(hsa_status_t status, hsa_queue_t *source, void *)
 {
   if (status != HSA_STATUS_SUCCESS)
@@ -73,10 +72,20 @@ static void callbackQueue(hsa_status_t status, hsa_queue_t *source, void *)
     }
 }
 
-static int main_with_hsa(int argc, char **argv)
+struct file_handles
 {
-  enum {number_gpu_threads = 1};
-  
+  int client_inbox;
+  int shared;
+  int client_outbox;
+};
+
+static int main_with_hsa(int argc, char **argv, file_handles *maybe_handles)
+{
+  enum
+  {
+    number_gpu_threads = 1
+  };
+
   const bool verbose = false;
   if (argc < 2)
     {
@@ -101,7 +110,7 @@ static int main_with_hsa(int argc, char **argv)
     }
 
   printf("Loaded executable\n");
-  
+
   // probably need to populate some of the implicit args for intrinsics to work
   hsa_region_t kernarg_region = hsa::region_kernarg(kernel_agent);
   hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
@@ -120,45 +129,100 @@ static int main_with_hsa(int argc, char **argv)
   int app_argc = argc - 1;
   char **app_argv = &argv[1];
 
-
-
   auto gpu_locks = hsa::allocate(coarse_grained_region, slots_bytes);
-
-  void *host_locks = aligned_alloc(64, slots_bytes); // todo: stop leaking this
+  void *host_locks = aligned_alloc(64, slots_bytes);  // todo: stop leaking this
 
   auto client_inbox = hsa::allocate(fine_grained_region, slots_bytes);
   auto client_outbox = hsa::allocate(fine_grained_region, slots_bytes);
-  auto shared_buffer = hsa::allocate(fine_grained_region, slots * sizeof(BufferElement));
-    
+  auto shared_buffer =
+      hsa::allocate(fine_grained_region, slots * sizeof(BufferElement));
 
+  void *client_inbox_ptr_host = client_inbox.get();
+  void *client_inbox_ptr_gpu = client_inbox.get();
 
-  if (!gpu_locks ||
-      !client_inbox ||
-      !client_outbox ||
-      !shared_buffer)
+  void *client_outbox_ptr_host = client_outbox.get();
+  void *client_outbox_ptr_gpu = client_outbox.get();
+
+  void *shared_buffer_ptr_host = shared_buffer.get();
+  void *shared_buffer_ptr_gpu = shared_buffer.get();
+
+  if (!gpu_locks || !client_inbox_ptr_host || !client_outbox_ptr_host ||
+      !shared_buffer_ptr_host)
     {
-        fprintf(stderr, "Failed to allocate rpc buffer\n");
-        exit(1);
-
+      fprintf(stderr, "Failed to allocate rpc buffer\n");
+      exit(1);
     }
 
-  // they're probably zero anyway. todo: check the hsa docs for the gpu one, it's more annoying to zero
-  memset(host_locks, 0, slots_bytes);
-  memset(client_inbox.get(), 0, slots_bytes);
-  memset(client_outbox.get(), 0, slots_bytes);
-  memset(shared_buffer.get(), 0, slots_bytes * sizeof(BufferElement));
+  if (maybe_handles != nullptr)
+    {
+      printf("Using mmap over file handles\n");
+      client_inbox_ptr_host = mmap(NULL, slots_bytes, PROT_READ | PROT_WRITE,
+                                   MAP_SHARED, maybe_handles->client_inbox, 0);
+      client_outbox_ptr_host = mmap(NULL, slots_bytes, PROT_READ | PROT_WRITE,
+                                    MAP_SHARED, maybe_handles->shared, 0);
+      shared_buffer_ptr_host =
+          mmap(NULL, slots * sizeof(BufferElement), PROT_READ | PROT_WRITE,
+               MAP_SHARED, maybe_handles->client_outbox, 0);
 
+      if (!client_inbox_ptr_host || !client_outbox_ptr_host ||
+          !shared_buffer_ptr_host)
+        {
+          fprintf(stderr,
+                  "Failed to allocate rpc buffer through file handles\n");
+          exit(1);
+        }
+
+      hsa_status_t rc;
+      rc = hsa_amd_memory_lock(client_inbox_ptr_host, slots_bytes,
+                               &kernel_agent, 1, &client_inbox_ptr_gpu);
+      if (rc != HSA_STATUS_SUCCESS)
+        {
+          const char * wot;
+          hsa_status_string(rc, &wot);
+          fprintf(stderr, "hsa lock failed %s\n", wot);
+          exit(1);
+        }
+
+      rc = hsa_amd_memory_lock(client_outbox_ptr_host, slots_bytes,
+                               &kernel_agent, 1, &client_outbox_ptr_gpu);
+      if (rc != HSA_STATUS_SUCCESS)
+        {
+          const char * wot;
+          hsa_status_string(rc, &wot);
+          fprintf(stderr, "hsa lock failed %s\n", wot);
+          exit(1);
+        }
+
+      rc = hsa_amd_memory_lock(shared_buffer_ptr_host,
+                               slots * sizeof(BufferElement), &kernel_agent, 1,
+                               &shared_buffer_ptr_gpu);
+      if (rc != HSA_STATUS_SUCCESS)
+        {
+          const char * wot;
+          hsa_status_string(rc, &wot);
+          fprintf(stderr, "hsa lock failed %s\n", wot);
+          exit(1);
+        }
+    }
+
+  // they're probably zero anyway. todo: check the hsa docs for the gpu one,
+  // it's more annoying to zero
+  memset(host_locks, 0, slots_bytes);
+  memset(client_inbox_ptr_host, 0, slots_bytes);
+  memset(client_outbox_ptr_host, 0, slots_bytes);
+  memset(shared_buffer_ptr_host, 0, slots_bytes * sizeof(BufferElement));
 
   server = __libc_rpc_server(
       {},
       hostrpc::careful_cast_to_bitmap<__libc_rpc_server::lock_t>(host_locks,
-                                                           slots_words),
-      hostrpc::careful_cast_to_bitmap<__libc_rpc_server::inbox_t>(client_outbox.get(),
-                                                            slots_words),
-      hostrpc::careful_cast_to_bitmap<__libc_rpc_server::outbox_t>(client_inbox.get(),
-                                                             slots_words),
-      hostrpc::careful_array_cast<BufferElement>(shared_buffer.get(), slots));
-  
+                                                                 slots_words),
+      hostrpc::careful_cast_to_bitmap<__libc_rpc_server::inbox_t>(
+          client_outbox_ptr_host, slots_words),
+      hostrpc::careful_cast_to_bitmap<__libc_rpc_server::outbox_t>(
+          client_inbox_ptr_host, slots_words),
+      hostrpc::careful_array_cast<BufferElement>(shared_buffer_ptr_host,
+                                                 slots));
+
   // arguments must be in kernarg memory, which is constant
   // opencl doesn't accept char** as a type and returns void
   // combined, choosing to pass arguments as:
@@ -172,25 +236,25 @@ static int main_with_hsa(int argc, char **argv)
   // don't match those I see from an opencl kernel. The first 24 bytes are
   // consistently used for offset_x, offset_y, offset_z. Zero those.
   // opencl and atmi both think the implicit structure is 80 long.
-  
+
   size_t implicit_offset_size = 24;
   size_t extra_implicit_size = 80 - implicit_offset_size;
 
   // implicit offset needs to be 8 byte aligned, which it w/ 24 bytes explicit
-  size_t bytes_for_kernarg = rpc_buffer_kernarg_size + 24 + implicit_offset_size + extra_implicit_size;
+  size_t bytes_for_kernarg =
+      rpc_buffer_kernarg_size + 24 + implicit_offset_size + extra_implicit_size;
 
   auto offsets = offsets_into_strtab(app_argc, app_argv);
   size_t bytes_for_argv = 8 * app_argc;
   size_t bytes_for_strtab = (offsets.back() + 3) & ~size_t{3};
 
-  
   size_t number_return_values =
       hsa::agent_get_info_wavefront_size(kernel_agent);
   if (number_gpu_threads < number_return_values)
     {
       number_return_values = number_gpu_threads;
     }
-  
+
   size_t bytes_for_return = sizeof(int) * number_return_values;
 
   // Always allocates > 0 because of the return slot
@@ -199,7 +263,7 @@ static int main_with_hsa(int argc, char **argv)
                     bytes_for_argv + bytes_for_strtab + bytes_for_return);
 
   size_t strtab_start_offset = bytes_for_argv;
-  
+
   const char *strtab_start =
       static_cast<char *>(mutable_alloc.get()) + strtab_start_offset;
   const char *result_location = static_cast<char *>(mutable_alloc.get()) +
@@ -253,14 +317,14 @@ static int main_with_hsa(int argc, char **argv)
     char *kernarg = (char *)kernarg_alloc.get();
 
     void *rpc_pointers[4] = {
-                             gpu_locks.get(),
-                             client_inbox.get(),
-                             client_outbox.get(),
-                             shared_buffer.get(),
+        gpu_locks.get(),
+        client_inbox.get(),
+        client_outbox.get(),
+        shared_buffer_ptr_gpu,
     };
     memcpy(kernarg, &rpc_pointers, sizeof(rpc_pointers));
     kernarg += sizeof(rpc_pointers);
-    
+
     // argc
     memcpy(kernarg, &app_argc, 4);
     kernarg += 4;
@@ -300,7 +364,6 @@ static int main_with_hsa(int argc, char **argv)
       exit(1);
     }
 
-
   // Claim a packet
   uint64_t packet_id = hsa::acquire_available_packet_id(queue);
 
@@ -308,14 +371,16 @@ static int main_with_hsa(int argc, char **argv)
   hsa_kernel_dispatch_packet_t *packet =
       (hsa_kernel_dispatch_packet_t *)queue->base_address + (packet_id & mask);
 
-  static_assert(offsetof(hsa_kernel_dispatch_packet_t, kernarg_address) == 40, "");
-  
+  static_assert(offsetof(hsa_kernel_dispatch_packet_t, kernarg_address) == 40,
+                "");
+
   uint32_t wavefront_size = hsa::agent_get_info_wavefront_size(kernel_agent);
   hsa::initialize_packet_defaults(wavefront_size, packet);
 
-  packet->workgroup_size_x = number_gpu_threads; // assuming single warp for now
+  packet->workgroup_size_x =
+      number_gpu_threads;  // assuming single warp for now
   packet->grid_size_x = packet->workgroup_size_x;
-   
+
   uint64_t kernel_address = find_entry_address(ex);
   packet->kernel_object = kernel_address;
 
@@ -365,38 +430,44 @@ static int main_with_hsa(int argc, char **argv)
       // TODO: Polling is better than waiting here as it lets the initial
       // dispatch spawn a graph
 
-      
-      bool r = //server.
-        rpc_handle(&server,
-          [&](hostrpc::port_t, BufferElement *data) {
-            fprintf(stderr, "Server got work to do:\n");
+      if (maybe_handles == nullptr)
+        {
+          // otherwise assume someone else is playing server
+      bool r =  // server.
+          rpc_handle(
+              &server,
+              [&](hostrpc::port_t, BufferElement *data) {
+                fprintf(stderr, "Direct Server got work to do:\n");
 
-            for (unsigned i = 0; i < 64; i++)
-              {
-                auto ith = data->cacheline[i];
-                uint64_t opcode = ith.element[0];
-                switch(opcode)
+                for (unsigned i = 0; i < 64; i++)
                   {
-                  case no_op:
-                  default:
-                    continue;
-                  case print_to_stderr:
-                    enum {w = 7 * 8};
-                    char buf[w];
-                    memcpy(buf, &ith.element[1], w);
-                    buf[w-1] = '\0';
-                    fprintf(stderr, "%s", buf);
-                    break;
+                    auto ith = data->cacheline[i];
+                    uint64_t opcode = ith.element[0];
+                    switch (opcode)
+                      {
+                        case no_op:
+                        default:
+                          continue;
+                        case print_to_stderr:
+                          enum
+                          {
+                            w = 7 * 8
+                          };
+                          char buf[w];
+                          memcpy(buf, &ith.element[1], w);
+                          buf[w - 1] = '\0';
+                          fprintf(stderr, "%s", buf);
+                          break;
+                      }
                   }
-              }
-          },
-          [&](hostrpc::port_t, BufferElement *data) {
-            fprintf(stderr, "Server cleaning up\n");
-            for (unsigned i = 0; i < 64; i++)
-              {
-                data->cacheline[i].element[0] = no_op;
-              }
-          });
+              },
+              [&](hostrpc::port_t, BufferElement *data) {
+                fprintf(stderr, "Server cleaning up\n");
+                for (unsigned i = 0; i < 64; i++)
+                  {
+                    data->cacheline[i].element[0] = no_op;
+                  }
+              });
 
       if (r)
         {
@@ -407,12 +478,13 @@ static int main_with_hsa(int argc, char **argv)
         {
           // found no work, could sleep here
           printf("no work found\n");
-          for (unsigned i = 0; i < 10000; i++) platform::sleep_briefly();                      
+          for (unsigned i = 0; i < 10000; i++) platform::sleep_briefly();
         }
+        }
+
     }
-  while (hsa_signal_wait_acquire(completion_signal,
-                                 HSA_SIGNAL_CONDITION_EQ, 0, 5000 /*000000*/,
-                                 HSA_WAIT_STATE_ACTIVE) != 0);
+  while (hsa_signal_wait_acquire(completion_signal, HSA_SIGNAL_CONDITION_EQ, 0,
+                                 5000 /*000000*/, HSA_WAIT_STATE_ACTIVE) != 0);
 
   if (verbose)
     {
@@ -461,10 +533,49 @@ extern "C" int amdgcn_loader_main(int argc, char **argv)
 {
   // valgrind thinks this is leaking slightly
   hsa::init hsa_state;  // Need to destroy this last
-  return main_with_hsa(argc, argv);
+  return main_with_hsa(argc, argv, nullptr);
+}
+
+extern "C" int amdgcn_loader_file_handles_entry_point(int argc, char **argv)
+{
+  // file descriptors, then name of program, then arguments to loader
+  hsa::init hsa_state;
+
+  if (argc < 3)
+    {
+      fprintf(stderr, "Require at least two arguments\n");
+      return 1;
+    }
+
+  int FD0, FD1, FD2;
+  int rc = sscanf(argv[1], "(%d %d %d)", &FD0, &FD1, &FD2);
+  if (rc != 3)
+    {
+      fprintf(stderr, "Failed to parse argv[1] = %s\n", argv[1]);
+      return 1;
+    }
+
+  file_handles tmp{FD0, FD1, FD2};
+
+  return main_with_hsa(argc - 1, &argv[1], &tmp);
 }
 
 __attribute__((weak)) extern "C" int main(int argc, char **argv)
 {
-  return amdgcn_loader_main(argc, argv);
+  hsa::init hsa_state;  // Need to destroy this last
+
+  int FD0, FD1, FD2;
+  int rc = sscanf(argv[0], "(%d %d %d)", &FD0, &FD1, &FD2);
+  if (rc != 3)
+    {
+      printf("failed to sscanf\n");
+      // probably didn't pass file handles in argv[0] then
+      return main_with_hsa(argc, argv, nullptr);
+    }
+  else
+    {
+      printf("Going to try to run with file handles %d %d %d\n", FD0, FD1, FD2);
+      file_handles tmp{FD0, FD1, FD2};
+      return main_with_hsa(argc - 1, &argv[1], &tmp);
+    }
 }

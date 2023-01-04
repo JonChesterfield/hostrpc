@@ -284,10 +284,16 @@ $LINK obj/allocator_openmp.x64.bc obj/openmp_plugins.x64.bc -o obj/openmp_suppor
 if (($have_amdgcn)); then
     DIR=libc_wip
     mkdir -p obj/$DIR
+    
     $CXX_X64 -Werror=consumed -I$HSAINC $DIR/amdgcn_loader.cpp -c -o obj/$DIR/amdgcn_loader.x64.bc
-    $LINK obj/$DIR/amdgcn_loader.x64.bc obj/msgpack.x64.bc obj/find_metadata.x64.bc -o obj/$DIR.bc
-    $CXX_X64_LD $LDFLAGS obj/$DIR.bc -o $DIR/amdgcn_loader.exe
+    $LINK obj/$DIR/amdgcn_loader.x64.bc obj/msgpack.x64.bc obj/find_metadata.x64.bc -o obj/amdgcn_loader.$DIR.bc
+    $CXX_X64_LD $LDFLAGS obj/amdgcn_loader.$DIR.bc -o $DIR/amdgcn_loader.exe
 
+
+    $CXX_X64 -Werror=consumed -I$HSAINC $DIR/indirect_loader.cpp -c -o obj/$DIR/indirect_loader.x64.bc
+    $LINK obj/$DIR/indirect_loader.x64.bc -o obj/indirect_loader.$DIR.bc
+    $CXX_X64_LD $LDFLAGS obj/indirect_loader.$DIR.bc -o $DIR/indirect_loader.exe
+    
 
     $CLANGXX $CXXVER -Werror=consumed $GCNFLAGS $DIR/crt.cpp -emit-llvm -c -o obj/$DIR/crt.gcn.bc 
 
@@ -307,7 +313,7 @@ if (($have_amdgcn)); then
     
     ./$DIR/amdgcn_loader.exe $DIR/demo.gcn
     
-    # exit 0
+   exit 0
 fi
 
 if (($have_amdgcn)); then
