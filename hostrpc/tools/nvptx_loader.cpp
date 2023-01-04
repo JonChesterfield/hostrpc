@@ -232,7 +232,7 @@ int init(void *image)
 
       for (unsigned i = 0; i < 16; i++)
         {
-          bool r = x64_nvptx_state.server.rpc_handle<operate_test, clear_test>(
+          bool r = rpc_handle(&x64_nvptx_state.server,
               operate_test{}, clear_test{}, &location);
           fprintf(stderr, "server ret %u\n", r);
           for (unsigned j = 0; j < 1000; j++)

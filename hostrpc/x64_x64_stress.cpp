@@ -65,7 +65,7 @@ uint32_t stress_pool_server::run(uint32_t server_location)
       }
   };
 
-  bool did_work = p.server.rpc_handle(op_func, cl_func, &server_location);
+  bool did_work = rpc_handle(&p.server, op_func, cl_func, &server_location);
   (void)did_work;
 
   if (did_work)

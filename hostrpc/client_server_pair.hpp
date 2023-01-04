@@ -298,7 +298,7 @@ struct client_server_pair_t
   using AllocRemote = typename Allocators::template remote_allocator_t<64>;
 
   using client_type = client<BufferElement, Word, SZ, client_counter>;
-  using server_type = server<BufferElement, Word, SZ, server_counter>;
+  using server_type = server<BufferElement, Word, SZ>;
 
   using storage_type = allocator::store_impl<AllocBuffer, AllocInboxOutbox,
                                              AllocLocal, AllocRemote>;
@@ -331,14 +331,6 @@ struct client_server_pair_t
   HOSTRPC_ANNOTATE ~client_server_pair_t() { storage.destroy(); }
 
   HOSTRPC_ANNOTATE bool valid() { return storage.valid(); }
-  HOSTRPC_ANNOTATE client_counters client_counters()
-  {
-    return client.get_counters();
-  }
-  HOSTRPC_ANNOTATE server_counters server_counters()
-  {
-    return server.get_counters();
-  }
 
   HOSTRPC_ANNOTATE void dump()
   {

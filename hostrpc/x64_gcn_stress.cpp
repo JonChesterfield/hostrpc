@@ -437,7 +437,7 @@ TEST_CASE("x64_gcn_stress")
               break;
             }
           bool did_work =
-              p.server.rpc_handle(op_func, cl_func, &server_location);
+            rpc_handle(&p.server, op_func, cl_func, &server_location);
           if (did_work)
             {
               count++;
@@ -604,8 +604,6 @@ TEST_CASE("x64_gcn_stress")
       memcpy(&p.client, vc, sizeof(p.client));
     }
 
-    p.server_counters().dump();
-    p.client_counters().dump();
     client_store.clear();  // tear down clients before closing hsa
     hsa_queue_destroy(queue);
   }

@@ -181,7 +181,7 @@ int main()
         bool got_cleanup = false;
 
       again:;
-        bool r = server.rpc_handle(
+        bool r = rpc_handle(&server,
             [&](hostrpc::port_t, BufferElement *data) {
               fprintf(stderr, "Server got work to do:\n");
               got_work = true;

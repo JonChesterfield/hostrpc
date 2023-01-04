@@ -266,7 +266,7 @@ class hostcall_impl
         {
           hostrpc::x64_host_amdgcn_client::operate op;
           hostrpc::x64_host_amdgcn_client::clear cl;
-          while (server.rpc_handle(op, cl, &ql))
+          while (rpc_handle(&server, op, cl, &ql))
             {
             }
 

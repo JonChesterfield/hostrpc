@@ -365,7 +365,9 @@ static int main_with_hsa(int argc, char **argv)
       // TODO: Polling is better than waiting here as it lets the initial
       // dispatch spawn a graph
 
-      bool r = server.rpc_handle(
+      
+      bool r = //server.
+        rpc_handle(&server,
           [&](hostrpc::port_t, BufferElement *data) {
             fprintf(stderr, "Server got work to do:\n");
 

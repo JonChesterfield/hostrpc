@@ -140,7 +140,7 @@ extern "C" void __device_persistent_kernel_call(HOSTRPC_ATOMIC(uint32_t) *
     }
   } cl;
 
-  if (server_instance[0].rpc_handle(op, cl, &location_arg))
+  if (rpc_handle(& server_instance[0], op, cl, &location_arg))
     {
       // did work
     }
@@ -364,9 +364,6 @@ TEST_CASE("persistent_kernel")
 
       memcpy(&p.server, vc, sizeof(p.server));
     }
-
-    p.server.get_counters().dump();
-    p.client.get_counters().dump();
 
     // the wait() on the launch_t does nothing because there is no completion
     // signal. This is therefore racy - need the server instance to report that

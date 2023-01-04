@@ -140,7 +140,7 @@ TEST_CASE("set up single word system")
       uint32_t loc_arg = 0;
       for (;;)
         {
-          if (sv.rpc_handle<operate, clear>(operate{}, clear{}, &loc_arg))
+          if (rpc_handle(&sv, operate{}, clear{}, &loc_arg))
 
             {
               calls_handled++;

@@ -43,6 +43,6 @@ extern "C" HOSTRPC_ANNOTATE void server_instance_direct(
 
   for (;;)
     {
-      s.rpc_handle(op, cl);
+      rpc_handle(&s, op, cl);
     }
 }

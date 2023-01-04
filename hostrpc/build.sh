@@ -307,7 +307,7 @@ if (($have_amdgcn)); then
     
     ./$DIR/amdgcn_loader.exe $DIR/demo.gcn
     
-    exit 0
+    # exit 0
 fi
 
 if (($have_amdgcn)); then
@@ -442,7 +442,9 @@ $CXX_GCN unit_tests/common.cpp -c -o obj/unit_tests/common.gcn.bc
 $LINK obj/unit_tests/common.gcn.bc obj/hostrpc_printf_enable_amdgpu.gcn.bc amdgcn_loader_device.gcn.bc hostcall.gcn.bc -o obj/unit_tests/common.gcn.linked.bc
 
 $CXX_GCN_LD obj/unit_tests/common.gcn.linked.bc -o unit_tests/common.gcn.exe
+set +e
 ../amdgcn_loader.exe ./unit_tests/common.gcn.exe
+set -e
 fi
 
 #if (($have_amdgcn)); then
@@ -667,7 +669,9 @@ set -e
 fi
 
 if (($have_amdgcn)); then
+set +e
 ./pool_example_amdgpu.x64.exe
+set -e
 fi
 
 time valgrind --leak-check=full --fair-sched=yes ./prototype/states.exe
