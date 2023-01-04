@@ -246,7 +246,7 @@ int main(int argc, char ** argv)
       else
         {
           // found no work, could sleep here
-          printf("no work found\n");
+          printf("Indirect: no work found\n");
           for (unsigned i = 0; i < 10000; i++) platform::sleep_briefly();
         }
 

@@ -312,8 +312,6 @@ if (($have_amdgcn)); then
     $CLANG $GCNFLAGS obj/$DIR/combined.gcn.bc -o $DIR/demo.gcn
     
     ./$DIR/amdgcn_loader.exe $DIR/demo.gcn
-    
-   exit 0
 fi
 
 if (($have_amdgcn)); then

@@ -1,3 +1,131 @@
+#define LOCAL_FILE_HANDLES 0
+
+
+#define _GNU_SOURCE 1
+#include <fcntl.h>
+#include <sys/mman.h>
+
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include <vector>
+
+#define errExit(msg) \
+  do                 \
+    {                \
+      perror(msg);   \
+      exit(1);       \
+    }                \
+  while (0)
+
+#include "../hsa.hpp"
+#include "../launch.hpp"
+#include "../raiifile.hpp"
+
+#include "crt.hpp"
+#include <string.h>
+
+struct memfd
+{
+  operator int() { return filedescriptor; }
+
+  memfd(size_t req) : size(req)
+  {
+    if (req == 0) return;
+
+    int fd = memfd_create("f", 0);
+    if (fd == -1) return;
+
+    // Set size to requested
+    if (ftruncate(fd, req) == -1)
+      {
+        close(fd);
+        return;
+      }
+
+    struct stat fd_stat;
+    if (fstat(fd, &fd_stat) != 0)
+      {
+        close(fd);
+        return;
+      }
+
+    if ((long long)req != fd_stat.st_size)
+      {
+        // todo: must it be exact?
+        close(fd);
+        return;
+      }
+
+      // No more changing the size
+#if 0
+    if (fcntl(fd, F_ADD_SEALS, F_SEAL_GROW | F_SEAL_SHRINK) != 0)
+      {
+        close(fd);
+        return;
+      }
+#endif
+    filedescriptor = fd;
+  }
+
+  void *map_writable() { return map(PROT_READ | PROT_WRITE); }
+
+  void *map_readable() { return map(PROT_READ); }
+
+  int no_more_map_writable()
+  {
+    if (filedescriptor != -1)
+      return fcntl(filedescriptor, F_ADD_SEALS, F_SEAL_FUTURE_WRITE);
+    else
+      return 0;  // may as well claim success, map accessors won't work anyway
+  }
+
+  ~memfd()
+  {
+    if (filedescriptor != -1) close(filedescriptor);
+  }
+
+ private:
+  void *map(size_t prot)
+  {
+    if (filedescriptor == -1)
+      {
+        return MAP_FAILED;
+      }
+    else
+      {
+        return mmap(NULL, size, prot, MAP_SHARED, filedescriptor, 0);
+      }
+  }
+
+  size_t size;
+  int filedescriptor = -1;
+};
+
+struct handles_t
+{
+  handles_t()
+      : server_inbox(slots_bytes),
+        server_outbox(slots_bytes),
+        shared(slots * sizeof(BufferElement))
+  {
+  }
+
+  bool valid()
+  {
+    return server_inbox != -1 && server_outbox != -1 && shared != -1;
+  }
+  memfd server_inbox;
+  memfd server_outbox;
+  memfd shared;
+};
+
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -79,6 +207,26 @@ struct file_handles
   int client_outbox;
 };
 
+inline hsa_agent_t find_a_host_cpu_or_exit()
+{
+  hsa_agent_t returned_agent;
+  if (HSA_STATUS_INFO_BREAK !=
+      hsa::iterate_agents([&](hsa_agent_t agent) -> hsa_status_t {
+        auto features = hsa::agent_get_info_feature(agent);
+        if (!(features & HSA_AGENT_FEATURE_KERNEL_DISPATCH))
+          {
+            returned_agent = agent;
+            return HSA_STATUS_INFO_BREAK;
+          }
+        return HSA_STATUS_SUCCESS;
+      }))
+    {
+      fprintf(stderr, "Failed to find a non-kernel agent\n");
+      exit(1);
+    }
+  return returned_agent;
+}
+
 static int main_with_hsa(int argc, char **argv, file_handles *maybe_handles)
 {
   enum
@@ -155,17 +303,73 @@ static int main_with_hsa(int argc, char **argv, file_handles *maybe_handles)
 
   if (maybe_handles != nullptr)
     {
+      printf("iterate over memory pools\n");
+
+      hsa_agent_t cpu_agent = find_a_host_cpu_or_exit();
+
+      hsa_amd_memory_pool_t maybe_pool;
+      hsa_status_t iterate_pool_result = hsa::iterate_memory_pools(
+          cpu_agent,
+          [&maybe_pool](hsa_amd_memory_pool_t memory_pool) -> hsa_status_t {
+            hsa_status_t rc;
+            printf("got a memory pool\n");
+
+            hsa_amd_segment_t segment;
+            rc = hsa_amd_memory_pool_get_info(
+                memory_pool, HSA_AMD_MEMORY_POOL_INFO_SEGMENT, &segment);
+            if (rc != HSA_STATUS_SUCCESS)
+              {
+                return rc;
+              }
+            if (segment != HSA_AMD_SEGMENT_GLOBAL)
+              {
+                // keep looking
+                return HSA_STATUS_SUCCESS;
+              }
+
+            uint32_t var;
+            rc = hsa_amd_memory_pool_get_info(
+                memory_pool, HSA_AMD_MEMORY_POOL_INFO_GLOBAL_FLAGS, &var);
+            if (rc != HSA_STATUS_SUCCESS)
+              {
+                printf("failed\n");
+                return rc;
+              }
+
+            if (var == HSA_AMD_MEMORY_POOL_GLOBAL_FLAG_FINE_GRAINED)
+              {
+                printf("global flags %u, success\n", var);
+                maybe_pool = memory_pool;
+                return HSA_STATUS_INFO_BREAK;
+              }
+
+            return HSA_STATUS_SUCCESS;
+          });
+
+      if (iterate_pool_result != HSA_STATUS_INFO_BREAK)
+        {
+          fprintf(stderr, "no pool\n");
+          exit(1);
+        }
+
+      void *client_inbox_ptr_gpu = 0;
+      void *client_outbox_ptr_gpu = 0;
+
+      void *shared_buffer_ptr_gpu = 0;
+
       printf("Using mmap over file handles\n");
       client_inbox_ptr_host = mmap(NULL, slots_bytes, PROT_READ | PROT_WRITE,
                                    MAP_SHARED, maybe_handles->client_inbox, 0);
-      client_outbox_ptr_host = mmap(NULL, slots_bytes, PROT_READ | PROT_WRITE,
-                                    MAP_SHARED, maybe_handles->shared, 0);
+      client_outbox_ptr_host =
+          mmap(NULL, slots_bytes, PROT_READ | PROT_WRITE, MAP_SHARED,
+               maybe_handles->client_outbox, 0);
       shared_buffer_ptr_host =
           mmap(NULL, slots * sizeof(BufferElement), PROT_READ | PROT_WRITE,
-               MAP_SHARED, maybe_handles->client_outbox, 0);
+               MAP_SHARED, maybe_handles->shared, 0);
 
-      if (!client_inbox_ptr_host || !client_outbox_ptr_host ||
-          !shared_buffer_ptr_host)
+      if (client_inbox_ptr_host == MAP_FAILED ||
+          client_outbox_ptr_host == MAP_FAILED ||
+          shared_buffer_ptr_host == MAP_FAILED)
         {
           fprintf(stderr,
                   "Failed to allocate rpc buffer through file handles\n");
@@ -173,32 +377,34 @@ static int main_with_hsa(int argc, char **argv, file_handles *maybe_handles)
         }
 
       hsa_status_t rc;
-      rc = hsa_amd_memory_lock(client_inbox_ptr_host, slots_bytes,
-                               &kernel_agent, 1, &client_inbox_ptr_gpu);
+      rc = hsa_amd_memory_lock_to_pool(client_inbox_ptr_host, slots_bytes,
+                                       &kernel_agent, 1, maybe_pool, 0,
+                                       &client_inbox_ptr_gpu);
       if (rc != HSA_STATUS_SUCCESS)
         {
-          const char * wot;
+          const char *wot;
           hsa_status_string(rc, &wot);
           fprintf(stderr, "hsa lock failed %s\n", wot);
           exit(1);
         }
 
-      rc = hsa_amd_memory_lock(client_outbox_ptr_host, slots_bytes,
-                               &kernel_agent, 1, &client_outbox_ptr_gpu);
+      rc = hsa_amd_memory_lock_to_pool(client_outbox_ptr_host, slots_bytes,
+                                       &kernel_agent, 1, maybe_pool, 0,
+                                       &client_outbox_ptr_gpu);
       if (rc != HSA_STATUS_SUCCESS)
         {
-          const char * wot;
+          const char *wot;
           hsa_status_string(rc, &wot);
           fprintf(stderr, "hsa lock failed %s\n", wot);
           exit(1);
         }
 
-      rc = hsa_amd_memory_lock(shared_buffer_ptr_host,
-                               slots * sizeof(BufferElement), &kernel_agent, 1,
-                               &shared_buffer_ptr_gpu);
+      rc = hsa_amd_memory_lock_to_pool(
+          shared_buffer_ptr_host, slots * sizeof(BufferElement), &kernel_agent,
+          1, maybe_pool, 0, &shared_buffer_ptr_gpu);
       if (rc != HSA_STATUS_SUCCESS)
         {
-          const char * wot;
+          const char *wot;
           hsa_status_string(rc, &wot);
           fprintf(stderr, "hsa lock failed %s\n", wot);
           exit(1);
@@ -318,8 +524,8 @@ static int main_with_hsa(int argc, char **argv, file_handles *maybe_handles)
 
     void *rpc_pointers[4] = {
         gpu_locks.get(),
-        client_inbox.get(),
-        client_outbox.get(),
+        client_inbox_ptr_gpu,
+        client_outbox_ptr_gpu,
         shared_buffer_ptr_gpu,
     };
     memcpy(kernarg, &rpc_pointers, sizeof(rpc_pointers));
@@ -430,58 +636,77 @@ static int main_with_hsa(int argc, char **argv, file_handles *maybe_handles)
       // TODO: Polling is better than waiting here as it lets the initial
       // dispatch spawn a graph
 
-      if (maybe_handles == nullptr)
+      if ((LOCAL_FILE_HANDLES == 1) ||
+          (maybe_handles == nullptr))
         {
           // otherwise assume someone else is playing server
-      bool r =  // server.
-          rpc_handle(
-              &server,
-              [&](hostrpc::port_t, BufferElement *data) {
-                fprintf(stderr, "Direct Server got work to do:\n");
+          bool r =  // server.
+              rpc_handle(
+                  &server,
+                  [&](hostrpc::port_t, BufferElement *data) {
+                    fprintf(stderr, "Direct Server got work to do:\n");
 
-                for (unsigned i = 0; i < 64; i++)
-                  {
-                    auto ith = data->cacheline[i];
-                    uint64_t opcode = ith.element[0];
-                    switch (opcode)
+                    for (unsigned i = 0; i < 64; i++)
                       {
-                        case no_op:
-                        default:
-                          continue;
-                        case print_to_stderr:
-                          enum
+                        auto ith = data->cacheline[i];
+                        uint64_t opcode = ith.element[0];
+                        switch (opcode)
                           {
-                            w = 7 * 8
-                          };
-                          char buf[w];
-                          memcpy(buf, &ith.element[1], w);
-                          buf[w - 1] = '\0';
-                          fprintf(stderr, "%s", buf);
-                          break;
+                            case no_op:
+                            default:
+                              continue;
+                            case print_to_stderr:
+                              enum
+                              {
+                                w = 7 * 8
+                              };
+                              char buf[w];
+                              memcpy(buf, &ith.element[1], w);
+                              buf[w - 1] = '\0';
+                              fprintf(stderr, "%s", buf);
+                              break;
+                          }
                       }
-                  }
-              },
-              [&](hostrpc::port_t, BufferElement *data) {
-                fprintf(stderr, "Server cleaning up\n");
-                for (unsigned i = 0; i < 64; i++)
-                  {
-                    data->cacheline[i].element[0] = no_op;
-                  }
-              });
+                  },
+                  [&](hostrpc::port_t, BufferElement *data) {
+                    fprintf(stderr, "Server cleaning up\n");
+                    for (unsigned i = 0; i < 64; i++)
+                      {
+                        data->cacheline[i].element[0] = no_op;
+                      }
+                  });
 
-      if (r)
-        {
-          // did something
-          printf("server did something\n");
+          if (r)
+            {
+              // did something
+              printf("server did something\n");
+            }
+          else
+            {
+              // found no work, could sleep here
+              printf("Direct: no work found\n");
+              for (unsigned i = 0; i < 10000; i++) platform::sleep_briefly();
+            }
         }
       else
         {
-          // found no work, could sleep here
-          printf("no work found\n");
-          for (unsigned i = 0; i < 10000; i++) platform::sleep_briefly();
+          for (unsigned i = 0; i < slots_bytes; i++)
+            {
+              unsigned char byte = *(unsigned char *)client_inbox_ptr_host;
+              if (byte != 0)
+                {
+                  printf("client_inbox_host[%u] = %u\n", i, byte);
+                }
+            }
+          for (unsigned i = 0; i < slots_bytes; i++)
+            {
+              unsigned char byte = *(unsigned char *)client_outbox_ptr_host;
+              if (byte != 0)
+                {
+                  printf("client_outbox_host[%u] = %u\n", i, byte);
+                }
+            }
         }
-        }
-
     }
   while (hsa_signal_wait_acquire(completion_signal, HSA_SIGNAL_CONDITION_EQ, 0,
                                  5000 /*000000*/, HSA_WAIT_STATE_ACTIVE) != 0);
@@ -560,9 +785,25 @@ extern "C" int amdgcn_loader_file_handles_entry_point(int argc, char **argv)
   return main_with_hsa(argc - 1, &argv[1], &tmp);
 }
 
+
+
 __attribute__((weak)) extern "C" int main(int argc, char **argv)
 {
   hsa::init hsa_state;  // Need to destroy this last
+
+#if LOCAL_FILE_HANDLES
+
+  handles_t handles;
+  if (!handles.valid())
+    {
+      return 1;
+    }
+  printf("actually scratch that, use new ones:\n");
+
+  file_handles tmp{handles.server_outbox, handles.shared, handles.server_inbox};
+
+  return main_with_hsa(argc, argv, &tmp);
+#else
 
   int FD0, FD1, FD2;
   int rc = sscanf(argv[0], "(%d %d %d)", &FD0, &FD1, &FD2);
@@ -576,6 +817,9 @@ __attribute__((weak)) extern "C" int main(int argc, char **argv)
     {
       printf("Going to try to run with file handles %d %d %d\n", FD0, FD1, FD2);
       file_handles tmp{FD0, FD1, FD2};
+
       return main_with_hsa(argc - 1, &argv[1], &tmp);
     }
+
+#endif
 }
