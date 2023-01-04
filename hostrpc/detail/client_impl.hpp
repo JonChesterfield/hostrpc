@@ -115,6 +115,9 @@ struct client_impl
   HOSTRPC_ANNOTATE typed_port_t<0, 0> rpc_open_typed_port(
       T active_threads, uint32_t scan_from = 0)
   {
+    // Warning: If no other call opens ports in <1, 1> state, it's possible
+    // to end up with all ports in <0, 0> and hit exhaustion.
+    // This would be safer if it garbage collected <1,1> ports on the fly.
     constexpr unsigned I = 0;
     constexpr unsigned O = 0;
     return base::template rpc_open_typed_port<I, O, T>(active_threads,
