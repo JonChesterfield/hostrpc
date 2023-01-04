@@ -31,11 +31,11 @@ void __libc_write_stderr(const char* str) {
   
   auto active_threads =   platform::active_threads(); 
 
-  auto maybe = client.template rpc_open_typed_port(active_threads);
-    
-  auto send = client.template rpc_port_send(
-                                            active_threads, hostrpc::cxx::move(maybe),
-                                            [=](hostrpc::port_t, BufferElement *data) {
+  auto maybe =  client.rpc_open_typed_port<0,0>(active_threads);
+
+  auto send =
+  client.rpc_port_apply(active_threads, hostrpc::cxx::move(maybe), 
+  [=](hostrpc::port_t, BufferElement *data) {
                                               auto me = platform::get_lane_id();
                                               enum
                                               {
@@ -44,15 +44,16 @@ void __libc_write_stderr(const char* str) {
                                               data->cacheline[me].element[0] = print_to_stderr;
                                               
                                               __builtin_memcpy(&data->cacheline[me].element[1], str, w);
-                                            });
+  });
 
 
-  auto recv = client.template rpc_port_recv(active_threads, hostrpc::cxx::move(send),
-                                  [=](hostrpc::port_t, BufferElement *data) {});
+  auto wait = client.rpc_port_wait(active_threads,  hostrpc::cxx::move(send));
 
+  auto recv = client.rpc_port_apply(active_threads,  hostrpc::cxx::move(wait),
+                                    [=](hostrpc::port_t, BufferElement *data) {});
   
-  
-  client.template rpc_close_port(active_threads, hostrpc::cxx::move(recv));
+
+  client.rpc_close_port(active_threads, hostrpc::cxx::move(recv));
   
 }
 

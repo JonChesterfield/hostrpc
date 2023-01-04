@@ -80,20 +80,20 @@ __printf_print_start(T *client, const char *fmt)
   // Otherwise need to report failure via the return value from printf
 
   typename T::template typed_port_t<0, 0> tport =
-      client->template rpc_open_typed_port(active_threads);
+    client->template rpc_open_typed_port<0,0>(active_threads);
 
   __printf_print_start_t inst;
   send_by_copy<__printf_print_start_t> f(&inst);
 
   typename T::template typed_port_t<0, 1> tport2 =
-      client->rpc_port_send(active_threads, hostrpc::cxx::move(tport), f);
+      client->rpc_port_apply(active_threads, hostrpc::cxx::move(tport), f);
 
   typename T::template typed_port_t<1, 1> tport3 =
       client->rpc_port_wait(active_threads, hostrpc::cxx::move(tport2));
 
   typename T::template typed_port_t<1, 0> tport4 =
-      client->rpc_port_discard_result(active_threads,
-                                      hostrpc::cxx::move(tport3));
+      client->rpc_port_apply(active_threads,
+                             hostrpc::cxx::move(tport3), [](hostrpc::port_t, hostrpc::page_t *) {});
 
   typename T::template typed_port_t<0, 0> tport5 =
       client->rpc_port_wait(active_threads, hostrpc::cxx::move(tport4));
@@ -113,13 +113,14 @@ __PRINTF_API_INTERNAL int __printf_print_end(
   __printf_print_end_t inst;
   send_by_copy<__printf_print_end_t> f(&inst);
   auto port1 =
-      client->rpc_port_send(active_threads, hostrpc::cxx::move(port0), f);
+      client->rpc_port_apply(active_threads, hostrpc::cxx::move(port0), f);
 
-  auto port2 = client->rpc_port_wait_for_result(active_threads,
-                                                hostrpc::cxx::move(port1));
+  auto port2 = client->rpc_port_wait(active_threads,
+                                     hostrpc::cxx::move(port1));
 
-  auto port3 = client->rpc_port_discard_result(active_threads,
-                                               hostrpc::cxx::move(port2));
+  auto port3 = client->rpc_port_apply(active_threads,
+                                      hostrpc::cxx::move(port2),
+                                      [](hostrpc::port_t, hostrpc::page_t *) {});
 
   client->rpc_close_port(active_threads, hostrpc::cxx::move(port3));
 
@@ -136,13 +137,21 @@ __printf_pass_element_uint64(T *client,
   __printf_pass_element_scalar_t inst(hostrpc_printf_pass_element_uint64, v);
   send_by_copy<__printf_pass_element_scalar_t> f(&inst);
   typename T::template typed_port_t<0, 1> port1 =
-      client->rpc_port_send(active_threads, hostrpc::cxx::move(port0), f);
+      client->rpc_port_apply(active_threads, hostrpc::cxx::move(port0), f);
 
-  typename T::template typed_port_t<0, 0> port2 =
+  typename T::template typed_port_t<1, 1> port2 =
+    client->rpc_port_wait(active_threads, hostrpc::cxx::move(port1));
+
+  typename T::template typed_port_t<1, 0> port3 =
+    client->rpc_port_apply(active_threads,
+                           hostrpc::cxx::move(port2),
+                           [](hostrpc::port_t, hostrpc::page_t *) {});
+  
+  typename T::template typed_port_t<0, 0> port4 =
       client->rpc_port_wait_until_available(active_threads,
-                                            hostrpc::cxx::move(port1));
+                                            hostrpc::cxx::move(port3));
 
-  return hostrpc::cxx::move(port2);
+  return hostrpc::cxx::move(port4);
 }
 
 template <typename T>
@@ -155,13 +164,21 @@ __printf_pass_element_double(T *client,
   __printf_pass_element_scalar_t inst(hostrpc_printf_pass_element_double, v);
   send_by_copy<__printf_pass_element_scalar_t> f(&inst);
   typename T::template typed_port_t<0, 1> port1 =
-      client->rpc_port_send(active_threads, hostrpc::cxx::move(port0), f);
+      client->rpc_port_apply(active_threads, hostrpc::cxx::move(port0), f);
 
-  typename T::template typed_port_t<0, 0> port2 =
-      client->rpc_port_wait_until_available(active_threads,
-                                            hostrpc::cxx::move(port1));
+  typename T::template typed_port_t<1, 1> port2 =
+    client->rpc_port_wait(active_threads, hostrpc::cxx::move(port1));
 
-  return hostrpc::cxx::move(port2);
+  typename T::template typed_port_t<1, 0> port3 =
+    client->rpc_port_apply(active_threads,
+                           hostrpc::cxx::move(port2),
+                           [](hostrpc::port_t, hostrpc::page_t *) {});
+  
+  typename T::template typed_port_t<0, 0> port4 =
+    client->rpc_port_wait_until_available(active_threads,
+                                            hostrpc::cxx::move(port3));
+
+  return hostrpc::cxx::move(port4);
 }
 
 template <typename T>
@@ -180,11 +197,19 @@ __printf_pass_element_void(T *client,
   typename T::template typed_port_t<0, 1> port1 =
       client->rpc_port_send(active_threads, hostrpc::cxx::move(port0), f);
 
-  typename T::template typed_port_t<0, 0> port2 =
-      client->rpc_port_wait_until_available(active_threads,
-                                            hostrpc::cxx::move(port1));
+    typename T::template typed_port_t<1, 1> port2 =
+    client->rpc_port_wait(active_threads, hostrpc::cxx::move(port1));
 
-  return hostrpc::cxx::move(port2);
+  typename T::template typed_port_t<1, 0> port3 =
+    client->rpc_port_apply(active_threads,
+                           hostrpc::cxx::move(port2),
+                           [](hostrpc::port_t, hostrpc::page_t *) {});
+  
+  typename T::template typed_port_t<0, 0> port4 =
+    client->rpc_port_wait_until_available(active_threads,
+                                            hostrpc::cxx::move(port3));
+
+  return hostrpc::cxx::move(port4);
 }
 
 template <typename T>

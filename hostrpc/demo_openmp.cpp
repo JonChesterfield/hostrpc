@@ -69,9 +69,9 @@ bool write_to_stderr(const char *str)
       platform::active_threads();  // warning, not valid on volta
   // uint64_t L = __printf_strlen(str);
 
-  if (auto maybe = client.template rpc_try_open_typed_port(active_threads))
+  if (auto maybe = client.rpc_try_open_typed_port<0,0>(active_threads))
     {
-      auto send = client.template rpc_port_send(
+      auto send = client.rpc_port_apply(
           active_threads, maybe.value(),
           [=](hostrpc::port_t, BufferElement *data) {
             auto me = platform::get_lane_id();
@@ -86,10 +86,11 @@ bool write_to_stderr(const char *str)
             __builtin_memcpy(&data->cacheline[me].element[1], str, width);
           });
 
+      auto wait = client.rpc_port_wait(active_threads,  hostrpc::cxx::move(send));
 
-      auto recv = client.template rpc_port_recv(active_threads, hostrpc::cxx::move(send), [](hostrpc::port_t, BufferElement*) {});
+      auto recv = client.rpc_port_apply(active_threads, hostrpc::cxx::move(wait), [](hostrpc::port_t, BufferElement*) {});
 
-      client.template rpc_close_port(active_threads, hostrpc::cxx::move(recv));
+      client.rpc_close_port(active_threads, hostrpc::cxx::move(recv));
 
       return true;
     }

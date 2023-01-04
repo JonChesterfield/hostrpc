@@ -324,7 +324,7 @@ TEST_CASE("persistent_kernel")
                 t->element[0] * t->element[1] * t->element[2] * t->element[3];
           }
 
-        bool r = p.client.rpc_invoke(f, u);
+        bool r = rpc_invoke(&p.client, f, u);
 
         for (unsigned j = 0; j < 64; j++)
           {

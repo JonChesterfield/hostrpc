@@ -82,11 +82,11 @@ static void hostcall_impl(uint64_t data[8])
     {
       if (C)
         {
-          success = c->rpc_invoke(f, u);
+          success = rpc_invoke(&c, f, u);
         }
       else
         {
-          success = c->rpc_invoke(f);
+          success = rpc_invoke(&c, f);
         }
     }
 }

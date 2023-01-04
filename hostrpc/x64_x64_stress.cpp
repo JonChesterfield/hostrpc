@@ -106,7 +106,7 @@ uint32_t stress_pool_client::run(uint32_t state)
   init_page(&scratch, id);
   init_page(&expect, id + 1);
 
-  if (p.client.rpc_invoke(fill, use))
+  if (rpc_invoke(& p.client, fill, use))
     {
       if (__builtin_memcmp(&scratch, &expect, sizeof(hostrpc::page_t)) != 0)
         {

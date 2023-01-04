@@ -297,7 +297,7 @@ struct client_server_pair_t
   using AllocLocal = typename Allocators::template local_allocator_t<64>;
   using AllocRemote = typename Allocators::template remote_allocator_t<64>;
 
-  using client_type = client<BufferElement, Word, SZ, client_counter>;
+  using client_type = client<BufferElement, Word, SZ>;
   using server_type = server<BufferElement, Word, SZ>;
 
   using storage_type = allocator::store_impl<AllocBuffer, AllocInboxOutbox,

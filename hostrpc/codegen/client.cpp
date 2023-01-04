@@ -141,7 +141,7 @@ extern "C" HOSTRPC_ANNOTATE void reference(client_type& c)
   };
 
   // opencl deduces the wrong type for fill line (__private qualifies it)
-  c.rpc_invoke(hostrpc::make_apply<fill_line>(fill_line{}));
+  rpc_invoke(&c, hostrpc::make_apply<fill_line>(fill_line{}));
 }
 namespace hostrpc
 {
@@ -170,5 +170,5 @@ extern "C" HOSTRPC_ANNOTATE void pointer(client_type& c)
   // opencl deduces the wrong type for fill line (__private qualifies it)
   auto a = hostrpc::make_apply<fill_line>(fill_line{});
 
-  c.rpc_invoke(hostrpc::cxx::move(a));
+  rpc_invoke(&c, hostrpc::cxx::move(a));
 }

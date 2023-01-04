@@ -36,25 +36,10 @@ struct use_nop
   use_nop(use_nop &&) = delete;
 };
 
-enum class client_state : uint8_t
-{
-  // inbox outbox active
-  idle_client = 0b000,
-  active_thread = 0b001,
-  work_available = 0b011,
-  async_work_available = 0b010,
-  done_pending_server_gc =
-      0b100,  // waiting for server to garbage collect, no local thread
-  garbage_with_thread = 0b101,  // transient state, 0b100 with local thread
-  done_pending_client_gc =
-      0b110,                 // created work, result available, no continuation
-  result_available = 0b111,  // thread waiting
-};
-
 // if inbox is set and outbox not, we are waiting for the server to collect
 // garbage that is, can't claim the slot for a new thread is that a sufficient
 // criteria for the slot to be awaiting gc?
-
+#if 0
 template <typename BufferElementT, typename WordT, typename SZT,
           typename Counter = counters::client>
 struct client_impl
@@ -234,6 +219,7 @@ struct client_impl
   }
 };
 
+
 template <typename BufferElementT, typename WordT, typename SZT,
           typename Counter = counters::client>
 struct client : public client_impl<BufferElementT, WordT, SZT, Counter>
@@ -349,6 +335,97 @@ struct client : public client_impl<BufferElementT, WordT, SZT, Counter>
                       cxx::forward<Use>(u));
   }
 };
+
+
+#endif
+
+template <typename BufferElementT, typename WordT, typename SZT>
+using client =
+    state_machine_impl<BufferElementT, WordT, SZT, counters::client_nop, false>;
+
+
+  // Return after calling use(), i.e. waits for server
+template <typename BufferElementT, typename WordT, typename SZT, typename T, typename Fill, typename Use>
+  HOSTRPC_ANNOTATE bool rpc_invoke(client<BufferElementT, WordT, SZT>* client,T active_threads, Fill &&fill,
+                                   Use &&use) noexcept
+  {
+    auto ApplyFill = hostrpc::make_apply<Fill>(cxx::forward<Fill>(fill));
+    auto ApplyUse = hostrpc::make_apply<Use>(cxx::forward<Use>(use));
+
+    if (auto maybe = client-> template rpc_try_open_typed_port(active_threads))
+      {
+        auto send = client-> template rpc_port_send(active_threads, maybe.value(),
+                                        cxx::move(ApplyFill));
+        auto recv = client-> template rpc_port_recv(active_threads, cxx::move(send),
+                                        cxx::move(ApplyUse));
+        client-> template rpc_close_port(active_threads, cxx::move(recv));
+        return true;
+      }
+    else
+      {
+        return false;
+      }
+  }
+
+  template <typename BufferElementT, typename WordT, typename SZT, typename T, typename Fill>
+  HOSTRPC_ANNOTATE bool rpc_invoke_async_noapply(client<BufferElementT, WordT, SZT>* client,T active_threads, Fill &&fill) noexcept
+  {
+    if (auto maybe = client-> template rpc_try_open_typed_port(active_threads))
+      {
+        auto send = client-> template rpc_port_send(active_threads, maybe.value(),
+                                        cxx::move(fill));
+        client-> template rpc_close_port(active_threads, cxx::move(send));
+        return true;
+      }
+    else
+      {
+        return false;
+      }
+  }
+
+  
+  template <typename BufferElementT, typename WordT, typename SZT, typename T, typename Fill, typename Use>
+  HOSTRPC_ANNOTATE bool rpc_invoke_noapply(client<BufferElementT, WordT, SZT>* client,T active_threads, Fill &&fill,
+                                   Use &&use) noexcept
+  {
+
+    if (auto maybe = client-> template rpc_try_open_typed_port(active_threads))
+      {
+        auto send = client-> template rpc_port_send(active_threads, maybe.value(),
+                                        cxx::move(fill));
+        auto recv = client-> template rpc_port_recv(active_threads, cxx::move(send),
+                                        cxx::move(use));
+        client-> template rpc_close_port(active_threads, cxx::move(recv));
+        return true;
+      }
+    else
+      {
+        return false;
+      }
+  }
+
+  
+  // TODO: Probably want one of these convenience functions for each rpc_invoke,
+  // but perhaps not on volta
+
+  // Return after calling fill(), i.e. does not wait for server
+  template <typename BufferElementT, typename WordT, typename SZT,typename Fill>
+  HOSTRPC_ANNOTATE bool rpc_invoke(client<BufferElementT, WordT, SZT>* client,Fill &&fill) noexcept
+  {
+    auto active_threads = platform::active_threads();
+    return client->rpc_invoke_async(active_threads, cxx::forward<Fill>(fill));
+  }
+
+  template <typename BufferElementT, typename WordT, typename SZT,typename Fill, typename Use>
+  HOSTRPC_ANNOTATE bool rpc_invoke(client<BufferElementT, WordT, SZT>* client,Fill &&f, Use &&u) noexcept
+  {
+    auto active_threads = platform::active_threads();
+    return client->rpc_invoke(active_threads, cxx::forward<Fill>(f),
+                      cxx::forward<Use>(u));
+  }
+
+
+  
 
 }  // namespace hostrpc
 
