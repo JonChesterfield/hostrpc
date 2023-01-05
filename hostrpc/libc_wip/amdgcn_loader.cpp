@@ -73,6 +73,111 @@ static void callbackQueue(hsa_status_t status, hsa_queue_t *source, void *)
     }
 }
 
+hsa_amd_memory_pool_t find_fine_grain_pool_or_exit()
+{
+  hsa_agent_t cpu_agent;
+  if (HSA_STATUS_INFO_BREAK !=
+      hsa::iterate_agents([&](hsa_agent_t agent) -> hsa_status_t {
+        auto features = hsa::agent_get_info_feature(agent);
+        if (!(features & HSA_AGENT_FEATURE_KERNEL_DISPATCH))
+          {
+            cpu_agent = agent;
+            return HSA_STATUS_INFO_BREAK;
+          }
+        return HSA_STATUS_SUCCESS;
+      }))
+    {
+      fprintf(stderr, "Failed to find a cpu agent\n");
+      exit(1);
+    }
+
+  hsa_amd_memory_pool_t fine_grain_pool;
+  if (HSA_STATUS_INFO_BREAK !=
+      hsa::iterate_memory_pools(
+          cpu_agent, [&](hsa_amd_memory_pool_t pool) -> hsa_status_t {
+            hsa_amd_segment_t segment;
+
+
+            if (hsa_status_t rc = hsa_amd_memory_pool_get_info(
+                                                  pool, HSA_AMD_MEMORY_POOL_INFO_SEGMENT, &segment))
+              {
+                return rc;
+              }
+
+            if (segment != HSA_AMD_SEGMENT_GLOBAL)
+              {
+                return HSA_STATUS_SUCCESS;
+              }
+
+            uint32_t val;
+            if (hsa_status_t rc = hsa_amd_memory_pool_get_info(
+                                                  pool, HSA_AMD_MEMORY_POOL_INFO_GLOBAL_FLAGS, &val))
+              {
+                return rc;
+              }
+
+            printf("Found a pool, flags %u\n", val);
+
+            if (val & HSA_AMD_MEMORY_POOL_GLOBAL_FLAG_FINE_GRAINED) {
+              // This one is acceptable
+              fine_grain_pool = pool;
+              return HSA_STATUS_INFO_BREAK;
+            }
+            
+            return HSA_STATUS_SUCCESS;
+          }))
+    {
+      fprintf(stderr, "Failed to find a memory pool agent\n");
+      exit(1);
+    }
+
+  return fine_grain_pool;
+
+}
+
+struct mmapped_pair
+{
+  mmapped_pair(hsa_agent_t kernel_agent, size_t N)
+  {
+    host = mmap(NULL, N, PROT_READ|PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS /*| MAP_LOCKED*/, -1, 0);
+    if (host == MAP_FAILED) {
+      return;
+    }
+
+    hsa_amd_memory_pool_t fine_grain_pool = find_fine_grain_pool_or_exit(); // cache it?
+
+  hsa_agent_t both[] = {kernel_agent,
+                        // cpu_agent, // doesn't seem to need this
+  };
+
+    if (hsa_status_t rc = hsa_amd_memory_lock_to_pool(host, N, both, sizeof(both)/sizeof(both[0]), fine_grain_pool, 0, &gpu))
+      {
+        munmap(host, N);
+        host = MAP_FAILED;
+        return;
+      }
+
+    
+    valid = true;
+  }
+
+  ~mmapped_pair()
+  {
+    if (!valid) return;
+
+    hsa_status_t rc = hsa_amd_memory_unlock(host);
+    if (rc != HSA_STATUS_SUCCESS) { /* should be unreachable */ return; }
+
+    munmap(host, N);
+  }
+
+  size_t N;
+  bool valid = false;
+  void * host = nullptr;
+  void * gpu = nullptr;
+
+};
+
 static int main_with_hsa(int argc, char **argv)
 {
   enum {number_gpu_threads = 1};
@@ -121,21 +226,62 @@ static int main_with_hsa(int argc, char **argv)
   char **app_argv = &argv[1];
 
 
-
   auto gpu_locks = hsa::allocate(coarse_grained_region, slots_bytes);
-
   void *host_locks = aligned_alloc(64, slots_bytes); // todo: stop leaking this
 
-  auto client_inbox = hsa::allocate(fine_grained_region, slots_bytes);
-  auto client_outbox = hsa::allocate(fine_grained_region, slots_bytes);
-  auto shared_buffer = hsa::allocate(fine_grained_region, slots * sizeof(BufferElement));
+
+#define USE_MMAP 1
+  
+#if ! (USE_MMAP)
+  auto client_inbox_store = hsa::allocate(fine_grained_region, slots_bytes);
+  auto client_outbox_store = hsa::allocate(fine_grained_region, slots_bytes);
+
+  void *client_inbox_host = client_inbox_store.get();
+  void *client_inbox_gpu = client_inbox_store.get();
+
+  void *client_outbox_host = client_outbox_store.get();
+  void *client_outbox_gpu = client_outbox_store.get();
+  
+  auto shared_buffer_store = hsa::allocate(fine_grained_region, slots * sizeof(BufferElement));
+  void *shared_buffer_host = shared_buffer_store.get();
+  void *shared_buffer_gpu = shared_buffer_store.get();
+
+#else
+  mmapped_pair client_inbox_store (kernel_agent, slots_bytes);
+  if (!client_inbox_store.valid) {
     
+        fprintf(stderr, "Failed to mmap rpc buffer\n");
+        exit(1);
+    }
+  void *client_inbox_gpu = client_inbox_store.gpu;
+  void *client_inbox_host = client_inbox_store.host;
+
+  mmapped_pair client_outbox_store (kernel_agent, slots_bytes);
+  if (!client_outbox_store.valid) {
+    
+        fprintf(stderr, "Failed to mmap rpc buffer\n");
+        exit(1);
+    }
+  void *client_outbox_gpu = client_outbox_store.gpu;
+  void *client_outbox_host = client_outbox_store.host;
+
+  mmapped_pair shared_buffer_store (kernel_agent, slots * sizeof(BufferElement));
+  if (!shared_buffer_store.valid) {
+    
+        fprintf(stderr, "Failed to mmap rpc buffer\n");
+        exit(1);
+    }
+  void *shared_buffer_gpu = shared_buffer_store.gpu;
+  void *shared_buffer_host = shared_buffer_store.host;
+
+#endif  
+  
 
 
   if (!gpu_locks ||
-      !client_inbox ||
-      !client_outbox ||
-      !shared_buffer)
+      !client_inbox_host ||
+      !client_outbox_host ||
+      !shared_buffer_host)
     {
         fprintf(stderr, "Failed to allocate rpc buffer\n");
         exit(1);
@@ -144,20 +290,20 @@ static int main_with_hsa(int argc, char **argv)
 
   // they're probably zero anyway. todo: check the hsa docs for the gpu one, it's more annoying to zero
   memset(host_locks, 0, slots_bytes);
-  memset(client_inbox.get(), 0, slots_bytes);
-  memset(client_outbox.get(), 0, slots_bytes);
-  memset(shared_buffer.get(), 0, slots_bytes * sizeof(BufferElement));
+  memset(client_inbox_host, 0, slots_bytes);
+  memset(client_outbox_host, 0, slots_bytes);
+  memset(shared_buffer_host, 0, slots_bytes * sizeof(BufferElement));
 
 
   server = __libc_rpc_server(
       {},
       hostrpc::careful_cast_to_bitmap<__libc_rpc_server::lock_t>(host_locks,
                                                            slots_words),
-      hostrpc::careful_cast_to_bitmap<__libc_rpc_server::inbox_t>(client_outbox.get(),
+      hostrpc::careful_cast_to_bitmap<__libc_rpc_server::inbox_t>(client_outbox_host,
                                                             slots_words),
-      hostrpc::careful_cast_to_bitmap<__libc_rpc_server::outbox_t>(client_inbox.get(),
+      hostrpc::careful_cast_to_bitmap<__libc_rpc_server::outbox_t>(client_inbox_host,
                                                              slots_words),
-      hostrpc::careful_array_cast<BufferElement>(shared_buffer.get(), slots));
+      hostrpc::careful_array_cast<BufferElement>(shared_buffer_host, slots));
   
   // arguments must be in kernarg memory, which is constant
   // opencl doesn't accept char** as a type and returns void
@@ -254,9 +400,9 @@ static int main_with_hsa(int argc, char **argv)
 
     void *rpc_pointers[4] = {
                              gpu_locks.get(),
-                             client_inbox.get(),
-                             client_outbox.get(),
-                             shared_buffer.get(),
+                             client_inbox_gpu,
+                             client_outbox_gpu,
+                             shared_buffer_gpu,
     };
     memcpy(kernarg, &rpc_pointers, sizeof(rpc_pointers));
     kernarg += sizeof(rpc_pointers);
@@ -389,6 +535,8 @@ static int main_with_hsa(int argc, char **argv)
                     break;
                   }
               }
+
+            fprintf(stderr, "\n");
           },
           [&](hostrpc::port_t, BufferElement *data) {
             fprintf(stderr, "Server cleaning up\n");
