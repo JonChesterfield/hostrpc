@@ -137,9 +137,20 @@ hsa_amd_memory_pool_t find_fine_grain_pool_or_exit()
 
 struct mmapped_pair
 {
-  mmapped_pair(hsa_agent_t kernel_agent, size_t N)
+  mmapped_pair(hsa_agent_t kernel_agent, size_t N, int * maybe_handle)
   {
-    host = mmap(NULL, N, PROT_READ|PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS /*| MAP_LOCKED*/, -1, 0);
+
+    // Locking is optional
+    // Write access is not, memory_lock fails with only PROT_READ set
+    if (maybe_handle)
+      {
+        host = mmap(NULL, N, PROT_READ | PROT_WRITE, MAP_SHARED |  MAP_LOCKED, *maybe_handle, 0);
+      }    
+    else
+      {
+        host = mmap(NULL, N, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_LOCKED, -1, 0);
+
+      }
     if (host == MAP_FAILED) {
       return;
     }
@@ -152,11 +163,10 @@ struct mmapped_pair
 
     if (hsa_status_t rc = hsa_amd_memory_lock_to_pool(host, N, both, sizeof(both)/sizeof(both[0]), fine_grain_pool, 0, &gpu))
       {
-        munmap(host, N);
+        munmap(host, N);        
         host = MAP_FAILED;
         return;
       }
-
     
     valid = true;
   }
@@ -178,7 +188,14 @@ struct mmapped_pair
 
 };
 
-static int main_with_hsa(int argc, char **argv)
+struct file_handles
+{
+  int client_inbox;
+  int shared;
+  int client_outbox;
+};
+
+static int main_with_hsa(int argc, char **argv, file_handles *maybe_handles)
 {
   enum {number_gpu_threads = 1};
   
@@ -206,7 +223,7 @@ static int main_with_hsa(int argc, char **argv)
     }
 
   printf("Loaded executable\n");
-  
+
   // probably need to populate some of the implicit args for intrinsics to work
   hsa_region_t kernarg_region = hsa::region_kernarg(kernel_agent);
   hsa_region_t fine_grained_region = hsa::region_fine_grained(kernel_agent);
@@ -225,12 +242,19 @@ static int main_with_hsa(int argc, char **argv)
   int app_argc = argc - 1;
   char **app_argv = &argv[1];
 
-
   auto gpu_locks = hsa::allocate(coarse_grained_region, slots_bytes);
   void *host_locks = aligned_alloc(64, slots_bytes); // todo: stop leaking this
 
 
 #define USE_MMAP 1
+
+  if (maybe_handles != nullptr)
+    {
+#if ! (USE_MMAP)
+      fprintf(stderr, "Can't use file handles with hsa::allocate\n");
+      exit(1);
+#endif
+    }
   
 #if ! (USE_MMAP)
   auto client_inbox_store = hsa::allocate(fine_grained_region, slots_bytes);
@@ -247,7 +271,7 @@ static int main_with_hsa(int argc, char **argv)
   void *shared_buffer_gpu = shared_buffer_store.get();
 
 #else
-  mmapped_pair client_inbox_store (kernel_agent, slots_bytes);
+  mmapped_pair client_inbox_store (kernel_agent, slots_bytes, maybe_handles ? &maybe_handles->client_inbox : nullptr);
   if (!client_inbox_store.valid) {
     
         fprintf(stderr, "Failed to mmap rpc buffer\n");
@@ -256,7 +280,7 @@ static int main_with_hsa(int argc, char **argv)
   void *client_inbox_gpu = client_inbox_store.gpu;
   void *client_inbox_host = client_inbox_store.host;
 
-  mmapped_pair client_outbox_store (kernel_agent, slots_bytes);
+  mmapped_pair client_outbox_store (kernel_agent, slots_bytes,  maybe_handles ? &maybe_handles->client_outbox : nullptr);
   if (!client_outbox_store.valid) {
     
         fprintf(stderr, "Failed to mmap rpc buffer\n");
@@ -265,7 +289,7 @@ static int main_with_hsa(int argc, char **argv)
   void *client_outbox_gpu = client_outbox_store.gpu;
   void *client_outbox_host = client_outbox_store.host;
 
-  mmapped_pair shared_buffer_store (kernel_agent, slots * sizeof(BufferElement));
+  mmapped_pair shared_buffer_store (kernel_agent, slots * sizeof(BufferElement), maybe_handles ? &maybe_handles->shared : nullptr);
   if (!shared_buffer_store.valid) {
     
         fprintf(stderr, "Failed to mmap rpc buffer\n");
@@ -318,7 +342,7 @@ static int main_with_hsa(int argc, char **argv)
   // don't match those I see from an opencl kernel. The first 24 bytes are
   // consistently used for offset_x, offset_y, offset_z. Zero those.
   // opencl and atmi both think the implicit structure is 80 long.
-  
+
   size_t implicit_offset_size = 24;
   size_t extra_implicit_size = 80 - implicit_offset_size;
 
@@ -461,7 +485,7 @@ static int main_with_hsa(int argc, char **argv)
 
   packet->workgroup_size_x = number_gpu_threads; // assuming single warp for now
   packet->grid_size_x = packet->workgroup_size_x;
-   
+
   uint64_t kernel_address = find_entry_address(ex);
   packet->kernel_object = kernel_address;
 
@@ -511,7 +535,8 @@ static int main_with_hsa(int argc, char **argv)
       // TODO: Polling is better than waiting here as it lets the initial
       // dispatch spawn a graph
 
-      
+      if (maybe_handles != nullptr) { continue; }
+
       bool r = //server.
         rpc_handle(&server,
           [&](hostrpc::port_t, BufferElement *data) {
@@ -609,10 +634,27 @@ extern "C" int amdgcn_loader_main(int argc, char **argv)
 {
   // valgrind thinks this is leaking slightly
   hsa::init hsa_state;  // Need to destroy this last
-  return main_with_hsa(argc, argv);
+  return main_with_hsa(argc, argv, nullptr);
 }
 
 __attribute__((weak)) extern "C" int main(int argc, char **argv)
 {
-  return amdgcn_loader_main(argc, argv);
+  hsa::init hsa_state;  // Need to destroy this last
+
+  int FD0, FD1, FD2;
+  int rc = sscanf(argv[0], "(%d %d %d)", &FD0, &FD1, &FD2);
+  if (rc != 3)
+    {
+      printf("failed to sscanf\n");
+      // probably didn't pass file handles in argv[0] then
+      return main_with_hsa(argc, argv, nullptr);
+    }
+  else
+    {
+      printf("Going to try to run with file handles %d %d %d\n", FD0, FD1, FD2);
+      file_handles tmp{FD0, FD1, FD2};
+
+      return main_with_hsa(argc - 1, &argv[1], &tmp);
+    }
+
 }
