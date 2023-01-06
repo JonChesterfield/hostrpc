@@ -14,7 +14,7 @@ namespace hostrpc
 // invariant during program execution I think it's worth tolerating this
 // anyway. Going to lead to a switch somewhere.
 
-// Need a bitmap which sets an element by CAS
+// Need a bitmap which sets an element by CAS or fetch_or
 // Also need to support find-some-bit-set
 
 // Uses:
@@ -280,10 +280,6 @@ struct device_local : base<true, true, true>
 template <typename Word, size_t scope, typename Prop>
 struct slot_bitmap;
 
-template <typename Word>
-using message_bitmap = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
-                                   properties::fine_grain<Word>>;
-
 template <typename WordT, size_t scope, typename PropT>
 struct slot_bitmap
 {
@@ -314,7 +310,7 @@ struct slot_bitmap
   HOSTRPC_ANNOTATE slot_bitmap(Ty *d) : underlying(d)
   {
     // can't necessarily write to a from this object. if the memory is on
-    // the gpu, but this instance is being constructed on the gpu first,
+    // a gpu, but this instance is being constructed on a cpu first,
     // then direct writes will fail. However, the data does need to be
     // zeroed for the bitmap to work.
   }
