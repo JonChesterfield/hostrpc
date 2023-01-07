@@ -190,12 +190,6 @@ HOSTRPC_ANNOTATE T atomic_fetch_or(HOSTRPC_ATOMIC(T) *, T);
 template <typename T, size_t memorder, size_t scope>
 HOSTRPC_ANNOTATE T atomic_fetch_xor(HOSTRPC_ATOMIC(T) *, T);
 
-// single memorder used for success and failure cases
-template <typename T, size_t memorder, size_t scope>
-HOSTRPC_ANNOTATE bool atomic_compare_exchange_weak(HOSTRPC_ATOMIC(T) *,
-                                                   T expected, T desired,
-                                                   T *loaded);
-
 }  // namespace platform
 
 // This is exciting. Nvptx doesn't implement atomic, so one must use volatile +
@@ -469,18 +463,6 @@ HOSTRPC_ANNOTATE T atomic_fetch_xor(
   return __atomic_fetch_xor(addr, value, memorder);
 }
 
-template <typename T, size_t memorder, size_t scope>
-HOSTRPC_ANNOTATE bool atomic_compare_exchange_weak(
-    HOSTRPC_ATOMIC(T) * addr,
-    T expected, T desired, T *loaded)
-{
-  static_assert(
-      platform::detail::atomic_params_readmodifywrite<memorder, scope>(), "");
-  bool r = __atomic_compare_exchange(addr, &expected, &desired, false,
-                                                 memorder, memorder);
-  *loaded = expected;
-  return r;
-}
 
 }
   
@@ -526,9 +508,7 @@ namespace detail
   HOSTRPC_ANNOTATE TYPE atomic_fetch_or_relaxed(HOSTRPC_ATOMIC(TYPE) * addr,  \
                                                 TYPE value);                  \
   HOSTRPC_ANNOTATE TYPE atomic_fetch_xor_relaxed(HOSTRPC_ATOMIC(TYPE) * addr, \
-                                                 TYPE value);                 \
-  HOSTRPC_ANNOTATE bool atomic_compare_exchange_weak_relaxed(                 \
-      HOSTRPC_ATOMIC(TYPE) * addr, TYPE expected, TYPE desired, TYPE * loaded)
+                                                 TYPE value);                 
 
 HOSTRPC_STAMP_MEMORY(uint8_t);
 HOSTRPC_STAMP_MEMORY(uint16_t);
@@ -633,29 +613,6 @@ HOSTRPC_ANNOTATE T atomic_fetch_xor(HOSTRPC_ATOMIC(T) * addr, T value)
                                  scope>(addr, value);
 }
 
-template <typename T, size_t memorder, size_t scope>
-HOSTRPC_ANNOTATE bool atomic_compare_exchange_weak(HOSTRPC_ATOMIC(T) * addr,
-                                                   T expected, T desired,
-                                                   T *loaded)
-{
-  static_assert(
-      platform::detail::atomic_params_readmodifywrite<memorder, scope>(), "");
-
-  if (memorder == __ATOMIC_ACQ_REL)
-    {
-      fence_release();
-    }
-
-  bool res = detail::atomic_compare_exchange_weak_relaxed(addr, expected,
-                                                          desired, loaded);
-
-  if (memorder == __ATOMIC_ACQ_REL)
-    {
-      fence_acquire();
-    }
-
-  return res;
-}
 
 }  // namespace nvptx
 
@@ -735,15 +692,6 @@ HOSTRPC_ANNOTATE inline T atomic_fetch_xor(HOSTRPC_ATOMIC(T) * a, T v)
   return HOSTRPC_IMPL_NS::atomic_fetch_xor<T, memorder, scope>(a, v);
 }
 
-// single memorder used for success and failure cases
-template <typename T, size_t memorder, size_t scope>
-HOSTRPC_ANNOTATE inline bool atomic_compare_exchange_weak(HOSTRPC_ATOMIC(T) * a,
-                                                          T expected, T desired,
-                                                          T *loaded)
-{
-  return HOSTRPC_IMPL_NS::atomic_compare_exchange_weak<T, memorder, scope>(
-      a, expected, desired, loaded);
-}
 
 }  // namespace platform
 

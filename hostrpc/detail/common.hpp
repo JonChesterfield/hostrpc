@@ -83,18 +83,6 @@ HOSTRPC_ANNOTATE inline uint64_t clearnthbit(uint64_t x, uint32_t n)
   return x & ~(UINT64_C(1) << n);
 }
 
-HOSTRPC_ANNOTATE inline uint32_t togglenthbit(uint32_t x, uint32_t n)
-{
-  assert(n < 32);
-  return x ^ ~(UINT32_C(1) << n);
-}
-
-HOSTRPC_ANNOTATE inline uint64_t togglenthbit(uint64_t x, uint32_t n)
-{
-  assert(n < 64);
-  return x ^ ~(UINT64_C(1) << n);
-}
-
 HOSTRPC_ANNOTATE inline uint32_t ctz(uint32_t value)
 {
   if (value == 0)
@@ -216,72 +204,38 @@ HOSTRPC_ANNOTATE inline uint64_t setbitsrange64(uint32_t l, uint32_t h)
 }  // namespace
 }  // namespace detail
 
-namespace properties
-{
-// atomic operations on fine grained memory are limited to those that the
-// pci-e bus supports. There is no cache involved to mask this - fetch_and on
-// the gpu will silently do the wrong thing if the pci-e bus doesn't support
-// it. That means using cas (or swap, or faa) to communicate or buffering. The
-// fetch_and works fine on coarse grained memory, but multiple waves will
-// clobber each other, leaving the flag flickering from the other device
-// perspective. Can downgrade to swap fairly easily, which will be roughly as
-// expensive as a load & store.
-// Observation by Tom Scogland - if the value of the bit is known ahead of time,
-// it can be set by fetch_add with the corresponding integer, and cleared with
-// fetch_sub (thus fetch_add via complement). This is expected to be available
-// over pcie.
 
-// x64 has cas, fetch op
-// amdgcn has cas, fetch on gpu and cas on pcie
-// nvptx has cas, fetch on gpu
-template <bool HasFetchOpArg, bool HasCasOpArg, bool HasAddOpArg>
-struct base
-{
-  HOSTRPC_ANNOTATE static constexpr bool hasFetchOp() { return HasFetchOpArg; }
-  HOSTRPC_ANNOTATE static constexpr bool hasCasOp() { return HasCasOpArg; }
-  HOSTRPC_ANNOTATE static constexpr bool hasAddOp() { return HasAddOpArg; }
-};
-
-template <typename Word>
-struct fine_grain : public base<false, true, true>
-{
-  using Ty = __attribute__((aligned(64))) HOSTRPC_ATOMIC(Word);
-};
-
-template <typename Word>
-struct device_local : base<true, true, true>
-{
-  using Ty = __attribute__((aligned(64)))
-#if 0
-    // Freestanding c++ is refusing to cast a void * to a pointer to this, drop the annotation entirely for now
-#if defined(__AMDGCN__) && !defined(__HIP__) && !defined(_OPENMP)
-  // HIP errors on this, may want to mark the variable __device__
-  // OpenMP is marking the pointer with this in _host_ code and then falling over
-  __attribute__((address_space(1)))
-#endif
-#endif
-  HOSTRPC_ATOMIC(Word);
-};
-
-}  // namespace properties
-
-template <typename Word, size_t scope, typename Prop>
+template <typename Word, size_t scope>
 struct slot_bitmap;
 
-template <typename WordT, size_t scope, typename PropT>
+static_assert(__OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES !=
+                  __OPENCL_MEMORY_SCOPE_DEVICE,
+              "Expected these to be distinct");
+
+template <typename WordT, size_t scope>
 struct slot_bitmap
 {
-  using Prop = PropT;
-  using Ty = typename Prop::Ty;
+  // Would like this to be addrspace qualified but that's currently rejected by
+  // most languages.
+  using Ty = __attribute__((aligned(64))) HOSTRPC_ATOMIC(WordT);
   using Word = WordT;
+
+  static constexpr bool system_scope()
+  {
+    return scope == __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES;
+  }
+
+  static constexpr bool device_scope()
+  {
+    return scope == __OPENCL_MEMORY_SCOPE_DEVICE;
+  }
+
+  static_assert(system_scope() || device_scope(), "");
+  static_assert(system_scope() != device_scope(), "");
 
   // could check the types, expecting uint64_t or uint32_t
   static_assert((sizeof(Word) == 8) || (sizeof(Word) == 4), "");
 
-  HOSTRPC_ANNOTATE constexpr size_t wordBits() const
-  {
-    return 8 * sizeof(Word);
-  }
 
   static_assert(sizeof(Word) == sizeof(HOSTRPC_ATOMIC(Word)), "");
   static_assert(sizeof(Word *) == 8, "");
@@ -304,88 +258,36 @@ struct slot_bitmap
   }
   HOSTRPC_ANNOTATE ~slot_bitmap() = default;
 
-  HOSTRPC_ANNOTATE bool read_bit(uint32_t size, uint32_t i) const
-  {
-    uint32_t w = index_to_element<Word>(i);
-    Word d = load_word(size, w);
-    return bits::nthbitset(d, index_to_subindex<Word>(i));
-  }
-
-  HOSTRPC_ANNOTATE void dump(uint32_t size) const
-  {
-    (void)size;
-#if HOSTRPC_HAVE_STDIO
-    uint32_t w = size / wordBits();
-    // printf("Size %u / words %u\n", size, w);
-    for (uint32_t i = 0; i < w; i++)
-      {
-        printf("[%2u]:", i);
-        for (uint32_t j = 0; j < wordBits(); j++)
-          {
-            if (j % 8 == 0)
-              {
-                printf(" ");
-              }
-            printf("%c", read_bit(size, wordBits() * i + j) ? '1' : '0');
-          }
-        printf("\n");
-      }
-#endif
-  }
-
-  // claim / release / toggle assume this is the only possible writer to that
-  // index
-
-  // Returns value of bit before writing true to it
-  template <bool KnownClearBefore>
-  HOSTRPC_ANNOTATE bool set_slot(uint32_t size, uint32_t i)
-  {
-    assert(i < size);
-    uint32_t w = index_to_element<Word>(i);
-    uint32_t subindex = index_to_subindex<Word>(i);
-
-    (void)size;
-    if (KnownClearBefore)
-      {
-        assert(!bits::nthbitset(load_word(size, w), subindex));
-      }
-
-    if (Prop::hasFetchOp())
-      {
-        Word mask = bits::setnthbit((Word)0, subindex);
-
-        Ty *addr = &underlying[w];
-        Word before = platform::atomic_fetch_or<Word, __ATOMIC_ACQ_REL, scope>(
-            addr, mask);
-        return bits::nthbitset(before, subindex);
-      }
-    else if (KnownClearBefore && Prop::hasAddOp())
-      {
-        Word addend = (Word)1 << subindex;
-        Word before = fetch_add(w, addend);
-        return bits::nthbitset(before, subindex);
-      }
-    else
-      {
-        // cas is currently hidden behind fetch_or but probably shouldn't be
-        Word mask = bits::setnthbit((Word)0, subindex);
-        Word before = fetch_or(w, mask);
-        return bits::nthbitset(before, subindex);
-      }
-  }
-
-  // assumes slot available
+  // assumes slot available, i.e. it's 0 and we're writing a 1
   HOSTRPC_ANNOTATE void claim_slot(uint32_t size, uint32_t i)
   {
+    (void)size;
     assert(i < size);
     assert(!bits::nthbitset(load_word(size, index_to_element<Word>(i)),
                             index_to_subindex<Word>(i)));
-    bool before = set_slot<true>(size, i);
+
+    uint32_t w = index_to_element<Word>(i);
+    uint32_t subindex = index_to_subindex<Word>(i);
+
+    Ty *addr = &underlying[w];
+    Word before;
+    if (system_scope())
+      {
+        Word addend = (Word)1 << subindex;
+        before = platform::atomic_fetch_add<Word, __ATOMIC_ACQ_REL, scope>(
+            addr, addend);
+      }
+    else
+      {
+        Word mask = bits::setnthbit((Word)0, subindex);
+        before = platform::atomic_fetch_or<Word, __ATOMIC_ACQ_REL, scope>(addr,
+                                                                          mask);
+      }
+    assert(!bits::nthbitset(before, subindex));
     (void)before;
-    assert(before == false);
   }
 
-  // assumes slot taken
+  // assumes slot taken before, i.e. it's 1 and we're writing a 0
   HOSTRPC_ANNOTATE void release_slot(uint32_t size, uint32_t i)
   {
     (void)size;
@@ -394,47 +296,23 @@ struct slot_bitmap
     uint32_t subindex = index_to_subindex<Word>(i);
     assert(bits::nthbitset(load_word(size, w), subindex));
 
-    static_assert(Prop::hasCasOp(), "");
-
-    if (Prop::hasFetchOp())
-      {
-        // and with everything other than the slot set
-        Word mask = ~bits::setnthbit((Word)0, subindex);
-        Word before = fetch_and(w, mask);
-        assert(bits::nthbitset(before, subindex));
-        (void)before;
-      }
-    else if (Prop::hasAddOp())
+    Ty *addr = &underlying[w];
+    Word before;
+    if (system_scope())
       {
         Word addend = 1 + ~((Word)1 << subindex);
-        Word before = fetch_add(w, addend);
-        assert(bits::nthbitset(before, subindex));
-        (void)before;
+        before = platform::atomic_fetch_add<Word, __ATOMIC_ACQ_REL, scope>(
+            addr, addend);
       }
     else
       {
-        // cas, indirectly
+        // and with everything other than the slot set
         Word mask = ~bits::setnthbit((Word)0, subindex);
-        Word before = fetch_and(w, mask);
-        assert(bits::nthbitset(before, subindex));
-        (void)before;
+
+        before = platform::atomic_fetch_and<Word, __ATOMIC_ACQ_REL, scope>(
+            addr, mask);
       }
-  }
-
-  HOSTRPC_ANNOTATE void toggle_slot(uint32_t size, uint32_t i)
-  {
-    (void)size;
-    assert(i < size);
-    uint32_t w = index_to_element<Word>(i);
-    uint32_t subindex = index_to_subindex<Word>(i);
-#ifndef NDEBUG
-    bool bit_before = bits::nthbitset(load_word(size, w), subindex);
-#endif
-    // xor with only the slot set
-    Word mask = bits::setnthbit((Word)0, subindex);
-
-    Word before = fetch_xor(w, mask);
-    assert(bit_before == bits::nthbitset(before, subindex));
+    assert(bits::nthbitset(before, subindex));
     (void)before;
   }
 
@@ -446,121 +324,35 @@ struct slot_bitmap
     return platform::atomic_load<Word, __ATOMIC_RELAXED, scope>(addr);
   }
 
-  HOSTRPC_ANNOTATE bool cas(Word element, Word expect, Word replace,
-                            Word *loaded)
+  // Returns value of bit before writing true to it
+  // Don't know the value before,
+  HOSTRPC_ANNOTATE bool test_and_set_slot(uint32_t size, uint32_t i)
   {
-    Ty *addr = &underlying[element];
-    return platform::atomic_compare_exchange_weak<Word, __ATOMIC_ACQ_REL,
-                                                  scope>(addr, expect, replace,
-                                                         loaded);
-  }
+    assert(i < size);
+    uint32_t w = index_to_element<Word>(i);
+    uint32_t subindex = index_to_subindex<Word>(i);
+    (void)size;
 
-  // returns value from before the and/or
-  // these are used on memory visible from all svm devices
+    static_assert(device_scope(), "");
 
- private:
-  template <typename Op>
-  HOSTRPC_ANNOTATE Word fetch_op(uint32_t element, Word mask)
-  {
-    Ty *addr = &underlying[element];
-    if (Prop::hasFetchOp())
-      {
-        // This seems to work on amdgcn, but only with acquire. acq/rel fails
-        return Op::Atomic(addr, mask);
-      }
-    else
-      {
-        // load and atomic cas have similar cost across pcie, may be faster to
-        // use a (usually wrong) initial guess instead of a load
-        Word current =
-            platform::atomic_load<Word, __ATOMIC_RELAXED, scope>(addr);
-        while (1)
-          {
-            Word replace = Op::Simple(current, mask);
-            Word loaded;
+    Word mask = bits::setnthbit((Word)0, subindex);
 
-            bool r = cas(element, current, replace, &loaded);
-
-            if (r)
-              {
-                return loaded;
-              }
-
-            // new best guess at what is in memory
-            current = loaded;
-          }
-      }
-  }
-
-  HOSTRPC_ANNOTATE Word fetch_and(uint32_t element, Word mask)
-  {
-    struct And
-    {
-      HOSTRPC_ANNOTATE static Word Simple(Word lhs, Word rhs)
-      {
-        return lhs & rhs;
-      }
-      HOSTRPC_ANNOTATE static Word Atomic(Ty *addr, Word value)
-      {
-        return platform::atomic_fetch_and<Word, __ATOMIC_ACQ_REL, scope>(addr,
-                                                                         value);
-      }
-    };
-    return fetch_op<And>(element, mask);
-  }
-
-  HOSTRPC_ANNOTATE Word fetch_or(uint32_t element, Word mask)
-  {
-    struct Or
-    {
-      HOSTRPC_ANNOTATE static Word Simple(Word lhs, Word rhs)
-      {
-        return lhs | rhs;
-      }
-      HOSTRPC_ANNOTATE static Word Atomic(Ty *addr, Word value)
-      {
-        return platform::atomic_fetch_or<Word, __ATOMIC_ACQ_REL, scope>(addr,
-                                                                        value);
-      }
-    };
-    return fetch_op<Or>(element, mask);
-  }
-
-  HOSTRPC_ANNOTATE Word fetch_xor(uint32_t element, Word mask)
-  {
-    struct Xor
-    {
-      HOSTRPC_ANNOTATE static Word Simple(Word lhs, Word rhs)
-      {
-        return lhs ^ rhs;
-      }
-      HOSTRPC_ANNOTATE static Word Atomic(Ty *addr, Word value)
-      {
-        return platform::atomic_fetch_xor<Word, __ATOMIC_ACQ_REL, scope>(addr,
-                                                                         value);
-      }
-    };
-    return fetch_op<Xor>(element, mask);
-  }
-
-  HOSTRPC_ANNOTATE Word fetch_add(uint32_t element, Word value)
-  {
-    Ty *addr = &underlying[element];
-    return platform::atomic_fetch_add<Word, __ATOMIC_ACQ_REL, scope>(addr,
-                                                                     value);
+    Ty *addr = &underlying[w];
+    Word before =
+        platform::atomic_fetch_or<Word, __ATOMIC_ACQ_REL, scope>(addr, mask);
+    return bits::nthbitset(before, subindex);
   }
 };
 
 template <typename Word>
-using mailbox_bitmap = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES,
-                                   typename properties::fine_grain<Word>>;
+using mailbox_bitmap = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>;
 
 template <typename WordT, bool Inverted>
 struct inbox_bitmap
 {
   using Word = WordT;
   using mailbox_t = mailbox_bitmap<Word>;
-  using Ty = typename mailbox_t::Prop::Ty;
+  using Ty = typename mailbox_t::Ty;
 
  private:
   mailbox_t a;
@@ -584,7 +376,7 @@ struct outbox_bitmap
 {
   using Word = WordT;
   using mailbox_t = mailbox_bitmap<Word>;
-  using Ty = typename mailbox_t::Prop::Ty;
+  using Ty = typename mailbox_t::Ty;
 
  private:
   mailbox_t a;
@@ -606,11 +398,6 @@ struct outbox_bitmap
     return a.release_slot(size, i);
   }
 
-  HOSTRPC_ANNOTATE void toggle_slot(uint32_t size, uint32_t i)
-  {
-    return a.toggle_slot(size, i);
-  }
-
   HOSTRPC_ANNOTATE Word load_word(uint32_t size, uint32_t w) const
   {
     return a.load_word(size, w);
@@ -620,13 +407,9 @@ struct outbox_bitmap
 template <typename Word>
 struct lock_bitmap
 {
-  using bitmap_t = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_DEVICE,
-                               typename properties::device_local<Word>>;
+  using bitmap_t = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_DEVICE>;
 
-  using Prop = typename bitmap_t::Prop;
-  using Ty = typename Prop::Ty;
-  static_assert(Prop::hasFetchOp(), "");
-  static_assert(Prop::hasCasOp(), "");
+  using Ty = typename bitmap_t::Ty;
 
  private:
   bitmap_t a;
@@ -642,32 +425,6 @@ struct lock_bitmap
   HOSTRPC_ANNOTATE bool try_claim_empty_slot(T active_threads, uint32_t size,
                                              uint32_t slot)
   {
-    if (Prop::hasFetchOp())
-      {
-        return try_claim_empty_slot_nospin(active_threads, size, slot);
-      }
-    else
-      {
-        return try_claim_empty_slot_cas(active_threads, size, slot);
-      }
-  }
-
-  HOSTRPC_ANNOTATE void release_slot(uint32_t size, uint32_t i)
-  {
-    a.release_slot(size, i);
-  }
-
-  HOSTRPC_ANNOTATE Word load_word(uint32_t size, uint32_t w) const
-  {
-    return a.load_word(size, w);
-  }
-
- private:
-  template <typename T>
-  HOSTRPC_ANNOTATE bool try_claim_empty_slot_nospin(T active_threads,
-                                                    uint32_t size,
-                                                    uint32_t slot)
-  {
     // requires hasFetchOp for correctness, need to refactor that
     // specifically this needs to hit fetchOr, not fetchAdd
     assert(slot < size);
@@ -675,7 +432,9 @@ struct lock_bitmap
     uint32_t before = 0;
     if (platform::is_master_lane(active_threads))
       {
-        before = a.template set_slot<false>(size, slot) ? 1u : 0u;
+        // returns boolean true if the corresponding bit was set before this
+        // call
+        before = a.test_and_set_slot(size, slot) ? 1u : 0u;
       }
     before = platform::broadcast_master(active_threads, before);
 
@@ -690,60 +449,17 @@ struct lock_bitmap
       }
   }
 
-  // cas, true on success
-  template <typename T>
-  HOSTRPC_ANNOTATE bool try_claim_empty_slot_cas(T active_threads,
-                                                 uint32_t size, uint32_t slot)
+  HOSTRPC_ANNOTATE void release_slot(uint32_t size, uint32_t i)
   {
-    assert(slot < size);
-    uint32_t w = index_to_element<Word>(slot);
-    uint32_t subindex = index_to_subindex<Word>(slot);
+    a.release_slot(size, i);
+  }
 
-    Word d = load_word(size, w);
-
-    // printf("Slot %lu, w %lu, subindex %lu, d %lu\n", i, w, subindex, d);
-    for (;;)
-      {
-        // if the bit was already set then we've lost the race
-
-        // can either check the bit is zero, or unconditionally set it and check
-        // if this changed the value
-        Word proposed = bits::setnthbit(d, subindex);
-        if (proposed == d)
-          {
-            return false;
-          }
-
-        // If the bit is known zero, can use fetch_or to set it
-
-        Word unexpected_contents = 0;
-        uint32_t r = 0;
-        if (platform::is_master_lane(active_threads))
-          {
-            r = a.cas(w, d, proposed, &unexpected_contents);
-          }
-        r = platform::broadcast_master(active_threads, r);
-        unexpected_contents =
-            platform::broadcast_master(active_threads, unexpected_contents);
-
-        if (r)
-          {
-            // success, got the lock, and active word was set to proposed
-            return true;
-          }
-
-        // cas failed. reasons:
-        // we lost the slot
-        // another slot in the same word changed
-        // spurious
-
-        // try again if the slot is still empty
-        // may want a give up count / sleep or similar
-        d = unexpected_contents;
-      }
+  HOSTRPC_ANNOTATE Word load_word(uint32_t size, uint32_t w) const
+  {
+    return a.load_word(size, w);
   }
 };
 
-} // namespace hostrpc
+}  // namespace hostrpc
 
 #endif

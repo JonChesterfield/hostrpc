@@ -81,17 +81,4 @@ HOSTRPC_ANNOTATE T atomic_fetch_xor(
   return __opencl_atomic_fetch_xor(addr, value, memorder, scope);
 }
 
-template <typename T, size_t memorder, size_t scope>
-HOSTRPC_ANNOTATE bool atomic_compare_exchange_weak(
-    HOSTRPC_PLATFORM_ATOMIC_ADDRSPACE_ATTRIBUTE HOSTRPC_ATOMIC(T) * addr,
-    T expected, T desired, T *loaded)
-{
-  static_assert(
-      platform::detail::atomic_params_readmodifywrite<memorder, scope>(), "");
-  bool r = __opencl_atomic_compare_exchange_weak(addr, &expected, desired,
-                                                 memorder, memorder, scope);
-  *loaded = expected;
-  return r;
-}
-
 #undef HOSTRPC_PLATFORM_ATOMIC_ADDRSPACE_ATTRIBUTE

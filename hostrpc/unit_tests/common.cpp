@@ -28,8 +28,7 @@ void use_result(hostrpc::page_t *page, uint64_t d[8])
 namespace hostrpc
 {
 template <typename Word>
-using bitmap_t = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_DEVICE,
-                             properties::fine_grain<Word>>;
+using bitmap_t = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_DEVICE>;
 }
 
 template <typename Word>
@@ -37,6 +36,17 @@ static HOSTRPC_ANNOTATE Word bypass_load_t(HOSTRPC_ATOMIC(Word) * addr)
 {
   return platform::atomic_load<Word, __ATOMIC_RELAXED,
                                __OPENCL_MEMORY_SCOPE_DEVICE>(addr);
+}
+
+template <typename Word>
+static HOSTRPC_ANNOTATE bool read_bit(hostrpc::bitmap_t<Word> &map,
+                                      uint32_t size, uint32_t i)
+
+{
+  uint32_t w = hostrpc::index_to_element<Word>(i);
+  Word d = map.load_word(size, w);
+  uint32_t subindex = hostrpc::index_to_subindex<Word>(i);
+  return hostrpc::bits::nthbitset(d, subindex);
 }
 
 MODULE(bitmap)
@@ -89,20 +99,6 @@ MODULE(bitmap)
       }
   }
 
-  TEST("check initial bits")
-  {
-    if (platform::is_master_lane(active_threads))
-      {
-        bool ok = true;
-        for (uint32_t i = 0; i < sz; i++)
-          {
-            uint32_t p = static_cast<uint32_t>(i);
-            ok &= baseline.read_bit(sz, p) == 0;
-          }
-        CHECK(ok);
-      }
-  }
-
   TEST("can set all bits")
   {
     if (platform::is_master_lane(active_threads))
@@ -141,37 +137,13 @@ MODULE(bitmap)
           {
             uint32_t p = static_cast<uint32_t>(i);
 
-            ok &= baseline.read_bit(sz, p) == 0;
+            ok &= read_bit(baseline, sz, p) == 0;
             baseline.claim_slot(sz, p);
-            ok &= baseline.read_bit(sz, p) == 1;
+            ok &= read_bit(baseline, sz, p) == 1;
             baseline.release_slot(sz, p);
-            ok &= baseline.read_bit(sz, p) == 0;
-            baseline.toggle_slot(sz, p);
-            ok &= baseline.read_bit(sz, p) == 1;
-            baseline.toggle_slot(sz, p);
-            ok &= baseline.read_bit(sz, p) == 0;
+            ok &= read_bit(baseline, sz, p) == 0;
           }
         CHECK(ok);
-      }
-  }
-
-  TEST("check cas (uses exchange_weak everywhere at present)")
-  {
-    if (platform::is_master_lane(active_threads))
-      {
-        for (uint32_t i = 0; i < words; i++)
-          {
-            Word bl;
-            CHECK(baseline.load_word(sz, i) == 0);
-            while (!baseline.cas(i, 0, m1, &bl))
-              ;
-            CHECK(bl == 0);
-            CHECK(baseline.load_word(sz, i) == m1);
-            while (!baseline.cas(i, m1, 0, &bl))
-              ;
-            CHECK(bl == m1);
-            CHECK(baseline.load_word(sz, i) == 0);
-          }
       }
   }
 }
