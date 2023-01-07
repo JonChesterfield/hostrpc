@@ -39,6 +39,53 @@ extern "C"
     auto p = s.rpc_open_partial_port(threads);
     s.rpc_close_port(threads, cxx::move(p));
   }
+
+  void open_and_close_typed_port_lo(state_machine_t &s)
+  {
+    auto threads = platform::active_threads();
+    auto p = s.rpc_open_typed_port<0,0>(threads);
+    s.rpc_close_port(threads, cxx::move(p));
+
+  }
+
+  void open_and_close_typed_port_hi(state_machine_t &s)
+  {
+    auto threads = platform::active_threads();
+    auto p = s.rpc_open_typed_port<1,1>(threads);
+    s.rpc_close_port(threads, cxx::move(p));
+  }
+
+  void try_open_and_close_partial_port(state_machine_t &s)
+  {
+    auto threads = platform::active_threads();
+    auto m = s.rpc_try_open_partial_port(threads);
+    if (m)
+      {
+        s.rpc_close_port(threads, m.value());        
+      }
+  }
+
+  void try_open_and_close_typed_port_lo(state_machine_t &s)
+  {
+    auto threads = platform::active_threads();
+    auto m = s.rpc_try_open_typed_port<0,0>(threads);
+    if (m)
+      {
+        s.rpc_close_port(threads, m.value());        
+      }
+  }
+
+    void try_open_and_close_typed_port_hi(state_machine_t &s)
+  {
+    auto threads = platform::active_threads();
+    auto m = s.rpc_try_open_typed_port<1,1>(threads);
+    if (m)
+      {
+        s.rpc_close_port(threads, m.value());        
+      }
+  }
+
+  
 }
 
 auto apply_partial_port(state_machine_t &s,
@@ -67,6 +114,31 @@ auto apply_typed_port_hi(state_machine_t &s,
   return s.rpc_port_apply(threads, cxx::move(p0),
                           [=](port_t, buffer_ty *b) { func(b); });
 }
+
+
+auto wait_partial_port(state_machine_t &s,
+                        state_machine_t::partial_port_t<0> &&p0)
+{
+  auto threads = platform::active_threads();
+  return s.rpc_port_wait(threads, cxx::move(p0));
+}
+
+auto wait_typed_port_lo(state_machine_t &s,
+                      state_machine_t::typed_port_t<1, 0> &&p0)
+{
+  auto threads = platform::active_threads();
+  return s.rpc_port_wait(threads, cxx::move(p0));
+}
+
+auto wait_typed_port_hi(state_machine_t &s,
+                      state_machine_t::typed_port_t<0, 1> &&p0
+                      )
+{
+  auto threads = platform::active_threads();
+  return s.rpc_port_wait(threads, cxx::move(p0));
+}
+
+
 
 
 extern "C"

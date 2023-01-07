@@ -416,6 +416,42 @@ struct state_machine_impl : public SZT, public Counter
 #endif
   }
 
+  template <typename T>
+  HOSTRPC_ANNOTATE partial_port_t<1> rpc_port_wait(T active_threads,
+                                                   partial_port_t<0>&& port)
+  {
+    // Implementing in terms of typed port in the first instance.
+    // Codegens roughly as expected - the two waits turn into distinct loops
+    if (port.outbox_state())
+      {
+        typename typed_port_t<0, 1>::maybe typed =
+          partial_to_typed<true>(active_threads, cxx::move(port));
+        if (typed)
+          {
+            return typed_to_partial(
+                rpc_port_wait(active_threads, typed.value()));
+          }
+        else
+          {
+            __builtin_unreachable();
+          }
+      }
+    else
+      {
+        typename typed_port_t<1, 0>::maybe typed =
+          partial_to_typed<false>(active_threads, cxx::move(port));
+        if (typed)
+          {
+            return typed_to_partial(
+                rpc_port_wait(active_threads, typed.value()));
+          }
+        else
+          {
+            __builtin_unreachable();
+          }
+      }
+  }
+
   // Corresponding version for partial requires either on partial which is not
   // yet implemented
 
@@ -458,26 +494,6 @@ struct state_machine_impl : public SZT, public Counter
       }
   }
 
-  template <unsigned I, typename T>
-  HOSTRPC_ANNOTATE bool rpc_port_inbox_has_changed(
-      T active_threads, typed_port_t<I, !I> const& port HOSTRPC_CONST_REF_ARG)
-  {
-    // todo: untested,  intended as a means for caller to tell if rpc_port_wait
-    // will transition without spinning
-    (void)active_threads;
-    uint32_t raw = static_cast<uint32_t>(port);
-    port_t untyped_port = static_cast<port_t>(raw);
-
-    const uint32_t size = this->size();
-    const uint32_t w = index_to_element<Word>(untyped_port);
-    const uint32_t subindex = index_to_subindex<Word>(untyped_port);
-
-    Word i = inbox.load_word(size, w);
-    platform::fence_acquire();
-
-    bool inbox_set = bits::nthbitset(i, subindex);
-    return inbox_set != I;
-  }
 
  private:
   template <typename PortType>
