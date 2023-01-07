@@ -7,8 +7,7 @@ struct buffer_ty
 
 using state_machine_t =
     hostrpc::state_machine_impl<buffer_ty, uint32_t,
-                                hostrpc::size_compiletime<128>,
-                                hostrpc::counters::client_nop, false>;
+                                hostrpc::size_compiletime<128>, false>;
 
 using namespace hostrpc;
 

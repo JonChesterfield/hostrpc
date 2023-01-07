@@ -5,8 +5,7 @@
 
 using SZ = hostrpc::size_compiletime<128>;
 
-using client_type = hostrpc::client<hostrpc::page_t, uint64_t, SZ,
-                                    hostrpc::counters::client_nop>;
+using client_type = hostrpc::client<hostrpc::page_t, uint64_t, SZ>;
 
 extern "C" __attribute__((noinline)) HOSTRPC_ANNOTATE void
 client_instance_invoke_direct(client_type& c)

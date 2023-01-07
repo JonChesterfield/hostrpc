@@ -3,7 +3,6 @@
 
 #include "../platform/detect.hpp"
 #include "common.hpp"
-#include "counters.hpp"
 #include "cxx.hpp"
 #include "maybe.hpp"
 #include "tuple.hpp"
@@ -32,13 +31,10 @@ namespace hostrpc
 // SZT is either a hostrpc::size_runtime or a hostrpc::size_compiletime, which
 // is an application choice based on how specialised it wants to be
 
-// Counter is a probably obsolete debugging hook, better erased
-
 // InvertedInboxLoad is a way for a client/server pair to configure themselves
 
-template <typename BufferElementT, typename WordT, typename SZT,
-          typename Counter, bool InvertedInboxLoad>
-struct state_machine_impl : public SZT, public Counter
+template <typename BufferElementT, typename WordT, typename SZT, bool InvertedInboxLoad>
+struct state_machine_impl : public SZT
 {
   using BufferElement = BufferElementT;
   using Word = WordT;
@@ -85,7 +81,7 @@ struct state_machine_impl : public SZT, public Counter
   static_assert(cxx::is_trivially_copyable<BufferElement>() /*::value*/, "");
 
   HOSTRPC_ANNOTATE state_machine_impl()
-      : SZ{}, Counter{}, active{}, inbox{}, outbox{}
+      : SZ{}, active{}, inbox{}, outbox{}
   {
   }
   HOSTRPC_ANNOTATE ~state_machine_impl() = default;
@@ -93,7 +89,6 @@ struct state_machine_impl : public SZT, public Counter
                                       outbox_t outbox,
                                       BufferElement* shared_buffer)
       : SZ{sz},
-        Counter{},
         shared_buffer(shared_buffer),
         active(active),
         inbox(inbox),

@@ -3,7 +3,6 @@
 
 #include "../platform/detect.hpp"
 #include "common.hpp"
-#include "counters.hpp"
 #include "cxx.hpp"
 #include "state_machine.hpp"
 
@@ -55,12 +54,11 @@ enum class client_state : uint8_t
 // garbage that is, can't claim the slot for a new thread is that a sufficient
 // criteria for the slot to be awaiting gc?
 
-template <typename BufferElementT, typename WordT, typename SZT,
-          typename Counter = counters::client>
+template <typename BufferElementT, typename WordT, typename SZT>
 struct client_impl
-    : public state_machine_impl<BufferElementT, WordT, SZT, Counter, false>
+    : public state_machine_impl<BufferElementT, WordT, SZT, false>
 {
-  using base = state_machine_impl<BufferElementT, WordT, SZT, Counter, false>;
+  using base = state_machine_impl<BufferElementT, WordT, SZT, false>;
   using typename base::state_machine_impl;
 
   using BufferElement = typename base::BufferElement;
@@ -87,18 +85,11 @@ struct client_impl
     {
       float x;
     };
-    // Counter is zero bytes for nop or potentially many
-    struct Counter_local : public Counter
-    {
-      float x;
-    };
     constexpr bool SZ_empty = sizeof(SZ_local) == sizeof(float);
-    constexpr bool Counter_empty = sizeof(Counter_local) == sizeof(float);
 
     constexpr size_t SZ_size = hostrpc::round8(SZ_empty ? 0 : sizeof(SZ));
-    constexpr size_t Counter_size = Counter_empty ? 0 : sizeof(Counter);
 
-    constexpr size_t total_size = client_size + SZ_size + Counter_size;
+    constexpr size_t total_size = client_size + SZ_size;
 
     static_assert(sizeof(client_impl) == total_size, "");
     static_assert(alignof(client_impl) == 8, "");
@@ -108,8 +99,6 @@ struct client_impl
   {
     return p;
   }
-
-  HOSTRPC_ANNOTATE client_counters get_counters() { return Counter::get(); }
 
   template <typename T>
   HOSTRPC_ANNOTATE typed_port_t<0, 0> rpc_open_typed_port(
@@ -234,14 +223,13 @@ struct client_impl
   }
 };
 
-template <typename BufferElementT, typename WordT, typename SZT,
-          typename Counter = counters::client>
-struct client : public client_impl<BufferElementT, WordT, SZT, Counter>
+template <typename BufferElementT, typename WordT, typename SZT>
+struct client : public client_impl<BufferElementT, WordT, SZT>
 {
   // TODO: Write directly in terms of state machine? Credible chance that any
   // program which wants more control than the invoke/invoke_async api will do
   // better with the raw state_machine.
-  using base = client_impl<BufferElementT, WordT, SZT, Counter>;
+  using base = client_impl<BufferElementT, WordT, SZT>;
   using base::client_impl;
   template <unsigned I, unsigned O>
   using typed_port_t = typename base::template typed_port_t<I, O>;

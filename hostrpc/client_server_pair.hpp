@@ -277,9 +277,7 @@ struct allocators
 
 }  // namespace arch
 
-template <typename SZ_, typename ClientArch_, typename ServerArch_,
-          typename client_counter = counters::client_nop,
-          typename server_counter = counters::server_nop>
+template <typename SZ_, typename ClientArch_, typename ServerArch_>
 struct client_server_pair_t
 {
   using SZ = SZ_;
@@ -297,7 +295,7 @@ struct client_server_pair_t
   using AllocLocal = typename Allocators::template local_allocator_t<64>;
   using AllocRemote = typename Allocators::template remote_allocator_t<64>;
 
-  using client_type = client<BufferElement, Word, SZ, client_counter>;
+  using client_type = client<BufferElement, Word, SZ>;
   using server_type = server<BufferElement, Word, SZ>;
 
   using storage_type = allocator::store_impl<AllocBuffer, AllocInboxOutbox,
@@ -345,10 +343,8 @@ struct client_server_pair_t
   }
 };
 
-template <typename SZ, typename ClientArch, typename ServerArch,
-          typename client_counter = counters::client_nop,
-          typename server_counter = counters::server_nop>
-client_server_pair_t<SZ, ClientArch, ServerArch, client_counter, server_counter>
+template <typename SZ, typename ClientArch, typename ServerArch>
+client_server_pair_t<SZ, ClientArch, ServerArch>
 make_client_server_pair(SZ sz, ClientArch c, ServerArch s)
 {
   return {sz, c, s};

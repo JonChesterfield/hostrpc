@@ -3,7 +3,6 @@
 
 #include "../platform/detect.hpp"
 #include "common.hpp"
-#include "counters.hpp"
 #include "cxx.hpp"
 #include "state_machine.hpp"
 
@@ -12,7 +11,7 @@ namespace hostrpc
 
 template <typename BufferElementT, typename WordT, typename SZT>
 using server =
-    state_machine_impl<BufferElementT, WordT, SZT, counters::server_nop, true>;
+  state_machine_impl<BufferElementT, WordT, SZT, true>;
 
 template <typename BufferElementT, typename WordT, typename SZT,
           typename Operate, typename Clear>
