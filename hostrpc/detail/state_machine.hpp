@@ -75,14 +75,14 @@ struct state_machine_impl : public SZT, public Counter
   outbox_t outbox;
 
   // Require that instances of this class can be trivially copied
-  static_assert(cxx::is_trivially_copyable<BufferElement*>()/*::value*/, "");
-  static_assert(cxx::is_trivially_copyable<lock_t>()/*::value*/, "");
-  static_assert(cxx::is_trivially_copyable<inbox_t>()/*::value*/, "");
-  static_assert(cxx::is_trivially_copyable<outbox_t>()/*::value*/, "");
+  static_assert(cxx::is_trivially_copyable<BufferElement*>() /*::value*/, "");
+  static_assert(cxx::is_trivially_copyable<lock_t>() /*::value*/, "");
+  static_assert(cxx::is_trivially_copyable<inbox_t>() /*::value*/, "");
+  static_assert(cxx::is_trivially_copyable<outbox_t>() /*::value*/, "");
 
   // Also need to check somewhere that the contents of the shared buffer is
   // copyable
-  static_assert(cxx::is_trivially_copyable<BufferElement>()/*::value*/, "");
+  static_assert(cxx::is_trivially_copyable<BufferElement>() /*::value*/, "");
 
   HOSTRPC_ANNOTATE state_machine_impl()
       : SZ{}, Counter{}, active{}, inbox{}, outbox{}
@@ -264,7 +264,8 @@ struct state_machine_impl : public SZT, public Counter
   {
     static_assert(port_openable<typed_port_t<I, O>>(), "");
     static_assert(I == O, "");
-    return try_open_typed_port<typed_port_t<I, O>, T>(active_threads, scan_from);
+    return try_open_typed_port<typed_port_t<I, O>, T>(active_threads,
+                                                      scan_from);
   }
 
   template <unsigned I, unsigned O, typename T>
@@ -322,7 +323,7 @@ struct state_machine_impl : public SZT, public Counter
   // by const& as well, as a reminder that writes to it aren't going
   // to be seen by the other side, though one could make multiple calls
   // before following with an apply.
-  
+
   // Apply will leave input unchanged and toggle output
   // passed <0, 0> returns <0, 1>, i.e. output changed
   // passed <1, 1> returns <1, 0>, i.e. output changed
@@ -425,7 +426,7 @@ struct state_machine_impl : public SZT, public Counter
     if (port.outbox_state())
       {
         typename typed_port_t<0, 1>::maybe typed =
-          partial_to_typed<true>(active_threads, cxx::move(port));
+            partial_to_typed<true>(active_threads, cxx::move(port));
         if (typed)
           {
             return typed_to_partial(
@@ -439,7 +440,7 @@ struct state_machine_impl : public SZT, public Counter
     else
       {
         typename typed_port_t<1, 0>::maybe typed =
-          partial_to_typed<false>(active_threads, cxx::move(port));
+            partial_to_typed<false>(active_threads, cxx::move(port));
         if (typed)
           {
             return typed_to_partial(
@@ -452,9 +453,6 @@ struct state_machine_impl : public SZT, public Counter
       }
   }
 
-  // Corresponding version for partial requires either on partial which is not
-  // yet implemented
-
   template <unsigned I, typename T>
   HOSTRPC_ANNOTATE either<
       /* might want return values swapped over */
@@ -465,35 +463,77 @@ struct state_machine_impl : public SZT, public Counter
   {
     (void)active_threads;
     static_assert(I == 0 || I == 1, "");
+    port.unconsumed();
 
     uint32_t raw = static_cast<uint32_t>(port);
-
     const uint32_t size = this->size();
     const uint32_t w = index_to_element<Word>(raw);
     const uint32_t subindex = index_to_subindex<Word>(raw);
-
     bool in = bits::nthbitset(inbox.load_word(size, w), subindex);
 
-    if (in == (I == 1))
+    if (in == port.inbox_state())
       {
+        port.unconsumed();
         either_builder<typed_port_t<I, !I>, typed_port_t<!I, !I>, uint32_t> b(
             port);
         // nothing changed
+        port.consumed();
         return b.normal();
       }
     else
       {
+        port.unconsumed();
         // loaded a different value, change detected
-        typed_port_t<!I, !I> n(port);
+        typed_port_t<!I, !I> n = port.invert_inbox();
+        port.consumed();
 
+        n.unconsumed();
         either_builder<typed_port_t<!I, !I>, typed_port_t<I, !I>, uint32_t> b(
             n);
+        n.consumed();
 
         platform::fence_acquire();
         return b.invert();
       }
   }
 
+  template <typename T>
+  HOSTRPC_ANNOTATE either<partial_port_t<0>, /* no change */
+                          partial_port_t<1>, /* inbox changed */
+                          cxx::tuple<uint32_t, bool>>
+  rpc_port_query(T active_threads, partial_port_t<0>&& port)
+  {
+    (void)active_threads;
+
+    // deduplicate vs typed port version subsequently
+    uint32_t raw = static_cast<uint32_t>(port);
+    const uint32_t size = this->size();
+    const uint32_t w = index_to_element<Word>(raw);
+    const uint32_t subindex = index_to_subindex<Word>(raw);
+    bool in = bits::nthbitset(inbox.load_word(size, w), subindex);
+
+    if (in == port.inbox_state())
+      {
+        port.unconsumed();
+        either_builder<partial_port_t<0>, partial_port_t<1>, cxx::tuple<uint32_t, bool>> s(port);
+        port.consumed();
+        // nothing changed
+        return s.normal();
+      }
+    else
+      {
+        // loaded a different value, change detected
+        port.unconsumed();
+        partial_port_t<1> n = port.invert_inbox();
+        port.consumed();
+        n.unconsumed();
+        either_builder<partial_port_t<1>, partial_port_t<0>, cxx::tuple<uint32_t, bool>> u(n);
+        n.consumed();
+
+        platform::fence_acquire();
+        return u.invert();
+      }
+  }
 
  private:
   template <typename PortType>
@@ -582,9 +622,10 @@ struct state_machine_impl : public SZT, public Counter
 
             if (active.try_claim_empty_slot(active_threads, size, slot))
               {
-                // Previous versions had no fence here, relying on the acquire-release
-                // on the lock. I'm 95% sure that was a race, the acq/rel on the lock CAS
-                // has no relation to these loads. Didn't show up in testing.
+                // Previous versions had no fence here, relying on the
+                // acquire-release on the lock. I'm 95% sure that was a race,
+                // the acq/rel on the lock CAS has no relation to these loads.
+                // Didn't show up in testing.
                 platform::fence_acquire();
                 static_assert(port_openable<PortType>(), "");
                 Word i = inbox.load_word(size, w);
@@ -640,12 +681,13 @@ struct state_machine_impl : public SZT, public Counter
     // of the comments 'assumes slot taken' and similar
 
     // I think the is_master_lane handling needs to be under the control of the
-    // bitmap, which is going to mean passing active threads down into those operations
-    // That means it'll be possible to replace this branch with having every active thread
-    // perform the atomic operation - that would make the CFG simpler but I don't know
-    // what the effect on memory traffic would be. E.g. one lane fetch_or's in a bit,
-    // all the others fetch_or in zero, but aimed at the same word in memory - what does
-    // that mean across pcie? Don't know, should find out.
+    // bitmap, which is going to mean passing active threads down into those
+    // operations That means it'll be possible to replace this branch with
+    // having every active thread perform the atomic operation - that would make
+    // the CFG simpler but I don't know what the effect on memory traffic would
+    // be. E.g. one lane fetch_or's in a bit, all the others fetch_or in zero,
+    // but aimed at the same word in memory - what does that mean across pcie?
+    // Don't know, should find out.
 
     if (port.outbox_state() == true)
       {

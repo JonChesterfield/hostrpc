@@ -238,6 +238,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   }
 
   // Trust instances of this type with inbox/outbox inverted but not both
+  // to support invert inbox_state/outbox_state
   friend typed_port_impl_t<Friend, I, !O>;
   friend typed_port_impl_t<Friend, !I, O>;
 
@@ -306,14 +307,14 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   // The dynamically dead path will call the other constructor, which is a
   // friend here to allow the dead path to typecheck.
 
-  // construction with outbox changed
-  friend hostrpc::either<SelfType, typed_port_impl_t<Friend, I, !O>, uint32_t>;
-  friend hostrpc::either<typed_port_impl_t<Friend, I, !O>, SelfType, uint32_t>;
-
-  // construction with inbox changed
+  // construction with inbox changed, used by query
   friend hostrpc::either<SelfType, typed_port_impl_t<Friend, !I, O>, uint32_t>;
   friend hostrpc::either<typed_port_impl_t<Friend, !I, O>, SelfType, uint32_t>;
 
+  // construction with outbox changed, would be used by an apply that can fail
+  friend hostrpc::either<SelfType, typed_port_impl_t<Friend, I, !O>, uint32_t>;
+  friend hostrpc::either<typed_port_impl_t<Friend, I, !O>, SelfType, uint32_t>;
+  
   // move construct and assign are available
   HOSTRPC_ANNOTATE
   HOSTRPC_CREATED_RES
@@ -408,6 +409,13 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     return value;
   }
 
+  HOSTRPC_ANNOTATE bool outbox_state() const { return state; }
+  HOSTRPC_ANNOTATE bool inbox_state() const
+  {
+    return (S == 1) ? outbox_state() : !outbox_state();
+  }
+
+  // allow constructing a maybe of this type
   using maybe = hostrpc::maybe<cxx::tuple<uint32_t, bool>, SelfType>;
   friend maybe;
 
@@ -426,6 +434,7 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
       }
   }
 
+  // For invert inbox/outbox
   friend partial_port_impl_t<Friend, !S>;
 
   HOSTRPC_ANNOTATE
@@ -463,6 +472,22 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     return {tup};
   }
 
+ // either_builder can only be constructed by the first template parameter
+ HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+   operator hostrpc::either_builder<SelfType, partial_port_impl_t<Friend, !S>,
+                                   cxx::tuple<uint32_t, bool>>()
+  {
+    cxx::tuple<uint32_t, bool> tup = {value, state};
+    kill();
+    return {tup};
+  }
+
+ // Construct an either from this type
+ friend hostrpc::either<SelfType, partial_port_impl_t<Friend, !S>, cxx::tuple<uint32_t, bool>>;
+ friend hostrpc::either<partial_port_impl_t<Friend, !S>,SelfType, cxx::tuple<uint32_t, bool>>;
+
   // move construct and assign are available
   HOSTRPC_ANNOTATE
   HOSTRPC_CREATED_RES
@@ -497,12 +522,6 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
   // else error, default must explicitly initialise const member
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_CONSUMED partial_port_impl_t() : state(false)
   {
-  }
-
-  HOSTRPC_ANNOTATE bool outbox_state() const { return state; }
-  HOSTRPC_ANNOTATE bool inbox_state() const
-  {
-    return (S == 1) ? outbox_state() : !outbox_state();
   }
 
  private:

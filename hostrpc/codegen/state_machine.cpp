@@ -43,15 +43,14 @@ extern "C"
   void open_and_close_typed_port_lo(state_machine_t &s)
   {
     auto threads = platform::active_threads();
-    auto p = s.rpc_open_typed_port<0,0>(threads);
+    auto p = s.rpc_open_typed_port<0, 0>(threads);
     s.rpc_close_port(threads, cxx::move(p));
-
   }
 
   void open_and_close_typed_port_hi(state_machine_t &s)
   {
     auto threads = platform::active_threads();
-    auto p = s.rpc_open_typed_port<1,1>(threads);
+    auto p = s.rpc_open_typed_port<1, 1>(threads);
     s.rpc_close_port(threads, cxx::move(p));
   }
 
@@ -61,31 +60,29 @@ extern "C"
     auto m = s.rpc_try_open_partial_port(threads);
     if (m)
       {
-        s.rpc_close_port(threads, m.value());        
+        s.rpc_close_port(threads, m.value());
       }
   }
 
   void try_open_and_close_typed_port_lo(state_machine_t &s)
   {
     auto threads = platform::active_threads();
-    auto m = s.rpc_try_open_typed_port<0,0>(threads);
+    auto m = s.rpc_try_open_typed_port<0, 0>(threads);
     if (m)
       {
-        s.rpc_close_port(threads, m.value());        
+        s.rpc_close_port(threads, m.value());
       }
   }
 
-    void try_open_and_close_typed_port_hi(state_machine_t &s)
+  void try_open_and_close_typed_port_hi(state_machine_t &s)
   {
     auto threads = platform::active_threads();
-    auto m = s.rpc_try_open_typed_port<1,1>(threads);
+    auto m = s.rpc_try_open_typed_port<1, 1>(threads);
     if (m)
       {
-        s.rpc_close_port(threads, m.value());        
+        s.rpc_close_port(threads, m.value());
       }
   }
-
-  
 }
 
 auto apply_partial_port(state_machine_t &s,
@@ -98,8 +95,8 @@ auto apply_partial_port(state_machine_t &s,
 }
 
 auto apply_typed_port_lo(state_machine_t &s,
-                      state_machine_t::typed_port_t<0, 0> &&p0,
-                      void func(buffer_ty *))
+                         state_machine_t::typed_port_t<0, 0> &&p0,
+                         void func(buffer_ty *))
 {
   auto threads = platform::active_threads();
   return s.rpc_port_apply(threads, cxx::move(p0),
@@ -107,39 +104,169 @@ auto apply_typed_port_lo(state_machine_t &s,
 }
 
 auto apply_typed_port_hi(state_machine_t &s,
-                      state_machine_t::typed_port_t<1, 1> &&p0,
-                      void func(buffer_ty *))
+                         state_machine_t::typed_port_t<1, 1> &&p0,
+                         void func(buffer_ty *))
 {
   auto threads = platform::active_threads();
   return s.rpc_port_apply(threads, cxx::move(p0),
                           [=](port_t, buffer_ty *b) { func(b); });
 }
 
-
 auto wait_partial_port(state_machine_t &s,
-                        state_machine_t::partial_port_t<0> &&p0)
+                       state_machine_t::partial_port_t<0> &&p0)
 {
   auto threads = platform::active_threads();
   return s.rpc_port_wait(threads, cxx::move(p0));
 }
 
 auto wait_typed_port_lo(state_machine_t &s,
-                      state_machine_t::typed_port_t<1, 0> &&p0)
+                        state_machine_t::typed_port_t<1, 0> &&p0)
 {
   auto threads = platform::active_threads();
   return s.rpc_port_wait(threads, cxx::move(p0));
 }
 
 auto wait_typed_port_hi(state_machine_t &s,
-                      state_machine_t::typed_port_t<0, 1> &&p0
-                      )
+                        state_machine_t::typed_port_t<0, 1> &&p0)
 {
   auto threads = platform::active_threads();
   return s.rpc_port_wait(threads, cxx::move(p0));
 }
 
+auto query_partial_port(state_machine_t &s,
+                        state_machine_t::partial_port_t<0> &&p0)
+{
+  auto threads = platform::active_threads();
+  return s.rpc_port_query(threads, cxx::move(p0));
+}
 
+auto query_typed_port_lo(state_machine_t &s,
+                         state_machine_t::typed_port_t<1, 0> &&p0)
+{
+  auto threads = platform::active_threads();
+  return s.rpc_port_query(threads, cxx::move(p0));
+}
 
+auto query_typed_port_hi(state_machine_t &s,
+                         state_machine_t::typed_port_t<0, 1> &&p0)
+{
+  auto threads = platform::active_threads();
+  return s.rpc_port_query(threads, cxx::move(p0));
+}
+
+state_machine_t::partial_port_t<1> wait_via_query_partial_port(
+    state_machine_t &s, state_machine_t::partial_port_t<0> &&p0)
+{
+  auto threads = platform::active_threads();
+
+  for (;;)
+    {
+      auto either = s.rpc_port_query(threads, cxx::move(p0));
+      if (either)
+        {
+          auto maybe = either.on_true();
+          if (maybe)
+            {
+              state_machine_t::partial_port_t<0> &&p1 = maybe.value();
+              p0 = cxx::move(p1);
+              continue;
+            }
+          else
+            {
+              __builtin_unreachable();
+            }
+        }
+      else
+        {
+          auto maybe = either.on_false();
+          if (maybe)
+            {
+              state_machine_t::partial_port_t<1> &&p1 = maybe.value();
+              return cxx::move(p1);
+            }
+          else
+            {
+              __builtin_unreachable();
+            }
+        }
+    }
+}
+
+state_machine_t::typed_port_t<0, 0> wait_via_query_typed_port_lo(
+    state_machine_t &s, state_machine_t::typed_port_t<1, 0> &&p0)
+{
+  auto threads = platform::active_threads();
+
+  for (;;)
+    {
+      auto either = s.rpc_port_query(threads, cxx::move(p0));
+      if (either)
+        {
+          auto maybe = either.on_true();
+          if (maybe)
+            {
+              state_machine_t::typed_port_t<1, 0> &&p1 = maybe.value();
+              p0 = cxx::move(p1);
+              continue;
+            }
+          else
+            {
+              __builtin_unreachable();
+            }
+        }
+      else
+        {
+          auto maybe = either.on_false();
+          if (maybe)
+            {
+              state_machine_t::typed_port_t<0, 0> &&p1 = maybe.value();
+              return cxx::move(p1);
+            }
+          else
+            {
+              __builtin_unreachable();
+            }
+        }
+    }
+}
+
+state_machine_t::typed_port_t<1, 1> wait_via_query_typed_port_hi(
+    state_machine_t &s, state_machine_t::typed_port_t<0, 1> &&p0)
+{
+  auto threads = platform::active_threads();
+
+  for (;;)
+    {
+      auto either = s.rpc_port_query(threads, cxx::move(p0));
+      if (either)
+        {
+          auto maybe = either.on_true();
+          if (maybe)
+            {
+              state_machine_t::typed_port_t<0, 1> &&p1 = maybe.value();
+              p0 = cxx::move(p1);
+              continue;
+            }
+          else
+            {
+              __builtin_unreachable();
+            }
+        }
+      else
+        {
+          auto maybe = either.on_false();
+          if (maybe)
+            {
+              state_machine_t::typed_port_t<1, 1> &&p1 = maybe.value();
+              return cxx::move(p1);
+            }
+          else
+            {
+              __builtin_unreachable();
+            }
+        }
+    }
+}
 
 extern "C"
 {
