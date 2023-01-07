@@ -36,11 +36,53 @@ _Static_assert(128 == round64(127), "");
 _Static_assert(128 == round64(128), "");
 _Static_assert(192 == round64(129), "");
 
+constexpr bool divides_exactly(size_t x, size_t y)
+{
+  if ((x == 0) || (y == 0))
+    {
+      return false;
+    }
+
+  if (x == y)
+    {
+      return true;
+    }
+
+  if (x < y)
+    {
+      size_t ratio = y / x;
+      bool exact = y == ratio * x;
+      return exact;
+    }
+  else
+    {
+      return divides_exactly(y, x);
+    }
+}
+
+// No zero
+_Static_assert(!divides_exactly(1, 0), "");
+_Static_assert(!divides_exactly(0, 1), "");
+_Static_assert(!divides_exactly(0, 0), "");
+
+// Multiples of one
+_Static_assert(divides_exactly(1, 1), "");
+_Static_assert(divides_exactly(2, 1), "");
+_Static_assert(divides_exactly(1, 2), "");
+
+// Multiples of not-one
+_Static_assert(divides_exactly(2, 4), "");
+_Static_assert(divides_exactly(4, 2), "");
+
+// Not multiple
+_Static_assert(!divides_exactly(5, 2), "");
+_Static_assert(!divides_exactly(2, 5), "");
+
 struct cacheline_t
 {
   alignas(64) uint64_t element[8];
 };
-static_assert(sizeof(cacheline_t) == 64, "");
+_Static_assert(sizeof(cacheline_t) == 64, "");
 
 struct page_t
 {
@@ -50,7 +92,7 @@ struct page_t
   };
   alignas(4096) cacheline_t cacheline[width];
 };
-static_assert(sizeof(page_t) == 4096, "");
+_Static_assert(sizeof(page_t) == 4096, "");
 
 template <typename T>
 struct size_runtime : public fastint_runtime<T>
@@ -94,7 +136,6 @@ struct storage
 
   alignas(Align) unsigned char data[Size];
 };
-
 
 }  // namespace hostrpc
 

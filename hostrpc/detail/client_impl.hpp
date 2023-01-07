@@ -239,50 +239,6 @@ struct client : public client_impl<BufferElementT, WordT, SZT>
   template <typename T, typename Fill>
   HOSTRPC_ANNOTATE bool rpc_invoke_async(T active_threads, Fill &&fill) noexcept
   {
-    auto ApplyFill = hostrpc::make_apply<Fill>(cxx::forward<Fill>(fill));
-
-    if (auto maybe = base::rpc_try_open_typed_port(active_threads))
-      {
-        auto send = base::rpc_port_send(active_threads, maybe.value(),
-                                        cxx::move(ApplyFill));
-        base::rpc_close_port(active_threads, cxx::move(send));
-        return true;
-      }
-    else
-      {
-        return false;
-      }
-  }
-
-  // rpc_invoke returns true if it successfully launched the task
-  // returns false if no slot was available
-
-  // Return after calling use(), i.e. waits for server
-  template <typename T, typename Fill, typename Use>
-  HOSTRPC_ANNOTATE bool rpc_invoke(T active_threads, Fill &&fill,
-                                   Use &&use) noexcept
-  {
-    auto ApplyFill = hostrpc::make_apply<Fill>(cxx::forward<Fill>(fill));
-    auto ApplyUse = hostrpc::make_apply<Use>(cxx::forward<Use>(use));
-
-    if (auto maybe = base::rpc_try_open_typed_port(active_threads))
-      {
-        auto send = base::rpc_port_send(active_threads, maybe.value(),
-                                        cxx::move(ApplyFill));
-        auto recv = base::rpc_port_recv(active_threads, cxx::move(send),
-                                        cxx::move(ApplyUse));
-        base::rpc_close_port(active_threads, cxx::move(recv));
-        return true;
-      }
-    else
-      {
-        return false;
-      }
-  }
-
-  template <typename T, typename Fill>
-  HOSTRPC_ANNOTATE bool rpc_invoke_async_noapply(T active_threads, Fill &&fill) noexcept
-  {
     if (auto maybe = base::rpc_try_open_typed_port(active_threads))
       {
         auto send = base::rpc_port_send(active_threads, maybe.value(),
@@ -298,7 +254,7 @@ struct client : public client_impl<BufferElementT, WordT, SZT>
 
   
   template <typename T, typename Fill, typename Use>
-  HOSTRPC_ANNOTATE bool rpc_invoke_noapply(T active_threads, Fill &&fill,
+  HOSTRPC_ANNOTATE bool rpc_invoke(T active_threads, Fill &&fill,
                                    Use &&use) noexcept
   {
 
