@@ -112,6 +112,33 @@ auto apply_typed_port_hi(state_machine_t &s,
                           [=](port_t, buffer_ty *b) { func(b); });
 }
 
+auto on_element_partial_port(state_machine_t &s,
+                             state_machine_t::partial_port_t<1> &&p0,
+                             void func(buffer_ty *))
+{
+  auto threads = platform::active_threads();
+  s.rpc_port_on_element(threads, p0, [=](port_t, buffer_ty *b) { func(b); });
+  return cxx::move(p0);
+}
+
+auto on_element_typed_port_lo(state_machine_t &s,
+                              state_machine_t::typed_port_t<0, 0> &&p0,
+                              void func(buffer_ty *))
+{
+  auto threads = platform::active_threads();
+  s.rpc_port_on_element(threads, p0, [=](port_t, buffer_ty *b) { func(b); });
+  return cxx::move(p0);
+}
+
+auto on_element_typed_port_hi(state_machine_t &s,
+                              state_machine_t::typed_port_t<1, 1> &&p0,
+                              void func(buffer_ty *))
+{
+  auto threads = platform::active_threads();
+  s.rpc_port_on_element(threads, p0, [=](port_t, buffer_ty *b) { func(b); });
+  return cxx::move(p0);
+}
+
 auto wait_partial_port(state_machine_t &s,
                        state_machine_t::partial_port_t<0> &&p0)
 {

@@ -177,8 +177,16 @@ HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr partial_port_impl_t<F, S> move(
 }  // namespace cxx
 #endif
 
+// Trivial ABI, __attribute__((trivial_abi)), would be a really good fit for this class.
+// It can be passed / returned in an i32 register, all the deleted move constructors and
+// so forth should burn out by codegen. With that type applied and the typestate stuff
+// quite crudely hacked out this is indeed returned as an i32. I don't think it can be passed
+// as i32 unless the cxx::move() requirement at call sites can be dropped, perhaps by
+// annotating the state machine methods directly.
+
 template <typename Friend, unsigned I, unsigned O>
-class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
+class HOSTRPC_CONSUMABLE_CLASS __attribute__((trivial_abi))
+typed_port_impl_t
 {
  private:
   using SelfType = typed_port_impl_t<Friend, I, O>;
@@ -316,6 +324,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   friend hostrpc::either<typed_port_impl_t<Friend, I, !O>, SelfType, uint32_t>;
   
   // move construct and assign are available
+#if HOSTRPC_USE_TYPESTATE
   HOSTRPC_ANNOTATE
   HOSTRPC_CREATED_RES
   HOSTRPC_CALL_ON_DEAD
@@ -336,17 +345,26 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     def();
     return *this;
   }
+  
+  HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_DEAD ~typed_port_impl_t() {}   
+  
+  // leaves value uninitialised, uses of the value are caught
+  // by the typestate annotations
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_CONSUMED typed_port_impl_t() {}
+#else
+  HOSTRPC_ANNOTATE  typed_port_impl_t() = default;
+  HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_DEAD ~typed_port_impl_t() = default;
+  typed_port_impl_t(typed_port_impl_t &&other) = default;
+  typed_port_impl_t &operator=(typed_port_impl_t &&other ) = default;
 
-  HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_DEAD ~typed_port_impl_t() {}
+#endif
+
 
   HOSTRPC_CALL_ON_DEAD HOSTRPC_ANNOTATE void consumed() const {}
   HOSTRPC_CALL_ON_LIVE HOSTRPC_ANNOTATE void unconsumed() const {}
   HOSTRPC_CALL_ON_UNKNOWN HOSTRPC_ANNOTATE void unknown() const {}
 
-  // leaves value uninitialised, uses of the value are caught
-  // by the typestate annotations
-  HOSTRPC_ANNOTATE HOSTRPC_RETURN_CONSUMED typed_port_impl_t() {}
-
+  
  private:
   HOSTRPC_ANNOTATE static typed_port_impl_t HOSTRPC_CREATED_RES
   recreate(typed_port_impl_t &&x HOSTRPC_CONSUMED_ARG)
@@ -364,8 +382,14 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     return v;
   }
 
+  #if HOSTRPC_USE_TYPESTATE
   typed_port_impl_t(const typed_port_impl_t &) = delete;
   typed_port_impl_t &operator=(const typed_port_impl_t &) = delete;
+#else
+  typed_port_impl_t(const typed_port_impl_t &) = default;
+  typed_port_impl_t &operator=(const typed_port_impl_t &) = default;
+  
+  #endif
 };
 
 template <typename Friend, unsigned S>

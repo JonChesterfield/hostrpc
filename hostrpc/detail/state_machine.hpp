@@ -328,6 +328,26 @@ struct state_machine_impl : public SZT, public Counter
   // passed <0, 0> returns <0, 1>, i.e. output changed
   // passed <1, 1> returns <1, 0>, i.e. output changed
   template <unsigned IandO, typename T, typename Op>
+  HOSTRPC_ANNOTATE void rpc_port_on_element(
+      T active_threads,
+      HOSTRPC_CONST_REF_ARG typed_port_t<IandO, IandO> const& port, Op&& op)
+  {
+    static_assert(IandO == 0 || IandO == 1, "");
+
+    return read_typed_port<typed_port_t<IandO, IandO>, T>(active_threads, port,
+                                                          cxx::forward<Op>(op));
+  }
+
+  template <typename T, typename Op>
+  HOSTRPC_ANNOTATE void rpc_port_on_element(
+      T active_threads, HOSTRPC_CONST_REF_ARG partial_port_t<1> const& port,
+      Op&& op)
+  {
+    return read_typed_port<partial_port_t<1>, T>(active_threads, port,
+                                                 cxx::forward<Op>(op));
+  }
+
+  template <unsigned IandO, typename T, typename Op>
   HOSTRPC_ANNOTATE typed_port_t<IandO, !IandO> rpc_port_apply(
       T active_threads, typed_port_t<IandO, IandO>&& port, Op&& op)
   {
@@ -421,36 +441,41 @@ struct state_machine_impl : public SZT, public Counter
   HOSTRPC_ANNOTATE partial_port_t<1> rpc_port_wait(T active_threads,
                                                    partial_port_t<0>&& port)
   {
+    // Implementing via typed port produces two distinct loops, one for each
+    // type it can branch to. Implementing via query resolves to a single loop
+    for (;;)
+      {
+        auto an_either = rpc_port_query(active_threads, cxx::move(port));
+        if (an_either)
+          {
+            auto a_maybe = an_either.on_true();
+            if (a_maybe)
+              {
+                auto a = a_maybe.value();
+                port = cxx::move(a);
+              }
+            else
+              {
+                __builtin_unreachable();
+              }
+          }
+        else
+          {
+            auto a_maybe = an_either.on_false();
+            if (a_maybe)
+              {
+                auto a = a_maybe.value();
+                return cxx::move(a);
+              }
+            else
+              {
+                __builtin_unreachable();
+              }
+          }
+      }
+
     // Implementing in terms of typed port in the first instance.
     // Codegens roughly as expected - the two waits turn into distinct loops
-    if (port.outbox_state())
-      {
-        typename typed_port_t<0, 1>::maybe typed =
-            partial_to_typed<true>(active_threads, cxx::move(port));
-        if (typed)
-          {
-            return typed_to_partial(
-                rpc_port_wait(active_threads, typed.value()));
-          }
-        else
-          {
-            __builtin_unreachable();
-          }
-      }
-    else
-      {
-        typename typed_port_t<1, 0>::maybe typed =
-            partial_to_typed<false>(active_threads, cxx::move(port));
-        if (typed)
-          {
-            return typed_to_partial(
-                rpc_port_wait(active_threads, typed.value()));
-          }
-        else
-          {
-            __builtin_unreachable();
-          }
-      }
   }
 
   template <unsigned I, typename T>
@@ -515,7 +540,9 @@ struct state_machine_impl : public SZT, public Counter
     if (in == port.inbox_state())
       {
         port.unconsumed();
-        either_builder<partial_port_t<0>, partial_port_t<1>, cxx::tuple<uint32_t, bool>> s(port);
+        either_builder<partial_port_t<0>, partial_port_t<1>,
+                       cxx::tuple<uint32_t, bool>>
+            s(port);
         port.consumed();
         // nothing changed
         return s.normal();
@@ -527,7 +554,9 @@ struct state_machine_impl : public SZT, public Counter
         partial_port_t<1> n = port.invert_inbox();
         port.consumed();
         n.unconsumed();
-        either_builder<partial_port_t<1>, partial_port_t<0>, cxx::tuple<uint32_t, bool>> u(n);
+        either_builder<partial_port_t<1>, partial_port_t<0>,
+                       cxx::tuple<uint32_t, bool>>
+            u(n);
         n.consumed();
 
         platform::fence_acquire();
@@ -659,6 +688,16 @@ struct state_machine_impl : public SZT, public Counter
     return {};
   }
 
+  template <typename PortArg, typename T, typename Op>
+  HOSTRPC_ANNOTATE void read_typed_port(
+      T active_threads, HOSTRPC_CONST_REF_ARG PortArg const& port, Op&& op)
+  {
+    (void)active_threads;
+    static_assert(port_trait<PortArg>::openable(), "");
+    uint32_t raw = static_cast<uint32_t>(port);
+    op(static_cast<port_t>(raw), &shared_buffer[raw]);
+  }
+
   template <typename PortRes, typename PortArg, typename T, typename Op>
   HOSTRPC_ANNOTATE PortRes apply_typed_port(T active_threads, PortArg&& port,
                                             Op&& op)
@@ -668,10 +707,11 @@ struct state_machine_impl : public SZT, public Counter
     static_assert(port_trait<PortArg>::openable(), "");
     static_assert(!port_trait<PortRes>::openable(), "");
 
+    read_typed_port<PortArg, T, Op>(active_threads, port, cxx::forward<Op>(op));
+
     const uint32_t size = this->size();
 
     uint32_t raw = static_cast<uint32_t>(port);
-    op(static_cast<port_t>(raw), &shared_buffer[raw]);
     platform::fence_release();
 
     // Toggle the outbox slot

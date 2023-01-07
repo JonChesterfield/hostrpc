@@ -137,6 +137,7 @@ MODULE(create_and_immediately_destroy)
   {
     auto tmp = typed_port_t<0, 0>{};
     // uint32_t v = tmp; (void)v;
+    (void)tmp;
   }
 
   TEST("default constructed warns on conversion to uint32")
