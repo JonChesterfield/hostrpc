@@ -284,6 +284,7 @@ struct state_machine_impl : public SZT, public Counter
     const port_t slot = static_cast<port_t>(static_cast<uint32_t>(port));
     if (platform::is_master_lane(active_threads))
       {
+        platform::fence_release();
         active.release_slot(size, slot);
       }
 
@@ -314,6 +315,14 @@ struct state_machine_impl : public SZT, public Counter
     rpc_close_port(active_threads, typed_to_partial(cxx::move(port)));
   }
 
+  // TODO: Want a function which can be called on stable ports, the same
+  // ones as apply, but takes the port by const& and does not change it
+  // This can be used to read the buffer without triggering a request
+  // for the other machine to act. It could probably take the buffer
+  // by const& as well, as a reminder that writes to it aren't going
+  // to be seen by the other side, though one could make multiple calls
+  // before following with an apply.
+  
   // Apply will leave input unchanged and toggle output
   // passed <0, 0> returns <0, 1>, i.e. output changed
   // passed <1, 1> returns <1, 0>, i.e. output changed
@@ -557,8 +566,10 @@ struct state_machine_impl : public SZT, public Counter
 
             if (active.try_claim_empty_slot(active_threads, size, slot))
               {
-                // Got the lock. Is the slot still available for this type of
-                // port? Need to reload now their values are locked to find out.
+                // Previous versions had no fence here, relying on the acquire-release
+                // on the lock. I'm 95% sure that was a race, the acq/rel on the lock CAS
+                // has no relation to these loads. Didn't show up in testing.
+                platform::fence_acquire();
                 static_assert(port_openable<PortType>(), "");
                 Word i = inbox.load_word(size, w);
                 Word o = outbox.load_word(size, w);
