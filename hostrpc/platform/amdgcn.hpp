@@ -51,17 +51,11 @@ inline HOSTRPC_ANNOTATE auto get_lane_id()
 }
 
 template <typename T>
-inline HOSTRPC_ANNOTATE auto get_master_lane_id(T active_threads)
-{
-  auto f = active_threads.findFirstSet();
-  return f.template subtract<1>();
-}
-
-template <typename T>
 HOSTRPC_ANNOTATE __attribute__((always_inline)) inline uint32_t
 broadcast_master(T, uint32_t x)
 {
   // reads from lowest set bit in exec mask
+  // this is OK from definition of get_master_lane_id
   return __builtin_amdgcn_readfirstlane(x);
 }
 

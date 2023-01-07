@@ -192,6 +192,7 @@ COMMONFLAGS="-Wall -Wextra -Werror=consumed -Wno-enum-constexpr-conversion -emit
 # there's a failure mode in trunk clang - 'remaining virtual register operands' - but it
 # resists changing the pipeline to llvm-link + llc, will have to debug it later
 # note, -gdwarf-4 if valgrind doesn't recognise the format
+# x64 segfaults if built -fno-exceptions
 X64FLAGS=" $OPTLEVEL -pthread " # nvptx can't handle debug info on x64 for O>0
 GCNFLAGS=" $OPTLEVEL -ffreestanding -fno-exceptions $AMDGPU"
 # atomic alignment objection seems reasonable - may want 32 wide atomics on nvptx
@@ -315,7 +316,6 @@ if (($have_amdgcn)); then
 
     ./$DIR/indirect_loader.exe $DIR/demo.gcn
     
-    exit 0
 fi
 
 if (($have_amdgcn)); then
@@ -488,7 +488,7 @@ if true; then
 # and provide an example of the generated IR
 $CXX_X64 $CXXVER -DNDEBUG codegen/client.cpp -S -o codegen/client.x64.ll
 $CXX_X64 $CXXVER -DNDEBUG codegen/server.cpp -S -o codegen/server.x64.ll
-$CXX_X64 $CXXVER -DNDEBUG codegen/state_machine.cpp -S -o codegen/state_machine.x64.ll
+$CXX_X64 $CXXVER -DNDEBUG -fno-exceptions codegen/state_machine.cpp -S -o codegen/state_machine.x64.ll
 
 $EXTRACT codegen/state_machine.x64.ll -func typed_port_via_wait -S -o codegen/first.ll
 $EXTRACT codegen/state_machine.x64.ll -func typed_port_via_query -S -o codegen/second.ll
@@ -556,6 +556,9 @@ $CLANGXX $XHIP $CXXVER $CODEGENOPTLEVEL --cuda-host-only codegen/server.cpp -S -
 $CLANGXX $XOPENCL -S -emit-llvm codegen/client.cpp -S -o codegen/client.ocl.x64.ll
 $CLANGXX $XOPENCL -S -emit-llvm codegen/server.cpp -S -o codegen/server.ocl.x64.ll
 fi
+
+# Currently interested in codegen
+exit 42
 
 $CXX_X64 -I$HSAINC tests.cpp -c -o tests.x64.bc
 $CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc

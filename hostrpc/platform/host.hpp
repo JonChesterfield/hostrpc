@@ -55,12 +55,6 @@ inline HOSTRPC_ANNOTATE auto get_lane_id()
 }
 
 template <typename T>
-HOSTRPC_ANNOTATE inline auto get_master_lane_id(T)
-{
-  return hostrpc::fastint_compiletime<0>();
-}
-
-template <typename T>
 HOSTRPC_ANNOTATE inline uint32_t broadcast_master(T, uint32_t x)
 {
   return x;

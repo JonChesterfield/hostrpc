@@ -133,6 +133,7 @@ struct fastint_runtime
 template <uint64_t V>
 struct fastint_compiletime
 {
+  // This doesn't have operator==, so comparisons go through value()
   using type = typename fastint::sufficientType<V>::type;
 
  private:

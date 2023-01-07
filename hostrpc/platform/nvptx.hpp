@@ -45,16 +45,9 @@ inline HOSTRPC_ANNOTATE auto active_threads()
 }
 
 template <typename T>
-inline HOSTRPC_ANNOTATE auto get_master_lane_id(T active_threads)
-{
-  auto f = active_threads.findFirstSet();
-  return f.template subtract<1>();
-}
-
-template <typename T>
 HOSTRPC_ANNOTATE inline uint32_t broadcast_master(T active_threads, uint32_t x)
 {
-  uint32_t master_id = get_master_lane_id(active_threads);
+  uint32_t master_id = platform::get_master_lane_id(active_threads);
   return __nvvm_shfl_sync_idx_i32(active_threads, x, master_id,
                                   native_width() - 1);
 }

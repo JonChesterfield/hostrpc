@@ -72,14 +72,33 @@ inline HOSTRPC_ANNOTATE constexpr uint64_t native_width();
 inline HOSTRPC_ANNOTATE void sleep_briefly();
 inline HOSTRPC_ANNOTATE void sleep();
 
-inline HOSTRPC_ANNOTATE auto active_threads();
-inline HOSTRPC_ANNOTATE auto get_lane_id();
+// auto is hiding some messy things here.
+// the (probably x64) host wants to use a compile time constant
+// where the gpu caller knows the thread mask as a compile time constant,
+// those should also use a compile time constant
+// however sometimes they don't
+// nvptx and gfx10 want a 32 bit wide result
+// gfx9 wants a 64 bit wide result
+// Functions on runtime integers usually return the same type, but functions on
+// the compile time ones return different types
 
+inline HOSTRPC_ANNOTATE auto active_threads();
+
+// get_lane_id is a runtime thing for GPUs and return 0 for the host
+inline HOSTRPC_ANNOTATE auto get_lane_id();
+ 
 template <typename T>
 inline HOSTRPC_ANNOTATE auto get_master_lane_id(T active_threads);
 
 template <typename T>
+inline HOSTRPC_ANNOTATE bool is_master_lane(T active_threads);
+ 
+template <typename T>
 inline HOSTRPC_ANNOTATE uint32_t broadcast_master(T active_threads, uint32_t);
+
+template <typename T>
+HOSTRPC_ANNOTATE inline uint64_t
+broadcast_master(T active_threads, uint64_t x);
 
 inline HOSTRPC_ANNOTATE uint32_t client_start_slot();
 
@@ -112,11 +131,7 @@ static_assert(native_width() <= 64, "");
 
 namespace
 {
-template <typename T>
-inline HOSTRPC_ANNOTATE bool is_master_lane(T active_threads)
-{
-  return get_lane_id() == get_master_lane_id(active_threads);
-}
+
 }  // namespace
 
 // related functions derived from the above
@@ -134,6 +149,20 @@ broadcast_master(T active_threads, uint64_t x)
   return ((uint64_t)hi << 32u) | lo;
 }
 
+template <typename T>
+inline HOSTRPC_ANNOTATE auto get_master_lane_id(T active_threads)
+{
+  // The lowest bit set. If changing, need to change broadcast_master to match.
+  auto f = active_threads.findFirstSet();
+  return f.template subtract<1>();
+}
+
+template <typename T>
+inline HOSTRPC_ANNOTATE bool is_master_lane(T active_threads)
+{
+  return get_lane_id() == get_master_lane_id(active_threads);
+}
+ 
 }  // namespace
 
 // atomics may also be overloaded on different address spaces for some platforms

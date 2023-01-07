@@ -1,93 +1,129 @@
 #include "../detail/state_machine.hpp"
 
+struct buffer_ty
+{
+  int x;
+};
+
 using state_machine_t =
-    hostrpc::state_machine_impl<hostrpc::page_t, uint32_t,
+    hostrpc::state_machine_impl<buffer_ty, uint32_t,
                                 hostrpc::size_compiletime<128>,
                                 hostrpc::counters::client_nop, false>;
 
-extern "C"
-void partial_port()
+using namespace hostrpc;
+
+auto master_lane()
 {
-  using namespace hostrpc;
   auto threads = platform::active_threads();
-  size_compiletime<128> sz;
-  state_machine_t s(sz, {nullptr}, {nullptr}, {nullptr}, nullptr);
+  return platform::get_master_lane_id(threads);
+}
 
-  state_machine_t::partial_port_t<1> p1 = s.rpc_open_partial_port(threads);
+auto is_master_lane()
+{
+  auto threads = platform::active_threads();
+  return platform::is_master_lane(threads);
+}
 
-  state_machine_t::partial_port_t<0> p0 = s.rpc_port_apply(threads, cxx::move(p1), [](port_t, page_t *) {});
-
-  s.rpc_close_port(threads, cxx::move(p0));
-
+bool is_master_when_all_active()
+{
+  // works through implicit conversion to the underlying runtime value
+  auto all = platform::all_threads_active_constant();
+  return platform::is_master_lane(all);
 }
 
 extern "C"
-void typed_port_via_wait()
 {
-  using namespace hostrpc;
-  auto threads = platform::active_threads();
-  size_compiletime<128> sz;
-  state_machine_t s(sz, {nullptr}, {nullptr}, {nullptr}, nullptr);
+  void open_and_close_partial_port(state_machine_t &s)
+  {
+    auto threads = platform::active_threads();
+    auto p = s.rpc_open_partial_port(threads);
+    s.rpc_close_port(threads, cxx::move(p));
+  }
 
-  auto p00 = s.rpc_open_typed_port<0, 0>(threads);
+  void partial_port()
+  {
+    auto threads = platform::active_threads();
+    size_compiletime<128> sz;
+    state_machine_t s(sz, {nullptr}, {nullptr}, {nullptr}, nullptr);
 
-  auto p01 = s.rpc_port_apply(threads, cxx::move(p00), [](port_t, page_t *) {});
+    state_machine_t::partial_port_t<1> p1 = s.rpc_open_partial_port(threads);
 
-  state_machine_t::typed_port_t<1, 1> p11 = s.rpc_port_wait(threads, cxx::move(p01));
+    state_machine_t::partial_port_t<0> p0 =
+        s.rpc_port_apply(threads, cxx::move(p1), [](port_t, buffer_ty *) {});
 
-  auto p10 = s.rpc_port_apply(threads, cxx::move(p11), [](port_t, page_t *) {});
-  
-  s.rpc_close_port(threads, cxx::move(p10));
-}
+    s.rpc_close_port(threads, cxx::move(p0));
+  }
 
-extern "C"
-void typed_port_via_query()
-{
-  using namespace hostrpc;
-  auto threads = platform::active_threads();
-  size_compiletime<128> sz;
-  state_machine_t s(sz, {nullptr}, {nullptr}, {nullptr}, nullptr);
+  void typed_port_via_wait()
+  {
+    using namespace hostrpc;
+    auto threads = platform::active_threads();
+    size_compiletime<128> sz;
+    state_machine_t s(sz, {nullptr}, {nullptr}, {nullptr}, nullptr);
 
-  auto p00 = s.rpc_open_typed_port<0, 0>(threads);
+    auto p00 = s.rpc_open_typed_port<0, 0>(threads);
 
-  auto p01 = s.rpc_port_apply(threads, cxx::move(p00), [](port_t, page_t *) {});
+    auto p01 =
+        s.rpc_port_apply(threads, cxx::move(p00), [](port_t, buffer_ty *) {});
 
-  state_machine_t::typed_port_t<1, 1> p11;
+    state_machine_t::typed_port_t<1, 1> p11 =
+        s.rpc_port_wait(threads, cxx::move(p01));
 
-  for (;;)
-    {
-      auto an_either = s.rpc_port_query(threads, cxx::move(p01));
-      if (an_either)
-        {
-          auto a_maybe = an_either.on_true();
-          if (a_maybe)
-            {
-              auto a = a_maybe.value();
-              p01 = cxx::move(a);
-            }
-          else
-            {
-              __builtin_unreachable();
-            }
-        }
-      else
-        {
-          auto a_maybe = an_either.on_false();
-          if (a_maybe)
-            {
-              auto a = a_maybe.value();
-              p11 = cxx::move(a);
-              break;
-            }
-          else
-            {
-              __builtin_unreachable();
-            }
+    auto p10 =
+        s.rpc_port_apply(threads, cxx::move(p11), [](port_t, buffer_ty *) {});
 
-        }
-    }
+    s.rpc_close_port(threads, cxx::move(p10));
+  }
 
-  auto p10 = s.rpc_port_apply(threads, cxx::move(p11), [](port_t, page_t *) {});
-  
-  s.rpc_close_port(threads, cxx::move(p10));
+  void typed_port_via_query()
+  {
+    using namespace hostrpc;
+    auto threads = platform::active_threads();
+    size_compiletime<128> sz;
+    state_machine_t s(sz, {nullptr}, {nullptr}, {nullptr}, nullptr);
+
+    auto p00 = s.rpc_open_typed_port<0, 0>(threads);
+
+    auto p01 =
+        s.rpc_port_apply(threads, cxx::move(p00), [](port_t, buffer_ty *) {});
+
+    state_machine_t::typed_port_t<1, 1> p11;
+
+    for (;;)
+      {
+        auto an_either = s.rpc_port_query(threads, cxx::move(p01));
+        if (an_either)
+          {
+            auto a_maybe = an_either.on_true();
+            if (a_maybe)
+              {
+                auto a = a_maybe.value();
+                p01 = cxx::move(a);
+              }
+            else
+              {
+                __builtin_unreachable();
+              }
+          }
+        else
+          {
+            auto a_maybe = an_either.on_false();
+            if (a_maybe)
+              {
+                auto a = a_maybe.value();
+                p11 = cxx::move(a);
+                break;
+              }
+            else
+              {
+                __builtin_unreachable();
+              }
+          }
+      }
+
+    auto p10 =
+        s.rpc_port_apply(threads, cxx::move(p11), [](port_t, buffer_ty *) {});
+
+    s.rpc_close_port(threads, cxx::move(p10));
+  }
 }
