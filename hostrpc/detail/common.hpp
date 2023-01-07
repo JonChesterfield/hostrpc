@@ -39,22 +39,10 @@ HOSTRPC_ANNOTATE inline uint32_t index_to_element(uint32_t x)
 }
 
 template <typename Word>
-HOSTRPC_ANNOTATE inline uint32_t index_to_element(port_t x)
-{
-  return index_to_element<Word>(static_cast<uint32_t>(x));
-}
-
-template <typename Word>
 HOSTRPC_ANNOTATE inline uint32_t index_to_subindex(uint32_t x)
 {
   uint32_t wordBits = 8 * sizeof(Word);
   return x % wordBits;
-}
-
-template <typename Word>
-HOSTRPC_ANNOTATE inline uint32_t index_to_subindex(port_t x)
-{
-  return index_to_subindex<Word>(static_cast<uint32_t>(x));
 }
 
 namespace bits
@@ -316,7 +304,7 @@ struct slot_bitmap
   }
   HOSTRPC_ANNOTATE ~slot_bitmap() = default;
 
-  HOSTRPC_ANNOTATE bool read_bit(uint32_t size, port_t i) const
+  HOSTRPC_ANNOTATE bool read_bit(uint32_t size, uint32_t i) const
   {
     uint32_t w = index_to_element<Word>(i);
     Word d = load_word(size, w);
@@ -350,9 +338,9 @@ struct slot_bitmap
 
   // Returns value of bit before writing true to it
   template <bool KnownClearBefore>
-  HOSTRPC_ANNOTATE bool set_slot(uint32_t size, port_t i)
+  HOSTRPC_ANNOTATE bool set_slot(uint32_t size, uint32_t i)
   {
-    assert(static_cast<uint32_t>(i) < size);
+    assert(i < size);
     uint32_t w = index_to_element<Word>(i);
     uint32_t subindex = index_to_subindex<Word>(i);
 
@@ -387,9 +375,9 @@ struct slot_bitmap
   }
 
   // assumes slot available
-  HOSTRPC_ANNOTATE void claim_slot(uint32_t size, port_t i)
+  HOSTRPC_ANNOTATE void claim_slot(uint32_t size, uint32_t i)
   {
-    assert(static_cast<uint32_t>(i) < size);
+    assert(i < size);
     assert(!bits::nthbitset(load_word(size, index_to_element<Word>(i)),
                             index_to_subindex<Word>(i)));
     bool before = set_slot<true>(size, i);
@@ -398,10 +386,10 @@ struct slot_bitmap
   }
 
   // assumes slot taken
-  HOSTRPC_ANNOTATE void release_slot(uint32_t size, port_t i)
+  HOSTRPC_ANNOTATE void release_slot(uint32_t size, uint32_t i)
   {
     (void)size;
-    assert(static_cast<uint32_t>(i) < size);
+    assert(i < size);
     uint32_t w = index_to_element<Word>(i);
     uint32_t subindex = index_to_subindex<Word>(i);
     assert(bits::nthbitset(load_word(size, w), subindex));
@@ -433,10 +421,10 @@ struct slot_bitmap
       }
   }
 
-  HOSTRPC_ANNOTATE void toggle_slot(uint32_t size, port_t i)
+  HOSTRPC_ANNOTATE void toggle_slot(uint32_t size, uint32_t i)
   {
     (void)size;
-    assert(static_cast<uint32_t>(i) < size);
+    assert(i < size);
     uint32_t w = index_to_element<Word>(i);
     uint32_t subindex = index_to_subindex<Word>(i);
 #ifndef NDEBUG
@@ -608,17 +596,17 @@ struct outbox_bitmap
 
   HOSTRPC_ANNOTATE void dump(uint32_t size) const { a.dump(size); }
 
-  HOSTRPC_ANNOTATE void claim_slot(uint32_t size, port_t i)
+  HOSTRPC_ANNOTATE void claim_slot(uint32_t size, uint32_t i)
   {
     return a.claim_slot(size, i);
   }
 
-  HOSTRPC_ANNOTATE void release_slot(uint32_t size, port_t i)
+  HOSTRPC_ANNOTATE void release_slot(uint32_t size, uint32_t i)
   {
     return a.release_slot(size, i);
   }
 
-  HOSTRPC_ANNOTATE void toggle_slot(uint32_t size, port_t i)
+  HOSTRPC_ANNOTATE void toggle_slot(uint32_t size, uint32_t i)
   {
     return a.toggle_slot(size, i);
   }
@@ -664,7 +652,7 @@ struct lock_bitmap
       }
   }
 
-  HOSTRPC_ANNOTATE void release_slot(uint32_t size, port_t i)
+  HOSTRPC_ANNOTATE void release_slot(uint32_t size, uint32_t i)
   {
     a.release_slot(size, i);
   }
@@ -687,7 +675,7 @@ struct lock_bitmap
     uint32_t before = 0;
     if (platform::is_master_lane(active_threads))
       {
-        before = a.template set_slot<false>(size, static_cast<port_t>(slot))
+        before = a.template set_slot<false>(size, slot)
                      ? 1u
                      : 0u;
       }
@@ -758,6 +746,7 @@ struct lock_bitmap
   }
 };
 
+
 // each platform defines platform::native_width(), presently either 1|32|64
 // the application provides a function of type void (*)(port_t, page_t*) and
 // is responsible for using get_lane_id or similar to iterate across the page
@@ -789,7 +778,7 @@ class classify_callback_type
 {
   template <typename U>
   static constexpr decltype(
-      cxx::declval<U>().operator()(cxx::declval<hostrpc::port_t>(),
+      cxx::declval<U>().operator()(cxx::declval<uint32_t>(),
                                    cxx::declval<hostrpc::page_t *>()),
       callback_type())
   test(int)
@@ -799,7 +788,7 @@ class classify_callback_type
 
   template <typename U>
   static constexpr decltype(
-      cxx::declval<U>().operator()(cxx::declval<hostrpc::port_t>(),
+      cxx::declval<U>().operator()(cxx::declval<uint32_t>(),
                                    cxx::declval<uint32_t>(),
                                    cxx::declval<uint64_t *>()),
       callback_type())
@@ -810,7 +799,7 @@ class classify_callback_type
 
   template <typename U>
   static constexpr decltype(
-      cxx::declval<U>().operator()(cxx::declval<hostrpc::port_t>(),
+      cxx::declval<U>().operator()(cxx::declval<uint32_t>(),
                                    cxx::declval<uint32_t>(),
                                    cxx::declval<uint64_t (&)[N]>()),
       callback_type())
@@ -923,7 +912,7 @@ struct apply<Func, apply_case::same_width>
   Func &&f;
   HOSTRPC_ANNOTATE apply(Func &&f_) : f(cxx::forward<Func>(f_)) {}
 
-  HOSTRPC_ANNOTATE void operator()(port_t port, page_t *page)
+  HOSTRPC_ANNOTATE void operator()(uint32_t port, page_t *page)
   {
     auto id = platform::get_lane_id();
     hostrpc::cacheline_t *L = &page->cacheline[id];
@@ -937,7 +926,7 @@ struct apply<Func, apply_case::page_wider>
   Func &&f;
   HOSTRPC_ANNOTATE apply(Func &&f_) : f(cxx::forward<Func>(f_)) {}
 
-  HOSTRPC_ANNOTATE void operator()(port_t port, page_t *page)
+  HOSTRPC_ANNOTATE void operator()(uint32_t port, page_t *page)
   {
     constexpr size_t ratio = page_t::width / platform::native_width();
     for (size_t step = 0; step < ratio; step++)
@@ -956,7 +945,7 @@ struct apply<Func, apply_case::page_narrower>
   Func &&f;
   HOSTRPC_ANNOTATE apply(Func &&f_) : f(cxx::forward<Func>(f_)) {}
 
-  HOSTRPC_ANNOTATE void operator()(port_t port, page_t *page)
+  HOSTRPC_ANNOTATE void operator()(uint32_t port, page_t *page)
   {
     auto id = platform::get_lane_id();
     if (id < page_t::width)
@@ -984,7 +973,7 @@ struct apply_function_iff_required<Func, C, callback_type::to_page>
   {
   }
 
-  HOSTRPC_ANNOTATE void operator()(port_t port, page_t *page) { f(port, page); }
+  HOSTRPC_ANNOTATE void operator()(uint32_t port, page_t *page) { f(port, page); }
 };
 
 template <typename Func, apply::apply_case C>
@@ -999,7 +988,7 @@ struct apply_function_iff_required<Func, C, callback_type::to_line>
   {
   }
 
-  HOSTRPC_ANNOTATE void operator()(port_t port, page_t *page) { f(port, page); }
+  HOSTRPC_ANNOTATE void operator()(uint32_t port, page_t *page) { f(port, page); }
 };
 
 }  // namespace detail

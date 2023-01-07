@@ -539,7 +539,7 @@ static int main_with_hsa(int argc, char **argv, file_handles *maybe_handles)
 
       bool r = //server.
         rpc_handle(&server,
-          [&](hostrpc::port_t, BufferElement *data) {
+          [&](uint32_t, BufferElement *data) {
             fprintf(stderr, "Server got work to do:\n");
 
             for (unsigned i = 0; i < 64; i++)
@@ -563,7 +563,7 @@ static int main_with_hsa(int argc, char **argv, file_handles *maybe_handles)
 
             fprintf(stderr, "\n");
           },
-          [&](hostrpc::port_t, BufferElement *data) {
+          [&](uint32_t, BufferElement *data) {
             fprintf(stderr, "Server cleaning up\n");
             for (unsigned i = 0; i < 64; i++)
               {

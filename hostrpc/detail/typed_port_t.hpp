@@ -185,8 +185,7 @@ HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr partial_port_impl_t<F, S> move(
 // annotating the state machine methods directly.
 
 template <typename Friend, unsigned I, unsigned O>
-class HOSTRPC_CONSUMABLE_CLASS __attribute__((trivial_abi))
-typed_port_impl_t
+class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
 {
  private:
   using SelfType = typed_port_impl_t<Friend, I, O>;

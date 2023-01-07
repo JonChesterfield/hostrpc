@@ -272,7 +272,7 @@ struct operate
       }
   }
 
-  void operator()(hostrpc::port_t port, hostrpc::page_t *page)
+  void operator()(uint32_t port, hostrpc::page_t *page)
   {
     uint32_t slot = static_cast<uint32_t>(port);
     const bool verbose = false;
@@ -291,7 +291,7 @@ struct clear
 {
   clear() = default;
 
-  void operator()(hostrpc::port_t, hostrpc::page_t *page)
+  void operator()(uint32_t, hostrpc::page_t *page)
   {
     for (uint64_t c = 0; c < 64; c++)
       {

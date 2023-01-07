@@ -96,7 +96,7 @@ MODULE(bitmap)
         bool ok = true;
         for (uint32_t i = 0; i < sz; i++)
           {
-            hostrpc::port_t p = static_cast<hostrpc::port_t>(i);
+            uint32_t p = static_cast<uint32_t>(i);
             ok &= baseline.read_bit(sz, p) == 0;
           }
         CHECK(ok);
@@ -110,7 +110,7 @@ MODULE(bitmap)
         bool ok = true;
         for (uint32_t i = 0; i < sz; i++)
           {
-            hostrpc::port_t p = static_cast<hostrpc::port_t>(i);
+            uint32_t p = static_cast<uint32_t>(i);
             baseline.claim_slot(sz, p);
           }
         for (uint32_t i = 0; i < words; i++)
@@ -120,7 +120,7 @@ MODULE(bitmap)
           }
         for (uint32_t i = 0; i < sz; i++)
           {
-            hostrpc::port_t p = static_cast<hostrpc::port_t>(i);
+            uint32_t p = static_cast<uint32_t>(i);
             baseline.release_slot(sz, p);
           }
         for (uint32_t i = 0; i < words; i++)
@@ -139,7 +139,7 @@ MODULE(bitmap)
         bool ok = true;
         for (uint32_t i = 0; i < sz; i++)
           {
-            hostrpc::port_t p = static_cast<hostrpc::port_t>(i);
+            uint32_t p = static_cast<uint32_t>(i);
 
             ok &= baseline.read_bit(sz, p) == 0;
             baseline.claim_slot(sz, p);

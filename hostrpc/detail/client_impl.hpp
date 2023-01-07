@@ -17,7 +17,7 @@ namespace hostrpc
 struct fill_nop
 {
   template <typename BufferElement>
-  HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, BufferElement *)
+  HOSTRPC_ANNOTATE void operator()(uint32_t, BufferElement *)
   {
   }
   fill_nop() = default;
@@ -28,7 +28,7 @@ struct fill_nop
 struct use_nop
 {
   template <typename BufferElement>
-  HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, BufferElement *)
+  HOSTRPC_ANNOTATE void operator()(uint32_t, BufferElement *)
   {
   }
   use_nop() = default;
@@ -201,7 +201,7 @@ struct client_impl
       T active_threads, typed_port_t<1, 1> &&port)
   {
     return rpc_port_recv(active_threads, hostrpc::cxx::move(port),
-                         [](hostrpc::port_t, BufferElement *) {});
+                         [](uint32_t, BufferElement *) {});
   }
 
   template <typename T, unsigned I, unsigned O>

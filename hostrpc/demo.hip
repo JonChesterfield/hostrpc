@@ -55,7 +55,7 @@ __device__ static bool invoke(C *client, uint64_t x[8])
 
 struct operate_test
 {
-  void operator()(hostrpc::port_t port, hostrpc::page_t *page)
+  void operator()(uint32_t port, hostrpc::page_t *page)
   {
     uint32_t slot = static_cast<uint32_t>(port);
     fprintf(stderr, "Invoked operate\n");
@@ -65,7 +65,7 @@ struct operate_test
       }
   }
 
-  void operator()(hostrpc::port_t, unsigned index, hostrpc::cacheline_t *line)
+  void operator()(uint32_t, unsigned index, hostrpc::cacheline_t *line)
   {
 #if HOSTRPC_HOST
     hostrpc::syscall_on_cache_line(index, line);

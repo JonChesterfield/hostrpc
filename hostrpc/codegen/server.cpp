@@ -10,7 +10,7 @@ namespace hostrpc
 {
 struct operate_direct
 {
-  HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, hostrpc::page_t *page)
+  HOSTRPC_ANNOTATE void operator()(uint32_t, hostrpc::page_t *page)
   {
     op_target(page);
   }
@@ -21,7 +21,7 @@ struct operate_direct
 
 struct clear_direct
 {
-  HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, hostrpc::page_t *page)
+  HOSTRPC_ANNOTATE void operator()(uint32_t, hostrpc::page_t *page)
   {
     cl_target(page);
   }

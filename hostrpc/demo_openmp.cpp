@@ -73,7 +73,7 @@ bool write_to_stderr(const char *str)
     {
       auto send = client.template rpc_port_send(
           active_threads, maybe.value(),
-          [=](hostrpc::port_t, BufferElement *data) {
+          [=](uint32_t, BufferElement *data) {
             auto me = platform::get_lane_id();
             enum
             {
@@ -87,7 +87,7 @@ bool write_to_stderr(const char *str)
           });
 
 
-      auto recv = client.template rpc_port_recv(active_threads, hostrpc::cxx::move(send), [](hostrpc::port_t, BufferElement*) {});
+      auto recv = client.template rpc_port_recv(active_threads, hostrpc::cxx::move(send), [](uint32_t, BufferElement*) {});
 
       client.template rpc_close_port(active_threads, hostrpc::cxx::move(recv));
 
@@ -182,7 +182,7 @@ int main()
 
       again:;
         bool r = rpc_handle(&server,
-            [&](hostrpc::port_t, BufferElement *data) {
+            [&](uint32_t, BufferElement *data) {
               fprintf(stderr, "Server got work to do:\n");
               got_work = true;
               for (unsigned i = 0; i < 64; i++)
@@ -196,7 +196,7 @@ int main()
                     }
                 }
             },
-            [&](hostrpc::port_t, BufferElement *data) {
+            [&](uint32_t, BufferElement *data) {
               fprintf(stderr, "Server cleaning up\n");
               got_cleanup = true;
               for (unsigned i = 0; i < 64; i++)

@@ -55,7 +55,7 @@ struct fill
   fill(hostrpc::page_t *d) : d(d) {}
   hostrpc::page_t *d;
 
-  void operator()(hostrpc::port_t, hostrpc::page_t *page)
+  void operator()(uint32_t, hostrpc::page_t *page)
   {
 #if defined(__AMDGCN__)
     copy_page(page, d);
@@ -70,7 +70,7 @@ struct use
   use(hostrpc::page_t *d) : d(d) {}
   hostrpc::page_t *d;
 
-  void operator()(hostrpc::port_t, hostrpc::page_t *page)
+  void operator()(uint32_t, hostrpc::page_t *page)
   {
 #if defined(__AMDGCN__)
     copy_page(d, page);
@@ -352,7 +352,7 @@ TEST_CASE("x64_gcn_stress")
     // call
 
     auto str = [](bool hit) -> const char * { return hit ? "FAIL" : "pass"; };
-    auto op_func = [&](hostrpc::port_t port, hostrpc::page_t *page) {
+    auto op_func = [&](uint32_t port, hostrpc::page_t *page) {
 #if 1
       uint32_t slot = static_cast<uint32_t>(port);
       // printf("gcn stress hit server function\n");
@@ -390,7 +390,7 @@ TEST_CASE("x64_gcn_stress")
         }
     };
 
-    auto cl_func = [&](hostrpc::port_t port, hostrpc::page_t *page) {
+    auto cl_func = [&](uint32_t port, hostrpc::page_t *page) {
 #if 1
       uint32_t slot = static_cast<uint32_t>(port);
       //   printf("gcn stress hit clear function\n");

@@ -211,7 +211,7 @@ int main(int argc, char ** argv)
       bool r =  // server.
           rpc_handle(
               &server,
-              [&](hostrpc::port_t, BufferElement *data) {
+              [&](uint32_t, BufferElement *data) {
                 fprintf(stderr, "Indirect server got work to do:\n");
 
                 for (unsigned i = 0; i < 64; i++)
@@ -236,7 +236,7 @@ int main(int argc, char ** argv)
                       }
                   }
               },
-              [&](hostrpc::port_t, BufferElement *data) {
+              [&](uint32_t, BufferElement *data) {
                 fprintf(stderr, "Server cleaning up\n");
                 for (unsigned i = 0; i < 64; i++)
                   {

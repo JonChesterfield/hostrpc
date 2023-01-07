@@ -282,7 +282,7 @@ struct state_machine_impl : public SZT, public Counter
                                        partial_port_t<S>&& port)
   {
     const uint32_t size = this->size();
-    const port_t slot = static_cast<port_t>(static_cast<uint32_t>(port));
+    const uint32_t slot = static_cast<uint32_t>(port);
     if (platform::is_master_lane(active_threads))
       {
         platform::fence_release();
@@ -672,7 +672,7 @@ struct state_machine_impl : public SZT, public Counter
                     // Failed, drop the lock before continuing to search
                     if (platform::is_master_lane(active_threads))
                       {
-                        active.release_slot(size, static_cast<port_t>(slot));
+                        active.release_slot(size, slot);
                       }
                   }
 
@@ -695,7 +695,7 @@ struct state_machine_impl : public SZT, public Counter
     (void)active_threads;
     static_assert(port_trait<PortArg>::openable(), "");
     uint32_t raw = static_cast<uint32_t>(port);
-    op(static_cast<port_t>(raw), &shared_buffer[raw]);
+    op(raw, &shared_buffer[raw]);
   }
 
   template <typename PortRes, typename PortArg, typename T, typename Op>
@@ -733,14 +733,14 @@ struct state_machine_impl : public SZT, public Counter
       {
         if (platform::is_master_lane(active_threads))
           {
-            outbox.release_slot(size, static_cast<port_t>(raw));
+            outbox.release_slot(size, raw);
           }
       }
     else
       {
         if (platform::is_master_lane(active_threads))
           {
-            outbox.claim_slot(size, static_cast<port_t>(raw));
+            outbox.claim_slot(size, raw);
           }
       }
 

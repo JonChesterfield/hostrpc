@@ -47,7 +47,7 @@ extern "C" __attribute__((flatten)) HOSTRPC_ANNOTATE void client_compiling_eithe
       client_type::typed_port_t<0, 0> p00(p0);
       client_type::typed_port_t<0, 1> p01 = c.rpc_port_send(active_threads,
                                                             cxx::move(p00),
-                                                            [](hostrpc::port_t, hostrpc::page_t *) {});
+                                                            [](uint32_t, hostrpc::page_t *) {});
       
       auto an_either = c.rpc_port_query<0,decltype(active_threads)>(active_threads, cxx::move(p01));
       if (an_either)
@@ -131,7 +131,7 @@ extern "C" HOSTRPC_ANNOTATE void reference(client_type& c)
   struct fill_line
   {
     // passing it as a reference gives bounds checking
-    HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, uint32_t call_number,
+    HOSTRPC_ANNOTATE void operator()(uint32_t, uint32_t call_number,
                                      uint64_t (&element)[8])
     {
       (void)call_number;
@@ -158,7 +158,7 @@ extern "C" HOSTRPC_ANNOTATE void pointer(client_type& c)
 {
   struct fill_line
   {
-    HOSTRPC_ANNOTATE void operator()(hostrpc::port_t, uint32_t call_number,
+    HOSTRPC_ANNOTATE void operator()(uint32_t, uint32_t call_number,
                                      uint64_t (&element)[8])
     {
       (void)call_number;
