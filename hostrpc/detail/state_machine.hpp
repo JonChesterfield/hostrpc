@@ -623,6 +623,14 @@ struct state_machine_impl : public SZT, public Counter
     // could pass a typed port representation here and get compile time checking
     // of the comments 'assumes slot taken' and similar
 
+    // I think the is_master_lane handling needs to be under the control of the
+    // bitmap, which is going to mean passing active threads down into those operations
+    // That means it'll be possible to replace this branch with having every active thread
+    // perform the atomic operation - that would make the CFG simpler but I don't know
+    // what the effect on memory traffic would be. E.g. one lane fetch_or's in a bit,
+    // all the others fetch_or in zero, but aimed at the same word in memory - what does
+    // that mean across pcie? Don't know, should find out.
+
     if (port.outbox_state() == true)
       {
         if (platform::is_master_lane(active_threads))

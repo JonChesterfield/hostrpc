@@ -500,6 +500,7 @@ $CXX_PTX $CXXVER -DNDEBUG codegen/client.cpp -S -o codegen/client.ptx.ll
 $CXX_PTX $CXXVER -DNDEBUG codegen/server.cpp -S -o codegen/server.ptx.ll
 $CXX_PTX $CXXVER -DNDEBUG codegen/state_machine.cpp -S -o codegen/state_machine.ptx.ll
 
+
 $CXX_X64 $CXXVER codegen/foo_cxx.cpp -S -o codegen/foo_cxx.x64.ll
 $CXX_GCN $CXXVER codegen/foo_cxx.cpp -S -o codegen/foo_cxx.gcn.ll
 $CXX_PTX $CXXVER codegen/foo_cxx.cpp -S -o codegen/foo_cxx.ptx.ll

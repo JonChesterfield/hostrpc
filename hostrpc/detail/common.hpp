@@ -255,7 +255,7 @@ struct base
 };
 
 template <typename Word>
-struct fine_grain : public base<false, true, false>
+struct fine_grain : public base<false, true, true>
 {
   using Ty = __attribute__((aligned(64))) HOSTRPC_ATOMIC(Word);
 };

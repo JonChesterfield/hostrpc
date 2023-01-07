@@ -39,7 +39,38 @@ extern "C"
     auto p = s.rpc_open_partial_port(threads);
     s.rpc_close_port(threads, cxx::move(p));
   }
+}
 
+auto apply_partial_port(state_machine_t &s,
+                        state_machine_t::partial_port_t<1> &&p0,
+                        void func(buffer_ty *))
+{
+  auto threads = platform::active_threads();
+  return s.rpc_port_apply(threads, cxx::move(p0),
+                          [=](port_t, buffer_ty *b) { func(b); });
+}
+
+auto apply_typed_port_lo(state_machine_t &s,
+                      state_machine_t::typed_port_t<0, 0> &&p0,
+                      void func(buffer_ty *))
+{
+  auto threads = platform::active_threads();
+  return s.rpc_port_apply(threads, cxx::move(p0),
+                          [=](port_t, buffer_ty *b) { func(b); });
+}
+
+auto apply_typed_port_hi(state_machine_t &s,
+                      state_machine_t::typed_port_t<1, 1> &&p0,
+                      void func(buffer_ty *))
+{
+  auto threads = platform::active_threads();
+  return s.rpc_port_apply(threads, cxx::move(p0),
+                          [=](port_t, buffer_ty *b) { func(b); });
+}
+
+
+extern "C"
+{
   void partial_port()
   {
     auto threads = platform::active_threads();
