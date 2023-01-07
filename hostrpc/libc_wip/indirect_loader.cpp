@@ -80,6 +80,10 @@ struct memfd
 
   void *map_readable() { return map(PROT_READ); }
 
+#if 0
+  // This works well on x64 on a kernel new enough to have SEAL_FUTURE_WRITE
+  // but it doesn't work on HSA, so going to ifdef this out in preference to
+  // working out how to detect kernels that have it for now.
   int no_more_map_writable()
   {
     if (filedescriptor != -1)
@@ -87,7 +91,7 @@ struct memfd
     else
       return 0;  // may as well claim success, map accessors won't work anyway
   }
-
+#endif
   ~memfd()
   {
     if (filedescriptor != -1) close(filedescriptor);
