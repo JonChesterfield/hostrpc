@@ -175,7 +175,7 @@ struct state_machine_impl : public SZT
 #else
     // Go via port conversion functions
     either<typename partial_to_typed_trait<S, OutboxState>::type,
-           typename partial_to_typed_trait<S, !OutboxState>::type, uint32_t>
+           typename partial_to_typed_trait<S, !OutboxState>::type>
         either = port;
     if (either)
       {
@@ -403,7 +403,7 @@ struct state_machine_impl : public SZT
                                                     partial_port_t<1>&& port,
                                                     Op&& op)
   {
-    either<typed_port_t<0, 0>, typed_port_t<1, 1>, uint32_t> either = port;
+    either<typed_port_t<0, 0>, typed_port_t<1, 1>> either = port;
     if (either)
       {
         typename typed_port_t<0, 0>::maybe maybe = either.on_true();
@@ -547,8 +547,8 @@ struct state_machine_impl : public SZT
   HOSTRPC_ANNOTATE either<
       /* might want return values swapped over */
       typed_port_t<I, !I>,  /* no change */
-      typed_port_t<!I, !I>, /* inbox changed */
-      uint32_t>
+      typed_port_t<!I, !I>> /* inbox changed */
+
   rpc_port_query(T active_threads, typed_port_t<I, !I>&& port)
   {
     static_assert(I == 0 || I == 1, "");
@@ -559,8 +559,7 @@ struct state_machine_impl : public SZT
 
   template <typename T>
   HOSTRPC_ANNOTATE either<partial_port_t<0>, /* no change */
-                          partial_port_t<1>, /* inbox changed */
-                          cxx::tuple<uint32_t, bool>>
+                          partial_port_t<1>> /* inbox changed */
   rpc_port_query(T active_threads, partial_port_t<0>&& port)
   {
     auto either = hostrpc::partial_to_typed(cxx::move(port));

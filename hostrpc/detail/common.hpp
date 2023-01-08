@@ -375,8 +375,8 @@ struct inbox_bitmap
 
   template <typename T, unsigned I>
   HOSTRPC_ANNOTATE either<typed_port_t<I, !I>,  /* no change */
-                          typed_port_t<!I, !I>, /* inbox changed */
-                          uint32_t>
+                          typed_port_t<!I, !I>> /* inbox changed */
+
   query(uint32_t size, T active_threads, typed_port_t<I, !I> &&port,
         Word *loaded_arg = nullptr)
   {
@@ -403,7 +403,7 @@ struct inbox_bitmap
       {
         // No change.
         port.unconsumed();
-        auto r = either<current, changed, uint32_t>::Left(port);
+        auto r = either<current, changed>::Left(port);
         port.consumed();
         r.unconsumed();
         return cxx::move(r);
@@ -415,7 +415,7 @@ struct inbox_bitmap
         typed_port_t<!I, !I> n = port.invert_inbox();
         port.consumed();
         n.unconsumed();
-        auto r = either<current, changed, uint32_t>::Right(n);
+        auto r = either<current, changed>::Right(n);
         platform::fence_acquire();
         return cxx::move(r);
       }

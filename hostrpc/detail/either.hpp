@@ -4,10 +4,11 @@
 #include "../platform/detect.hpp"
 #include "maybe.hpp"
 #include "typestate.hpp"
+#include "cxx.hpp"
 
 namespace hostrpc
 {
-template <typename TrueTy, typename FalseTy, typename From>
+template <typename TrueTy, typename FalseTy>
 struct HOSTRPC_CONSUMABLE_CLASS either;
 
 #if HOSTRPC_USE_TYPESTATE
@@ -15,24 +16,32 @@ namespace cxx
 {
 // Declare, to put them in the right namespace
 // Pretty sure none of these should be constexpr
-template <typename TrueTy, typename FalseTy, typename From>
-HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy, From>
-move(either<TrueTy, FalseTy, From> &&x HOSTRPC_CONSUMED_ARG);
-template <typename TrueTy, typename FalseTy, typename From>
-HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy, From>
-move(either<TrueTy, FalseTy, From> &x HOSTRPC_CONSUMED_ARG);
+template <typename TrueTy, typename FalseTy>
+HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy>
+move(either<TrueTy, FalseTy> &&x HOSTRPC_CONSUMED_ARG);
+template <typename TrueTy, typename FalseTy>
+HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy>
+move(either<TrueTy, FalseTy> &x HOSTRPC_CONSUMED_ARG);
 }  // namespace cxx
 #endif
 
 // Result is a type that will raise -Wconsumable errors if not 'used'
 // Pattern is to return an instance of this from a function and branch
 // on operator bool(). Use on_true/on_false in the respective branches
-// to retrieve a TrueTy or FalseTy instance constructed from the stored From.
+// to retrieve a TrueTy or FalseTy instance.
 
-template <typename TrueTy, typename FalseTy, typename From>
+template <typename TrueTy, typename FalseTy>
 struct HOSTRPC_CONSUMABLE_CLASS either
 {
-  friend either<FalseTy, TrueTy, From>;
+  static_assert(!cxx::is_same<TrueTy, FalseTy>(), "");
+
+  static_assert(cxx::is_same<typename TrueTy::UnderlyingType,
+                             typename FalseTy::UnderlyingType>(),
+                "");
+
+  using UnderlyingType = typename TrueTy::UnderlyingType;
+
+  friend either<FalseTy, TrueTy>;
 
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_ANNOTATE
@@ -83,7 +92,7 @@ struct HOSTRPC_CONSUMABLE_CLASS either
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
-  operator either<FalseTy, TrueTy, From>() { return {payload, !state}; }
+  operator either<FalseTy, TrueTy>() { return {payload, !state}; }
 
   // Going to try allowing moving either
   HOSTRPC_ANNOTATE
@@ -132,7 +141,7 @@ struct HOSTRPC_CONSUMABLE_CLASS either
  private:
   HOSTRPC_CREATED_RES
   HOSTRPC_ANNOTATE
-  either(From payload, bool state) : payload(payload), state(state)
+  either(UnderlyingType payload, bool state) : payload(payload), state(state)
   {
     unknown();
   }
@@ -143,18 +152,18 @@ struct HOSTRPC_CONSUMABLE_CLASS either
     return state == State;
   }
 
-  From payload;
+  UnderlyingType payload;
   bool state;  // can't be const and keep move assignment
 
 #if HOSTRPC_USE_TYPESTATE
   // Declare move hooks as friends
   friend HOSTRPC_ANNOTATE
-      HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy, From>
-      cxx::move(either<TrueTy, FalseTy, From> &&x HOSTRPC_CONSUMED_ARG);
+      HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy>
+      cxx::move(either<TrueTy, FalseTy> &&x HOSTRPC_CONSUMED_ARG);
 
   friend HOSTRPC_ANNOTATE
-      HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy, From>
-      cxx::move(either<TrueTy, FalseTy, From> &x HOSTRPC_CONSUMED_ARG);
+      HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy>
+      cxx::move(either<TrueTy, FalseTy> &x HOSTRPC_CONSUMED_ARG);
 #endif
 
   HOSTRPC_ANNOTATE HOSTRPC_SET_TYPESTATE(consumed) void kill() const {}
@@ -163,7 +172,7 @@ struct HOSTRPC_CONSUMABLE_CLASS either
   HOSTRPC_ANNOTATE static either HOSTRPC_CREATED_RES
   recreate(either &&x HOSTRPC_CONSUMED_ARG)
   {
-    From v = x.payload;
+    UnderlyingType v = x.payload;
     bool s = x.state;
     x.kill();
     return {v, s};
@@ -172,7 +181,7 @@ struct HOSTRPC_CONSUMABLE_CLASS either
   HOSTRPC_ANNOTATE static either HOSTRPC_CREATED_RES
   recreate(either &x HOSTRPC_CONSUMED_ARG)
   {
-    From v = x.payload;
+    UnderlyingType v = x.payload;
     bool s = x.state;
     x.kill();
     return {v, s};
@@ -187,18 +196,18 @@ struct HOSTRPC_CONSUMABLE_CLASS either
 #if HOSTRPC_USE_TYPESTATE
 namespace cxx
 {
-template <typename TrueTy, typename FalseTy, typename From>
-HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy, From>
-move(either<TrueTy, FalseTy, From> &&x HOSTRPC_CONSUMED_ARG)
+template <typename TrueTy, typename FalseTy>
+HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy>
+move(either<TrueTy, FalseTy> &&x HOSTRPC_CONSUMED_ARG)
 {
-  return either<TrueTy, FalseTy, From>::recreate(x);
+  return either<TrueTy, FalseTy>::recreate(x);
 }
 
-template <typename TrueTy, typename FalseTy, typename From>
-HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy, From>
-move(either<TrueTy, FalseTy, From> &x HOSTRPC_CONSUMED_ARG)
+template <typename TrueTy, typename FalseTy>
+HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy>
+move(either<TrueTy, FalseTy> &x HOSTRPC_CONSUMED_ARG)
 {
-  return either<TrueTy, FalseTy, From>::recreate(x);
+  return either<TrueTy, FalseTy>::recreate(x);
 }
 }  // namespace cxx
 #endif

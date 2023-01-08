@@ -22,93 +22,6 @@ class typed_port_impl_t;
 template <typename Friend, unsigned S>
 class partial_port_impl_t;
 
-
-template <typename PortFriend>
-class PortUnderlyingAccess {
-private:
-  friend maybe<typed_port_impl_t<PortFriend, 0, 0>>;
-  friend maybe<typed_port_impl_t<PortFriend, 0, 1>>;
-  friend maybe<typed_port_impl_t<PortFriend, 1, 0>>;
-  friend maybe<typed_port_impl_t<PortFriend, 1, 1>>;
-
-  friend maybe<partial_port_impl_t<PortFriend, 0>>;
-  friend maybe<partial_port_impl_t<PortFriend, 1>>;
-
-
-  friend either<typed_port_impl_t<PortFriend, 0, 0>,
-                typed_port_impl_t<PortFriend, 0, 0>,
-                uint32_t>;
-  friend either<typed_port_impl_t<PortFriend, 0, 0>,
-                typed_port_impl_t<PortFriend, 0, 1>,
-                uint32_t>;
-  friend either<typed_port_impl_t<PortFriend, 0, 0>,
-                typed_port_impl_t<PortFriend, 1, 0>,
-                uint32_t>;
-  friend either<typed_port_impl_t<PortFriend, 0, 0>,
-                typed_port_impl_t<PortFriend, 1, 1>,
-                uint32_t>;
-
-  friend either<typed_port_impl_t<PortFriend, 0, 1>,
-                typed_port_impl_t<PortFriend, 0, 0>,
-                uint32_t>;
-  friend either<typed_port_impl_t<PortFriend, 0, 1>,
-                typed_port_impl_t<PortFriend, 0, 1>,
-                uint32_t>;
-  friend either<typed_port_impl_t<PortFriend, 0, 1>,
-                typed_port_impl_t<PortFriend, 1, 0>,
-                uint32_t>;
-  friend either<typed_port_impl_t<PortFriend, 0, 1>,
-                typed_port_impl_t<PortFriend, 1, 1>,
-                uint32_t>;
-
-
-    friend either<typed_port_impl_t<PortFriend, 1, 0>,
-                typed_port_impl_t<PortFriend, 0, 0>,
-                uint32_t>;
-  friend either<typed_port_impl_t<PortFriend, 1, 0>,
-                typed_port_impl_t<PortFriend, 0, 1>,
-                uint32_t>;
-  friend either<typed_port_impl_t<PortFriend, 1, 0>,
-                typed_port_impl_t<PortFriend, 1, 0>,
-                uint32_t>;
-  friend either<typed_port_impl_t<PortFriend, 1, 0>,
-                typed_port_impl_t<PortFriend, 1, 1>,
-                uint32_t>;
-
-
-      friend either<typed_port_impl_t<PortFriend, 1, 1>,
-                typed_port_impl_t<PortFriend, 0, 0>,
-                uint32_t>;
-  friend either<typed_port_impl_t<PortFriend, 1, 1>,
-                typed_port_impl_t<PortFriend, 0, 1>,
-                uint32_t>;
-  friend either<typed_port_impl_t<PortFriend, 1, 1>,
-                typed_port_impl_t<PortFriend, 1, 0>,
-                uint32_t>;
-  friend either<typed_port_impl_t<PortFriend, 1, 1>,
-                typed_port_impl_t<PortFriend, 1, 1>,
-                uint32_t>;
-
-
-  friend either<partial_port_impl_t<PortFriend, 0>,
-                partial_port_impl_t<PortFriend, 0>,
-                cxx::tuple<uint32_t, bool>>;
-  friend either<partial_port_impl_t<PortFriend, 0>,
-                partial_port_impl_t<PortFriend, 1>,
-                cxx::tuple<uint32_t, bool>>;
-  friend either<partial_port_impl_t<PortFriend, 1>,
-                partial_port_impl_t<PortFriend, 0>,
-                cxx::tuple<uint32_t, bool>>;
-  friend either<partial_port_impl_t<PortFriend, 1>,
-                partial_port_impl_t<PortFriend, 1>,
-                cxx::tuple<uint32_t, bool>>;
-
-  
-  
-  HOSTRPC_ANNOTATE  PortUnderlyingAccess() {}
-  HOSTRPC_ANNOTATE  PortUnderlyingAccess(PortUnderlyingAccess const&) {}
-};
-  
 // Typed port knows the exact state of inbox and outbox at a given point in time
 // Partial port knows whether inbox == outbox, called Stable / S here, and
 // tracks what the the inbox/outbox state is using a runtime boolean.
@@ -183,16 +96,6 @@ struct partial_to_typed_trait<Friend, partial_port_impl_t<Friend, 0>, false>
   using type = typed_port_impl_t<Friend, 1, 0>;
 };
 
-template <class T, class U>
-struct is_same : cxx::false_type
-{
-};
-
-template <class T>
-struct is_same<T, T> : cxx::true_type
-{
-};
-
 // Make a typed port type, convert to partial port and back
 template <typename Friend, unsigned I, unsigned O>
 struct check_from_typed
@@ -206,7 +109,7 @@ struct check_from_typed
 
   static constexpr bool consistent()
   {
-    return is_same<typed_port_t, typename typed_info::type>() /*::value*/;
+    return cxx::is_same<typed_port_t, typename typed_info::type>() /*::value*/;
   }
 };
 
@@ -223,7 +126,8 @@ struct check_from_partial
 
   static constexpr bool consistent()
   {
-    return is_same<partial_port_t, typename partial_info::type>() /*::value*/
+    return cxx::is_same<partial_port_t,
+                        typename partial_info::type>() /*::value*/
            && partial_info::state() == state;
   }
 };
@@ -280,25 +184,44 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   friend Friend;  // the state machine
 
   using UnderlyingType = uint32_t;
-  
+
   UnderlyingType value;
 
-  using PortUnderlyingAccess = typename hostrpc::PortUnderlyingAccess<Friend>;
-  
+  class PortUnderlyingAccess
+  {
+   private:
+    friend maybe<typed_port_impl_t<Friend, I, O>>;
+
+    friend either<typed_port_impl_t<Friend, I, O>,
+                  typed_port_impl_t<Friend, !I, O>>;
+    friend either<typed_port_impl_t<Friend, !I, O>,
+                  typed_port_impl_t<Friend, I, O>>;
+
+    friend either<typed_port_impl_t<Friend, I, O>,
+                  typed_port_impl_t<Friend, I, !O>>;
+    friend either<typed_port_impl_t<Friend, I, !O>,
+                  typed_port_impl_t<Friend, I, O>>;
+
+    friend either<typed_port_impl_t<Friend, I, O>,
+                  typed_port_impl_t<Friend, !I, !O>>;
+    friend either<typed_port_impl_t<Friend, !I, !O>,
+                  typed_port_impl_t<Friend, I, O>>;
+
+    HOSTRPC_ANNOTATE PortUnderlyingAccess() {}
+    HOSTRPC_ANNOTATE PortUnderlyingAccess(PortUnderlyingAccess const &) {}
+  };
+
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
-  UnderlyingType disassemble(PortUnderlyingAccess)
-  {
-    return value;
-  }
+  UnderlyingType disassemble(PortUnderlyingAccess) { return value; }
 
-  HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES
-  static SelfType reconstitute(PortUnderlyingAccess, UnderlyingType value)
+  HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES static SelfType reconstitute(
+      PortUnderlyingAccess, UnderlyingType value)
   {
     return {value};
   }
-  
+
  public:
   // non-default maybe can only be constructed by the second template parameter,
   // i.e. by this class. The only method that does so is operator that consumes
@@ -345,16 +268,16 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   // friend here to allow the dead path to typecheck.
 
   // construction with inbox changed, used by query
-  friend hostrpc::either<SelfType, typed_port_impl_t<Friend, !I, O>, uint32_t>;
-  friend hostrpc::either<typed_port_impl_t<Friend, !I, O>, SelfType, uint32_t>;
+  friend hostrpc::either<SelfType, typed_port_impl_t<Friend, !I, O>>;
+  friend hostrpc::either<typed_port_impl_t<Friend, !I, O>, SelfType>;
 
   // construction with outbox changed, would be used by an apply that can fail
-  friend hostrpc::either<SelfType, typed_port_impl_t<Friend, I, !O>, uint32_t>;
-  friend hostrpc::either<typed_port_impl_t<Friend, I, !O>, SelfType, uint32_t>;
+  friend hostrpc::either<SelfType, typed_port_impl_t<Friend, I, !O>>;
+  friend hostrpc::either<typed_port_impl_t<Friend, I, !O>, SelfType>;
 
   // construction with both changed, used by conversion from partial_port_t
-  friend hostrpc::either<SelfType, typed_port_impl_t<Friend, !I, !O>, uint32_t>;
-  friend hostrpc::either<typed_port_impl_t<Friend, !I, !O>, SelfType, uint32_t>;
+  friend hostrpc::either<SelfType, typed_port_impl_t<Friend, !I, !O>>;
+  friend hostrpc::either<typed_port_impl_t<Friend, !I, !O>, SelfType>;
 
 #if HOSTRPC_USE_TYPESTATE
   // so that cxx::move keeps track of the typestate
@@ -403,7 +326,6 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     return {v};
   }
 
-
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
@@ -411,7 +333,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   operator maybe()
   {
     UnderlyingType u = value;
-    return {typename maybe::Key{},u};
+    return {typename maybe::Key{}, u};
   }
 
   HOSTRPC_ANNOTATE
@@ -494,26 +416,35 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
   friend Friend;  // the state machine
 
   using UnderlyingType = cxx::tuple<uint32_t, bool>;
- 
+
   uint32_t value;
   bool state;
 
-  using PortUnderlyingAccess = typename hostrpc::PortUnderlyingAccess<Friend>;
+  class PortUnderlyingAccess
+  {
+   private:
+    friend maybe<partial_port_impl_t<Friend, S>>;
+
+    friend either<partial_port_impl_t<Friend, S>,
+                  partial_port_impl_t<Friend, !S>>;
+    friend either<partial_port_impl_t<Friend, !S>,
+                  partial_port_impl_t<Friend, S>>;
+
+    HOSTRPC_ANNOTATE PortUnderlyingAccess() {}
+    HOSTRPC_ANNOTATE PortUnderlyingAccess(PortUnderlyingAccess const &) {}
+  };
 
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
-  UnderlyingType disassemble(PortUnderlyingAccess)
-  {
-    return {value, state};
-  }
+  UnderlyingType disassemble(PortUnderlyingAccess) { return {value, state}; }
 
- HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES
- static SelfType reconstitute(PortUnderlyingAccess, UnderlyingType value)
+  HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES static SelfType reconstitute(
+      PortUnderlyingAccess, UnderlyingType value)
   {
     return {value};
   }
- 
+
   HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES partial_port_impl_t(uint32_t v,
                                                            bool state)
       : value(v), state(state)
@@ -599,7 +530,6 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     return {tup};
   }
 
-
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
@@ -610,18 +540,13 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     return {typename maybe::Key{}, u};
   }
 
- 
-
   // Construct an either from this type
-  friend hostrpc::either<SelfType, partial_port_impl_t<Friend, !S>,
-                         cxx::tuple<uint32_t, bool>>;
-  friend hostrpc::either<partial_port_impl_t<Friend, !S>, SelfType,
-                         cxx::tuple<uint32_t, bool>>;
+  friend hostrpc::either<SelfType, partial_port_impl_t<Friend, !S>>;
+  friend hostrpc::either<partial_port_impl_t<Friend, !S>, SelfType>;
 
   using either_partial_to_typed_type = typename hostrpc::either<
       typename traits::partial_to_typed_trait<Friend, SelfType, false>::type,
-      typename traits::partial_to_typed_trait<Friend, SelfType, true>::type,
-      uint32_t>;
+      typename traits::partial_to_typed_trait<Friend, SelfType, true>::type>;
 
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
@@ -639,13 +564,12 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     if (s)
       {
         true_typed_port_t p(v);
-        return either<true_typed_port_t, false_typed_port_t, uint32_t>::Left(p);
-
+        return either<true_typed_port_t, false_typed_port_t>::Left(p);
       }
     else
       {
         false_typed_port_t p(v);
-        return either<true_typed_port_t, false_typed_port_t, uint32_t>::Right(p);
+        return either<true_typed_port_t, false_typed_port_t>::Right(p);
       }
   }
 
@@ -655,13 +579,11 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
   HOSTRPC_SET_TYPESTATE(consumed)
   operator typename hostrpc::either<
       typename traits::partial_to_typed_trait<Friend, SelfType, true>::type,
-      typename traits::partial_to_typed_trait<Friend, SelfType, false>::type,
-      uint32_t>()
+      typename traits::partial_to_typed_trait<Friend, SelfType, false>::type>()
   {
     typename hostrpc::either<
         typename traits::partial_to_typed_trait<Friend, SelfType, false>::type,
-        typename traits::partial_to_typed_trait<Friend, SelfType, true>::type,
-        uint32_t>
+        typename traits::partial_to_typed_trait<Friend, SelfType, true>::type>
         either = *this;
     return either;
   }
@@ -738,9 +660,9 @@ HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE HOSTRPC_SET_TYPESTATE(consumed)
   return {v, traits::typed_to_partial_trait<Friend, SelfType>::state()};
 }
 
-// Can convert losslessly between partial and typed ports. These are mostly implemented as
-// user defined conversions to interact reasonably with typestate, but that requires spelling
-// out the types relatively frequently.
+// Can convert losslessly between partial and typed ports. These are mostly
+// implemented as user defined conversions to interact reasonably with
+// typestate, but that requires spelling out the types relatively frequently.
 
 template <typename Friend, unsigned S>
 HOSTRPC_ANNOTATE
@@ -751,10 +673,9 @@ HOSTRPC_ANNOTATE
 }
 
 template <typename Friend, unsigned I, unsigned O>
-HOSTRPC_ANNOTATE
-    typename traits::typed_to_partial_trait<Friend,
-                                            typed_port_impl_t<Friend, I, O>>::type
-    typed_to_partial(typed_port_impl_t<Friend, I, O> &&port)
+HOSTRPC_ANNOTATE typename traits::typed_to_partial_trait<
+    Friend, typed_port_impl_t<Friend, I, O>>::type
+typed_to_partial(typed_port_impl_t<Friend, I, O> &&port)
 {
   return port;
 }
@@ -763,18 +684,16 @@ template <typename Friend, unsigned IA, unsigned OA, unsigned IB, unsigned OB>
 HOSTRPC_ANNOTATE either<typename traits::typed_to_partial_trait<
                             Friend, typed_port_impl_t<Friend, IA, OA>>::type,
                         typename traits::typed_to_partial_trait<
-                            Friend, typed_port_impl_t<Friend, IB, OB>>::type,
-                        cxx::tuple<uint32_t, bool>>
+                            Friend, typed_port_impl_t<Friend, IB, OB>>::type>
 typed_to_partial(either<typed_port_impl_t<Friend, IA, OA>,
-                        typed_port_impl_t<Friend, IB, OB>, uint32_t> &&port)
+                        typed_port_impl_t<Friend, IB, OB>> &&port)
 {
   using true_typed_port_t = typename traits::typed_to_partial_trait<
       Friend, typed_port_impl_t<Friend, IA, OA>>::type;
   using false_typed_port_t = typename traits::typed_to_partial_trait<
       Friend, typed_port_impl_t<Friend, IB, OB>>::type;
 
-  using result_type = either<true_typed_port_t, false_typed_port_t,
-                             cxx::tuple<uint32_t, bool>>;
+  using result_type = either<true_typed_port_t, false_typed_port_t>;
   if (port)
     {
       typename typed_port_impl_t<Friend, IA, OA>::maybe m = port.on_true();

@@ -118,24 +118,6 @@ extern "C"
     state_machine_t::partial_port_t<0> pU = p10;
     s.rpc_close_port(threads, cxx::move(pU));
   }
-
-}
-
-template <unsigned I, unsigned O>
-auto try_build_an_either(state_machine_t::typed_port_t<I,O> &&p)
-{
-auto e =  either<state_machine_t::typed_port_t<I,O>,
-         state_machine_t::typed_port_t<I,!O>,
-         uint32_t>::Left(cxx::move(p));
-
- 
-  return cxx::move(e);
-
-}
-
-auto try_build_an_either_inst(state_machine_t::typed_port_t<0,0> &&p)
-{
-  return try_build_an_either(cxx::move(p));
 }
 
 template <unsigned S>
@@ -143,7 +125,7 @@ static state_machine_t::partial_port_t<S> partial_S_nop_via_typed_port(
     state_machine_t::partial_port_t<S> &&p)
 {
   hostrpc::either<state_machine_t::typed_port_t<0, S ? 0 : 1>,
-                  state_machine_t::typed_port_t<1, S ? 1 : 0>, uint32_t>
+                  state_machine_t::typed_port_t<1, S ? 1 : 0>>
       either = p;
 
   if (either)
@@ -174,19 +156,15 @@ static state_machine_t::partial_port_t<S> partial_S_nop_via_typed_port(
     }
 }
 
-auto partial_0_nop_via_typed_port(
-    state_machine_t::partial_port_t<0> &&p)
+auto partial_0_nop_via_typed_port(state_machine_t::partial_port_t<0> &&p)
 {
   return partial_S_nop_via_typed_port<0>(cxx::move(p));
 }
 
-auto partial_1_nop_via_typed_port(
-    state_machine_t::partial_port_t<1> &&p)
+auto partial_1_nop_via_typed_port(state_machine_t::partial_port_t<1> &&p)
 {
   return partial_S_nop_via_typed_port<1>(cxx::move(p));
 }
-
-
 
 auto apply_partial_port(state_machine_t &s,
                         state_machine_t::partial_port_t<1> &&p0,
@@ -364,7 +342,7 @@ state_machine_t::typed_port_t<1, 1> wait_via_query_typed_port_hi(
     state_machine_t &s, state_machine_t::typed_port_t<0, 1> &&p0)
 {
   auto threads = platform::active_threads();
-  
+
   for (;;)
     {
       auto either = s.rpc_port_query(threads, cxx::move(p0));

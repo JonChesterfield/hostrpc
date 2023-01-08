@@ -14,22 +14,10 @@ HOSTRPC_ANNOTATE size_t bytes_for_N_slots(size_t N)
 }
 
 template <typename T, typename U>
-struct is_same
-{
-  static constexpr bool value = false;
-};
-
-template <typename T>
-struct is_same<T, T>
-{
-  static constexpr bool value = true;
-};
-
-template <typename T, typename U>
 struct is_same_or_inverted
 {
   static constexpr bool value =
-      is_same<T, U>::value || is_same<T, typename U::invertedType>::value;
+    cxx::is_same<T, U>() || cxx::is_same<T, typename U::invertedType>();
 };
 
 // local, remote are instances of client_impl, server_impl
@@ -51,8 +39,8 @@ host_client(AllocBuffer alloc_buffer, AllocInboxOutbox alloc_inbox_outbox,
 {
   // consistency constraints (todo: let word vary across the two?)
   static_assert(
-      is_same<typename LocalType::Word, typename RemoteType::Word>::value, "");
-  static_assert(is_same<typename LocalType::SZ, typename RemoteType::SZ>::value,
+                cxx::is_same<typename LocalType::Word, typename RemoteType::Word>(), "");
+  static_assert(cxx::is_same<typename LocalType::SZ, typename RemoteType::SZ>(),
                 "");
 
   // can have different values for Inverted without problems
@@ -60,11 +48,11 @@ host_client(AllocBuffer alloc_buffer, AllocInboxOutbox alloc_inbox_outbox,
   // write methods on it
 #if 0
   static_assert(is_same_or_inverted<typename LocalType::inbox_t,
-                                    typename RemoteType::outbox_t>::value,
+                typename RemoteType::outbox_t>(),
                 "");
 
   static_assert(is_same_or_inverted<typename LocalType::outbox_t,
-                                    typename RemoteType::inbox_t>::value,
+                typename RemoteType::inbox_t>(),
                 "");
 #endif
   

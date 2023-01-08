@@ -65,7 +65,7 @@ struct integral_constant
   constexpr value_type operator()() const noexcept { return v; }
 };
 // template <class T, T __v> onstexpr const T integral_constant<T, __v>::value;
-  
+
 template <class T>
 struct is_trivially_copyable
     : public integral_constant<bool, __is_trivially_copyable(T)>
@@ -77,7 +77,18 @@ using bool_constant = integral_constant<bool, B>;
 
 typedef bool_constant<true> true_type;
 typedef bool_constant<false> false_type;
-  
+
+// libc++ uses an intrinsic, this suffices for now
+template <class T, class U>
+struct is_same : false_type
+{
+};
+
+template <class T>
+struct is_same<T, T> : true_type
+{
+};
+
 }  // namespace cxx
 }  // namespace hostrpc
 

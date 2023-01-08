@@ -416,10 +416,10 @@ static MODULE(const_reference)
   }
 }
 
-hostrpc::either<typed_port_t<0, 1>, typed_port_t<0, 0>, uint32_t> maybe_apply(
+hostrpc::either<typed_port_t<0, 1>, typed_port_t<0, 0>> maybe_apply(
     bool act, typed_port_t<0, 0>&& port HOSTRPC_CONSUMED_ARG)
 {
-  using result_type = hostrpc::either<typed_port_t<0, 1>, typed_port_t<0, 0>, uint32_t>;
+  using result_type = hostrpc::either<typed_port_t<0, 1>, typed_port_t<0, 0>>;
   port.unconsumed();
   if (act)
     {
