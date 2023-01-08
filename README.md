@@ -1,5 +1,54 @@
 # hostrpc
-Remote procedure calls within a shared address space. Expecting 'remote' to mean across pcie.
+Remote procedure calls through shared memory. Examples:
+- A gpu warp calling a function on the host machine to allocate memory
+- An x64 machine calling a function on an amdgpu to do arithmetic
+- A Linux process providing audited syscall access to a seccomp'ed one
+- A gpu calling a function on another gpu on the same pcie bus
+
+## What is this?
+
+Define a trivially copyable type BufferElement. Put an array of N of them in
+shared memory, and allocate a couple of bitmaps in the same shared memory.
+
+Given those pointers, this code will coordinate mutually exclusive access to
+that array of BufferElements. Each is always unambiguously owned by one of the
+two systems, and that ownership is tracked by the C++ type system.
+
+The current owner has read/write access to that element. It can transfer
+ownership to the other system. It can also query for whether the other system
+has given the buffer back yet. It has neither read nor write access until then.
+
+This repo is therefore an overengineered type system over two bitmaps used to
+track and change which of two systems currently owns a given array element.
+
+Since shared memory does not fail without killing the attached processors,
+this is sufficient to implement remote procedure calls which do not embed
+additional network failure related noise in their interface. Thus
+`void *malloc(size_t)` executing on the other system looks the same as local.
+
+This particular repo doesn't have much to say about the syntax above. Syntax is
+contentious, with people split on whether it should be conjured by compilers,
+code generators, the C preprocessor or by typing. The expectation should be
+that this repo will give you `void syscall(uint64_t data[8])` easily
+and that serialising arbitrary C++ types across that is largely an exercise for
+the layer above.
+
+## Requirements
+
+Shared memory between two processors that wish to communicate. The llpp paper
+in this repo assumed only load and store operations on the shared memory, the
+present implementation requires atomic fetch_add as well. This is available on
+pcie and that assumption simplifies the implementation.
+
+There is an application-specific setup phase which involves writing a few
+pointers to shared memory to each processor. This is difficult to abstract over
+as different environments have differing ideas about how best to do that.
+Similarly at end of execution something should deallocate those pointers.
+
+Compiled and tested on x64, amdgpu, nvptx, under freestanding C++, openmp, cuda,
+hip. OpenCL cannot currently express the linear type system but otherwise builds.
+
+
 
 ## Implementation status
 
