@@ -193,16 +193,43 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   friend Friend;  // the state machine
   uint32_t value;
 
+ public:
+  // non-default maybe can only be constructed by the second template parameter,
+  // i.e. by this class. The only method that does so is operator that consumes
+  // the port. Thus this instance can be converted to a maybe and then
+  // retrieved.
+  using maybe = hostrpc::maybe<uint32_t, SelfType>;
+  friend maybe;
+
+ private:
   // Constructor is private. Permissions setup is fairly complicated.
   HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES typed_port_impl_t(uint32_t v) : value(v)
   {
     static_assert((I <= 1) && (O <= 1), "");
   }
 
+  template <bool InboxSet, bool OutboxSet>
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN static maybe make(uint32_t v)
+  {
+    constexpr unsigned ReqInbox = InboxSet ? 1 : 0;
+    constexpr unsigned ReqOutbox = OutboxSet ? 1 : 0;
+    if (I == ReqInbox && O == ReqOutbox)
+      {
+        return {v};
+      }
+    else
+      {
+        return {};
+      }
+  }
+
   // Trust instances of this type with inbox/outbox inverted but not both
   // to support invert inbox_state/outbox_state
   friend typed_port_impl_t<Friend, I, !O>;
   friend typed_port_impl_t<Friend, !I, O>;
+
+  // Trusts the partial port implementation.
+  friend partial_port_impl_t<Friend, I == O>;
 
   // if either is constructed by normal(), the ==true path is live and will
   // return (a maybe that returns) SelfType.
@@ -244,31 +271,9 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     return value;
   }
 
-  // non-default maybe can only be constructed by the second template parameter,
-  // i.e. by this class. The only method that does so is operator that consumes
-  // the port. Thus this instance can be converted to a maybe and then
-  // retrieved.
-  using maybe = hostrpc::maybe<uint32_t, SelfType>;
-  friend maybe;
-
   // non-constexpr member functions to match partial_port_impl_t
   HOSTRPC_ANNOTATE bool outbox_state() const { return O; }
   HOSTRPC_ANNOTATE bool inbox_state() const { return I; }
-
-  template <bool InboxSet, bool OutboxSet>
-  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN static maybe make(uint32_t v)
-  {
-    constexpr unsigned ReqInbox = InboxSet ? 1 : 0;
-    constexpr unsigned ReqOutbox = OutboxSet ? 1 : 0;
-    if (I == ReqInbox && O == ReqOutbox)
-      {
-        return {v};
-      }
-    else
-      {
-        return {};
-      }
-  }
 
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
@@ -547,42 +552,20 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     using false_typed_port_t =
         typename traits::partial_to_typed_trait<Friend, SelfType, false>::type;
 
-    cxx::tuple<uint32_t, bool> tup = {value, state};
-    if (state == true)
+    const uint32_t v = value;
+    const bool s = state;
+
+    if (s)
       {
-        constexpr unsigned O = true;
-        constexpr unsigned I = S ? O : !O;
-        typename true_typed_port_t::maybe m =
-            true_typed_port_t::template make<I, O>(value);
-        if (m)
-          {
-            true_typed_port_t p = m.value();
-            either_builder<true_typed_port_t, false_typed_port_t, uint32_t> b =
-                p;
-            return b.invert();
-          }
-        else
-          {
-            __builtin_unreachable();
-          }
+        true_typed_port_t p(v);
+        either_builder<true_typed_port_t, false_typed_port_t, uint32_t> b = p;
+        return b.invert();
       }
     else
       {
-        constexpr unsigned O = false;
-        constexpr unsigned I = S ? O : !O;
-        typename false_typed_port_t::maybe m =
-            false_typed_port_t::template make<I, O>(value);
-        if (m)
-          {
-            false_typed_port_t p = m.value();
-            either_builder<false_typed_port_t, true_typed_port_t, uint32_t> b =
-                p;
-            return b.normal();
-          }
-        else
-          {
-            __builtin_unreachable();
-          }
+        false_typed_port_t p(v);
+        either_builder<false_typed_port_t, true_typed_port_t, uint32_t> b = p;
+        return b.normal();
       }
   }
 
@@ -595,11 +578,12 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
       typename traits::partial_to_typed_trait<Friend, SelfType, false>::type,
       uint32_t>()
   {
-   typename hostrpc::either<
-      typename traits::partial_to_typed_trait<Friend, SelfType, false>::type,
-      typename traits::partial_to_typed_trait<Friend, SelfType, true>::type,
-     uint32_t> either = *this;
-   return either;
+    typename hostrpc::either<
+        typename traits::partial_to_typed_trait<Friend, SelfType, false>::type,
+        typename traits::partial_to_typed_trait<Friend, SelfType, true>::type,
+        uint32_t>
+        either = *this;
+    return either;
   }
 
   // Construct a partial port from a typed port by user defined conversion
