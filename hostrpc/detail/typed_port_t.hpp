@@ -179,18 +179,23 @@ HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr partial_port_impl_t<F, S> move(
 template <typename Friend, unsigned I, unsigned O>
 class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
 {
- private:
-  using SelfType = typed_port_impl_t<Friend, I, O>;
-  friend Friend;  // the state machine
-
+ public:
   using UnderlyingType = uint32_t;
+  using SelfType = typed_port_impl_t<Friend, I, O>;
+  using maybe = hostrpc::maybe<SelfType>;
 
+ private:
   UnderlyingType value;
+
+  //  friend Friend;  // the state machine
 
   class PortUnderlyingAccess
   {
    private:
-    friend maybe<typed_port_impl_t<Friend, I, O>>;
+    friend typed_port_impl_t<Friend, I, O>;
+    friend partial_port_impl_t<Friend, I==O>;
+    
+    friend hostrpc::maybe<typed_port_impl_t<Friend, I, O>>;
 
     friend either<typed_port_impl_t<Friend, I, O>,
                   typed_port_impl_t<Friend, !I, O>>;
@@ -211,6 +216,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     HOSTRPC_ANNOTATE PortUnderlyingAccess(PortUnderlyingAccess const &) {}
   };
 
+ public:
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
@@ -221,14 +227,6 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   {
     return {value};
   }
-
- public:
-  // non-default maybe can only be constructed by the second template parameter,
-  // i.e. by this class. The only method that does so is operator that consumes
-  // the port. Thus this instance can be converted to a maybe and then
-  // retrieved.
-  using maybe = hostrpc::maybe<SelfType>;
-  friend maybe;
 
  private:
   // Constructor is private. Permissions setup is fairly complicated.
@@ -256,28 +254,6 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   // to support invert inbox_state/outbox_state
   friend typed_port_impl_t<Friend, I, !O>;
   friend typed_port_impl_t<Friend, !I, O>;
-
-  // Trusts the partial port implementation.
-  friend partial_port_impl_t<Friend, I == O>;
-
-  // if either is constructed by normal(), the ==true path is live and will
-  // return (a maybe that returns) SelfType.
-  // if either is cosntructed by invert(), the ==false path is live and will
-  // return (a maybe that returns) SelfType.
-  // The dynamically dead path will call the other constructor, which is a
-  // friend here to allow the dead path to typecheck.
-
-  // construction with inbox changed, used by query
-  friend hostrpc::either<SelfType, typed_port_impl_t<Friend, !I, O>>;
-  friend hostrpc::either<typed_port_impl_t<Friend, !I, O>, SelfType>;
-
-  // construction with outbox changed, would be used by an apply that can fail
-  friend hostrpc::either<SelfType, typed_port_impl_t<Friend, I, !O>>;
-  friend hostrpc::either<typed_port_impl_t<Friend, I, !O>, SelfType>;
-
-  // construction with both changed, used by conversion from partial_port_t
-  friend hostrpc::either<SelfType, typed_port_impl_t<Friend, !I, !O>>;
-  friend hostrpc::either<typed_port_impl_t<Friend, !I, !O>, SelfType>;
 
 #if HOSTRPC_USE_TYPESTATE
   // so that cxx::move keeps track of the typestate
@@ -411,19 +387,25 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
 template <typename Friend, unsigned S>
 class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
 {
- private:
-  using SelfType = partial_port_impl_t<Friend, S>;
-  friend Friend;  // the state machine
-
+ public:
   using UnderlyingType = cxx::tuple<uint32_t, bool>;
+  using SelfType = partial_port_impl_t<Friend, S>;
+  using maybe = hostrpc::maybe<SelfType>;
 
+ private:
   uint32_t value;
   bool state;
+
+  friend Friend;  // the state machine
 
   class PortUnderlyingAccess
   {
    private:
-    friend maybe<partial_port_impl_t<Friend, S>>;
+    friend partial_port_impl_t<Friend, S>;
+    friend typed_port_impl_t<Friend, 0, S ? 0 : 1>;
+    friend typed_port_impl_t<Friend, 1, S ? 1 : 0>;
+    
+    friend hostrpc::maybe<partial_port_impl_t<Friend, S>>;
 
     friend either<partial_port_impl_t<Friend, S>,
                   partial_port_impl_t<Friend, !S>>;
@@ -434,6 +416,7 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     HOSTRPC_ANNOTATE PortUnderlyingAccess(PortUnderlyingAccess const &) {}
   };
 
+ public:
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
@@ -445,6 +428,7 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     return {value};
   }
 
+ private:
   HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES partial_port_impl_t(uint32_t v,
                                                            bool state)
       : value(v), state(state)
@@ -482,10 +466,6 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
   {
     return (S == 1) ? outbox_state() : !outbox_state();
   }
-
-  // allow constructing a maybe of this type
-  using maybe = hostrpc::maybe<SelfType>;
-  friend maybe;
 
   template <bool InboxSet, bool OutboxSet>
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN static maybe make(uint32_t v)
@@ -539,11 +519,7 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     UnderlyingType u = {value, state};
     return {typename maybe::Key{}, u};
   }
-
-  // Construct an either from this type
-  friend hostrpc::either<SelfType, partial_port_impl_t<Friend, !S>>;
-  friend hostrpc::either<partial_port_impl_t<Friend, !S>, SelfType>;
-
+ 
   using either_partial_to_typed_type = typename hostrpc::either<
       typename traits::partial_to_typed_trait<Friend, SelfType, false>::type,
       typename traits::partial_to_typed_trait<Friend, SelfType, true>::type>;
@@ -558,18 +534,17 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     using false_typed_port_t =
         typename traits::partial_to_typed_trait<Friend, SelfType, false>::type;
 
-    const uint32_t v = value;
-    const bool s = state;
+    const UnderlyingType p = this->disassemble({});
+    const bool s = p.get<0>();
+    const uint32_t v = p.get<1>();
 
     if (s)
       {
-        true_typed_port_t p(v);
-        return either<true_typed_port_t, false_typed_port_t>::Left(p);
+        return either<true_typed_port_t, false_typed_port_t>::Left(true_typed_port_t::reconstitute({}, v));
       }
     else
       {
-        false_typed_port_t p(v);
-        return either<true_typed_port_t, false_typed_port_t>::Right(p);
+        return either<true_typed_port_t, false_typed_port_t>::Right(false_typed_port_t::reconstitute({}, v));
       }
   }
 
@@ -587,10 +562,6 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
         either = *this;
     return either;
   }
-
-  // Construct a partial port from a typed port by user defined conversion
-  friend hostrpc::typed_port_impl_t<Friend, 0, S ? 0 : 1>;
-  friend hostrpc::typed_port_impl_t<Friend, 1, S ? 1 : 0>;
 
   // move construct and assign are available
   HOSTRPC_ANNOTATE
@@ -656,8 +627,10 @@ HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE HOSTRPC_SET_TYPESTATE(consumed)
     typed_port_impl_t<Friend, I, O>::operator typename traits::
         typed_to_partial_trait<Friend, SelfType>::type()
 {
-  uint32_t v = *this;
-  return {v, traits::typed_to_partial_trait<Friend, SelfType>::state()};
+  using PartialTrait = traits::typed_to_partial_trait<Friend, SelfType>; 
+  UnderlyingType v = this->disassemble({});
+  typename PartialTrait::type::UnderlyingType partial = {v, PartialTrait::state()};
+  return PartialTrait::type::reconstitute({}, partial);
 }
 
 // Can convert losslessly between partial and typed ports. These are mostly

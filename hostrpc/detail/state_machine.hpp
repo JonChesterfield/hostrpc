@@ -40,17 +40,17 @@ struct state_machine_impl : public SZT
   using BufferElement = BufferElementT;
   using Word = WordT;
   using SZ = SZT;
-  static constexpr bool InvertedInboxLoad() { return InvertedInboxLoadT;}
-  
-  using state_machine_impl_t = state_machine_impl<BufferElementT, WordT, SZT, InvertedInboxLoadT>;
-  
+  static constexpr bool InvertedInboxLoad() { return InvertedInboxLoadT; }
+
+  using state_machine_impl_t =
+      state_machine_impl<BufferElementT, WordT, SZT, InvertedInboxLoadT>;
+
   using lock_t = lock_bitmap<state_machine_impl_t>;
 
   using mailbox_t = mailbox_bitmap<state_machine_impl_t>;
 
   using inbox_t = inbox_bitmap<state_machine_impl_t>;
   using outbox_t = outbox_bitmap<state_machine_impl_t>;
-
 
   template <unsigned I, unsigned O>
   using typed_port_t = typed_port_impl_t<state_machine_impl, I, O>;
@@ -301,14 +301,13 @@ struct state_machine_impl : public SZT
     const uint32_t size = this->size();
     const uint32_t slot = static_cast<uint32_t>(port);
     platform::fence_release();
-    active.release_slot(active_threads, size, slot);      
+    active.release_slot(active_threads, size, slot);
     port.kill();
   }
 
   template <typename T>
-  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN
-      maybe<partial_port_t<1>>
-      rpc_try_open_partial_port(T active_threads, uint32_t scan_from = 0)
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN maybe<partial_port_t<1>>
+  rpc_try_open_partial_port(T active_threads, uint32_t scan_from = 0)
   {
     static_assert(port_openable<partial_port_t<1>>(), "");
     return try_open_typed_port<partial_port_t<1>>(active_threads, scan_from);
@@ -366,7 +365,8 @@ struct state_machine_impl : public SZT
   {
     static_assert(IandO == 0 || IandO == 1, "");
 
-    read_typed_port<typed_port_t<IandO, IandO>, T, Op>(active_threads, port, cxx::forward<Op>(op));
+    read_typed_port<typed_port_t<IandO, IandO>, T, Op>(active_threads, port,
+                                                       cxx::forward<Op>(op));
 
     const uint32_t size = this->size();
 
@@ -395,7 +395,6 @@ struct state_machine_impl : public SZT
       {
         return outbox.release_slot(active_threads, size, cxx::move(port));
       }
-
   }
 
   template <typename T, typename Op>
@@ -699,7 +698,6 @@ struct state_machine_impl : public SZT
                   {
                     // Failed, drop the lock before continuing to search
                     active.release_slot(active_threads, size, slot);
-                      
                   }
 
                 available &= port_trait<PortType>::available_bitmap(i, o);
@@ -723,7 +721,6 @@ struct state_machine_impl : public SZT
     uint32_t raw = static_cast<uint32_t>(port);
     op(raw, &shared_buffer[raw]);
   }
-
 };
 
 }  // namespace hostrpc

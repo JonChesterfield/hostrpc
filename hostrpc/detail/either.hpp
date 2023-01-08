@@ -2,9 +2,9 @@
 #define HOSTRPC_DETAIL_EITHER_HPP_INCLUDED
 
 #include "../platform/detect.hpp"
+#include "cxx.hpp"
 #include "maybe.hpp"
 #include "typestate.hpp"
-#include "cxx.hpp"
 
 namespace hostrpc
 {
@@ -17,11 +17,11 @@ namespace cxx
 // Declare, to put them in the right namespace
 // Pretty sure none of these should be constexpr
 template <typename TrueTy, typename FalseTy>
-HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy>
-move(either<TrueTy, FalseTy> &&x HOSTRPC_CONSUMED_ARG);
+HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy> move(
+    either<TrueTy, FalseTy> &&x HOSTRPC_CONSUMED_ARG);
 template <typename TrueTy, typename FalseTy>
-HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy>
-move(either<TrueTy, FalseTy> &x HOSTRPC_CONSUMED_ARG);
+HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy> move(
+    either<TrueTy, FalseTy> &x HOSTRPC_CONSUMED_ARG);
 }  // namespace cxx
 #endif
 
@@ -41,8 +41,6 @@ struct HOSTRPC_CONSUMABLE_CLASS either
 
   using UnderlyingType = typename TrueTy::UnderlyingType;
 
-  friend either<FalseTy, TrueTy>;
-
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_ANNOTATE
   explicit operator bool() { return is_state<true>(); }
@@ -55,7 +53,8 @@ struct HOSTRPC_CONSUMABLE_CLASS either
   {
     if (*this)
       {
-        TrueTy tmp(payload);
+        TrueTy tmp = TrueTy::reconstitute({}, payload);
+        tmp.unconsumed();
         return tmp;
       }
     else
@@ -72,7 +71,8 @@ struct HOSTRPC_CONSUMABLE_CLASS either
   {
     if (!*this)
       {
-        FalseTy tmp(payload);
+        FalseTy tmp = FalseTy::reconstitute({}, payload);
+        tmp.unconsumed();
         return tmp;
       }
     else
@@ -88,13 +88,36 @@ struct HOSTRPC_CONSUMABLE_CLASS either
   HOSTRPC_CALL_ON_LIVE HOSTRPC_ANNOTATE void unconsumed() const {}
   HOSTRPC_CALL_ON_UNKNOWN HOSTRPC_ANNOTATE void unknown() const {}
 
+  HOSTRPC_CREATED_RES
+  HOSTRPC_ANNOTATE
+  static either Left(HOSTRPC_CONSUMED_ARG TrueTy &value)
+  {
+    either r{value.disassemble({}), true};
+    r.unconsumed();
+    return cxx::move(r);
+  }
+
+  HOSTRPC_CREATED_RES
+  HOSTRPC_ANNOTATE
+  static either Right(HOSTRPC_CONSUMED_ARG FalseTy &value)
+  {
+    return {value.disassemble({}), false};
+  }
+
+  HOSTRPC_ANNOTATE
+  static either Left(TrueTy &&value) { return Left(value); }
+  HOSTRPC_ANNOTATE
+  static either Right(FalseTy &&value) { return Right(value); }
+
   // Swap branches, consuming current instance in the process
+  // Friend of self for this purpose
+  friend either<FalseTy, TrueTy>;
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
   operator either<FalseTy, TrueTy>() { return {payload, !state}; }
 
-  // Going to try allowing moving either
+  // Either is movable
   HOSTRPC_ANNOTATE
   HOSTRPC_CREATED_RES
   HOSTRPC_CALL_ON_DEAD
@@ -116,28 +139,6 @@ struct HOSTRPC_CONSUMABLE_CLASS either
     return *this;
   }
 
-  HOSTRPC_CREATED_RES
-  HOSTRPC_ANNOTATE
-  static either Left(HOSTRPC_CONSUMED_ARG TrueTy &value)
-  {
-    either r{value.disassemble({}), true};
-    r.unconsumed();
-    return cxx::move(r);
-  }
-
-  HOSTRPC_ANNOTATE
-  static either Left(TrueTy &&value) { return Left(value); }
-
-  HOSTRPC_CREATED_RES
-  HOSTRPC_ANNOTATE
-  static either Right(HOSTRPC_CONSUMED_ARG FalseTy &value)
-  {
-    return {value.disassemble({}), false};
-  }
-
-  HOSTRPC_ANNOTATE
-  static either Right(FalseTy &&value) { return Right(value); }
-
  private:
   HOSTRPC_CREATED_RES
   HOSTRPC_ANNOTATE
@@ -157,13 +158,11 @@ struct HOSTRPC_CONSUMABLE_CLASS either
 
 #if HOSTRPC_USE_TYPESTATE
   // Declare move hooks as friends
-  friend HOSTRPC_ANNOTATE
-      HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy>
-      cxx::move(either<TrueTy, FalseTy> &&x HOSTRPC_CONSUMED_ARG);
+  friend HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy>
+  cxx::move(either<TrueTy, FalseTy> &&x HOSTRPC_CONSUMED_ARG);
 
-  friend HOSTRPC_ANNOTATE
-      HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy>
-      cxx::move(either<TrueTy, FalseTy> &x HOSTRPC_CONSUMED_ARG);
+  friend HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy>
+  cxx::move(either<TrueTy, FalseTy> &x HOSTRPC_CONSUMED_ARG);
 #endif
 
   HOSTRPC_ANNOTATE HOSTRPC_SET_TYPESTATE(consumed) void kill() const {}
@@ -197,15 +196,15 @@ struct HOSTRPC_CONSUMABLE_CLASS either
 namespace cxx
 {
 template <typename TrueTy, typename FalseTy>
-HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy>
-move(either<TrueTy, FalseTy> &&x HOSTRPC_CONSUMED_ARG)
+HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy> move(
+    either<TrueTy, FalseTy> &&x HOSTRPC_CONSUMED_ARG)
 {
   return either<TrueTy, FalseTy>::recreate(x);
 }
 
 template <typename TrueTy, typename FalseTy>
-HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy>
-move(either<TrueTy, FalseTy> &x HOSTRPC_CONSUMED_ARG)
+HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy> move(
+    either<TrueTy, FalseTy> &x HOSTRPC_CONSUMED_ARG)
 {
   return either<TrueTy, FalseTy>::recreate(x);
 }
