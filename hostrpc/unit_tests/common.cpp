@@ -27,8 +27,8 @@ void use_result(hostrpc::page_t *page, uint64_t d[8])
 
 namespace hostrpc
 {
-template <typename state_machine>
-using bitmap_t = slot_bitmap<state_machine, __OPENCL_MEMORY_SCOPE_DEVICE>;
+template <typename Word>
+using bitmap_t = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_DEVICE>;
 }
 
 template <typename Word>
@@ -38,12 +38,11 @@ static HOSTRPC_ANNOTATE Word bypass_load_t(HOSTRPC_ATOMIC(Word) * addr)
                                __OPENCL_MEMORY_SCOPE_DEVICE>(addr);
 }
 
-template <typename state_machine>
-static HOSTRPC_ANNOTATE bool read_bit(hostrpc::bitmap_t<state_machine> &map,
+template <typename Word>
+static HOSTRPC_ANNOTATE bool read_bit(hostrpc::bitmap_t<Word> &map,
                                       uint32_t size, uint32_t i)
 
 {
-  using Word = typename state_machine::Word;
   uint32_t w = hostrpc::index_to_element<Word>(i);
   Word d = map.load_word(size, w);
   uint32_t subindex = hostrpc::index_to_subindex<Word>(i);
@@ -53,11 +52,7 @@ static HOSTRPC_ANNOTATE bool read_bit(hostrpc::bitmap_t<state_machine> &map,
 MODULE(bitmap)
 {
   using namespace hostrpc;
-  struct state_machine
-  {
-    using Word = uint64_t;
-  };
-  using Word = state_machine::Word;
+  using Word = uint64_t;
 
   enum : uint32_t
   {
@@ -87,8 +82,8 @@ MODULE(bitmap)
       inverted_storage[i] = m1;
     }
 
-  bitmap_t<state_machine> baseline(baseline_storage);
-  bitmap_t<state_machine> inverted(inverted_storage);
+  bitmap_t<Word> baseline(baseline_storage);
+  bitmap_t<Word> inverted(inverted_storage);
 
   TEST("check initial words")
   {
