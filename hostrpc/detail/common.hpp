@@ -256,7 +256,6 @@ struct slot_bitmap
     // then direct writes will fail. However, the data does need to be
     // zeroed for the bitmap to work.
   }
-  HOSTRPC_ANNOTATE ~slot_bitmap() = default;
 
   // assumes slot available, i.e. it's 0 and we're writing a 1
   HOSTRPC_ANNOTATE void claim_slot(uint32_t size, uint32_t i)

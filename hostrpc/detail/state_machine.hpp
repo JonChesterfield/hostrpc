@@ -139,9 +139,7 @@ struct state_machine_impl : public SZT
       typename typed_to_partial_trait<I, O>::type
       typed_to_partial(typed_port_t<I, O>&& port HOSTRPC_CONSUMED_ARG)
   {
-    uint32_t v = port;
-    port.kill();  // don't close it, port lives on in the return value
-    return {v, typed_to_partial_trait<I, O>::state()};
+    return cxx::move(port);
   }
 
   template <unsigned S, bool OutboxState>

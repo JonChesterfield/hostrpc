@@ -82,6 +82,42 @@ extern "C"
         s.rpc_close_port(threads, m.value());
       }
   }
+
+  void open_and_close_typed_port_lo_via_partial(state_machine_t &s)
+  {
+    auto threads = platform::active_threads();
+    auto p0 = s.rpc_open_typed_port<0, 0>(threads);
+    state_machine_t::partial_port_t<1> p1 = p0;
+    s.rpc_close_port(threads, cxx::move(p1));
+  }
+
+  void open_and_close_typed_port_hi_via_partial(state_machine_t &s)
+  {
+    auto threads = platform::active_threads();
+    auto p0 = s.rpc_open_typed_port<1, 1>(threads);
+    state_machine_t::partial_port_t<1> p1 = p0;
+    s.rpc_close_port(threads, cxx::move(p1));
+  }
+
+  void open_and_close_typed_port_lo_via_partial_after_apply(state_machine_t &s)
+  {
+    auto threads = platform::active_threads();
+    auto p00 = s.rpc_open_typed_port<0, 0>(threads);
+    auto p01 =
+        s.rpc_port_apply(threads, cxx::move(p00), [](uint32_t, buffer_ty *) {});
+    state_machine_t::partial_port_t<0> pU = p01;
+    s.rpc_close_port(threads, cxx::move(pU));
+  }
+
+  void open_and_close_typed_port_hi_via_partial_after_apply(state_machine_t &s)
+  {
+    auto threads = platform::active_threads();
+    auto p11 = s.rpc_open_typed_port<1, 1>(threads);
+    auto p10 =
+        s.rpc_port_apply(threads, cxx::move(p11), [](uint32_t, buffer_ty *) {});
+    state_machine_t::partial_port_t<0> pU = p10;
+    s.rpc_close_port(threads, cxx::move(pU));
+  }
 }
 
 auto apply_partial_port(state_machine_t &s,

@@ -177,12 +177,13 @@ HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr partial_port_impl_t<F, S> move(
 }  // namespace cxx
 #endif
 
-// Trivial ABI, __attribute__((trivial_abi)), would be a really good fit for this class.
-// It can be passed / returned in an i32 register, all the deleted move constructors and
-// so forth should burn out by codegen. With that type applied and the typestate stuff
-// quite crudely hacked out this is indeed returned as an i32. I don't think it can be passed
-// as i32 unless the cxx::move() requirement at call sites can be dropped, perhaps by
-// annotating the state machine methods directly.
+// Trivial ABI, __attribute__((trivial_abi)), would be a really good fit for
+// this class. It can be passed / returned in an i32 register, all the deleted
+// move constructors and so forth should burn out by codegen. With that type
+// applied and the typestate stuff quite crudely hacked out this is indeed
+// returned as an i32. I don't think it can be passed as i32 unless the
+// cxx::move() requirement at call sites can be dropped, perhaps by annotating
+// the state machine methods directly.
 
 template <typename Friend, unsigned I, unsigned O>
 class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
@@ -192,10 +193,31 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   friend Friend;  // the state machine
   uint32_t value;
 
+  // Constructor is private. Permissions setup is fairly complicated.
   HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES typed_port_impl_t(uint32_t v) : value(v)
   {
     static_assert((I <= 1) && (O <= 1), "");
   }
+
+  // Trust instances of this type with inbox/outbox inverted but not both
+  // to support invert inbox_state/outbox_state
+  friend typed_port_impl_t<Friend, I, !O>;
+  friend typed_port_impl_t<Friend, !I, O>;
+
+  // if either is constructed by normal(), the ==true path is live and will
+  // return (a maybe that returns) SelfType.
+  // if either is cosntructed by invert(), the ==false path is live and will
+  // return (a maybe that returns) SelfType.
+  // The dynamically dead path will call the other constructor, which is a
+  // friend here to allow the dead path to typecheck.
+
+  // construction with inbox changed, used by query
+  friend hostrpc::either<SelfType, typed_port_impl_t<Friend, !I, O>, uint32_t>;
+  friend hostrpc::either<typed_port_impl_t<Friend, !I, O>, SelfType, uint32_t>;
+
+  // construction with outbox changed, would be used by an apply that can fail
+  friend hostrpc::either<SelfType, typed_port_impl_t<Friend, I, !O>, uint32_t>;
+  friend hostrpc::either<typed_port_impl_t<Friend, I, !O>, SelfType, uint32_t>;
 
 #if HOSTRPC_USE_TYPESTATE
   // so that cxx::move keeps track of the typestate
@@ -218,16 +240,16 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     return value;
   }
 
-  // non-constexpr member functions to match partial_port_impl_t
-  HOSTRPC_ANNOTATE bool outbox_state() const { return O; }
-  HOSTRPC_ANNOTATE bool inbox_state() const { return I; }
-
   // non-default maybe can only be constructed by the second template parameter,
   // i.e. by this class. The only method that does so is operator that consumes
   // the port. Thus this instance can be converted to a maybe and then
   // retrieved.
   using maybe = hostrpc::maybe<uint32_t, SelfType>;
   friend maybe;
+
+  // non-constexpr member functions to match partial_port_impl_t
+  HOSTRPC_ANNOTATE bool outbox_state() const { return O; }
+  HOSTRPC_ANNOTATE bool inbox_state() const { return I; }
 
   template <bool InboxSet, bool OutboxSet>
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN static maybe make(uint32_t v)
@@ -243,11 +265,6 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
         return {};
       }
   }
-
-  // Trust instances of this type with inbox/outbox inverted but not both
-  // to support invert inbox_state/outbox_state
-  friend typed_port_impl_t<Friend, I, !O>;
-  friend typed_port_impl_t<Friend, !I, O>;
 
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
@@ -307,21 +324,11 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     return {v};
   }
 
-  // if either is constructed by normal(), the ==true path is live and will
-  // return (a maybe that returns) SelfType.
-  // if either is cosntructed by invert(), the ==false path is live and will
-  // return (a maybe that returns) SelfType.
-  // The dynamically dead path will call the other constructor, which is a
-  // friend here to allow the dead path to typecheck.
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+  operator typename traits::typed_to_partial_trait<Friend, SelfType>::type();
 
-  // construction with inbox changed, used by query
-  friend hostrpc::either<SelfType, typed_port_impl_t<Friend, !I, O>, uint32_t>;
-  friend hostrpc::either<typed_port_impl_t<Friend, !I, O>, SelfType, uint32_t>;
-
-  // construction with outbox changed, would be used by an apply that can fail
-  friend hostrpc::either<SelfType, typed_port_impl_t<Friend, I, !O>, uint32_t>;
-  friend hostrpc::either<typed_port_impl_t<Friend, I, !O>, SelfType, uint32_t>;
-  
   // move construct and assign are available
 #if HOSTRPC_USE_TYPESTATE
   HOSTRPC_ANNOTATE
@@ -344,26 +351,24 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     def();
     return *this;
   }
-  
-  HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_DEAD ~typed_port_impl_t() {}   
-  
+
+  HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_DEAD ~typed_port_impl_t() {}
+
   // leaves value uninitialised, uses of the value are caught
   // by the typestate annotations
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_CONSUMED typed_port_impl_t() {}
 #else
-  HOSTRPC_ANNOTATE  typed_port_impl_t() = default;
+  HOSTRPC_ANNOTATE typed_port_impl_t() = default;
   HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_DEAD ~typed_port_impl_t() = default;
   typed_port_impl_t(typed_port_impl_t &&other) = default;
-  typed_port_impl_t &operator=(typed_port_impl_t &&other ) = default;
+  typed_port_impl_t &operator=(typed_port_impl_t &&other) = default;
 
 #endif
-
 
   HOSTRPC_CALL_ON_DEAD HOSTRPC_ANNOTATE void consumed() const {}
   HOSTRPC_CALL_ON_LIVE HOSTRPC_ANNOTATE void unconsumed() const {}
   HOSTRPC_CALL_ON_UNKNOWN HOSTRPC_ANNOTATE void unknown() const {}
 
-  
  private:
   HOSTRPC_ANNOTATE static typed_port_impl_t HOSTRPC_CREATED_RES
   recreate(typed_port_impl_t &&x HOSTRPC_CONSUMED_ARG)
@@ -381,14 +386,14 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     return v;
   }
 
-  #if HOSTRPC_USE_TYPESTATE
+#if HOSTRPC_USE_TYPESTATE
   typed_port_impl_t(const typed_port_impl_t &) = delete;
   typed_port_impl_t &operator=(const typed_port_impl_t &) = delete;
 #else
   typed_port_impl_t(const typed_port_impl_t &) = default;
   typed_port_impl_t &operator=(const typed_port_impl_t &) = default;
-  
-  #endif
+
+#endif
 };
 
 template <typename Friend, unsigned S>
@@ -495,11 +500,11 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     return {tup};
   }
 
- // either_builder can only be constructed by the first template parameter
- HOSTRPC_ANNOTATE
+  // either_builder can only be constructed by the first template parameter
+  HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
-   operator hostrpc::either_builder<SelfType, partial_port_impl_t<Friend, !S>,
+  operator hostrpc::either_builder<SelfType, partial_port_impl_t<Friend, !S>,
                                    cxx::tuple<uint32_t, bool>>()
   {
     cxx::tuple<uint32_t, bool> tup = {value, state};
@@ -507,9 +512,15 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     return {tup};
   }
 
- // Construct an either from this type
- friend hostrpc::either<SelfType, partial_port_impl_t<Friend, !S>, cxx::tuple<uint32_t, bool>>;
- friend hostrpc::either<partial_port_impl_t<Friend, !S>,SelfType, cxx::tuple<uint32_t, bool>>;
+  // Construct an either from this type
+  friend hostrpc::either<SelfType, partial_port_impl_t<Friend, !S>,
+                         cxx::tuple<uint32_t, bool>>;
+  friend hostrpc::either<partial_port_impl_t<Friend, !S>, SelfType,
+                         cxx::tuple<uint32_t, bool>>;
+
+  // Construct a partial port from a typed port by user defined conversion
+  friend hostrpc::typed_port_impl_t<Friend, 0, S ? 0 : 1>;
+  friend hostrpc::typed_port_impl_t<Friend, 1, S ? 1 : 0>;
 
   // move construct and assign are available
   HOSTRPC_ANNOTATE
@@ -569,6 +580,17 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
   partial_port_impl_t(const partial_port_impl_t &) = delete;
   partial_port_impl_t &operator=(const partial_port_impl_t &) = delete;
 };
+
+template <typename Friend, unsigned I, unsigned O>
+HOSTRPC_ANNOTATE
+HOSTRPC_CALL_ON_LIVE
+HOSTRPC_SET_TYPESTATE(consumed)
+typed_port_impl_t<Friend, I, O>::operator typename traits::
+    typed_to_partial_trait<Friend, SelfType>::type()
+{
+  uint32_t v = *this;
+  return {v, traits::typed_to_partial_trait<Friend, SelfType>::state()};
+}
 
 #if HOSTRPC_USE_TYPESTATE
 namespace cxx
