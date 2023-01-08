@@ -7,6 +7,8 @@
 #include "../platform.hpp"
 #include "../platform/detect.hpp"
 #include "cxx.hpp"
+#include "typestate.hpp"
+#include "either.hpp"
 
 namespace hostrpc
 {
@@ -204,21 +206,20 @@ HOSTRPC_ANNOTATE inline uint64_t setbitsrange64(uint32_t l, uint32_t h)
 }  // namespace
 }  // namespace detail
 
-
-template <typename Word, size_t scope>
+template <typename StateMachineType, size_t scope>
 struct slot_bitmap;
 
 static_assert(__OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES !=
                   __OPENCL_MEMORY_SCOPE_DEVICE,
               "Expected these to be distinct");
 
-template <typename WordT, size_t scope>
+template <typename StateMachineType, size_t scope>
 struct slot_bitmap
 {
   // Would like this to be addrspace qualified but that's currently rejected by
   // most languages.
-  using Ty = __attribute__((aligned(64))) HOSTRPC_ATOMIC(WordT);
-  using Word = WordT;
+  using Word = typename StateMachineType::Word;
+  using Ty = __attribute__((aligned(64))) HOSTRPC_ATOMIC(Word);
 
   static constexpr bool system_scope()
   {
@@ -235,7 +236,6 @@ struct slot_bitmap
 
   // could check the types, expecting uint64_t or uint32_t
   static_assert((sizeof(Word) == 8) || (sizeof(Word) == 4), "");
-
 
   static_assert(sizeof(Word) == sizeof(HOSTRPC_ATOMIC(Word)), "");
   static_assert(sizeof(Word *) == 8, "");
@@ -343,15 +343,19 @@ struct slot_bitmap
   }
 };
 
-template <typename Word>
-using mailbox_bitmap = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>;
+template <typename StateMachineType>
+using mailbox_bitmap =
+    slot_bitmap<StateMachineType, __OPENCL_MEMORY_SCOPE_ALL_SVM_DEVICES>;
 
-template <typename WordT, bool Inverted>
+template <typename StateMachineType>
 struct inbox_bitmap
 {
-  using Word = WordT;
-  using mailbox_t = mailbox_bitmap<Word>;
+  using Word = typename StateMachineType::Word;
+  using mailbox_t = mailbox_bitmap<StateMachineType>;
   using Ty = typename mailbox_t::Ty;
+
+  template <unsigned I, unsigned O>
+  using typed_port_t = typename StateMachineType::template typed_port_t<I, O>;
 
  private:
   mailbox_t a;
@@ -366,16 +370,63 @@ struct inbox_bitmap
   HOSTRPC_ANNOTATE Word load_word(uint32_t size, uint32_t w) const
   {
     Word tmp = a.load_word(size, w);
-    return Inverted ? ~tmp : tmp;
+    return StateMachineType::InvertedInboxLoad() ? ~tmp : tmp;
   }
+
+
+  template <typename T, unsigned I>
+  HOSTRPC_ANNOTATE either<
+    typed_port_t<I, !I>,  /* no change */
+    typed_port_t<!I, !I>, /* inbox changed */
+    uint32_t>
+  query(uint32_t size, T active_threads,  typed_port_t<I, !I> &&port, Word * loaded_arg = nullptr)
+  {
+    static_assert(I == 0 || I == 1, "");
+    (void)active_threads;
+
+    using current = typed_port_t<I, !I>;
+    using changed = typed_port_t<!I, !I>;
+    
+    uint32_t raw = static_cast<uint32_t>(port);
+    const uint32_t w = index_to_element<Word>(raw);
+    const uint32_t subindex = index_to_subindex<Word>(raw);
+
+    Word loaded = load_word(size, w);
+    if (loaded_arg) {*loaded_arg = loaded; }
+    
+    bool in = bits::nthbitset(loaded, subindex);
+    
+    if (in == port.inbox_state())
+      {
+        // No change.
+        either_builder<current, changed, uint32_t> b(
+            port);
+        return b.normal();
+      }
+    else
+      {
+        // Can transition.
+        typed_port_t<!I, !I> n = port.invert_inbox();
+        either_builder<changed, current, uint32_t> b(
+            n);
+        platform::fence_acquire();
+        return b.invert();
+      }   
+  }
+    
+  
+  
 };
 
-template <typename WordT>
+template <typename StateMachineType>
 struct outbox_bitmap
 {
-  using Word = WordT;
-  using mailbox_t = mailbox_bitmap<Word>;
+  using Word = typename StateMachineType::Word;
+  using mailbox_t = mailbox_bitmap<StateMachineType>;
   using Ty = typename mailbox_t::Ty;
+
+  template <unsigned I, unsigned O>
+  using typed_port_t = typename StateMachineType::template typed_port_t<I, O>;
 
  private:
   mailbox_t a;
@@ -387,14 +438,28 @@ struct outbox_bitmap
 
   HOSTRPC_ANNOTATE void dump(uint32_t size) const { a.dump(size); }
 
-  HOSTRPC_ANNOTATE void claim_slot(uint32_t size, uint32_t i)
+  template <typename T>
+  HOSTRPC_ANNOTATE typed_port_t<0, 1> claim_slot(T active_threads,
+                                                 uint32_t size,
+                                                 typed_port_t<0, 0> &&port)
   {
-    return a.claim_slot(size, i);
+    if (platform::is_master_lane(active_threads))
+      {
+        a.claim_slot(size, static_cast<uint32_t>(port));
+      }
+    return port.invert_outbox();
   }
 
-  HOSTRPC_ANNOTATE void release_slot(uint32_t size, uint32_t i)
+  template <typename T>
+  HOSTRPC_ANNOTATE typed_port_t<1, 0> release_slot(T active_threads,
+                                                   uint32_t size,
+                                                   typed_port_t<1, 1> &&port)
   {
-    return a.release_slot(size, i);
+    if (platform::is_master_lane(active_threads))
+      {
+        a.release_slot(size, static_cast<uint32_t>(port));
+      }
+    return port.invert_outbox();
   }
 
   HOSTRPC_ANNOTATE Word load_word(uint32_t size, uint32_t w) const
@@ -403,11 +468,11 @@ struct outbox_bitmap
   }
 };
 
-template <typename Word>
+template <typename StateMachineType>
 struct lock_bitmap
 {
-  using bitmap_t = slot_bitmap<Word, __OPENCL_MEMORY_SCOPE_DEVICE>;
-
+  using Word = typename StateMachineType::Word;
+  using bitmap_t = slot_bitmap<StateMachineType, __OPENCL_MEMORY_SCOPE_DEVICE>;
   using Ty = typename bitmap_t::Ty;
 
  private:
@@ -447,10 +512,14 @@ struct lock_bitmap
         return true;
       }
   }
-
-  HOSTRPC_ANNOTATE void release_slot(uint32_t size, uint32_t i)
+  
+  template <typename T>
+  HOSTRPC_ANNOTATE void release_slot(T active_threads, uint32_t size, uint32_t i)
   {
-    a.release_slot(size, i);
+    if (platform::is_master_lane(active_threads))
+      {
+        a.release_slot(size, i);
+      }
   }
 
   HOSTRPC_ANNOTATE Word load_word(uint32_t size, uint32_t w) const

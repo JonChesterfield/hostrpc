@@ -34,28 +34,33 @@ namespace hostrpc
 // InvertedInboxLoad is a way for a client/server pair to configure themselves
 
 template <typename BufferElementT, typename WordT, typename SZT,
-          bool InvertedInboxLoad>
+          bool InvertedInboxLoadT>
 struct state_machine_impl : public SZT
 {
   using BufferElement = BufferElementT;
   using Word = WordT;
   using SZ = SZT;
-  using lock_t = lock_bitmap<Word>;
+  static constexpr bool InvertedInboxLoad() { return InvertedInboxLoadT;}
+  
+  using state_machine_impl_t = state_machine_impl<BufferElementT, WordT, SZT, InvertedInboxLoadT>;
+  
+  using lock_t = lock_bitmap<state_machine_impl_t>;
 
-  using mailbox_t = mailbox_bitmap<Word>;
+  using mailbox_t = mailbox_bitmap<state_machine_impl_t>;
 
-  using inbox_t = inbox_bitmap<Word, InvertedInboxLoad>;
-  using outbox_t = outbox_bitmap<Word>;
+  using inbox_t = inbox_bitmap<state_machine_impl_t>;
+  using outbox_t = outbox_bitmap<state_machine_impl_t>;
 
-  // TODO: Better assert is same_type
-  static_assert(sizeof(Word) == sizeof(typename inbox_t::Word), "");
-  static_assert(sizeof(Word) == sizeof(typename outbox_t::Word), "");
 
   template <unsigned I, unsigned O>
   using typed_port_t = typed_port_impl_t<state_machine_impl, I, O>;
 
   template <unsigned S>
   using partial_port_t = partial_port_impl_t<state_machine_impl, S>;
+
+  // TODO: Better assert is same_type
+  static_assert(sizeof(Word) == sizeof(typename inbox_t::Word), "");
+  static_assert(sizeof(Word) == sizeof(typename outbox_t::Word), "");
 
   HOSTRPC_ANNOTATE constexpr size_t wordBits() const
   {
@@ -295,12 +300,8 @@ struct state_machine_impl : public SZT
   {
     const uint32_t size = this->size();
     const uint32_t slot = static_cast<uint32_t>(port);
-    if (platform::is_master_lane(active_threads))
-      {
-        platform::fence_release();
-        active.release_slot(size, slot);
-      }
-
+    platform::fence_release();
+    active.release_slot(active_threads, size, slot);      
     port.kill();
   }
 
@@ -365,9 +366,36 @@ struct state_machine_impl : public SZT
   {
     static_assert(IandO == 0 || IandO == 1, "");
 
-    return apply_typed_port<typed_port_t<IandO, !IandO>,
-                            typed_port_t<IandO, IandO>, T>(
-        active_threads, cxx::move(port), cxx::forward<Op>(op));
+    read_typed_port<typed_port_t<IandO, IandO>, T, Op>(active_threads, port, cxx::forward<Op>(op));
+
+    const uint32_t size = this->size();
+
+    platform::fence_release();
+
+    // Toggle the outbox slot
+    // partial port implementation could call outbox.toggle here
+
+    // could pass a typed port representation here and get compile time checking
+    // of the comments 'assumes slot taken' and similar
+
+    // I think the is_master_lane handling needs to be under the control of the
+    // bitmap, which is going to mean passing active threads down into those
+    // operations That means it'll be possible to replace this branch with
+    // having every active thread perform the atomic operation - that would make
+    // the CFG simpler but I don't know what the effect on memory traffic would
+    // be. E.g. one lane fetch_or's in a bit, all the others fetch_or in zero,
+    // but aimed at the same word in memory - what does that mean across pcie?
+    // Don't know, should find out.
+
+    if constexpr (IandO == 0)
+      {
+        return outbox.claim_slot(active_threads, size, cxx::move(port));
+      }
+    else
+      {
+        return outbox.release_slot(active_threads, size, cxx::move(port));
+      }
+
   }
 
   template <typename T, typename Op>
@@ -375,8 +403,33 @@ struct state_machine_impl : public SZT
                                                     partial_port_t<1>&& port,
                                                     Op&& op)
   {
-    return apply_typed_port<partial_port_t<0>, partial_port_t<1>, T>(
-        active_threads, cxx::move(port), cxx::forward<Op>(op));
+    either<typed_port_t<0, 0>, typed_port_t<1, 1>, uint32_t> either = port;
+    if (either)
+      {
+        typename typed_port_t<0, 0>::maybe maybe = either.on_true();
+        if (maybe)
+          {
+            return rpc_port_apply(active_threads, maybe.value(),
+                                  cxx::forward<Op>(op));
+          }
+        else
+          {
+            __builtin_unreachable();
+          }
+      }
+    else
+      {
+        typename typed_port_t<1, 1>::maybe maybe = either.on_false();
+        if (maybe)
+          {
+            return rpc_port_apply(active_threads, maybe.value(),
+                                  cxx::forward<Op>(op));
+          }
+        else
+          {
+            __builtin_unreachable();
+          }
+      }
   }
 
   // Can only wait on the inbox to change state as this thread will not change
@@ -498,40 +551,9 @@ struct state_machine_impl : public SZT
       uint32_t>
   rpc_port_query(T active_threads, typed_port_t<I, !I>&& port)
   {
-    (void)active_threads;
     static_assert(I == 0 || I == 1, "");
-    port.unconsumed();
-
-    uint32_t raw = static_cast<uint32_t>(port);
     const uint32_t size = this->size();
-    const uint32_t w = index_to_element<Word>(raw);
-    const uint32_t subindex = index_to_subindex<Word>(raw);
-    bool in = bits::nthbitset(inbox.load_word(size, w), subindex);
-
-    if (in == port.inbox_state())
-      {
-        port.unconsumed();
-        either_builder<typed_port_t<I, !I>, typed_port_t<!I, !I>, uint32_t> b(
-            port);
-        // nothing changed
-        port.consumed();
-        return b.normal();
-      }
-    else
-      {
-        port.unconsumed();
-        // loaded a different value, change detected
-        typed_port_t<!I, !I> n = port.invert_inbox();
-        port.consumed();
-
-        n.unconsumed();
-        either_builder<typed_port_t<!I, !I>, typed_port_t<I, !I>, uint32_t> b(
-            n);
-        n.consumed();
-
-        platform::fence_acquire();
-        return b.invert();
-      }
+    return inbox.query(size, active_threads, cxx::move(port));
   }
 
   template <typename T>
@@ -540,39 +562,33 @@ struct state_machine_impl : public SZT
                           cxx::tuple<uint32_t, bool>>
   rpc_port_query(T active_threads, partial_port_t<0>&& port)
   {
-    (void)active_threads;
+    auto either = hostrpc::partial_to_typed(cxx::move(port));
 
-    // deduplicate vs typed port version subsequently
-    uint32_t raw = static_cast<uint32_t>(port);
-    const uint32_t size = this->size();
-    const uint32_t w = index_to_element<Word>(raw);
-    const uint32_t subindex = index_to_subindex<Word>(raw);
-    bool in = bits::nthbitset(inbox.load_word(size, w), subindex);
-
-    if (in == port.inbox_state())
+    if (either)
       {
-        port.unconsumed();
-        either_builder<partial_port_t<0>, partial_port_t<1>,
-                       cxx::tuple<uint32_t, bool>>
-            s(port);
-        port.consumed();
-        // nothing changed
-        return s.normal();
+        auto maybe = either.on_true();
+        if (maybe)
+          {
+            return hostrpc::typed_to_partial(
+                rpc_port_query(active_threads, maybe.value()));
+          }
+        else
+          {
+            __builtin_unreachable();
+          }
       }
     else
       {
-        // loaded a different value, change detected
-        port.unconsumed();
-        partial_port_t<1> n = port.invert_inbox();
-        port.consumed();
-        n.unconsumed();
-        either_builder<partial_port_t<1>, partial_port_t<0>,
-                       cxx::tuple<uint32_t, bool>>
-            u(n);
-        n.consumed();
-
-        platform::fence_acquire();
-        return u.invert();
+        auto maybe = either.on_false();
+        if (maybe)
+          {
+            return hostrpc::typed_to_partial(
+                rpc_port_query(active_threads, maybe.value()));
+          }
+        else
+          {
+            __builtin_unreachable();
+          }
       }
   }
 
@@ -682,10 +698,8 @@ struct state_machine_impl : public SZT
                 else
                   {
                     // Failed, drop the lock before continuing to search
-                    if (platform::is_master_lane(active_threads))
-                      {
-                        active.release_slot(size, slot);
-                      }
+                    active.release_slot(active_threads, size, slot);
+                      
                   }
 
                 available &= port_trait<PortType>::available_bitmap(i, o);
@@ -710,55 +724,6 @@ struct state_machine_impl : public SZT
     op(raw, &shared_buffer[raw]);
   }
 
-  template <typename PortRes, typename PortArg, typename T, typename Op>
-  HOSTRPC_ANNOTATE PortRes apply_typed_port(T active_threads, PortArg&& port,
-                                            Op&& op)
-  {
-    // Might need a better name than this
-    // Looking for static assert that inbox == outbox
-    static_assert(port_trait<PortArg>::openable(), "");
-    static_assert(!port_trait<PortRes>::openable(), "");
-
-    read_typed_port<PortArg, T, Op>(active_threads, port, cxx::forward<Op>(op));
-
-    const uint32_t size = this->size();
-
-    uint32_t raw = static_cast<uint32_t>(port);
-    platform::fence_release();
-
-    // Toggle the outbox slot
-    // partial port implementation could call outbox.toggle here
-
-    // could pass a typed port representation here and get compile time checking
-    // of the comments 'assumes slot taken' and similar
-
-    // I think the is_master_lane handling needs to be under the control of the
-    // bitmap, which is going to mean passing active threads down into those
-    // operations That means it'll be possible to replace this branch with
-    // having every active thread perform the atomic operation - that would make
-    // the CFG simpler but I don't know what the effect on memory traffic would
-    // be. E.g. one lane fetch_or's in a bit, all the others fetch_or in zero,
-    // but aimed at the same word in memory - what does that mean across pcie?
-    // Don't know, should find out.
-
-    if (port.outbox_state() == true)
-      {
-        if (platform::is_master_lane(active_threads))
-          {
-            outbox.release_slot(size, raw);
-          }
-      }
-    else
-      {
-        if (platform::is_master_lane(active_threads))
-          {
-            outbox.claim_slot(size, raw);
-          }
-      }
-
-    return port.invert_outbox();  // might cause problems with clang's consumed
-                                  // checking
-  }
 };
 
 }  // namespace hostrpc

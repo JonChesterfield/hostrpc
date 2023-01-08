@@ -7,9 +7,22 @@
 
 namespace hostrpc
 {
-
 template <typename TrueTy, typename FalseTy, typename From>
 struct HOSTRPC_CONSUMABLE_CLASS either;
+
+#if HOSTRPC_USE_TYPESTATE
+namespace cxx
+{
+// Declare, to put them in the right namespace
+// Pretty sure none of these should be constexpr
+template <typename TrueTy, typename FalseTy, typename From>
+HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy, From>
+move(either<TrueTy, FalseTy, From> &&x HOSTRPC_CONSUMED_ARG);
+template <typename TrueTy, typename FalseTy, typename From>
+HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy, From>
+move(either<TrueTy, FalseTy, From> &x HOSTRPC_CONSUMED_ARG);
+}  // namespace cxx
+#endif
 
 template <typename TrueTy, typename FalseTy, typename From>
 struct HOSTRPC_CONSUMABLE_CLASS either_builder
@@ -42,7 +55,6 @@ struct HOSTRPC_CONSUMABLE_CLASS either_builder
   HOSTRPC_ANNOTATE
   either_builder(From payload) : payload(payload) {}
 };
-
 
 // Construct from a single-use instance of either_builder.
 // Result is a type that will raise -Wconsumable errors if not 'used'
@@ -106,11 +118,30 @@ struct HOSTRPC_CONSUMABLE_CLASS either
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
-  operator either<FalseTy, TrueTy, From>()
+  operator either<FalseTy, TrueTy, From>() { return {payload, !state}; }
+
+  // Going to try allowing moving either
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CREATED_RES
+  HOSTRPC_CALL_ON_DEAD
+  either(either &&other HOSTRPC_CONSUMED_ARG)
+      : payload(other.payload), state(other.state)
   {
-    return {payload, !state};
+    other.kill();
+    def();
   }
-  
+
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CREATED_RES
+  HOSTRPC_CALL_ON_DEAD either &operator=(either &&other HOSTRPC_CONSUMED_ARG)
+  {
+    payload = other.payload;
+    state = other.state;
+    other.kill();
+    def();
+    return *this;
+  }
+
  private:
   HOSTRPC_CREATED_RES
   HOSTRPC_ANNOTATE
@@ -126,14 +157,64 @@ struct HOSTRPC_CONSUMABLE_CLASS either
   }
 
   From payload;
-  const bool state;
+  bool state;  // can't be const and keep move assignment
 
-  // Copying or moving these types doesn't work very intuitively
+#if HOSTRPC_USE_TYPESTATE
+  // Declare move hooks as friends
+  friend HOSTRPC_ANNOTATE
+      HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy, From>
+      cxx::move(either<TrueTy, FalseTy, From> &&x HOSTRPC_CONSUMED_ARG);
+
+  friend HOSTRPC_ANNOTATE
+      HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy, From>
+      cxx::move(either<TrueTy, FalseTy, From> &x HOSTRPC_CONSUMED_ARG);
+#endif
+
+  HOSTRPC_ANNOTATE HOSTRPC_SET_TYPESTATE(consumed) void kill() const {}
+  HOSTRPC_ANNOTATE HOSTRPC_SET_TYPESTATE(unconsumed) void def() const {}
+
+  HOSTRPC_ANNOTATE static either HOSTRPC_CREATED_RES
+  recreate(either &&x HOSTRPC_CONSUMED_ARG)
+  {
+    From v = x.payload;
+    bool s = x.state;
+    x.kill();
+    return {v, s};
+  }
+
+  HOSTRPC_ANNOTATE static either HOSTRPC_CREATED_RES
+  recreate(either &x HOSTRPC_CONSUMED_ARG)
+  {
+    From v = x.payload;
+    bool s = x.state;
+    x.kill();
+    return {v, s};
+  }
+
+  // Copying or moving maybe doesn't work very intuitively, moving either should
+  // be OK
   either(const either &other) = delete;
-  either(either &&other) = delete;
   either &operator=(const either &other) = delete;
-  either &operator=(either &&other) = delete;
 };
+
+#if HOSTRPC_USE_TYPESTATE
+namespace cxx
+{
+template <typename TrueTy, typename FalseTy, typename From>
+HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy, From>
+move(either<TrueTy, FalseTy, From> &&x HOSTRPC_CONSUMED_ARG)
+{
+  return either<TrueTy, FalseTy, From>::recreate(x);
+}
+
+template <typename TrueTy, typename FalseTy, typename From>
+HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy, From>
+move(either<TrueTy, FalseTy, From> &x HOSTRPC_CONSUMED_ARG)
+{
+  return either<TrueTy, FalseTy, From>::recreate(x);
+}
+}  // namespace cxx
+#endif
 
 }  // namespace hostrpc
 
