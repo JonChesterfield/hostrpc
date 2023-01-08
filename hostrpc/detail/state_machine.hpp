@@ -561,8 +561,23 @@ struct state_machine_impl : public SZT
                           partial_port_t<1>> /* inbox changed */
   rpc_port_query(T active_threads, partial_port_t<0>&& port)
   {
-    auto either = hostrpc::partial_to_typed(cxx::move(port));
+    using EitherTy = typename partial_port_t<0>::partial_to_typed_result_type;
+    EitherTy either = hostrpc::partial_to_typed(cxx::move(port));
 
+#if 0
+    // Visit avoids the builtin unreachable branches but captures active threads by
+    // reference. OpenCL may struggle with that.
+    using ResultTy = hostrpc::either<partial_port_t<0>, partial_port_t<1>>;
+    return either.template visit<ResultTy>(
+        [=](typename EitherTy::TrueTy&& port) -> ResultTy {
+          return hostrpc::typed_to_partial(
+              rpc_port_query(active_threads, cxx::move(port)));
+        },
+        [=](typename EitherTy::FalseTy&& port) -> ResultTy {
+          return hostrpc::typed_to_partial(
+              rpc_port_query(active_threads, cxx::move(port)));
+        });
+#else
     if (either)
       {
         auto maybe = either.on_true();
@@ -589,6 +604,7 @@ struct state_machine_impl : public SZT
             __builtin_unreachable();
           }
       }
+#endif
   }
 
  private:

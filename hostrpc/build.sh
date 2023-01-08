@@ -486,30 +486,34 @@ if false; then
 fi
 
 if true; then
+# Try to make the IR easier to read
+CODEGEN="-DNDEBUG -fno-strict-aliasing -g0"
+CODEGEN="-DNDEBUG -g0"
+    
 # Sanity checks that the client and server compile successfully
 # and provide an example of the generated IR
-$CXX_X64 $CXXVER -DNDEBUG codegen/client.cpp -S -o codegen/client.x64.ll
-$CXX_X64 $CXXVER -DNDEBUG codegen/server.cpp -S -o codegen/server.x64.ll
-$CXX_X64 $CXXVER -DNDEBUG -fno-exceptions codegen/state_machine.cpp -S -o codegen/state_machine.x64.ll
+$CXX_X64 $CXXVER $CODEGEN codegen/client.cpp -S -o codegen/client.x64.ll
+$CXX_X64 $CXXVER $CODEGEN codegen/server.cpp -S -o codegen/server.x64.ll
+$CXX_X64 $CXXVER $CODEGEN -fno-exceptions codegen/state_machine.cpp -S -o codegen/state_machine.x64.ll
 
 $EXTRACT codegen/state_machine.x64.ll -func typed_port_via_wait -S -o codegen/first.ll
 $EXTRACT codegen/state_machine.x64.ll -func typed_port_via_query -S -o codegen/second.ll
 
-$CXX_GCN $CXXVER -DNDEBUG codegen/client.cpp -S -o codegen/client.gcn.ll
-$CXX_GCN $CXXVER -DNDEBUG codegen/server.cpp -S -o codegen/server.gcn.ll
-$CXX_GCN $CXXVER -DNDEBUG codegen/state_machine.cpp -S -o codegen/state_machine.gcn.ll
-$CXX_PTX $CXXVER -DNDEBUG codegen/client.cpp -S -o codegen/client.ptx.ll
-$CXX_PTX $CXXVER -DNDEBUG codegen/server.cpp -S -o codegen/server.ptx.ll
-$CXX_PTX $CXXVER -DNDEBUG codegen/state_machine.cpp -S -o codegen/state_machine.ptx.ll
+$CXX_GCN $CXXVER $CODEGEN codegen/client.cpp -S -o codegen/client.gcn.ll
+$CXX_GCN $CXXVER $CODEGEN codegen/server.cpp -S -o codegen/server.gcn.ll
+$CXX_GCN $CXXVER $CODEGEN codegen/state_machine.cpp -S -o codegen/state_machine.gcn.ll
+$CXX_PTX $CXXVER $CODEGEN codegen/client.cpp -S -o codegen/client.ptx.ll
+$CXX_PTX $CXXVER $CODEGEN codegen/server.cpp -S -o codegen/server.ptx.ll
+$CXX_PTX $CXXVER $CODEGEN codegen/state_machine.cpp -S -o codegen/state_machine.ptx.ll
 
 
-$CXX_X64 $CXXVER codegen/foo_cxx.cpp -S -o codegen/foo_cxx.x64.ll
-$CXX_GCN $CXXVER codegen/foo_cxx.cpp -S -o codegen/foo_cxx.gcn.ll
-$CXX_PTX $CXXVER codegen/foo_cxx.cpp -S -o codegen/foo_cxx.ptx.ll
+$CXX_X64 $CXXVER $CODEGEN codegen/foo_cxx.cpp -S -o codegen/foo_cxx.x64.ll
+$CXX_GCN $CXXVER $CODEGEN codegen/foo_cxx.cpp -S -o codegen/foo_cxx.gcn.ll
+$CXX_PTX $CXXVER $CODEGEN codegen/foo_cxx.cpp -S -o codegen/foo_cxx.ptx.ll
 
-$CLANGXX $XCUDA $CXXVER --cuda-device-only -nocudainc -nocudalib codegen/foo.cu -emit-llvm -S -o codegen/foo.cuda.ptx.ll
+$CLANGXX $XCUDA $CXXVER $CODEGEN --cuda-device-only -nocudainc -nocudalib codegen/foo.cu -emit-llvm -S -o codegen/foo.cuda.ptx.ll
 
-$CLANGXX $XCUDA $CXXVER --cuda-host-only -nocudainc -nocudalib codegen/foo.cu -emit-llvm -S -o codegen/foo.cuda.x64.ll
+$CLANGXX $XCUDA $CXXVER $CODEGEN --cuda-host-only -nocudainc -nocudalib codegen/foo.cu -emit-llvm -S -o codegen/foo.cuda.x64.ll
 
 cd codegen
 $CLANGXX $XCUDA $CXXVER -nocudainc -nocudalib foo.cu -emit-llvm -S
@@ -520,8 +524,8 @@ cd -
 CODEGENOPTLEVEL='-O2'
 
 # aomp has broken cuda-device-only
-$CLANGXX -x hip --cuda-gpu-arch=$GCNGFX -nogpulib -nogpuinc $CXXVER $CODEGENOPTLEVEL --cuda-device-only codegen/foo.cu -emit-llvm -S -o codegen/foo.hip.gcn.ll
-$CLANGXX -x hip --cuda-gpu-arch=$GCNGFX -nogpulib -nogpuinc $CXXVER $CODEGENOPTLEVEL --cuda-host-only codegen/foo.cu -emit-llvm -S -o codegen/foo.hip.x64.ll
+$CLANGXX -x hip --cuda-gpu-arch=$GCNGFX -nogpulib -nogpuinc $CXXVER $CODEGEN $CODEGENOPTLEVEL --cuda-device-only codegen/foo.cu -emit-llvm -S -o codegen/foo.hip.gcn.ll
+$CLANGXX -x hip --cuda-gpu-arch=$GCNGFX -nogpulib -nogpuinc $CXXVER $CODEGEN $CODEGENOPTLEVEL --cuda-host-only codegen/foo.cu -emit-llvm -S -o codegen/foo.hip.x64.ll
 
 # hip doesn't understand -emit-llvm (or -S, or -c) when trying to do host and device together
 # so can't test that here
@@ -531,7 +535,6 @@ $CLANGXX $CODEGENOPTLEVEL -target x86_64-pc-linux-gnu $OPENMP_FLAGS_AMDGPU codeg
 
 # ignores host-only, so the IR has a binary gfx pasted at the top
 $CLANGXX $CODEGENOPTLEVEL  -target x86_64-pc-linux-gnu $OPENMP_FLAGS_AMDGPU codegen/foo.omp.cpp -S -emit-llvm --cuda-host-only -o codegen/foo.omp.gcn-x64.ll
-
 
 $CLANGXX $CODEGENOPTLEVEL  -target x86_64-pc-linux-gnu $OPENMP_FLAGS_NVPTX codegen/foo.omp.cpp -c -emit-llvm -S --cuda-device-only -o codegen/foo.omp.ptx.ll
 
@@ -672,8 +675,9 @@ if (($have_amdgcn)); then
 $CXX_X64_LD x64_gcn_stress.x64.bc obj/hsa_support.x64.bc obj/catch.o $LDFLAGS -o x64_gcn_stress.exe
 fi
 
+set +e
 $CXX_X64_LD tests.x64.bc obj/host_support.x64.bc obj/catch.o $LDFLAGS -o tests.exe
-
+set -e
 
 # clang trunk is crashing on this at present
 if (($have_amdgcn)); then
@@ -728,7 +732,9 @@ if (($have_nvptx)); then
 bash -c "$LOADPREFIX ./demo_openmp_ptx"
 fi
 
+set +e
 time ./tests.exe
+set -e
 
 if (($have_amdgcn)); then
 echo "Call hostcall/loader executable"

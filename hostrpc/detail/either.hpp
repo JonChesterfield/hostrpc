@@ -81,6 +81,23 @@ struct HOSTRPC_CONSUMABLE_CLASS either
       }
   }
 
+
+  template <typename CallbackReturn, typename OnTrue, typename OnFalse>
+  HOSTRPC_SET_TYPESTATE(consumed)
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_ANNOTATE
+  CallbackReturn visit(OnTrue on_true, OnFalse on_false)
+  {
+    if (*this)
+      {
+        return on_true(TrueTy::reconstitute({}, payload));
+      }
+    else
+      {
+        return on_false(FalseTy::reconstitute({}, payload));
+      }
+  }
+  
   HOSTRPC_CALL_ON_DEAD HOSTRPC_ANNOTATE ~either() {}
 
   // Useful for checking assumptions

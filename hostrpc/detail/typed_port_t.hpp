@@ -187,14 +187,14 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
  private:
   UnderlyingType value;
 
-  //  friend Friend;  // the state machine
+  friend Friend;  // the state machine
 
   class PortUnderlyingAccess
   {
    private:
     friend typed_port_impl_t<Friend, I, O>;
-    friend partial_port_impl_t<Friend, I==O>;
-    
+    friend partial_port_impl_t<Friend, I == O>;
+
     friend hostrpc::maybe<typed_port_impl_t<Friend, I, O>>;
 
     friend either<typed_port_impl_t<Friend, I, O>,
@@ -404,7 +404,7 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     friend partial_port_impl_t<Friend, S>;
     friend typed_port_impl_t<Friend, 0, S ? 0 : 1>;
     friend typed_port_impl_t<Friend, 1, S ? 1 : 0>;
-    
+
     friend hostrpc::maybe<partial_port_impl_t<Friend, S>>;
 
     friend either<partial_port_impl_t<Friend, S>,
@@ -519,15 +519,15 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     UnderlyingType u = {value, state};
     return {typename maybe::Key{}, u};
   }
- 
-  using either_partial_to_typed_type = typename hostrpc::either<
+
+  using partial_to_typed_result_type = typename hostrpc::either<
       typename traits::partial_to_typed_trait<Friend, SelfType, false>::type,
       typename traits::partial_to_typed_trait<Friend, SelfType, true>::type>;
 
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
-  operator either_partial_to_typed_type()
+  operator partial_to_typed_result_type()
   {
     using true_typed_port_t =
         typename traits::partial_to_typed_trait<Friend, SelfType, true>::type;
@@ -535,16 +535,18 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
         typename traits::partial_to_typed_trait<Friend, SelfType, false>::type;
 
     const UnderlyingType p = this->disassemble({});
-    const bool s = p.get<0>();
-    const uint32_t v = p.get<1>();
+    const uint32_t v = p.get<0>();
+    const bool s = p.get<1>();
 
     if (s)
       {
-        return either<true_typed_port_t, false_typed_port_t>::Left(true_typed_port_t::reconstitute({}, v));
+        return either<true_typed_port_t, false_typed_port_t>::Left(
+            true_typed_port_t::reconstitute({}, v));
       }
     else
       {
-        return either<true_typed_port_t, false_typed_port_t>::Right(false_typed_port_t::reconstitute({}, v));
+        return either<true_typed_port_t, false_typed_port_t>::Right(
+            false_typed_port_t::reconstitute({}, v));
       }
   }
 
@@ -627,9 +629,10 @@ HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE HOSTRPC_SET_TYPESTATE(consumed)
     typed_port_impl_t<Friend, I, O>::operator typename traits::
         typed_to_partial_trait<Friend, SelfType>::type()
 {
-  using PartialTrait = traits::typed_to_partial_trait<Friend, SelfType>; 
+  using PartialTrait = traits::typed_to_partial_trait<Friend, SelfType>;
   UnderlyingType v = this->disassemble({});
-  typename PartialTrait::type::UnderlyingType partial = {v, PartialTrait::state()};
+  typename PartialTrait::type::UnderlyingType partial = {v,
+                                                         PartialTrait::state()};
   return PartialTrait::type::reconstitute({}, partial);
 }
 
@@ -639,7 +642,7 @@ HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE HOSTRPC_SET_TYPESTATE(consumed)
 
 template <typename Friend, unsigned S>
 HOSTRPC_ANNOTATE
-    typename partial_port_impl_t<Friend, S>::either_partial_to_typed_type
+    typename partial_port_impl_t<Friend, S>::partial_to_typed_result_type
     partial_to_typed(partial_port_impl_t<Friend, S> &&port)
 {
   return port;
@@ -665,32 +668,14 @@ typed_to_partial(either<typed_port_impl_t<Friend, IA, OA>,
       Friend, typed_port_impl_t<Friend, IA, OA>>::type;
   using false_typed_port_t = typename traits::typed_to_partial_trait<
       Friend, typed_port_impl_t<Friend, IB, OB>>::type;
-
   using result_type = either<true_typed_port_t, false_typed_port_t>;
-  if (port)
-    {
-      typename typed_port_impl_t<Friend, IA, OA>::maybe m = port.on_true();
-      if (m)
-        {
-          return result_type::Left(typed_to_partial(m.value()));
-        }
-      else
-        {
-          __builtin_unreachable();
-        }
-    }
-  else
-    {
-      typename typed_port_impl_t<Friend, IB, OB>::maybe m = port.on_false();
-      if (m)
-        {
-          return result_type::Right(typed_to_partial(m.value()));
-        }
-      else
-        {
-          __builtin_unreachable();
-        }
-    }
+  return port.template visit<result_type>(
+      [](typed_port_impl_t<Friend, IA, OA> &&port) -> result_type {
+        return result_type::Left(typed_to_partial(cxx::move(port)));
+      },
+      [](typed_port_impl_t<Friend, IB, OB> &&port) -> result_type {
+        return result_type::Right(typed_to_partial(cxx::move(port)));
+      });
 }
 
 #if HOSTRPC_USE_TYPESTATE
