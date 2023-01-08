@@ -55,6 +55,7 @@ struct HOSTRPC_CONSUMABLE_CLASS either
 {
   friend either_builder<TrueTy, FalseTy, From>;
   friend either_builder<FalseTy, TrueTy, From>;
+  friend either<FalseTy, TrueTy, From>;
 
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_ANNOTATE
@@ -101,6 +102,15 @@ struct HOSTRPC_CONSUMABLE_CLASS either
   HOSTRPC_CALL_ON_LIVE HOSTRPC_ANNOTATE void unconsumed() const {}
   HOSTRPC_CALL_ON_UNKNOWN HOSTRPC_ANNOTATE void unknown() const {}
 
+  // Swap branches, consuming current instance in the process
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+  operator either<FalseTy, TrueTy, From>()
+  {
+    return {payload, !state};
+  }
+  
  private:
   HOSTRPC_CREATED_RES
   HOSTRPC_ANNOTATE

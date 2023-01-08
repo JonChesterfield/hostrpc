@@ -33,7 +33,8 @@ namespace hostrpc
 
 // InvertedInboxLoad is a way for a client/server pair to configure themselves
 
-template <typename BufferElementT, typename WordT, typename SZT, bool InvertedInboxLoad>
+template <typename BufferElementT, typename WordT, typename SZT,
+          bool InvertedInboxLoad>
 struct state_machine_impl : public SZT
 {
   using BufferElement = BufferElementT;
@@ -80,10 +81,7 @@ struct state_machine_impl : public SZT
   // copyable
   static_assert(cxx::is_trivially_copyable<BufferElement>() /*::value*/, "");
 
-  HOSTRPC_ANNOTATE state_machine_impl()
-      : SZ{}, active{}, inbox{}, outbox{}
-  {
-  }
+  HOSTRPC_ANNOTATE state_machine_impl() : SZ{}, active{}, inbox{}, outbox{} {}
   HOSTRPC_ANNOTATE ~state_machine_impl() = default;
   HOSTRPC_ANNOTATE state_machine_impl(SZ sz, lock_t active, inbox_t inbox,
                                       outbox_t outbox,
@@ -153,6 +151,8 @@ struct state_machine_impl : public SZT
       partial_to_typed(T active_threads,
                        partial_port_t<S>&& port HOSTRPC_CONSUMED_ARG)
   {
+#if 0
+    // Directly construct it from within state machine
     uint32_t v = port.value;
     bool state = port.state;
 
@@ -167,6 +167,25 @@ struct state_machine_impl : public SZT
         rpc_close_port(active_threads, cxx::move(port));
         return {};
       }
+#else
+    // Go via port conversion functions
+    either<typename partial_to_typed_trait<S, OutboxState>::type,
+           typename partial_to_typed_trait<S, !OutboxState>::type, uint32_t>
+        either = port;
+    if (either)
+      {
+        return either.on_true();
+      }
+    else
+      {
+        auto m = either.on_false();
+        if (m)
+          {
+            rpc_close_port(active_threads, m.value());
+          }
+        return {};
+      }
+#endif
   }
 
   // These should probably be gated behind an explicit opt in, another

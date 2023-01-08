@@ -118,6 +118,34 @@ extern "C"
     state_machine_t::partial_port_t<0> pU = p10;
     s.rpc_close_port(threads, cxx::move(pU));
   }
+
+  void open_and_close_partial_via_typed_port(state_machine_t &s)
+  {
+    auto threads = platform::active_threads();
+    state_machine_t::partial_port_t<1> p = s.rpc_open_partial_port(threads);
+    hostrpc::either<state_machine_t::typed_port_t<0, 0>,
+                    state_machine_t::typed_port_t<1, 1>, uint32_t>
+        either = p;
+
+    if (either)
+      {
+        auto maybe = either.on_true();
+        if (maybe)
+          {
+            state_machine_t::typed_port_t<0, 0> p00 = maybe.value();
+            s.rpc_close_port(threads, cxx::move(p00));
+          }
+      }
+    else
+      {
+        auto maybe = either.on_false();
+        if (maybe)
+          {
+            state_machine_t::typed_port_t<1, 1> p11 = maybe.value();
+            s.rpc_close_port(threads, cxx::move(p11));
+          }
+      }
+  }
 }
 
 auto apply_partial_port(state_machine_t &s,

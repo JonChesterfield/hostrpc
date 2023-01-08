@@ -219,6 +219,10 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   friend hostrpc::either<SelfType, typed_port_impl_t<Friend, I, !O>, uint32_t>;
   friend hostrpc::either<typed_port_impl_t<Friend, I, !O>, SelfType, uint32_t>;
 
+  // construction with both changed, used by conversion from partial_port_t
+  friend hostrpc::either<SelfType, typed_port_impl_t<Friend, !I, !O>, uint32_t>;
+  friend hostrpc::either<typed_port_impl_t<Friend, !I, !O>, SelfType, uint32_t>;
+
 #if HOSTRPC_USE_TYPESTATE
   // so that cxx::move keeps track of the typestate
   friend HOSTRPC_ANNOTATE
@@ -317,6 +321,18 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
   operator hostrpc::either_builder<SelfType, typed_port_impl_t<Friend, !I, O>,
+                                   uint32_t>()
+  {
+    uint32_t v = *this;
+    kill();
+    return {v};
+  }
+
+  // This conversion is useful when constructing from a partial port
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+  operator hostrpc::either_builder<SelfType, typed_port_impl_t<Friend, !I, !O>,
                                    uint32_t>()
   {
     uint32_t v = *this;
@@ -518,6 +534,74 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
   friend hostrpc::either<partial_port_impl_t<Friend, !S>, SelfType,
                          cxx::tuple<uint32_t, bool>>;
 
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+  operator typename hostrpc::either<
+      typename traits::partial_to_typed_trait<Friend, SelfType, false>::type,
+      typename traits::partial_to_typed_trait<Friend, SelfType, true>::type,
+      uint32_t>()
+  {
+    using true_typed_port_t =
+        typename traits::partial_to_typed_trait<Friend, SelfType, true>::type;
+    using false_typed_port_t =
+        typename traits::partial_to_typed_trait<Friend, SelfType, false>::type;
+
+    cxx::tuple<uint32_t, bool> tup = {value, state};
+    if (state == true)
+      {
+        constexpr unsigned O = true;
+        constexpr unsigned I = S ? O : !O;
+        typename true_typed_port_t::maybe m =
+            true_typed_port_t::template make<I, O>(value);
+        if (m)
+          {
+            true_typed_port_t p = m.value();
+            either_builder<true_typed_port_t, false_typed_port_t, uint32_t> b =
+                p;
+            return b.invert();
+          }
+        else
+          {
+            __builtin_unreachable();
+          }
+      }
+    else
+      {
+        constexpr unsigned O = false;
+        constexpr unsigned I = S ? O : !O;
+        typename false_typed_port_t::maybe m =
+            false_typed_port_t::template make<I, O>(value);
+        if (m)
+          {
+            false_typed_port_t p = m.value();
+            either_builder<false_typed_port_t, true_typed_port_t, uint32_t> b =
+                p;
+            return b.normal();
+          }
+        else
+          {
+            __builtin_unreachable();
+          }
+      }
+  }
+
+  // Call into the above, via either knowing how to swap its branches
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+  operator typename hostrpc::either<
+      typename traits::partial_to_typed_trait<Friend, SelfType, true>::type,
+      typename traits::partial_to_typed_trait<Friend, SelfType, false>::type,
+      uint32_t>()
+  {
+   typename hostrpc::either<
+      typename traits::partial_to_typed_trait<Friend, SelfType, false>::type,
+      typename traits::partial_to_typed_trait<Friend, SelfType, true>::type,
+     uint32_t> either = *this;
+   return either;
+  }
+
   // Construct a partial port from a typed port by user defined conversion
   friend hostrpc::typed_port_impl_t<Friend, 0, S ? 0 : 1>;
   friend hostrpc::typed_port_impl_t<Friend, 1, S ? 1 : 0>;
@@ -582,11 +666,9 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
 };
 
 template <typename Friend, unsigned I, unsigned O>
-HOSTRPC_ANNOTATE
-HOSTRPC_CALL_ON_LIVE
-HOSTRPC_SET_TYPESTATE(consumed)
-typed_port_impl_t<Friend, I, O>::operator typename traits::
-    typed_to_partial_trait<Friend, SelfType>::type()
+HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE HOSTRPC_SET_TYPESTATE(consumed)
+    typed_port_impl_t<Friend, I, O>::operator typename traits::
+        typed_to_partial_trait<Friend, SelfType>::type()
 {
   uint32_t v = *this;
   return {v, traits::typed_to_partial_trait<Friend, SelfType>::state()};
