@@ -121,6 +121,23 @@ extern "C"
 
 }
 
+template <unsigned I, unsigned O>
+auto try_build_an_either(state_machine_t::typed_port_t<I,O> &&p)
+{
+auto e =  either<state_machine_t::typed_port_t<I,O>,
+         state_machine_t::typed_port_t<I,!O>,
+         uint32_t>::Left(cxx::move(p));
+
+ 
+  return cxx::move(e);
+
+}
+
+auto try_build_an_either_inst(state_machine_t::typed_port_t<0,0> &&p)
+{
+  return try_build_an_either(cxx::move(p));
+}
+
 template <unsigned S>
 static state_machine_t::partial_port_t<S> partial_S_nop_via_typed_port(
     state_machine_t::partial_port_t<S> &&p)

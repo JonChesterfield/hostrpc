@@ -33,6 +33,77 @@ private:
 
   friend maybe<partial_port_impl_t<PortFriend, 0>>;
   friend maybe<partial_port_impl_t<PortFriend, 1>>;
+
+
+  friend either<typed_port_impl_t<PortFriend, 0, 0>,
+                typed_port_impl_t<PortFriend, 0, 0>,
+                uint32_t>;
+  friend either<typed_port_impl_t<PortFriend, 0, 0>,
+                typed_port_impl_t<PortFriend, 0, 1>,
+                uint32_t>;
+  friend either<typed_port_impl_t<PortFriend, 0, 0>,
+                typed_port_impl_t<PortFriend, 1, 0>,
+                uint32_t>;
+  friend either<typed_port_impl_t<PortFriend, 0, 0>,
+                typed_port_impl_t<PortFriend, 1, 1>,
+                uint32_t>;
+
+  friend either<typed_port_impl_t<PortFriend, 0, 1>,
+                typed_port_impl_t<PortFriend, 0, 0>,
+                uint32_t>;
+  friend either<typed_port_impl_t<PortFriend, 0, 1>,
+                typed_port_impl_t<PortFriend, 0, 1>,
+                uint32_t>;
+  friend either<typed_port_impl_t<PortFriend, 0, 1>,
+                typed_port_impl_t<PortFriend, 1, 0>,
+                uint32_t>;
+  friend either<typed_port_impl_t<PortFriend, 0, 1>,
+                typed_port_impl_t<PortFriend, 1, 1>,
+                uint32_t>;
+
+
+    friend either<typed_port_impl_t<PortFriend, 1, 0>,
+                typed_port_impl_t<PortFriend, 0, 0>,
+                uint32_t>;
+  friend either<typed_port_impl_t<PortFriend, 1, 0>,
+                typed_port_impl_t<PortFriend, 0, 1>,
+                uint32_t>;
+  friend either<typed_port_impl_t<PortFriend, 1, 0>,
+                typed_port_impl_t<PortFriend, 1, 0>,
+                uint32_t>;
+  friend either<typed_port_impl_t<PortFriend, 1, 0>,
+                typed_port_impl_t<PortFriend, 1, 1>,
+                uint32_t>;
+
+
+      friend either<typed_port_impl_t<PortFriend, 1, 1>,
+                typed_port_impl_t<PortFriend, 0, 0>,
+                uint32_t>;
+  friend either<typed_port_impl_t<PortFriend, 1, 1>,
+                typed_port_impl_t<PortFriend, 0, 1>,
+                uint32_t>;
+  friend either<typed_port_impl_t<PortFriend, 1, 1>,
+                typed_port_impl_t<PortFriend, 1, 0>,
+                uint32_t>;
+  friend either<typed_port_impl_t<PortFriend, 1, 1>,
+                typed_port_impl_t<PortFriend, 1, 1>,
+                uint32_t>;
+
+
+  friend either<partial_port_impl_t<PortFriend, 0>,
+                partial_port_impl_t<PortFriend, 0>,
+                cxx::tuple<uint32_t, bool>>;
+  friend either<partial_port_impl_t<PortFriend, 0>,
+                partial_port_impl_t<PortFriend, 1>,
+                cxx::tuple<uint32_t, bool>>;
+  friend either<partial_port_impl_t<PortFriend, 1>,
+                partial_port_impl_t<PortFriend, 0>,
+                cxx::tuple<uint32_t, bool>>;
+  friend either<partial_port_impl_t<PortFriend, 1>,
+                partial_port_impl_t<PortFriend, 1>,
+                cxx::tuple<uint32_t, bool>>;
+
+  
   
   HOSTRPC_ANNOTATE  PortUnderlyingAccess() {}
   HOSTRPC_ANNOTATE  PortUnderlyingAccess(PortUnderlyingAccess const&) {}
@@ -216,7 +287,6 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
-  HOSTRPC_CREATED_RES
   HOSTRPC_SET_TYPESTATE(consumed)
   UnderlyingType disassemble(PortUnderlyingAccess)
   {
@@ -344,43 +414,6 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     return {typename maybe::Key{},u};
   }
 
-  // either_builder can only be constructed by the first template parameter,
-  // i.e. by this class. The only method that does so consumes the port. either
-  // is only constructed from either_builder, which consumes the builder.
-  HOSTRPC_ANNOTATE
-  HOSTRPC_CALL_ON_LIVE
-  HOSTRPC_SET_TYPESTATE(consumed)
-  operator hostrpc::either_builder<SelfType, typed_port_impl_t<Friend, I, !O>,
-                                   uint32_t>()
-  {
-    UnderlyingType v = *this;
-    kill();
-    return {v};
-  }
-
-  HOSTRPC_ANNOTATE
-  HOSTRPC_CALL_ON_LIVE
-  HOSTRPC_SET_TYPESTATE(consumed)
-  operator hostrpc::either_builder<SelfType, typed_port_impl_t<Friend, !I, O>,
-                                   uint32_t>()
-  {
-    UnderlyingType v = *this;
-    kill();
-    return {v};
-  }
-
-  // This conversion is useful when constructing from a partial port
-  HOSTRPC_ANNOTATE
-  HOSTRPC_CALL_ON_LIVE
-  HOSTRPC_SET_TYPESTATE(consumed)
-  operator hostrpc::either_builder<SelfType, typed_port_impl_t<Friend, !I, !O>,
-                                   uint32_t>()
-  {
-    UnderlyingType v = *this;
-    kill();
-    return {v};
-  }
-
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
@@ -469,7 +502,6 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
 
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
-  HOSTRPC_CREATED_RES
   HOSTRPC_SET_TYPESTATE(consumed)
   UnderlyingType disassemble(PortUnderlyingAccess)
   {
@@ -579,17 +611,6 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
   }
 
  
-  // either_builder can only be constructed by the first template parameter
-  HOSTRPC_ANNOTATE
-  HOSTRPC_CALL_ON_LIVE
-  HOSTRPC_SET_TYPESTATE(consumed)
-  operator hostrpc::either_builder<SelfType, partial_port_impl_t<Friend, !S>,
-                                   cxx::tuple<uint32_t, bool>>()
-  {
-    cxx::tuple<uint32_t, bool> tup = {value, state};
-    kill();
-    return {tup};
-  }
 
   // Construct an either from this type
   friend hostrpc::either<SelfType, partial_port_impl_t<Friend, !S>,
@@ -618,14 +639,13 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     if (s)
       {
         true_typed_port_t p(v);
-        either_builder<true_typed_port_t, false_typed_port_t, uint32_t> b = p;
-        return b.invert();
+        return either<true_typed_port_t, false_typed_port_t, uint32_t>::Left(p);
+
       }
     else
       {
         false_typed_port_t p(v);
-        either_builder<false_typed_port_t, true_typed_port_t, uint32_t> b = p;
-        return b.normal();
+        return either<true_typed_port_t, false_typed_port_t, uint32_t>::Right(p);
       }
   }
 
@@ -752,16 +772,15 @@ typed_to_partial(either<typed_port_impl_t<Friend, IA, OA>,
       Friend, typed_port_impl_t<Friend, IA, OA>>::type;
   using false_typed_port_t = typename traits::typed_to_partial_trait<
       Friend, typed_port_impl_t<Friend, IB, OB>>::type;
-  
+
+  using result_type = either<true_typed_port_t, false_typed_port_t,
+                             cxx::tuple<uint32_t, bool>>;
   if (port)
     {
       typename typed_port_impl_t<Friend, IA, OA>::maybe m = port.on_true();
       if (m)
         {
-          typed_port_impl_t<Friend, IA, OA> typed = m.value();
-          true_typed_port_t partial = typed_to_partial(cxx::move(typed));
-          either_builder<true_typed_port_t, false_typed_port_t, cxx::tuple<uint32_t,bool>> res = cxx::move(partial);
-          return res.normal();
+          return result_type::Left(typed_to_partial(m.value()));
         }
       else
         {
@@ -773,10 +792,7 @@ typed_to_partial(either<typed_port_impl_t<Friend, IA, OA>,
       typename typed_port_impl_t<Friend, IB, OB>::maybe m = port.on_false();
       if (m)
         {
-          typed_port_impl_t<Friend, IB, OB> typed = m.value();
-          false_typed_port_t partial = typed_to_partial(cxx::move(typed));
-          either_builder<false_typed_port_t, true_typed_port_t, cxx::tuple<uint32_t,bool>> res = cxx::move(partial);
-          return res.invert();
+          return result_type::Right(typed_to_partial(m.value()));
         }
       else
         {

@@ -419,6 +419,7 @@ static MODULE(const_reference)
 hostrpc::either<typed_port_t<0, 1>, typed_port_t<0, 0>, uint32_t> maybe_apply(
     bool act, typed_port_t<0, 0>&& port HOSTRPC_CONSUMED_ARG)
 {
+  using result_type = hostrpc::either<typed_port_t<0, 1>, typed_port_t<0, 0>, uint32_t>;
   port.unconsumed();
   if (act)
     {
@@ -426,19 +427,17 @@ hostrpc::either<typed_port_t<0, 1>, typed_port_t<0, 0>, uint32_t> maybe_apply(
       typed_port_t<0, 1> tmp2 = make<0, 1>(static_cast<uint32_t>(port));
       drop(hostrpc::cxx::move(port));
       port.consumed();
-      hostrpc::either_builder<typed_port_t<0, 1>, typed_port_t<0, 0>, uint32_t>
-          b(tmp2);
+      result_type b = result_type::Left(tmp2);
       b.unconsumed();
-      return b.normal();
+      return hostrpc::cxx::move(b);
     }
   else
     {
       port.unconsumed();
-      hostrpc::either_builder<typed_port_t<0, 0>, typed_port_t<0, 1>, uint32_t>
-          b(port);
+      result_type b = result_type::Right(port);
       port.consumed();
       b.unconsumed();
-      return b.invert();
+      return hostrpc::cxx::move(b);
     }
 }
 

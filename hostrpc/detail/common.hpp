@@ -380,6 +380,7 @@ struct inbox_bitmap
   query(uint32_t size, T active_threads, typed_port_t<I, !I> &&port,
         Word *loaded_arg = nullptr)
   {
+    port.unconsumed();
     static_assert(I == 0 || I == 1, "");
     (void)active_threads;
 
@@ -401,16 +402,22 @@ struct inbox_bitmap
     if (in == port.inbox_state())
       {
         // No change.
-        either_builder<current, changed, uint32_t> b(port);
-        return b.normal();
+        port.unconsumed();
+        auto r = either<current, changed, uint32_t>::Left(port);
+        port.consumed();
+        r.unconsumed();
+        return cxx::move(r);
       }
     else
       {
         // Can transition.
+        port.unconsumed();
         typed_port_t<!I, !I> n = port.invert_inbox();
-        either_builder<changed, current, uint32_t> b(n);
+        port.consumed();
+        n.unconsumed();
+        auto r = either<current, changed, uint32_t>::Right(n);
         platform::fence_acquire();
-        return b.invert();
+        return cxx::move(r);
       }
   }
 };

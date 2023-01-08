@@ -553,6 +553,7 @@ struct state_machine_impl : public SZT
   {
     static_assert(I == 0 || I == 1, "");
     const uint32_t size = this->size();
+    port.unconsumed();
     return inbox.query(size, active_threads, cxx::move(port));
   }
 
