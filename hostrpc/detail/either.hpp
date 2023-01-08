@@ -77,7 +77,7 @@ struct HOSTRPC_CONSUMABLE_CLASS either
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_RETURN_UNKNOWN
   HOSTRPC_ANNOTATE
-  hostrpc::maybe<From, TrueTy> on_true()
+  hostrpc::maybe<TrueTy> on_true()
   {
     if (*this)
       {
@@ -94,7 +94,7 @@ struct HOSTRPC_CONSUMABLE_CLASS either
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_RETURN_UNKNOWN
   HOSTRPC_ANNOTATE
-  hostrpc::maybe<From, FalseTy> on_false()
+  hostrpc::maybe<FalseTy> on_false()
   {
     if (!*this)
       {

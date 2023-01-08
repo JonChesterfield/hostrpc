@@ -22,6 +22,22 @@ class typed_port_impl_t;
 template <typename Friend, unsigned S>
 class partial_port_impl_t;
 
+
+template <typename PortFriend>
+class PortUnderlyingAccess {
+private:
+  friend maybe<typed_port_impl_t<PortFriend, 0, 0>>;
+  friend maybe<typed_port_impl_t<PortFriend, 0, 1>>;
+  friend maybe<typed_port_impl_t<PortFriend, 1, 0>>;
+  friend maybe<typed_port_impl_t<PortFriend, 1, 1>>;
+
+  friend maybe<partial_port_impl_t<PortFriend, 0>>;
+  friend maybe<partial_port_impl_t<PortFriend, 1>>;
+  
+  HOSTRPC_ANNOTATE  PortUnderlyingAccess() {}
+  HOSTRPC_ANNOTATE  PortUnderlyingAccess(PortUnderlyingAccess const&) {}
+};
+  
 // Typed port knows the exact state of inbox and outbox at a given point in time
 // Partial port knows whether inbox == outbox, called Stable / S here, and
 // tracks what the the inbox/outbox state is using a runtime boolean.
@@ -191,14 +207,34 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
  private:
   using SelfType = typed_port_impl_t<Friend, I, O>;
   friend Friend;  // the state machine
-  uint32_t value;
 
+  using UnderlyingType = uint32_t;
+  
+  UnderlyingType value;
+
+  using PortUnderlyingAccess = typename hostrpc::PortUnderlyingAccess<Friend>;
+  
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_CREATED_RES
+  HOSTRPC_SET_TYPESTATE(consumed)
+  UnderlyingType disassemble(PortUnderlyingAccess)
+  {
+    return value;
+  }
+
+  HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES
+  static SelfType reconstitute(PortUnderlyingAccess, UnderlyingType value)
+  {
+    return {value};
+  }
+  
  public:
   // non-default maybe can only be constructed by the second template parameter,
   // i.e. by this class. The only method that does so is operator that consumes
   // the port. Thus this instance can be converted to a maybe and then
   // retrieved.
-  using maybe = hostrpc::maybe<uint32_t, SelfType>;
+  using maybe = hostrpc::maybe<SelfType>;
   friend maybe;
 
  private:
@@ -215,7 +251,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     constexpr unsigned ReqOutbox = OutboxSet ? 1 : 0;
     if (I == ReqInbox && O == ReqOutbox)
       {
-        return {v};
+        return {{}, v};
       }
     else
       {
@@ -281,7 +317,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   HOSTRPC_SET_TYPESTATE(consumed)
   typed_port_impl_t<Friend, I, !O> invert_outbox()
   {
-    uint32_t v = *this;
+    UnderlyingType v = *this;
     kill();
     return {v};
   }
@@ -292,10 +328,11 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   HOSTRPC_SET_TYPESTATE(consumed)
   typed_port_impl_t<Friend, !I, O> invert_inbox()
   {
-    uint32_t v = *this;
+    UnderlyingType v = *this;
     kill();
     return {v};
   }
+
 
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
@@ -303,9 +340,8 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   HOSTRPC_RETURN_UNKNOWN
   operator maybe()
   {
-    uint32_t v = *this;
-    kill();
-    return {v};
+    UnderlyingType u = value;
+    return {typename maybe::Key{},u};
   }
 
   // either_builder can only be constructed by the first template parameter,
@@ -317,7 +353,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   operator hostrpc::either_builder<SelfType, typed_port_impl_t<Friend, I, !O>,
                                    uint32_t>()
   {
-    uint32_t v = *this;
+    UnderlyingType v = *this;
     kill();
     return {v};
   }
@@ -328,7 +364,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   operator hostrpc::either_builder<SelfType, typed_port_impl_t<Friend, !I, O>,
                                    uint32_t>()
   {
-    uint32_t v = *this;
+    UnderlyingType v = *this;
     kill();
     return {v};
   }
@@ -340,7 +376,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   operator hostrpc::either_builder<SelfType, typed_port_impl_t<Friend, !I, !O>,
                                    uint32_t>()
   {
-    uint32_t v = *this;
+    UnderlyingType v = *this;
     kill();
     return {v};
   }
@@ -394,7 +430,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   HOSTRPC_ANNOTATE static typed_port_impl_t HOSTRPC_CREATED_RES
   recreate(typed_port_impl_t &&x HOSTRPC_CONSUMED_ARG)
   {
-    uint32_t v = x;
+    UnderlyingType v = x;
     x.kill();
     return v;
   }
@@ -402,7 +438,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   HOSTRPC_ANNOTATE static typed_port_impl_t HOSTRPC_CREATED_RES
   recreate(typed_port_impl_t &x HOSTRPC_CONSUMED_ARG)
   {
-    uint32_t v = x;
+    UnderlyingType v = x;
     x.kill();
     return v;
   }
@@ -423,9 +459,29 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
  private:
   using SelfType = partial_port_impl_t<Friend, S>;
   friend Friend;  // the state machine
+
+  using UnderlyingType = cxx::tuple<uint32_t, bool>;
+ 
   uint32_t value;
   bool state;
 
+  using PortUnderlyingAccess = typename hostrpc::PortUnderlyingAccess<Friend>;
+
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_CREATED_RES
+  HOSTRPC_SET_TYPESTATE(consumed)
+  UnderlyingType disassemble(PortUnderlyingAccess)
+  {
+    return {value, state};
+  }
+
+ HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES
+ static SelfType reconstitute(PortUnderlyingAccess, UnderlyingType value)
+  {
+    return {value};
+  }
+ 
   HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES partial_port_impl_t(uint32_t v,
                                                            bool state)
       : value(v), state(state)
@@ -465,7 +521,7 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
   }
 
   // allow constructing a maybe of this type
-  using maybe = hostrpc::maybe<cxx::tuple<uint32_t, bool>, SelfType>;
+  using maybe = hostrpc::maybe<SelfType>;
   friend maybe;
 
   template <bool InboxSet, bool OutboxSet>
@@ -475,7 +531,8 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     if (ReqSame == S)
       {
         cxx::tuple<uint32_t, bool> tup = {v, OutboxSet};
-        return {tup};
+        SelfType port(tup);
+        return cxx::move(port);
       }
     else
       {
@@ -510,17 +567,18 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     return {tup};
   }
 
+
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
   HOSTRPC_RETURN_UNKNOWN
   operator maybe()
   {
-    cxx::tuple<uint32_t, bool> tup = {value, state};
-    kill();
-    return {tup};
+    UnderlyingType u = {value, state};
+    return {typename maybe::Key{}, u};
   }
 
+ 
   // either_builder can only be constructed by the first template parameter
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE

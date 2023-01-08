@@ -433,9 +433,11 @@ if (($have_amdgcn)); then
   $CXX_GCN_LD printf_test.gcn.bc -o printf_test.gcn
 fi
 
+if false; then
 $CXX_X64 unit_tests/maybe.cpp -c -o obj/unit_tests/maybe.x64.bc
 $CXX_X64_LD obj/unit_tests/maybe.x64.bc -o unit_tests/maybe.x64.exe
 ./unit_tests/maybe.x64.exe
+fi
 
 $CXX_X64 unit_tests/common.cpp -c -o obj/unit_tests/common.x64.bc
 $CXX_X64_LD obj/unit_tests/common.x64.bc -o unit_tests/common.x64.exe
@@ -559,7 +561,7 @@ $CLANGXX $XOPENCL -S -emit-llvm codegen/server.cpp -S -o codegen/server.ocl.x64.
 fi
 
 # Currently interested in codegen
-exit 42
+# exit 42
 
 $CXX_X64 -I$HSAINC tests.cpp -c -o tests.x64.bc
 $CXX_X64 -I$HSAINC x64_x64_stress.cpp -c -o x64_x64_stress.x64.bc

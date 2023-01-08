@@ -63,7 +63,7 @@ struct test_state_machine
 
   template <bool OutboxState, unsigned S>
   static HOSTRPC_RETURN_UNKNOWN hostrpc::maybe<
-      uint32_t, typename hostrpc::traits::partial_to_typed_trait<
+      typename hostrpc::traits::partial_to_typed_trait<
                     test_state_machine, partial_port_t<S>, OutboxState>::type>
   partial_to_typed(partial_port_t<S>&& port HOSTRPC_CONSUMED_ARG)
   {
@@ -381,7 +381,7 @@ static MODULE(maybe)
     if (val)
       {
         val.unconsumed();
-        typed_port_t<0, 1> tmp = val;
+        typed_port_t<0, 1> tmp = val.value();
         val.consumed();
         tmp.unconsumed();
         drop(cxx::move(tmp));
@@ -455,7 +455,7 @@ static MODULE(either)
         typed_port_t<0, 1>::maybe p = e.on_true();
         if (p)
           {
-            typed_port_t<0, 1> t = p;
+            typed_port_t<0, 1> t = p.value();
             drop(cxx::move(t));
           }
       }
@@ -464,7 +464,7 @@ static MODULE(either)
         typed_port_t<0, 0>::maybe p = e.on_false();
         if (p)
           {
-            typed_port_t<0, 0> t = p;
+            typed_port_t<0, 0> t = p.value();
             drop(cxx::move(t));
           }
       }

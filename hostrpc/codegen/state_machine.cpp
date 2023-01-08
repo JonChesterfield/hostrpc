@@ -347,7 +347,7 @@ state_machine_t::typed_port_t<1, 1> wait_via_query_typed_port_hi(
     state_machine_t &s, state_machine_t::typed_port_t<0, 1> &&p0)
 {
   auto threads = platform::active_threads();
-
+  
   for (;;)
     {
       auto either = s.rpc_port_query(threads, cxx::move(p0));

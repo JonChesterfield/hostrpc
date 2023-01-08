@@ -43,7 +43,7 @@ extern "C" __attribute__((flatten)) HOSTRPC_ANNOTATE void client_compiling_eithe
   
   if (p0)
     {
-      client_type::typed_port_t<0, 0> p00(p0);
+      client_type::typed_port_t<0, 0> p00(p0.value());
       client_type::typed_port_t<0, 1> p01 = c.rpc_port_send(active_threads,
                                                             cxx::move(p00),
                                                             [](uint32_t, hostrpc::page_t *) {});

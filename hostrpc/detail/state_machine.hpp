@@ -152,7 +152,7 @@ struct state_machine_impl : public SZT
 
   template <bool OutboxState, unsigned S, typename T>
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN
-      maybe<uint32_t, typename partial_to_typed_trait<S, OutboxState>::type>
+      maybe<typename partial_to_typed_trait<S, OutboxState>::type>
       partial_to_typed(T active_threads,
                        partial_port_t<S>&& port HOSTRPC_CONSUMED_ARG)
   {
@@ -307,7 +307,7 @@ struct state_machine_impl : public SZT
 
   template <typename T>
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN
-      maybe<cxx::tuple<uint32_t, bool>, partial_port_t<1>>
+      maybe<partial_port_t<1>>
       rpc_try_open_partial_port(T active_threads, uint32_t scan_from = 0)
   {
     static_assert(port_openable<partial_port_t<1>>(), "");
