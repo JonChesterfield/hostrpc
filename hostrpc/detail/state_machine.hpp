@@ -765,7 +765,7 @@ struct state_machine_impl : public SZT
             const uint32_t slot = wordBits() * w + idx;
             assert(slot < size);
 
-#if 1  // current
+#if 0  // current
             if (active.try_claim_empty_slot(active_threads, size, slot))
               {
                 // Previous versions had no fence here, relying on the

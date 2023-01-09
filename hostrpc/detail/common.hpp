@@ -582,12 +582,12 @@ struct lock_bitmap
     bool r = try_claim_empty_slot(active_threads, size, slot);
     if (r)
       {
-        return {};
+        return StateMachineType::template typed_port_t<2, 2>::raw_construction(
+            {}, slot);
       }
     else
       {
-        return StateMachineType::template typed_port_t<2, 2>::raw_construction(
-            {}, slot);
+        return {};
       }
   }
 
