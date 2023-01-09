@@ -412,7 +412,7 @@ struct inbox_bitmap
       {
         // Can transition.
         port.unconsumed();
-        typed_port_t<!I, !I> n = port.invert_inbox();
+        typed_port_t<!I, !I> n = port.invert_inbox({});
         port.consumed();
         n.unconsumed();
         auto r = either<current, changed>::Right(n);
@@ -451,7 +451,7 @@ struct outbox_bitmap
       {
         a.claim_slot(size, static_cast<uint32_t>(port));
       }
-    return port.invert_outbox();
+    return port.invert_outbox({});
   }
 
   template <typename T>
@@ -463,7 +463,7 @@ struct outbox_bitmap
       {
         a.release_slot(size, static_cast<uint32_t>(port));
       }
-    return port.invert_outbox();
+    return port.invert_outbox({});
   }
 
   HOSTRPC_ANNOTATE Word load_word(uint32_t size, uint32_t w) const

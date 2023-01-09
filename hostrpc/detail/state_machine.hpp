@@ -437,36 +437,7 @@ struct state_machine_impl : public SZT
   HOSTRPC_ANNOTATE typed_port_t<!I, !I> rpc_port_wait(
       T active_threads, typed_port_t<I, !I>&& port)
   {
-#if 1
-    // can only wait on the inbox to change
-    (void)active_threads;
-    static_assert(I == 0 || I == 1, "");
-
-    uint32_t raw = static_cast<uint32_t>(port);
-
-    const uint32_t size = this->size();
-    const uint32_t w = index_to_element<Word>(raw);
-    const uint32_t subindex = index_to_subindex<Word>(raw);
-
-    constexpr bool req = I == 1;
-    bool in = req;
-
-    while (in == req)
-      {
-        // until inbox changes
-        in = bits::nthbitset(inbox.load_word(size, w), subindex);
-      }
-
-    platform::fence_acquire();
-    // return port.invert_inbox(); // should be fine here but trips up clang's
-    // consumed checking
-    return typed_port_t<!I, !I>(raw);
-#else
-    // wait can be implemented in terms of query
-    // calling wait vs the following inlined showed identical codegen,
-    // implementing wait as the following seems to miss a loop optimisation
-    // but the change is very minor
-
+    // todo: fold with below
     for (;;)
       {
         auto an_either = rpc_port_query(active_threads, cxx::move(port));
@@ -497,8 +468,6 @@ struct state_machine_impl : public SZT
               }
           }
       }
-
-#endif
   }
 
   template <typename T>

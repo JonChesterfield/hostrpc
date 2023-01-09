@@ -63,24 +63,23 @@ struct HOSTRPC_CONSUMABLE_CLASS either
       }
   }
 
+  // Internal structuring is a little strange. It ensures that only the TrueTy is
+  // ever used to create an instance, and likewise that only the TrueTy is used
+  // to reconstitute the stored value. Inverting the instance at various points
+  // means that PortUnderlyingAccess permissions are only granted to disassemble
+  // and reconstruct that type. Provided either reliably distinguishes left from
+  // right internally, this should stop it accidentally changing the type of the
+  // stored object during the disassemble/reconstitute path.
+
   HOSTRPC_SET_TYPESTATE(consumed)
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_RETURN_UNKNOWN
   HOSTRPC_ANNOTATE
   hostrpc::maybe<FalseTy> on_false()
   {
-    if (!*this)
-      {
-        FalseTy tmp = FalseTy::reconstitute({}, payload);
-        tmp.unconsumed();
-        return tmp;
-      }
-    else
-      {
-        return {};
-      }
+    either<FalseTy, TrueTy> tmp = *this;
+    return tmp.on_true();
   }
-
 
   template <typename CallbackReturn, typename OnTrue, typename OnFalse>
   HOSTRPC_SET_TYPESTATE(consumed)
@@ -94,10 +93,12 @@ struct HOSTRPC_CONSUMABLE_CLASS either
       }
     else
       {
-        return on_false(FalseTy::reconstitute({}, payload));
+        // return on_false(FalseTy::reconstitute({}, payload));
+        either<FalseTy, TrueTy> tmp = *this;
+        return tmp.template visit<CallbackReturn>(on_false, on_true);
       }
   }
-  
+
   HOSTRPC_CALL_ON_DEAD HOSTRPC_ANNOTATE ~either() {}
 
   // Useful for checking assumptions
@@ -118,7 +119,8 @@ struct HOSTRPC_CONSUMABLE_CLASS either
   HOSTRPC_ANNOTATE
   static either Right(HOSTRPC_CONSUMED_ARG FalseTy &value)
   {
-    return {value.disassemble({}), false};
+    using inverse = either<FalseTy, TrueTy>;
+    return inverse::Left(value);
   }
 
   HOSTRPC_ANNOTATE

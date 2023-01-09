@@ -189,6 +189,11 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
 
   friend Friend;  // the state machine
 
+  // The idea here is to track access permissions at finer grain than wholly trusted.
+  // Ideally converting to/from the UnderlyingType would be limited to environments
+  // which cannot also change the state, e.g. can't call invert_inbox.
+  // Converting directly betweeen typed and partial port is probably a special case.
+
   class PortUnderlyingAccess
   {
    private:
@@ -197,25 +202,41 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
 
     friend hostrpc::maybe<typed_port_impl_t<Friend, I, O>>;
 
+    // either can only construct from an instance of its lhs or its rhs type
+    // this restricts it to only construct (and disassemble) from the lhs
+    // that should suffice to stop either from constructing ports with the
+    // type annotation changed. Internally it handles this by inverting.
+    // At least, it would also need to mishandle it's own state to go wrong.
     friend either<typed_port_impl_t<Friend, I, O>,
                   typed_port_impl_t<Friend, !I, O>>;
-    friend either<typed_port_impl_t<Friend, !I, O>,
-                  typed_port_impl_t<Friend, I, O>>;
 
     friend either<typed_port_impl_t<Friend, I, O>,
                   typed_port_impl_t<Friend, I, !O>>;
-    friend either<typed_port_impl_t<Friend, I, !O>,
-                  typed_port_impl_t<Friend, I, O>>;
 
     friend either<typed_port_impl_t<Friend, I, O>,
                   typed_port_impl_t<Friend, !I, !O>>;
-    friend either<typed_port_impl_t<Friend, !I, !O>,
-                  typed_port_impl_t<Friend, I, O>>;
 
     HOSTRPC_ANNOTATE PortUnderlyingAccess() {}
     HOSTRPC_ANNOTATE PortUnderlyingAccess(PortUnderlyingAccess const &) {}
   };
 
+  class InboxPermission
+  {
+  private:
+    friend typename Friend::inbox_t;
+    friend Friend; // temporary
+    HOSTRPC_ANNOTATE InboxPermission() {}
+    HOSTRPC_ANNOTATE InboxPermission(InboxPermission const &) {}    
+  };
+
+  class OutboxPermission
+  {
+  private:
+    friend typename Friend::outbox_t;
+    HOSTRPC_ANNOTATE OutboxPermission() {}
+    HOSTRPC_ANNOTATE OutboxPermission(OutboxPermission const &) {}    
+  };
+  
  public:
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
@@ -284,7 +305,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_CREATED_RES
   HOSTRPC_SET_TYPESTATE(consumed)
-  typed_port_impl_t<Friend, I, !O> invert_outbox()
+  typed_port_impl_t<Friend, I, !O> invert_outbox(OutboxPermission)
   {
     UnderlyingType v = *this;
     kill();
@@ -295,7 +316,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_CREATED_RES
   HOSTRPC_SET_TYPESTATE(consumed)
-  typed_port_impl_t<Friend, !I, O> invert_inbox()
+  typed_port_impl_t<Friend, !I, O> invert_inbox(InboxPermission)
   {
     UnderlyingType v = *this;
     kill();
@@ -409,13 +430,27 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
 
     friend either<partial_port_impl_t<Friend, S>,
                   partial_port_impl_t<Friend, !S>>;
-    friend either<partial_port_impl_t<Friend, !S>,
-                  partial_port_impl_t<Friend, S>>;
 
     HOSTRPC_ANNOTATE PortUnderlyingAccess() {}
     HOSTRPC_ANNOTATE PortUnderlyingAccess(PortUnderlyingAccess const &) {}
   };
 
+  class InboxPermission
+  {
+  private:
+    friend typename Friend::inbox_t;
+    HOSTRPC_ANNOTATE InboxPermission() {}
+    HOSTRPC_ANNOTATE InboxPermission(InboxPermission const &) {}    
+  };
+
+  class OutboxPermission
+  {
+  private:
+    friend typename Friend::outbox_t;
+    HOSTRPC_ANNOTATE OutboxPermission() {}
+    HOSTRPC_ANNOTATE OutboxPermission(OutboxPermission const &) {}    
+  };
+ 
  public:
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
@@ -490,7 +525,7 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_CREATED_RES
   HOSTRPC_SET_TYPESTATE(consumed)
-  partial_port_impl_t<Friend, !S> invert_outbox()
+  partial_port_impl_t<Friend, !S> invert_outbox(OutboxPermission)
   {
     // Inverts outbox and inverts S
     cxx::tuple<uint32_t, bool> tup = {value, !state};
@@ -502,7 +537,7 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_CREATED_RES
   HOSTRPC_SET_TYPESTATE(consumed)
-  partial_port_impl_t<Friend, !S> invert_inbox()
+  partial_port_impl_t<Friend, !S> invert_inbox(InboxPermission)
   {
     // No change to outbox, inverts S
     cxx::tuple<uint32_t, bool> tup = {value, state};
