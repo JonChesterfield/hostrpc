@@ -166,6 +166,49 @@ auto partial_1_nop_via_typed_port(state_machine_t::partial_port_t<1> &&p)
   return partial_S_nop_via_typed_port<1>(cxx::move(p));
 }
 
+template <unsigned IA, unsigned OA, unsigned IB, unsigned OB, typename T>
+hostrpc::either<state_machine_t::typed_port_t<!IA, OA>,
+                state_machine_t::typed_port_t<!IB, OB>>
+wait_inbox_on_either(
+    T active_threads, state_machine_t &s,
+    hostrpc::either<state_machine_t::typed_port_t<IA, OA>,
+                    state_machine_t::typed_port_t<IB, OB>> &&port)
+{
+  // Looks functional, seeking a way to collapse the two inbox read loops
+  // Tricky in that they're each waiting for a specific value when really
+  if (!port)
+    {
+      return wait_inbox_on_either(active_threads, s, port.invert()).invert();
+    }
+  else
+    {
+      if (typename state_machine_t::typed_port_t<IA, OA>::maybe maybe =
+              port.on_true())
+        {
+          state_machine_t::typed_port_t<IA, OA> first = maybe.value();
+          state_machine_t::typed_port_t<!IA, OA> waited =
+              s.rpc_port_wait(active_threads, cxx::move(first));
+
+          return hostrpc::either<
+              state_machine_t::typed_port_t<!IA, OA>,
+              state_machine_t::typed_port_t<!IB, OB>>::Left(cxx::move(waited));
+        }
+      else
+        {
+          __builtin_unreachable();
+        }
+    }
+}
+
+auto wait_inbox_on_either(
+    state_machine_t &s,
+    hostrpc::either<state_machine_t::typed_port_t<0, 1>,
+                    state_machine_t::typed_port_t<1, 0>> &&port)
+{
+  auto threads = platform::active_threads();
+  return wait_inbox_on_either(threads, s, cxx::move(port));
+}
+
 auto apply_partial_port(state_machine_t &s,
                         state_machine_t::partial_port_t<1> &&p0,
                         void func(buffer_ty *))

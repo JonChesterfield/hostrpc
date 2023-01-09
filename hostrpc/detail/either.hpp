@@ -136,6 +136,14 @@ struct HOSTRPC_CONSUMABLE_CLASS either
   HOSTRPC_SET_TYPESTATE(consumed)
   operator either<FalseTy, TrueTy>() { return {payload, !state}; }
 
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+  either<FalseTy, TrueTy> invert()
+  {
+    return *this;
+  }
+  
   // Either is movable
   HOSTRPC_ANNOTATE
   HOSTRPC_CREATED_RES
