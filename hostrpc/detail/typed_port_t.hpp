@@ -391,6 +391,14 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   {
     return {v};
   }
+
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+  void raw_destruction(LocksPermission)
+  {
+    kill();
+  }
   
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
@@ -519,7 +527,15 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     HOSTRPC_ANNOTATE OutboxPermission() {}
     HOSTRPC_ANNOTATE OutboxPermission(OutboxPermission const &) {}    
   };
- 
+
+   class LocksPermission
+  {
+  private:
+    friend typename Friend::lock_t;
+    HOSTRPC_ANNOTATE LocksPermission() {}
+    HOSTRPC_ANNOTATE LocksPermission(LocksPermission const &) {}    
+  };
+
  public:
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
@@ -614,6 +630,14 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     return {tup};
   }
 
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+  void raw_destruction(LocksPermission)
+  {
+    kill();
+  }
+ 
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)

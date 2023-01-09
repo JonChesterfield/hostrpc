@@ -298,11 +298,9 @@ struct state_machine_impl : public SZT
   HOSTRPC_ANNOTATE void rpc_close_port(T active_threads,
                                        partial_port_t<S>&& port)
   {
-    const uint32_t size = this->size();
-    const uint32_t slot = static_cast<uint32_t>(port);
     platform::fence_release();
-    active.release_slot(active_threads, size, slot);
-    port.kill();
+    const uint32_t size = this->size();
+    active.close_port(active_threads, size, cxx::move(port));
   }
 
   template <typename T>
@@ -325,7 +323,9 @@ struct state_machine_impl : public SZT
   HOSTRPC_ANNOTATE void rpc_close_port(T active_threads,
                                        typed_port_t<I, O>&& port)
   {
-    rpc_close_port(active_threads, typed_to_partial(cxx::move(port)));
+    platform::fence_release();
+    const uint32_t size = this->size();
+    active.close_port(active_threads, size, cxx::move(port));
   }
 
   // TODO: Want a function which can be called on stable ports, the same
@@ -614,8 +614,8 @@ struct state_machine_impl : public SZT
   }
 
   template <typename PortType, typename T, unsigned I, unsigned O>
-  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename PortType::maybe try_convert(
-      T active_threads, typed_port_t<I, O>&& port)
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename PortType::maybe
+  convert_or_close(T active_threads, typed_port_t<I, O>&& port)
   {
     if constexpr (cxx::is_same<typed_port_t<I, O>, PortType>())
       {
@@ -627,8 +627,94 @@ struct state_machine_impl : public SZT
         return hostrpc::typed_to_partial(cxx::move(port));
       }
 
-    rpc_close_port(active_threads, cxx::move(port));
+    const uint32_t size = this->size();
+    active.close_port(active_threads, size, cxx::move(port));
     return {};
+  }
+
+  // Only writes to inbox/outbox pointers if it loaded the corresponding
+  template <typename PortType, typename T>
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename PortType::maybe
+  try_open_specific_port(T active_threads, uint32_t slot, Word* inbox_to_update,
+                         Word* outbox_to_update)
+  {
+    const uint32_t size = this->size();
+    auto maybe_port = active.try_open_port(active_threads, size, slot);
+    if (!maybe_port)
+      {
+        return {};
+      }
+
+    // Need reads from inbox, outbox to occur after the locked read
+    platform::fence_acquire();
+
+    // Might be faster to check outbox first
+    either<typed_port_t<0, 2>, typed_port_t<1, 2>> with_inbox =
+        inbox.refine(size, active_threads, maybe_port.value(), inbox_to_update);
+    if (with_inbox)
+      {
+        // 0, 2
+        auto maybe = with_inbox.on_true();
+        if (!maybe)
+          {
+            __builtin_unreachable();
+          }
+
+        either<typed_port_t<0, 0>, typed_port_t<0, 1>> with_outbox =
+            outbox.refine(size, active_threads, maybe.value(),
+                          outbox_to_update);
+
+        if (with_outbox)
+          {
+            auto maybe = with_outbox.on_true();
+            if (!maybe)
+              {
+                __builtin_unreachable();
+              }
+            return convert_or_close<PortType>(active_threads, maybe.value());
+          }
+        else
+          {
+            auto maybe = with_outbox.on_false();
+            if (!maybe)
+              {
+                __builtin_unreachable();
+              }
+            return convert_or_close<PortType>(active_threads, maybe.value());
+          }
+      }
+    else
+      {
+        // 1, 2
+        auto maybe = with_inbox.on_false();
+        if (!maybe)
+          {
+            __builtin_unreachable();
+          }
+
+        either<typed_port_t<1, 0>, typed_port_t<1, 1>> with_outbox =
+            outbox.refine(size, active_threads, maybe.value(),
+                          outbox_to_update);
+
+        if (with_outbox)
+          {
+            auto maybe = with_outbox.on_true();
+            if (!maybe)
+              {
+                __builtin_unreachable();
+              }
+            return convert_or_close<PortType>(active_threads, maybe.value());
+          }
+        else
+          {
+            auto maybe = with_outbox.on_false();
+            if (!maybe)
+              {
+                __builtin_unreachable();
+              }
+            return convert_or_close<PortType>(active_threads, maybe.value());
+          }
+      }
   }
 
   template <typename PortType, typename T>
@@ -690,12 +776,12 @@ struct state_machine_impl : public SZT
                 static_assert(port_openable<PortType>(), "");
                 Word i = inbox.load_word(size, w);
                 Word o = outbox.load_word(size, w);
-                platform::fence_acquire();
 
                 typename PortType::maybe maybe = try_construct_port<PortType>(
                     bits::nthbitset(i, idx), bits::nthbitset(o, idx), slot);
                 if (maybe)
                   {
+                    platform::fence_acquire();
                     return maybe.value();
                   }
                 else
@@ -707,84 +793,20 @@ struct state_machine_impl : public SZT
                 available &= port_trait<PortType>::available_bitmap(i, o);
               }
 #else
-            if (auto maybe_port =
-                    active.try_open_port(active_threads, size, slot))
+            Word latest_known_inbox = i;
+            Word latest_known_outbox = o;
+            if (auto specific =
+                try_open_specific_port<PortType, T>(active_threads, slot, &latest_known_inbox, &latest_known_outbox))
               {
-                either<typed_port_t<0, 2>, typed_port_t<1, 2>> with_inbox =
-                    inbox.refine(size, active_threads, maybe_port.value());
-                if (with_inbox)
-                  {
-                    if (auto maybe = with_inbox.on_true())
-                      {
-                        either<typed_port_t<0, 0>, typed_port_t<0, 1>>
-                            with_outbox = outbox.refine(size, active_threads,
-                                                        maybe.value());
-
-                        if (with_outbox)
-                          {
-                            if (auto maybe = with_outbox.on_true())
-                              {
-                                typename PortType::maybe res =
-                                    try_convert<PortType>(active_threads,
-                                                          maybe.value());
-                                if (res)
-                                  {
-                                    return {res.value()};
-                                  }
-                              }
-                          }
-                        else
-                          {
-                            if (auto maybe = with_outbox.on_false())
-                              {
-                                typename PortType::maybe res =
-                                    try_convert<PortType>(active_threads,
-                                                          maybe.value());
-                                if (res)
-                                  {
-                                    return {res.value()};
-                                  }
-                              }
-                          }
-                      }
-                  }
-                else
-                  {
-                    if (auto maybe = with_inbox.on_false())
-                      {
-                        either<typed_port_t<1, 0>, typed_port_t<1, 1>>
-                            with_outbox = outbox.refine(size, active_threads,
-                                                        maybe.value());
-                        if (with_outbox)
-                          {
-                            if (auto maybe = with_outbox.on_true())
-                              {
-                                typename PortType::maybe res =
-                                    try_convert<PortType>(active_threads,
-                                                          maybe.value());
-                                if (res)
-                                  {
-                                    return {res.value()};
-                                  }
-                              }
-                          }
-                        else
-                          {
-                            if (auto maybe = with_outbox.on_false())
-                              {
-                                typename PortType::maybe res =
-                                    try_convert<PortType>(active_threads,
-                                                          maybe.value());
-                                if (res)
-                                  {
-                                    return {res.value()};
-                                  }
-                              }
-                          }
-                      }
-                  }
+                platform::fence_acquire();
+                return {specific.value()};
               }
+            available &= port_trait<PortType>::available_bitmap(
+                latest_known_inbox, latest_known_outbox);
 #endif
+            // Don't try to lock this slot again
+            // TODO: Also mask off the locks which we just learned have
+            // been taken by other threads
             available = bits::clearnthbit(available, idx);
           }
 

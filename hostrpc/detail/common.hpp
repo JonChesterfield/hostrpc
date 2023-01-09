@@ -375,7 +375,8 @@ struct inbox_bitmap
 
   template <typename T, unsigned O>
   HOSTRPC_ANNOTATE either<typed_port_t<0, O>, typed_port_t<1, O>> refine(
-      uint32_t size, T active_threads, typed_port_t<2, O> &&port)
+      uint32_t size, T active_threads, typed_port_t<2, O> &&port,
+      Word *loaded_arg = nullptr)
   {
     using resultType = either<typed_port_t<0, O>, typed_port_t<1, O>>;
     (void)active_threads;
@@ -384,6 +385,10 @@ struct inbox_bitmap
     const uint32_t subindex = index_to_subindex<Word>(raw);
 
     Word loaded = load_word(size, w);
+    if (loaded_arg)
+      {
+        *loaded_arg = loaded;
+      }
     bool in = bits::nthbitset(loaded, subindex);
 
     if (in)
@@ -471,7 +476,8 @@ struct outbox_bitmap
 
   template <typename T, unsigned I>
   HOSTRPC_ANNOTATE either<typed_port_t<I, 0>, typed_port_t<I, 1>> refine(
-      uint32_t size, T active_threads, typed_port_t<I, 2> &&port)
+      uint32_t size, T active_threads, typed_port_t<I, 2> &&port,
+      Word *loaded_arg = nullptr)
   {
     // TODO: This is extremely similar to the inbox one
     using resultType = either<typed_port_t<I, 0>, typed_port_t<I, 1>>;
@@ -481,6 +487,10 @@ struct outbox_bitmap
     const uint32_t subindex = index_to_subindex<Word>(raw);
 
     Word loaded = load_word(size, w);
+    if (loaded_arg)
+      {
+        *loaded_arg = loaded;
+      }
     bool out = bits::nthbitset(loaded, subindex);
 
     if (out)
@@ -579,6 +589,26 @@ struct lock_bitmap
         return StateMachineType::template typed_port_t<2, 2>::raw_construction(
             {}, slot);
       }
+  }
+
+  template <typename T, unsigned I, unsigned O>
+  HOSTRPC_ANNOTATE void close_port(
+      T active_threads, uint32_t size,
+      typename StateMachineType::template typed_port_t<I, O> &&port)
+  {
+    const uint32_t slot = static_cast<uint32_t>(port);
+    release_slot(active_threads, size, slot);
+    port.raw_destruction({});
+  }
+
+  template <typename T, unsigned S>
+  HOSTRPC_ANNOTATE void close_port(
+      T active_threads, uint32_t size,
+      typename StateMachineType::template partial_port_t<S> &&port)
+  {
+    const uint32_t slot = static_cast<uint32_t>(port);
+    release_slot(active_threads, size, slot);
+    port.raw_destruction({});
   }
 
   template <typename T>
