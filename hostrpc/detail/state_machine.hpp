@@ -613,6 +613,24 @@ struct state_machine_impl : public SZT
       }
   }
 
+  template <typename PortType, typename T, unsigned I, unsigned O>
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename PortType::maybe try_convert(
+      T active_threads, typed_port_t<I, O>&& port)
+  {
+    if constexpr (cxx::is_same<typed_port_t<I, O>, PortType>())
+      {
+        return {cxx::move(port)};
+      }
+
+    if constexpr (cxx::is_same<partial_port_t<(I == O)>, PortType>())
+      {
+        return hostrpc::typed_to_partial(cxx::move(port));
+      }
+
+    rpc_close_port(active_threads, cxx::move(port));
+    return {};
+  }
+
   template <typename PortType, typename T>
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename PortType::maybe
   try_open_typed_port(T active_threads, uint32_t scan_from)
@@ -661,6 +679,7 @@ struct state_machine_impl : public SZT
             const uint32_t slot = wordBits() * w + idx;
             assert(slot < size);
 
+#if 1  // current
             if (active.try_claim_empty_slot(active_threads, size, slot))
               {
                 // Previous versions had no fence here, relying on the
@@ -687,7 +706,85 @@ struct state_machine_impl : public SZT
 
                 available &= port_trait<PortType>::available_bitmap(i, o);
               }
+#else
+            if (auto maybe_port =
+                    active.try_open_port(active_threads, size, slot))
+              {
+                either<typed_port_t<0, 2>, typed_port_t<1, 2>> with_inbox =
+                    inbox.refine(size, active_threads, maybe_port.value());
+                if (with_inbox)
+                  {
+                    if (auto maybe = with_inbox.on_true())
+                      {
+                        either<typed_port_t<0, 0>, typed_port_t<0, 1>>
+                            with_outbox = outbox.refine(size, active_threads,
+                                                        maybe.value());
 
+                        if (with_outbox)
+                          {
+                            if (auto maybe = with_outbox.on_true())
+                              {
+                                typename PortType::maybe res =
+                                    try_convert<PortType>(active_threads,
+                                                          maybe.value());
+                                if (res)
+                                  {
+                                    return {res.value()};
+                                  }
+                              }
+                          }
+                        else
+                          {
+                            if (auto maybe = with_outbox.on_false())
+                              {
+                                typename PortType::maybe res =
+                                    try_convert<PortType>(active_threads,
+                                                          maybe.value());
+                                if (res)
+                                  {
+                                    return {res.value()};
+                                  }
+                              }
+                          }
+                      }
+                  }
+                else
+                  {
+                    if (auto maybe = with_inbox.on_false())
+                      {
+                        either<typed_port_t<1, 0>, typed_port_t<1, 1>>
+                            with_outbox = outbox.refine(size, active_threads,
+                                                        maybe.value());
+                        if (with_outbox)
+                          {
+                            if (auto maybe = with_outbox.on_true())
+                              {
+                                typename PortType::maybe res =
+                                    try_convert<PortType>(active_threads,
+                                                          maybe.value());
+                                if (res)
+                                  {
+                                    return {res.value()};
+                                  }
+                              }
+                          }
+                        else
+                          {
+                            if (auto maybe = with_outbox.on_false())
+                              {
+                                typename PortType::maybe res =
+                                    try_convert<PortType>(active_threads,
+                                                          maybe.value());
+                                if (res)
+                                  {
+                                    return {res.value()};
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+#endif
             available = bits::clearnthbit(available, idx);
           }
 
