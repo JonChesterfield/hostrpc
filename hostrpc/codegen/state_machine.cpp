@@ -305,6 +305,71 @@ auto query_typed_port_hi(state_machine_t &s,
   return s.rpc_port_query(threads, cxx::move(p0));
 }
 
+auto visit_either(state_machine_t &s, state_machine_t::typed_port_t<0, 1> &&p0)
+{
+  auto threads = platform::active_threads();
+  hostrpc::either<state_machine_t::typed_port_t<0, 1>,
+                  state_machine_t::typed_port_t<1, 1>>
+      either = s.rpc_port_query(threads, cxx::move(p0));
+
+  auto nop = either.visit2(
+      [](state_machine_t::typed_port_t<0, 1> &&port) {
+        return cxx::move(port);
+      },
+      [](state_machine_t::typed_port_t<1, 1> &&port) {
+        return cxx::move(port);
+      });
+
+  hostrpc::either<state_machine_t::typed_port_t<0, 1>,
+                  state_machine_t::typed_port_t<1, 0>>
+      conditional_apply = nop.visit2(
+          [](state_machine_t::typed_port_t<0, 1> &&port) {
+            return cxx::move(port);
+          },
+          [&](state_machine_t::typed_port_t<1, 1> &&port) {
+            return s.rpc_port_apply(threads, cxx::move(port),
+                                    [](uint32_t, buffer_ty *) {});
+          });
+
+  hostrpc::either<state_machine_t::typed_port_t<0, 1>,
+                  state_machine_t::typed_port_t<0, 0>>
+      conditional_wait = conditional_apply.visit2(
+          [](state_machine_t::typed_port_t<0, 1> &&port) {
+            return cxx::move(port);
+          },
+          [&](state_machine_t::typed_port_t<1, 0> &&port) {
+            return s.rpc_port_wait(threads, cxx::move(port));
+          });
+
+  hostrpc::either<state_machine_t::typed_port_t<0, 1>,
+                  state_machine_t::typed_port_t<0, 1>>
+      conditional_apply_again = conditional_wait.visit2(
+          [](state_machine_t::typed_port_t<0, 1> &&port) {
+            return cxx::move(port);
+          },
+          [&](state_machine_t::typed_port_t<0, 0> &&port) {
+            return s.rpc_port_apply(threads, cxx::move(port),
+                                    [](uint32_t, buffer_ty *) {});
+          });
+
+  state_machine_t::typed_port_t<0, 1> flatten =
+      conditional_apply_again.on_true_and_false();
+
+  s.rpc_close_port(threads, cxx::move(flatten));
+}
+
+auto maybe_either(state_machine_t &s, state_machine_t::typed_port_t<0, 1> &&p0)
+{
+  auto threads = platform::active_threads();
+  hostrpc::either<state_machine_t::typed_port_t<0, 1>,
+                  state_machine_t::typed_port_t<1, 1>>
+      either = s.rpc_port_query(threads, cxx::move(p0));
+
+  return hostrpc::either<
+      state_machine_t::typed_port_t<0, 1>,
+      state_machine_t::typed_port_t<1, 1>>::maybe(cxx::move(either));
+}
+
 state_machine_t::partial_port_t<1> wait_via_query_partial_port(
     state_machine_t &s, state_machine_t::partial_port_t<0> &&p0)
 {

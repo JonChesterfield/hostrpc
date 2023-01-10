@@ -216,6 +216,10 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     friend either<typed_port_impl_t<Friend, I, O>,
                   typed_port_impl_t<Friend, !I, !O>>;
 
+    // Also type preserving to have lhs==rhs
+    friend either<typed_port_impl_t<Friend, I, O>,
+                  typed_port_impl_t<Friend, I, O>>;
+
     HOSTRPC_ANNOTATE PortUnderlyingAccess() {}
     HOSTRPC_ANNOTATE PortUnderlyingAccess(PortUnderlyingAccess const &) {}
   };

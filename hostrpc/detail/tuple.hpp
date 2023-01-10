@@ -1,6 +1,8 @@
 #ifndef HOSTRPC_CXX_TUPLE_HPP_INCLUDED
 #define HOSTRPC_CXX_TUPLE_HPP_INCLUDED
 
+#include <stddef.h>
+
 #include "cxx.hpp"
 
 #include "../platform/detect.hpp"
