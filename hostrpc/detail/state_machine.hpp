@@ -617,31 +617,15 @@ struct state_machine_impl : public SZT
       }
   }
 
-  template <typename PortType, typename T, unsigned I, unsigned O>
-  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename PortType::maybe
-  convert_or_close(T active_threads, typed_port_t<I, O>&& port)
-  {
-    if constexpr (cxx::is_same<typed_port_t<I, O>, PortType>())
-      {
-        return {cxx::move(port)};
-      }
-
-    if constexpr (cxx::is_same<partial_port_t<(I == O)>, PortType>())
-      {
-        return hostrpc::typed_to_partial(cxx::move(port));
-      }
-
-    const uint32_t size = this->size();
-    active.close_port(active_threads, size, cxx::move(port));
-    return {};
-  }
-
   // Only writes to inbox/outbox pointers if it loaded the corresponding
-  template <typename PortType, typename T>
-  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename PortType::maybe
-  try_open_specific_port(T active_threads, uint32_t slot, Word* inbox_to_update,
-                         Word* outbox_to_update)
+  template <typename T>
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN
+      typename either<typed_port_t<0, 0>, typed_port_t<1, 1>>::maybe
+      try_open_specific_port(T active_threads, uint32_t slot,
+                             Word* inbox_to_update, Word* outbox_to_update)
   {
+    using EitherStable = either<typed_port_t<0, 0>, typed_port_t<1, 1>>;
+
     const uint32_t size = this->size();
     auto maybe_port = active.try_open_port(active_threads, size, slot);
     if (!maybe_port)
@@ -655,6 +639,45 @@ struct state_machine_impl : public SZT
     // Might be faster to check outbox first
     either<typed_port_t<0, 2>, typed_port_t<1, 2>> with_inbox =
         inbox.refine(size, active_threads, maybe_port.value(), inbox_to_update);
+
+    // Neither visit nor open coding look great. Also this is calling rpc_port_closer
+    // which will introduce spurious fences.
+    
+#if 1
+
+    return with_inbox.template visit<typename EitherStable::maybe>(
+
+        [&](typed_port_t<0, 2>&& port) HOSTRPC_RETURN_UNKNOWN ->
+        typename EitherStable::maybe {
+          either<typed_port_t<0, 0>, typed_port_t<0, 1>> with_outbox =
+              outbox.refine(size, active_threads, cxx::move(port),
+                            outbox_to_update);
+          if (auto maybe = with_outbox.left(rpc_port_closer(active_threads)))
+            {
+              return EitherStable::Left(maybe.value());
+            }
+          else
+            {
+              return {};
+            }
+        },
+
+        [&](typed_port_t<1, 2>&& port) HOSTRPC_RETURN_UNKNOWN ->
+        typename EitherStable::maybe {
+          either<typed_port_t<1, 0>, typed_port_t<1, 1>> with_outbox =
+              outbox.refine(size, active_threads, cxx::move(port),
+                            outbox_to_update);
+          if (auto maybe = with_outbox.right(rpc_port_closer(active_threads)))
+            {
+              return EitherStable::Right(maybe.value());
+            }
+          else
+            {
+              return {};
+            }
+        });
+#else
+
     if (with_inbox)
       {
         // 0, 2
@@ -668,23 +691,13 @@ struct state_machine_impl : public SZT
             outbox.refine(size, active_threads, maybe.value(),
                           outbox_to_update);
 
-        if (with_outbox)
+        if (auto maybe = with_outbox.left(rpc_port_closer(active_threads)))
           {
-            auto maybe = with_outbox.left(rpc_port_closer(active_threads));
-            if (!maybe)
-              {
-                __builtin_unreachable();
-              }
-            return convert_or_close<PortType>(active_threads, maybe.value());
+            return EitherStable::Left(maybe.value());
           }
         else
           {
-            auto maybe = with_outbox.right(rpc_port_closer(active_threads));
-            if (!maybe)
-              {
-                __builtin_unreachable();
-              }
-            return convert_or_close<PortType>(active_threads, maybe.value());
+            return {};
           }
       }
     else
@@ -700,25 +713,16 @@ struct state_machine_impl : public SZT
             outbox.refine(size, active_threads, maybe.value(),
                           outbox_to_update);
 
-        if (with_outbox)
+        if (auto maybe = with_outbox.right(rpc_port_closer(active_threads)))
           {
-            auto maybe = with_outbox.left(rpc_port_closer(active_threads));
-            if (!maybe)
-              {
-                __builtin_unreachable();
-              }
-            return convert_or_close<PortType>(active_threads, maybe.value());
+            return EitherStable::Right(maybe.value());
           }
         else
           {
-            auto maybe = with_outbox.right(rpc_port_closer(active_threads));
-            if (!maybe)
-              {
-                __builtin_unreachable();
-              }
-            return convert_or_close<PortType>(active_threads, maybe.value());
+            return {};
           }
       }
+#endif
   }
 
   template <typename PortType, typename T>
@@ -799,13 +803,48 @@ struct state_machine_impl : public SZT
 #else
             Word latest_known_inbox = i;
             Word latest_known_outbox = o;
-            if (auto specific = try_open_specific_port<PortType, T>(
-                    active_threads, slot, &latest_known_inbox,
-                    &latest_known_outbox))
+
+            if (auto specific = try_open_specific_port<T>(active_threads, slot,
+                                                          &latest_known_inbox,
+                                                          &latest_known_outbox))
               {
-                platform::fence_acquire();
-                return {specific.value()};
+                either<typed_port_t<0, 0>, typed_port_t<1, 1>> port =
+                    specific.value();
+
+                if constexpr (cxx::is_same<typed_port_t<0, 0>, PortType>())
+                  {
+                    if (port)
+                      {
+                        platform::fence_acquire();
+                        return port.left(rpc_port_closer(active_threads));
+                      }
+                  }
+                if constexpr (cxx::is_same<typed_port_t<1, 1>, PortType>())
+                  {
+                    if (!port)
+                      {
+                        platform::fence_acquire();
+                        return port.right(rpc_port_closer(active_threads));
+                      }
+                  }
+
+                if constexpr (cxx::is_same<partial_port_t<1>, PortType>())
+                  {
+                    platform::fence_acquire();
+                    return port.template visit<partial_port_t<1>>(
+                        [](auto&& port) -> partial_port_t<1> {
+                          return hostrpc::typed_to_partial(cxx::move(port));
+                        },
+                        [](auto&& port) -> partial_port_t<1> {
+                          return hostrpc::typed_to_partial(cxx::move(port));
+                        });
+                  }
+
+                // Otherwise the port didn't match what was requested, close it
+                port.template visit<void>(rpc_port_closer(active_threads),
+                                          rpc_port_closer(active_threads));
               }
+
             available &= port_trait<PortType>::available_bitmap(
                 latest_known_inbox, latest_known_outbox);
 #endif
