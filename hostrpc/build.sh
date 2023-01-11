@@ -496,6 +496,14 @@ $CXX_X64 $CXXVER $CODEGEN codegen/client.cpp -S -o codegen/client.x64.ll
 $CXX_X64 $CXXVER $CODEGEN codegen/server.cpp -S -o codegen/server.x64.ll
 $CXX_X64 $CXXVER $CODEGEN -fno-exceptions codegen/state_machine.cpp -S -o codegen/state_machine.x64.ll
 
+$CLANGXX $XOPENCL -S -emit-llvm codegen/state_machine.cpp -S -o codegen/state_machine.cl.x64.ll
+
+# This did not go well. Initially it refuses to compile because it can't find stdint,
+# which looks like nvptx's multilibs req. Installed gcc multilib and it does indeed find stdint,
+# but uses a 32 bit version. Clang has it's own opencl-c-base.h which contradicts it.
+# Passing freestanding as a way to say "don't use the stdint headers from the system"
+$CLANGXX $XOPENCL -S -ffreestanding -nogpulib -emit-llvm -target amdgcn-amd-amdhsa -mcpu=$GCNGFX codegen/state_machine.cpp -S -o codegen/state_machine.cl.gcn.ll
+
 $EXTRACT codegen/state_machine.x64.ll -func typed_port_via_wait -S -o codegen/first.ll
 $EXTRACT codegen/state_machine.x64.ll -func typed_port_via_query -S -o codegen/second.ll
 
@@ -542,7 +550,6 @@ $CLANGXX $CODEGENOPTLEVEL  -target x86_64-pc-linux-gnu $OPENMP_FLAGS_NVPTX codeg
 
 # OpenCL compilation model is essentially that of c++
 $CLANGXX $XOPENCL -S -emit-llvm codegen/foo_cxx.cpp -S -o codegen/foo.cl.x64.ll
-
 $CLANGXX $XOPENCL -S -nogpulib -emit-llvm -target amdgcn-amd-amdhsa -mcpu=$GCNGFX codegen/foo_cxx.cpp -S -o codegen/foo.cl.gcn.ll
 
 # recognises mcpu but warns that it is unused

@@ -1,6 +1,8 @@
 #ifndef HOSTRPC_CXX_TUPLE_HPP_INCLUDED
 #define HOSTRPC_CXX_TUPLE_HPP_INCLUDED
 
+#include <stddef.h>
+
 #include "cxx.hpp"
 
 #include "../platform/detect.hpp"
@@ -14,7 +16,6 @@ struct tuple;
 
 namespace detail
 {
-
 template <size_t I, typename T, typename... Ts>
 struct nthAccessor
 {
@@ -67,7 +68,7 @@ struct tuple<T>
   HOSTRPC_ANNOTATE
   tuple(T t) : value(t) {}
 
-  static_assert(is_trivially_copyable<T>()/*::value*/,
+  static_assert(is_trivially_copyable<T>() /*::value*/,
                 "Require trivially copyable type");
 
   using type = tuple<T>;

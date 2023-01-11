@@ -234,15 +234,15 @@ struct client : public client_impl<BufferElementT, WordT, SZT>
   template <unsigned I, unsigned O>
   using typed_port_t = typename base::template typed_port_t<I, O>;
 
-  static_assert(cxx::is_trivially_copyable<base>()/*::value*/, "");
+  static_assert(cxx::is_trivially_copyable<base>() /*::value*/, "");
 
   template <typename T, typename Fill>
   HOSTRPC_ANNOTATE bool rpc_invoke_async(T active_threads, Fill &&fill) noexcept
   {
     if (auto maybe = base::rpc_try_open_typed_port(active_threads))
       {
-        auto send = base::rpc_port_send(active_threads, maybe.value(),
-                                        cxx::move(fill));
+        auto send =
+            base::rpc_port_send(active_threads, maybe.value(), cxx::move(fill));
         base::rpc_close_port(active_threads, cxx::move(send));
         return true;
       }
@@ -252,16 +252,14 @@ struct client : public client_impl<BufferElementT, WordT, SZT>
       }
   }
 
-  
   template <typename T, typename Fill, typename Use>
   HOSTRPC_ANNOTATE bool rpc_invoke(T active_threads, Fill &&fill,
                                    Use &&use) noexcept
   {
-
     if (auto maybe = base::rpc_try_open_typed_port(active_threads))
       {
-        auto send = base::rpc_port_send(active_threads, maybe.value(),
-                                        cxx::move(fill));
+        auto send =
+            base::rpc_port_send(active_threads, maybe.value(), cxx::move(fill));
         auto recv = base::rpc_port_recv(active_threads, cxx::move(send),
                                         cxx::move(use));
         base::rpc_close_port(active_threads, cxx::move(recv));
@@ -273,7 +271,6 @@ struct client : public client_impl<BufferElementT, WordT, SZT>
       }
   }
 
-  
   // TODO: Probably want one of these convenience functions for each rpc_invoke,
   // but perhaps not on volta
 

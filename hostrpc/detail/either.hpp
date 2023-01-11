@@ -4,6 +4,7 @@
 #include "../platform/detect.hpp"
 #include "cxx.hpp"
 #include "maybe.hpp"
+#include "tuple.hpp"
 #include "typestate.hpp"
 
 namespace hostrpc
@@ -25,87 +26,39 @@ HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES constexpr either<TrueTy, FalseTy> move(
 }  // namespace cxx
 #endif
 
-// Result is a type that will raise -Wconsumable errors if not 'used'
-// Pattern is to return an instance of this from a function and branch
-// on operator bool(). Use on_true/on_false in the respective branches
-// to retrieve a TrueTy or FalseTy instance.
-
 template <typename TrueTy, typename FalseTy>
 struct HOSTRPC_CONSUMABLE_CLASS either
 {
-  static_assert(!cxx::is_same<TrueTy, FalseTy>(), "");
-
   static_assert(cxx::is_same<typename TrueTy::UnderlyingType,
                              typename FalseTy::UnderlyingType>(),
-                "");
+                "Simplifies implementation vs. using a union");
 
-  using UnderlyingType = typename TrueTy::UnderlyingType;
+  using SelfType = either<TrueTy, FalseTy>;
+  using InverseType = either<FalseTy, TrueTy>;
+  using maybe = hostrpc::maybe<SelfType>;
 
-  HOSTRPC_CALL_ON_LIVE
+  using ContainedType = typename TrueTy::UnderlyingType;
+  using UnderlyingType = cxx::tuple<ContainedType, bool>;
+
+ private:
+  friend InverseType;
+  ContainedType payload;
+  bool state;  // can't be const and keep move assignment
+
   HOSTRPC_ANNOTATE
-  explicit operator bool() { return is_state<true>(); }
-
+  HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
-  HOSTRPC_CALL_ON_LIVE
-  HOSTRPC_RETURN_UNKNOWN
-  HOSTRPC_ANNOTATE
-  hostrpc::maybe<TrueTy> on_true()
+  TrueTy retrieve() { return TrueTy::reconstitute({}, payload); }
+
+  template <typename Op>
+  HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE
+      HOSTRPC_SET_TYPESTATE(consumed) auto propagate(Op op)
+          -> decltype(cxx::declval<Op>()(cxx::declval<TrueTy &&>()))
   {
-    if (*this)
-      {
-        TrueTy tmp = TrueTy::reconstitute({}, payload);
-        tmp.unconsumed();
-        return tmp;
-      }
-    else
-      {
-        return {};
-      }
+    return op(retrieve());
   }
 
-  // Internal structuring is a little strange. It ensures that only the TrueTy is
-  // ever used to create an instance, and likewise that only the TrueTy is used
-  // to reconstitute the stored value. Inverting the instance at various points
-  // means that PortUnderlyingAccess permissions are only granted to disassemble
-  // and reconstruct that type. Provided either reliably distinguishes left from
-  // right internally, this should stop it accidentally changing the type of the
-  // stored object during the disassemble/reconstitute path.
-
-  HOSTRPC_SET_TYPESTATE(consumed)
-  HOSTRPC_CALL_ON_LIVE
-  HOSTRPC_RETURN_UNKNOWN
-  HOSTRPC_ANNOTATE
-  hostrpc::maybe<FalseTy> on_false()
-  {
-    either<FalseTy, TrueTy> tmp = *this;
-    return tmp.on_true();
-  }
-
-  template <typename CallbackReturn, typename OnTrue, typename OnFalse>
-  HOSTRPC_SET_TYPESTATE(consumed)
-  HOSTRPC_CALL_ON_LIVE
-  HOSTRPC_ANNOTATE
-  CallbackReturn visit(OnTrue on_true, OnFalse on_false)
-  {
-    if (*this)
-      {
-        return on_true(TrueTy::reconstitute({}, payload));
-      }
-    else
-      {
-        // return on_false(FalseTy::reconstitute({}, payload));
-        either<FalseTy, TrueTy> tmp = *this;
-        return tmp.template visit<CallbackReturn>(on_false, on_true);
-      }
-  }
-
-  HOSTRPC_CALL_ON_DEAD HOSTRPC_ANNOTATE ~either() {}
-
-  // Useful for checking assumptions
-  HOSTRPC_CALL_ON_DEAD HOSTRPC_ANNOTATE void consumed() const {}
-  HOSTRPC_CALL_ON_LIVE HOSTRPC_ANNOTATE void unconsumed() const {}
-  HOSTRPC_CALL_ON_UNKNOWN HOSTRPC_ANNOTATE void unknown() const {}
-
+ public:
   HOSTRPC_CREATED_RES
   HOSTRPC_ANNOTATE
   static either Left(HOSTRPC_CONSUMED_ARG TrueTy &value)
@@ -119,8 +72,7 @@ struct HOSTRPC_CONSUMABLE_CLASS either
   HOSTRPC_ANNOTATE
   static either Right(HOSTRPC_CONSUMED_ARG FalseTy &value)
   {
-    using inverse = either<FalseTy, TrueTy>;
-    return inverse::Left(value);
+    return InverseType::Left(value);
   }
 
   HOSTRPC_ANNOTATE
@@ -128,13 +80,118 @@ struct HOSTRPC_CONSUMABLE_CLASS either
   HOSTRPC_ANNOTATE
   static either Right(FalseTy &&value) { return Right(value); }
 
+  // This should probably return an enum which is switched'ed on instead
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_ANNOTATE
+  explicit operator bool() { return is_state<true>(); }
+
+  template <typename Op>
+  HOSTRPC_SET_TYPESTATE(consumed)
+  HOSTRPC_CALL_ON_LIVE HOSTRPC_RETURN_UNKNOWN
+      HOSTRPC_ANNOTATE hostrpc::maybe<TrueTy> left(Op op)
+  {
+    static_assert(cxx::is_same<void, decltype(cxx::declval<Op>()(
+                                         cxx::declval<FalseTy &&>()))>(),
+                  "");
+    if (*this)
+      {
+        return retrieve();
+      }
+    else
+      {
+        invert().template propagate<Op>(cxx::forward<Op>(op));
+        return {};
+      }
+  }
+
+  template <typename Op>
+  HOSTRPC_SET_TYPESTATE(consumed)
+  HOSTRPC_CALL_ON_LIVE HOSTRPC_RETURN_UNKNOWN
+      HOSTRPC_ANNOTATE hostrpc::maybe<FalseTy> right(Op op)
+  {
+    static_assert(
+        cxx::is_same<void,
+                     decltype(cxx::declval<Op>()(cxx::declval<TrueTy &&>()))>(),
+        "");
+    return invert().left(cxx::forward<Op>(op));
+  }
+
+  HOSTRPC_SET_TYPESTATE(consumed)
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_ANNOTATE
+  TrueTy left_and_right()
+  {
+    // When types match, can unconditionally retrieve
+    static_assert(cxx::is_same<TrueTy, FalseTy>(), "");
+    return retrieve();
+  }
+
+  template <typename CallbackReturn, typename OnTrue, typename OnFalse>
+  HOSTRPC_SET_TYPESTATE(consumed)
+  HOSTRPC_CALL_ON_LIVE HOSTRPC_ANNOTATE CallbackReturn
+      visit(OnTrue on_true, OnFalse on_false)
+  {
+    if (*this)
+      {
+        return propagate<OnTrue>(cxx::forward<OnTrue>(on_true));
+      }
+    else
+      {
+        return invert().template visit<CallbackReturn>(on_false, on_true);
+      }
+  }
+
+  template <typename OnTrue, typename OnFalse>
+  HOSTRPC_SET_TYPESTATE(consumed)
+  HOSTRPC_CALL_ON_LIVE HOSTRPC_ANNOTATE
+      auto foreach (OnTrue on_true, OnFalse on_false)
+  {
+    using TrueResTy =
+        decltype(cxx::declval<OnTrue>()(cxx::declval<TrueTy &&>()));
+    using FalseResTy =
+        decltype(cxx::declval<OnFalse>()(cxx::declval<FalseTy &&>()));
+
+    using ResultTy = either<TrueResTy, FalseResTy>;
+
+    if (*this)
+      {
+        return ResultTy::Left(propagate<OnTrue>(cxx::forward<OnTrue>(on_true)));
+      }
+    else
+      {
+        return invert()
+            .template foreach<OnFalse, OnTrue>(on_false, on_true)
+            .invert();
+      }
+  }
+
+  HOSTRPC_CALL_ON_DEAD HOSTRPC_ANNOTATE ~either() {}
+
+  // Useful for checking assumptions
+  HOSTRPC_CALL_ON_DEAD HOSTRPC_ANNOTATE void consumed() const {}
+  HOSTRPC_CALL_ON_LIVE HOSTRPC_ANNOTATE void unconsumed() const {}
+  HOSTRPC_CALL_ON_UNKNOWN HOSTRPC_ANNOTATE void unknown() const {}
+
   // Swap branches, consuming current instance in the process
-  // Friend of self for this purpose
-  friend either<FalseTy, TrueTy>;
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
-  operator either<FalseTy, TrueTy>() { return {payload, !state}; }
+  InverseType invert() { return {payload, !state}; }
+
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+  operator InverseType() { return invert(); }
+
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+  HOSTRPC_RETURN_UNKNOWN
+  operator maybe()
+  {
+    UnderlyingType u = {payload, state};
+    return {typename maybe::Key{}, u};
+  }
 
   // Either is movable
   HOSTRPC_ANNOTATE
@@ -161,7 +218,7 @@ struct HOSTRPC_CONSUMABLE_CLASS either
  private:
   HOSTRPC_CREATED_RES
   HOSTRPC_ANNOTATE
-  either(UnderlyingType payload, bool state) : payload(payload), state(state)
+  either(ContainedType payload, bool state) : payload(payload), state(state)
   {
     unknown();
   }
@@ -172,8 +229,8 @@ struct HOSTRPC_CONSUMABLE_CLASS either
     return state == State;
   }
 
-  UnderlyingType payload;
-  bool state;  // can't be const and keep move assignment
+  HOSTRPC_ANNOTATE HOSTRPC_SET_TYPESTATE(consumed) void kill() const {}
+  HOSTRPC_ANNOTATE HOSTRPC_SET_TYPESTATE(unconsumed) void def() const {}
 
 #if HOSTRPC_USE_TYPESTATE
   // Declare move hooks as friends
@@ -184,13 +241,10 @@ struct HOSTRPC_CONSUMABLE_CLASS either
   cxx::move(either<TrueTy, FalseTy> &x HOSTRPC_CONSUMED_ARG);
 #endif
 
-  HOSTRPC_ANNOTATE HOSTRPC_SET_TYPESTATE(consumed) void kill() const {}
-  HOSTRPC_ANNOTATE HOSTRPC_SET_TYPESTATE(unconsumed) void def() const {}
-
   HOSTRPC_ANNOTATE static either HOSTRPC_CREATED_RES
   recreate(either &&x HOSTRPC_CONSUMED_ARG)
   {
-    UnderlyingType v = x.payload;
+    ContainedType v = x.payload;
     bool s = x.state;
     x.kill();
     return {v, s};
@@ -199,16 +253,39 @@ struct HOSTRPC_CONSUMABLE_CLASS either
   HOSTRPC_ANNOTATE static either HOSTRPC_CREATED_RES
   recreate(either &x HOSTRPC_CONSUMED_ARG)
   {
-    UnderlyingType v = x.payload;
+    ContainedType v = x.payload;
     bool s = x.state;
     x.kill();
     return {v, s};
   }
 
-  // Copying or moving maybe doesn't work very intuitively, moving either should
-  // be OK
   either(const either &other) = delete;
   either &operator=(const either &other) = delete;
+
+  // Implement the PortUnderlyingAccess / disassemble / reconstitute hook here
+  // to allow constructing SelfType::maybe or either of either instances.
+  // Private as the only classes that can access this are also friends of this
+  // class.
+  class PortUnderlyingAccess
+  {
+   private:
+    template <typename L, typename R>
+    friend struct either;
+    friend hostrpc::maybe<SelfType>;
+    HOSTRPC_ANNOTATE PortUnderlyingAccess() {}
+    HOSTRPC_ANNOTATE PortUnderlyingAccess(PortUnderlyingAccess const &) {}
+  };
+
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+  UnderlyingType disassemble(PortUnderlyingAccess) { return {payload, state}; }
+
+  HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES static either<TrueTy, FalseTy>
+  reconstitute(PortUnderlyingAccess, UnderlyingType value)
+  {
+    return {value.template get<0>(), value.template get<1>()};
+  }
 };
 
 #if HOSTRPC_USE_TYPESTATE

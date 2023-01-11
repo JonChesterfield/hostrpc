@@ -8,10 +8,8 @@
 
 namespace hostrpc
 {
-
 template <typename BufferElementT, typename WordT, typename SZT>
-using server =
-  state_machine_impl<BufferElementT, WordT, SZT, true>;
+using server = state_machine_impl<BufferElementT, WordT, SZT, true>;
 
 template <typename BufferElementT, typename WordT, typename SZT,
           typename Operate, typename Clear>

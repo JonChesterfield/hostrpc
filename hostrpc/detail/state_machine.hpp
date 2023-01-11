@@ -156,41 +156,12 @@ struct state_machine_impl : public SZT
       partial_to_typed(T active_threads,
                        partial_port_t<S>&& port HOSTRPC_CONSUMED_ARG)
   {
-#if 0
-    // Directly construct it from within state machine
-    uint32_t v = port.value;
-    bool state = port.state;
-
-    if (OutboxState == state)
-      {
-        port.kill();
-        typename partial_to_typed_trait<S, OutboxState>::type new_port(v);
-        return new_port;
-      }
-    else
-      {
-        rpc_close_port(active_threads, cxx::move(port));
-        return {};
-      }
-#else
+    // TODO: Delete this member, better options implemented now
     // Go via port conversion functions
     either<typename partial_to_typed_trait<S, OutboxState>::type,
            typename partial_to_typed_trait<S, !OutboxState>::type>
         either = port;
-    if (either)
-      {
-        return either.on_true();
-      }
-    else
-      {
-        auto m = either.on_false();
-        if (m)
-          {
-            rpc_close_port(active_threads, m.value());
-          }
-        return {};
-      }
-#endif
+    return either.left(rpc_port_closer(active_threads));
   }
 
   // These should probably be gated behind an explicit opt in, another
@@ -328,6 +299,37 @@ struct state_machine_impl : public SZT
     active.close_port(active_threads, size, cxx::move(port));
   }
 
+  template <typename T>
+  struct rpc_port_closer_t
+  {
+    HOSTRPC_ANNOTATE
+    rpc_port_closer_t(T active_threads, state_machine_impl* M)
+        : active_threads(active_threads), M(M)
+    {
+    }
+
+    template <unsigned I, unsigned O>
+    HOSTRPC_ANNOTATE void operator()(typed_port_t<I, O>&& port)
+    {
+      M->rpc_close_port(active_threads, cxx::move(port));
+    }
+
+    template <unsigned S>
+    HOSTRPC_ANNOTATE void operator()(partial_port_t<S>&& port)
+    {
+      M->rpc_close_port(active_threads, cxx::move(port));
+    }
+
+    T active_threads;
+    state_machine_impl* M;
+  };
+
+  template <typename T>
+  HOSTRPC_ANNOTATE rpc_port_closer_t<T> rpc_port_closer(T active_threads)
+  {
+    return rpc_port_closer_t<T>(active_threads, this);
+  }
+
   // TODO: Want a function which can be called on stable ports, the same
   // ones as apply, but takes the port by const& and does not change it
   // This can be used to read the buffer without triggering a request
@@ -405,7 +407,8 @@ struct state_machine_impl : public SZT
     either<typed_port_t<0, 0>, typed_port_t<1, 1>> either = port;
     if (either)
       {
-        typename typed_port_t<0, 0>::maybe maybe = either.on_true();
+        typename typed_port_t<0, 0>::maybe maybe =
+            either.left(rpc_port_closer(active_threads));
         if (maybe)
           {
             return rpc_port_apply(active_threads, maybe.value(),
@@ -418,7 +421,8 @@ struct state_machine_impl : public SZT
       }
     else
       {
-        typename typed_port_t<1, 1>::maybe maybe = either.on_false();
+        typename typed_port_t<1, 1>::maybe maybe =
+            either.right(rpc_port_closer(active_threads));
         if (maybe)
           {
             return rpc_port_apply(active_threads, maybe.value(),
@@ -443,7 +447,7 @@ struct state_machine_impl : public SZT
         auto an_either = rpc_port_query(active_threads, cxx::move(port));
         if (an_either)
           {
-            auto a_maybe = an_either.on_true();
+            auto a_maybe = an_either.left(rpc_port_closer(active_threads));
             if (a_maybe)
               {
                 auto a = a_maybe.value();
@@ -456,7 +460,7 @@ struct state_machine_impl : public SZT
           }
         else
           {
-            auto a_maybe = an_either.on_false();
+            auto a_maybe = an_either.right(rpc_port_closer(active_threads));
             if (a_maybe)
               {
                 auto a = a_maybe.value();
@@ -481,7 +485,7 @@ struct state_machine_impl : public SZT
         auto an_either = rpc_port_query(active_threads, cxx::move(port));
         if (an_either)
           {
-            auto a_maybe = an_either.on_true();
+            auto a_maybe = an_either.left(rpc_port_closer(active_threads));
             if (a_maybe)
               {
                 auto a = a_maybe.value();
@@ -494,7 +498,7 @@ struct state_machine_impl : public SZT
           }
         else
           {
-            auto a_maybe = an_either.on_false();
+            auto a_maybe = an_either.right(rpc_port_closer(active_threads));
             if (a_maybe)
               {
                 auto a = a_maybe.value();
@@ -549,7 +553,7 @@ struct state_machine_impl : public SZT
 #else
     if (either)
       {
-        auto maybe = either.on_true();
+        auto maybe = either.left(rpc_port_closer(active_threads));
         if (maybe)
           {
             return hostrpc::typed_to_partial(
@@ -562,7 +566,7 @@ struct state_machine_impl : public SZT
       }
     else
       {
-        auto maybe = either.on_false();
+        auto maybe = either.right(rpc_port_closer(active_threads));
         if (maybe)
           {
             return hostrpc::typed_to_partial(
@@ -654,7 +658,7 @@ struct state_machine_impl : public SZT
     if (with_inbox)
       {
         // 0, 2
-        auto maybe = with_inbox.on_true();
+        auto maybe = with_inbox.left(rpc_port_closer(active_threads));
         if (!maybe)
           {
             __builtin_unreachable();
@@ -666,7 +670,7 @@ struct state_machine_impl : public SZT
 
         if (with_outbox)
           {
-            auto maybe = with_outbox.on_true();
+            auto maybe = with_outbox.left(rpc_port_closer(active_threads));
             if (!maybe)
               {
                 __builtin_unreachable();
@@ -675,7 +679,7 @@ struct state_machine_impl : public SZT
           }
         else
           {
-            auto maybe = with_outbox.on_false();
+            auto maybe = with_outbox.right(rpc_port_closer(active_threads));
             if (!maybe)
               {
                 __builtin_unreachable();
@@ -686,7 +690,7 @@ struct state_machine_impl : public SZT
     else
       {
         // 1, 2
-        auto maybe = with_inbox.on_false();
+        auto maybe = with_inbox.right(rpc_port_closer(active_threads));
         if (!maybe)
           {
             __builtin_unreachable();
@@ -698,7 +702,7 @@ struct state_machine_impl : public SZT
 
         if (with_outbox)
           {
-            auto maybe = with_outbox.on_true();
+            auto maybe = with_outbox.left(rpc_port_closer(active_threads));
             if (!maybe)
               {
                 __builtin_unreachable();
@@ -707,7 +711,7 @@ struct state_machine_impl : public SZT
           }
         else
           {
-            auto maybe = with_outbox.on_false();
+            auto maybe = with_outbox.right(rpc_port_closer(active_threads));
             if (!maybe)
               {
                 __builtin_unreachable();
@@ -795,8 +799,9 @@ struct state_machine_impl : public SZT
 #else
             Word latest_known_inbox = i;
             Word latest_known_outbox = o;
-            if (auto specific =
-                try_open_specific_port<PortType, T>(active_threads, slot, &latest_known_inbox, &latest_known_outbox))
+            if (auto specific = try_open_specific_port<PortType, T>(
+                    active_threads, slot, &latest_known_inbox,
+                    &latest_known_outbox))
               {
                 platform::fence_acquire();
                 return {specific.value()};

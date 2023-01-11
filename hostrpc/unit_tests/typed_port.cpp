@@ -451,7 +451,7 @@ static MODULE(either)
     auto e = maybe_apply(false, cxx::move(val));
     if (e)
       {
-        typed_port_t<0, 1>::maybe p = e.on_true();
+        typed_port_t<0, 1>::maybe p = e.left([](auto && p){drop(cxx::move(p));});
         if (p)
           {
             typed_port_t<0, 1> t = p.value();
@@ -460,7 +460,7 @@ static MODULE(either)
       }
     else
       {
-        typed_port_t<0, 0>::maybe p = e.on_false();
+        typed_port_t<0, 0>::maybe p = e.right([](auto && p){drop(cxx::move(p));});
         if (p)
           {
             typed_port_t<0, 0> t = p.value();

@@ -146,7 +146,6 @@ constexpr bool traits_consistent()
          check_from_partial<Friend, 1, true>::consistent();
 }
 
-
 // Can't convert an undefined port <2,2> into a partial. This is somewhat
 // captured by the missing state member, and no corresponding inverse.
 template <typename Friend>
@@ -165,7 +164,6 @@ struct typed_to_partial_trait<Friend, typed_port_impl_t<Friend, 1, 2>>
   using type = void;
 };
 
-  
 }  // namespace traits
 
 #if HOSTRPC_USE_TYPESTATE
@@ -210,10 +208,11 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
 
   friend Friend;  // the state machine
 
-  // The idea here is to track access permissions at finer grain than wholly trusted.
-  // Ideally converting to/from the UnderlyingType would be limited to environments
-  // which cannot also change the state, e.g. can't call invert_inbox.
-  // Converting directly betweeen typed and partial port is probably a special case.
+  // The idea here is to track access permissions at finer grain than wholly
+  // trusted. Ideally converting to/from the UnderlyingType would be limited to
+  // environments which cannot also change the state, e.g. can't call
+  // invert_inbox. Converting directly betweeen typed and partial port is
+  // probably a special case.
 
   class PortUnderlyingAccess
   {
@@ -229,6 +228,9 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     // type annotation changed. Internally it handles this by inverting.
     // At least, it would also need to mishandle it's own state to go wrong.
     friend either<typed_port_impl_t<Friend, I, O>,
+                  typed_port_impl_t<Friend, I, O>>;
+
+    friend either<typed_port_impl_t<Friend, I, O>,
                   typed_port_impl_t<Friend, !I, O>>;
 
     friend either<typed_port_impl_t<Friend, I, O>,
@@ -243,30 +245,29 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
 
   class InboxPermission
   {
-  private:
+   private:
     friend typename Friend::inbox_t;
-    friend Friend; // temporary
+    friend Friend;  // temporary
     HOSTRPC_ANNOTATE InboxPermission() {}
-    HOSTRPC_ANNOTATE InboxPermission(InboxPermission const &) {}    
+    HOSTRPC_ANNOTATE InboxPermission(InboxPermission const &) {}
   };
 
   class OutboxPermission
   {
-  private:
+   private:
     friend typename Friend::outbox_t;
     HOSTRPC_ANNOTATE OutboxPermission() {}
-    HOSTRPC_ANNOTATE OutboxPermission(OutboxPermission const &) {}    
+    HOSTRPC_ANNOTATE OutboxPermission(OutboxPermission const &) {}
   };
 
   class LocksPermission
   {
-  private:
+   private:
     friend typename Friend::lock_t;
     HOSTRPC_ANNOTATE LocksPermission() {}
-    HOSTRPC_ANNOTATE LocksPermission(LocksPermission const &) {}    
+    HOSTRPC_ANNOTATE LocksPermission(LocksPermission const &) {}
   };
 
-  
  public:
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
@@ -309,7 +310,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   // Allows refining a 2,2 into this type
   friend typed_port_impl_t<Friend, I, 2>;
   friend typed_port_impl_t<Friend, 2, O>;
-  
+
 #if HOSTRPC_USE_TYPESTATE
   // so that cxx::move keeps track of the typestate
   friend HOSTRPC_ANNOTATE
@@ -358,12 +359,9 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   }
 
   template <unsigned newI>
-  HOSTRPC_ANNOTATE
-  HOSTRPC_CALL_ON_LIVE
-  HOSTRPC_CREATED_RES
-  HOSTRPC_SET_TYPESTATE(consumed)
-  typed_port_impl_t<Friend, newI, O>
-    assign_inbox(InboxPermission)
+  HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE HOSTRPC_CREATED_RES
+      HOSTRPC_SET_TYPESTATE(consumed)
+          typed_port_impl_t<Friend, newI, O> assign_inbox(InboxPermission)
   {
     static_assert(I == 2, "Only valid on unknown types");
     UnderlyingType v = *this;
@@ -372,22 +370,20 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   }
 
   template <unsigned newO>
-  HOSTRPC_ANNOTATE
-  HOSTRPC_CALL_ON_LIVE
-  HOSTRPC_CREATED_RES
-  HOSTRPC_SET_TYPESTATE(consumed)
-    typed_port_impl_t<Friend, I, newO>
-    assign_outbox(OutboxPermission)
+  HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE HOSTRPC_CREATED_RES
+      HOSTRPC_SET_TYPESTATE(consumed)
+          typed_port_impl_t<Friend, I, newO> assign_outbox(OutboxPermission)
   {
     static_assert(O == 2, "Only valid on unknown types");
     UnderlyingType v = *this;
     kill();
     return {v};
   }
-  
+
   HOSTRPC_ANNOTATE
   HOSTRPC_CREATED_RES
-  static typed_port_impl_t<Friend, 2, 2> raw_construction(LocksPermission, UnderlyingType v)
+  static typed_port_impl_t<Friend, 2, 2> raw_construction(LocksPermission,
+                                                          UnderlyingType v)
   {
     return {v};
   }
@@ -395,11 +391,8 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
-  void raw_destruction(LocksPermission)
-  {
-    kill();
-  }
-  
+  void raw_destruction(LocksPermission) { kill(); }
+
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
@@ -514,26 +507,26 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
 
   class InboxPermission
   {
-  private:
+   private:
     friend typename Friend::inbox_t;
     HOSTRPC_ANNOTATE InboxPermission() {}
-    HOSTRPC_ANNOTATE InboxPermission(InboxPermission const &) {}    
+    HOSTRPC_ANNOTATE InboxPermission(InboxPermission const &) {}
   };
 
   class OutboxPermission
   {
-  private:
+   private:
     friend typename Friend::outbox_t;
     HOSTRPC_ANNOTATE OutboxPermission() {}
-    HOSTRPC_ANNOTATE OutboxPermission(OutboxPermission const &) {}    
+    HOSTRPC_ANNOTATE OutboxPermission(OutboxPermission const &) {}
   };
 
-   class LocksPermission
+  class LocksPermission
   {
-  private:
+   private:
     friend typename Friend::lock_t;
     HOSTRPC_ANNOTATE LocksPermission() {}
-    HOSTRPC_ANNOTATE LocksPermission(LocksPermission const &) {}    
+    HOSTRPC_ANNOTATE LocksPermission(LocksPermission const &) {}
   };
 
  public:
@@ -633,11 +626,8 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)
-  void raw_destruction(LocksPermission)
-  {
-    kill();
-  }
- 
+  void raw_destruction(LocksPermission) { kill(); }
+
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
   HOSTRPC_SET_TYPESTATE(consumed)

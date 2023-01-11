@@ -23,7 +23,7 @@ struct HOSTRPC_CONSUMABLE_CLASS maybe
   HOSTRPC_RETURN_UNKNOWN
   HOSTRPC_ANNOTATE
   maybe() : valid(false) { unknown(); }
-  
+
   // Branch on the value, the true side will be 'unconsumed'
   HOSTRPC_CALL_ON_UNKNOWN
   HOSTRPC_ANNOTATE
@@ -35,7 +35,7 @@ struct HOSTRPC_CONSUMABLE_CLASS maybe
   HOSTRPC_ANNOTATE
   HOSTRPC_CREATED_RES
   T value() { return T::reconstitute({}, payload); }
-  
+
   // Errors if the above pattern is not followed
   HOSTRPC_CALL_ON_DEAD HOSTRPC_ANNOTATE ~maybe() {}
 
@@ -43,7 +43,6 @@ struct HOSTRPC_CONSUMABLE_CLASS maybe
   HOSTRPC_CALL_ON_DEAD HOSTRPC_ANNOTATE void consumed() const {}
   HOSTRPC_CALL_ON_LIVE HOSTRPC_ANNOTATE void unconsumed() const {}
   HOSTRPC_CALL_ON_UNKNOWN HOSTRPC_ANNOTATE void unknown() const {}
-
 
   // Used to implement operator maybe() from T
   //
@@ -58,22 +57,21 @@ struct HOSTRPC_CONSUMABLE_CLASS maybe
   // Might be better to require a default constructor for T::UnderlyingType
   // and make that field const, then give T friend access to this class on the
   // basis that it can't change any of it anyway.
- class Key
- {
- private:
-   // T is allowed access to the constructor but nothing else
-   friend T;
-   HOSTRPC_ANNOTATE  Key() {}
-   HOSTRPC_ANNOTATE  Key(Key const&) {}
- };
-  
+  class Key
+  {
+   private:
+    // T is allowed access to the constructor but nothing else
+    friend T;
+    HOSTRPC_ANNOTATE Key() {}
+    HOSTRPC_ANNOTATE Key(Key const &) {}
+  };
+
   HOSTRPC_RETURN_UNKNOWN
   HOSTRPC_ANNOTATE
-  maybe(Key, typename  T::UnderlyingType v) : payload(v), valid(true) {}
+  maybe(Key, typename T::UnderlyingType v) : payload(v), valid(true) {}
 
  private:
-  
-  typename  T::UnderlyingType payload;
+  typename T::UnderlyingType payload;
   const bool valid;
 
   // Copying or moving these types doesn't work very intuitively
