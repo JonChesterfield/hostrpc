@@ -51,7 +51,7 @@ extern "C" __attribute__((flatten)) HOSTRPC_ANNOTATE void client_compiling_eithe
       auto an_either = c.rpc_port_query<0,decltype(active_threads)>(active_threads, cxx::move(p01));
       if (an_either)
         {
-          auto a_maybe = an_either.on_true();
+          auto a_maybe = an_either.left([&](auto && port){c.rpc_close_port(active_threads, cxx::move(port));});
           if (a_maybe)
             {
               auto a = a_maybe.value();
@@ -60,7 +60,7 @@ extern "C" __attribute__((flatten)) HOSTRPC_ANNOTATE void client_compiling_eithe
         }
       else
         {
-          auto a_maybe = an_either.on_false();
+          auto a_maybe = an_either.right([&](auto && port){c.rpc_close_port(active_threads, cxx::move(port));});
           if (a_maybe)
             {
               auto a = a_maybe.value();
