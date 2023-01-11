@@ -189,10 +189,11 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
 
   friend Friend;  // the state machine
 
-  // The idea here is to track access permissions at finer grain than wholly trusted.
-  // Ideally converting to/from the UnderlyingType would be limited to environments
-  // which cannot also change the state, e.g. can't call invert_inbox.
-  // Converting directly betweeen typed and partial port is probably a special case.
+  // The idea here is to track access permissions at finer grain than wholly
+  // trusted. Ideally converting to/from the UnderlyingType would be limited to
+  // environments which cannot also change the state, e.g. can't call
+  // invert_inbox. Converting directly betweeen typed and partial port is
+  // probably a special case.
 
   class PortUnderlyingAccess
   {
@@ -226,21 +227,21 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
 
   class InboxPermission
   {
-  private:
+   private:
     friend typename Friend::inbox_t;
-    friend Friend; // temporary
+    friend Friend;  // temporary
     HOSTRPC_ANNOTATE InboxPermission() {}
-    HOSTRPC_ANNOTATE InboxPermission(InboxPermission const &) {}    
+    HOSTRPC_ANNOTATE InboxPermission(InboxPermission const &) {}
   };
 
   class OutboxPermission
   {
-  private:
+   private:
     friend typename Friend::outbox_t;
     HOSTRPC_ANNOTATE OutboxPermission() {}
-    HOSTRPC_ANNOTATE OutboxPermission(OutboxPermission const &) {}    
+    HOSTRPC_ANNOTATE OutboxPermission(OutboxPermission const &) {}
   };
-  
+
  public:
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
@@ -441,20 +442,20 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
 
   class InboxPermission
   {
-  private:
+   private:
     friend typename Friend::inbox_t;
     HOSTRPC_ANNOTATE InboxPermission() {}
-    HOSTRPC_ANNOTATE InboxPermission(InboxPermission const &) {}    
+    HOSTRPC_ANNOTATE InboxPermission(InboxPermission const &) {}
   };
 
   class OutboxPermission
   {
-  private:
+   private:
     friend typename Friend::outbox_t;
     HOSTRPC_ANNOTATE OutboxPermission() {}
-    HOSTRPC_ANNOTATE OutboxPermission(OutboxPermission const &) {}    
+    HOSTRPC_ANNOTATE OutboxPermission(OutboxPermission const &) {}
   };
- 
+
  public:
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE

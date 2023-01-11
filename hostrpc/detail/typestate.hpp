@@ -15,12 +15,15 @@
 #define HOSTRPC_CONSUMABLE_CLASS __attribute__((consumable(unconsumed)))
 
 #define HOSTRPC_RETURN_CONSUMED __attribute__((return_typestate(consumed)))
-#define HOSTRPC_RETURN_UNKNOWN __attribute__((return_typestate(unknown)))  
+#define HOSTRPC_RETURN_UNKNOWN __attribute__((return_typestate(unknown)))
 #define HOSTRPC_CREATED_RES __attribute__((return_typestate(unconsumed)))
 
-#define HOSTRPC_CONSUMED_ARG \
-  __attribute__((param_typestate(unconsumed))) __attribute__((return_typestate(consumed)))
-#define HOSTRPC_CONST_REF_ARG __attribute__((param_typestate(unconsumed))) __attribute__((return_typestate(unconsumed)))
+#define HOSTRPC_CONSUMED_ARG                   \
+  __attribute__((param_typestate(unconsumed))) \
+      __attribute__((return_typestate(consumed)))
+#define HOSTRPC_CONST_REF_ARG                  \
+  __attribute__((param_typestate(unconsumed))) \
+      __attribute__((return_typestate(unconsumed)))
 
 #define HOSTRPC_CALL_ON_LIVE __attribute__((callable_when(unconsumed)))
 #define HOSTRPC_CALL_ON_DEAD __attribute__((callable_when(consumed)))
@@ -41,6 +44,5 @@
 #define HOSTRPC_SET_TYPESTATE(X)
 #define HOSTRPC_TEST_TYPESTATE(X)
 #endif
-
 
 #endif
