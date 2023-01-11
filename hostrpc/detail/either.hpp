@@ -116,37 +116,12 @@ struct HOSTRPC_CONSUMABLE_CLASS either
     return invert().left(cxx::forward<Op>(op));
   }
 
-  // on_true / on_false leak the object when called in the wrong state,
-  // transferring call sites to left()/right() which take a continuation
-
   HOSTRPC_SET_TYPESTATE(consumed)
   HOSTRPC_CALL_ON_LIVE
-  HOSTRPC_RETURN_UNKNOWN
   HOSTRPC_ANNOTATE
-  hostrpc::maybe<TrueTy> on_true()
+  TrueTy left_and_right()
   {
-    if (*this)
-      {
-        return retrieve();
-      }
-    else
-      {
-        // This leaks the contained object. Prefer left()
-        return {};
-      }
-  }
-
-  HOSTRPC_SET_TYPESTATE(consumed)
-  HOSTRPC_CALL_ON_LIVE
-  HOSTRPC_RETURN_UNKNOWN
-  HOSTRPC_ANNOTATE
-  hostrpc::maybe<FalseTy> on_false() { return invert().on_true(); }
-
-  HOSTRPC_SET_TYPESTATE(consumed)
-  HOSTRPC_CALL_ON_LIVE
-  HOSTRPC_ANNOTATE
-  TrueTy on_true_and_false()
-  {
+    // When types match, can unconditionally retrieve
     static_assert(cxx::is_same<TrueTy, FalseTy>(), "");
     return retrieve();
   }

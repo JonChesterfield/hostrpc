@@ -185,6 +185,8 @@ wait_inbox_on_either(
 {
   // Looks functional, seeking a way to collapse the two inbox read loops
   // Tricky in that they're each waiting for a specific value when really
+  // they're both waiting for a change - inbox_state implemented on either
+  // perhaps?
   if (!port)
     {
       return wait_inbox_on_either(active_threads, s, port.invert()).invert();
@@ -192,7 +194,7 @@ wait_inbox_on_either(
   else
     {
       if (typename state_machine_t::typed_port_t<IA, OA>::maybe maybe =
-              port.on_true())
+              port.left(s.rpc_port_closer(active_threads)))
         {
           state_machine_t::typed_port_t<IA, OA> first = maybe.value();
           state_machine_t::typed_port_t<!IA, OA> waited =
@@ -362,7 +364,7 @@ auto visit_either(state_machine_t &s, state_machine_t::typed_port_t<0, 1> &&p0)
           });
 
   state_machine_t::typed_port_t<0, 1> flatten =
-      conditional_apply_again.on_true_and_false();
+      conditional_apply_again.left_and_right();
 
   s.rpc_close_port(threads, cxx::move(flatten));
 }
@@ -389,7 +391,7 @@ state_machine_t::partial_port_t<1> wait_via_query_partial_port(
       auto either = s.rpc_port_query(threads, cxx::move(p0));
       if (either)
         {
-          auto maybe = either.on_true();
+          auto maybe = either.left(s.rpc_port_closer(threads));
           if (maybe)
             {
               state_machine_t::partial_port_t<0> &&p1 = maybe.value();
@@ -403,7 +405,7 @@ state_machine_t::partial_port_t<1> wait_via_query_partial_port(
         }
       else
         {
-          auto maybe = either.on_false();
+          auto maybe = either.right(s.rpc_port_closer(threads));
           if (maybe)
             {
               state_machine_t::partial_port_t<1> &&p1 = maybe.value();
@@ -427,7 +429,7 @@ state_machine_t::typed_port_t<0, 0> wait_via_query_typed_port_lo(
       auto either = s.rpc_port_query(threads, cxx::move(p0));
       if (either)
         {
-          auto maybe = either.on_true();
+          auto maybe = either.left(s.rpc_port_closer(threads));
           if (maybe)
             {
               state_machine_t::typed_port_t<1, 0> &&p1 = maybe.value();
@@ -441,7 +443,7 @@ state_machine_t::typed_port_t<0, 0> wait_via_query_typed_port_lo(
         }
       else
         {
-          auto maybe = either.on_false();
+          auto maybe = either.right(s.rpc_port_closer(threads));
           if (maybe)
             {
               state_machine_t::typed_port_t<0, 0> &&p1 = maybe.value();
@@ -465,7 +467,7 @@ state_machine_t::typed_port_t<1, 1> wait_via_query_typed_port_hi(
       auto either = s.rpc_port_query(threads, cxx::move(p0));
       if (either)
         {
-          auto maybe = either.on_true();
+          auto maybe = either.left(s.rpc_port_closer(threads));
           if (maybe)
             {
               state_machine_t::typed_port_t<0, 1> &&p1 = maybe.value();
@@ -479,7 +481,7 @@ state_machine_t::typed_port_t<1, 1> wait_via_query_typed_port_hi(
         }
       else
         {
-          auto maybe = either.on_false();
+          auto maybe = either.right(s.rpc_port_closer(threads));
           if (maybe)
             {
               state_machine_t::typed_port_t<1, 1> &&p1 = maybe.value();
@@ -549,7 +551,7 @@ extern "C"
         auto an_either = s.rpc_port_query(threads, cxx::move(p01));
         if (an_either)
           {
-            auto a_maybe = an_either.on_true();
+            auto a_maybe = an_either.left(s.rpc_port_closer(threads));
             if (a_maybe)
               {
                 auto a = a_maybe.value();
@@ -562,7 +564,7 @@ extern "C"
           }
         else
           {
-            auto a_maybe = an_either.on_false();
+            auto a_maybe = an_either.right(s.rpc_port_closer(threads));
             if (a_maybe)
               {
                 auto a = a_maybe.value();

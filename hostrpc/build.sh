@@ -20,8 +20,6 @@ fi
 echo "have_nvptx: $have_nvptx"
 echo "have_amdgcn: $have_amdgcn"
 
-have_amdgcn=0
-
 RDIR=$HOME/llvm-install
 
 if [[ -d "$RDIR" ]]
