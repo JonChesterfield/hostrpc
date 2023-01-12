@@ -1,9 +1,29 @@
 # hostrpc
-Remote procedure calls through shared memory. Examples:
+
+Compiler enforced mutual exclusion between heterogenous processors.
+
+Given an array of a trivially copyable type in shared memory, and a few
+administrative bitmaps, this library will provide compiler-enforced mutual
+exclusion over elements of that array between heterogenous processors.
+
+This is sufficient for safe remote procedure calls. Examples:
 - A gpu warp calling a function on the host machine to allocate memory
 - An x64 machine calling a function on an amdgpu to do arithmetic
 - A Linux process providing audited syscall access to a seccomp'ed one
 - A gpu calling a function on another gpu on the same pcie bus
+
+## Pseudocode interface
+
+```
+port open();                 // Waits for a port
+port use(port, callback);    // Safe, we own it
+port send(port);             // Also safe
+// port use(port, callback); // Won't compile
+port recv(port);             // Wait for the other side
+port use(port, callback);    // OK again
+close(port);                 // Done
+
+```
 
 ## What is this?
 
