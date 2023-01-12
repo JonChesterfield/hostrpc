@@ -220,6 +220,16 @@ struct state_machine_impl : public SZT
     }
   };
 
+  template <>
+  struct port_trait<either<typed_port_t<0, 0>,typed_port_t<1, 1>>>
+  {
+    HOSTRPC_ANNOTATE static constexpr bool openable() { return true; }
+    HOSTRPC_ANNOTATE static constexpr Word available_bitmap(Word i, Word o)
+    {
+      return (~i & ~o) | (i & o);
+    }
+  };
+  
   template <typename T>
   HOSTRPC_ANNOTATE static constexpr Word available_bitmap(Word i, Word o)
   {
@@ -263,6 +273,23 @@ struct state_machine_impl : public SZT
     static_assert(port_openable<typed_port_t<I, O>>(), "");
     static_assert(I == O, "");
     return open_typed_port<typed_port_t<I, O>, T>(active_threads, scan_from);
+  }
+
+  template <typename T>
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN
+      typename either<typed_port_t<0, 0>, typed_port_t<1, 1>>::maybe
+      rpc_try_open_port(T active_threads, uint32_t scan_from = 0)
+  {
+    return try_open_typed_port<either<typed_port_t<0, 0>, typed_port_t<1, 1>>,
+                               T>(active_threads, scan_from);
+  }
+
+  template <typename T>
+  HOSTRPC_ANNOTATE either<typed_port_t<0, 0>, typed_port_t<1, 1>> rpc_open_port(
+      T active_threads, uint32_t scan_from = 0)
+  {
+    return open_typed_port<either<typed_port_t<0, 0>, typed_port_t<1, 1>>, T>(
+        active_threads, scan_from);
   }
 
   template <unsigned S, typename T>
@@ -328,6 +355,15 @@ struct state_machine_impl : public SZT
   HOSTRPC_ANNOTATE rpc_port_closer_t<T> rpc_port_closer(T active_threads)
   {
     return rpc_port_closer_t<T>(active_threads, this);
+  }
+
+  template <unsigned IA, unsigned OA, unsigned IB, unsigned OB, typename T>
+  HOSTRPC_ANNOTATE void rpc_close_port(
+      T active_threads,
+      either<typed_port_t<IA, OA>, typed_port_t<IB, OB>>&& port)
+  {
+    port.template visit<void>(rpc_port_closer(active_threads),
+                              rpc_port_closer(active_threads));
   }
 
   // TODO: Want a function which can be called on stable ports, the same
@@ -640,9 +676,9 @@ struct state_machine_impl : public SZT
     either<typed_port_t<0, 2>, typed_port_t<1, 2>> with_inbox =
         inbox.refine(size, active_threads, maybe_port.value(), inbox_to_update);
 
-    // Neither visit nor open coding look great. Also this is calling rpc_port_closer
-    // which will introduce spurious fences.
-    
+    // Neither visit nor open coding look great. Also this is calling
+    // rpc_port_closer which will introduce spurious fences.
+
 #if 1
 
     return with_inbox.template visit<typename EitherStable::maybe>(
@@ -819,6 +855,7 @@ struct state_machine_impl : public SZT
                         return port.left(rpc_port_closer(active_threads));
                       }
                   }
+
                 if constexpr (cxx::is_same<typed_port_t<1, 1>, PortType>())
                   {
                     if (!port)
@@ -826,6 +863,14 @@ struct state_machine_impl : public SZT
                         platform::fence_acquire();
                         return port.right(rpc_port_closer(active_threads));
                       }
+                  }
+
+                if constexpr (cxx::is_same<either<typed_port_t<0, 0>,
+                                                  typed_port_t<1, 1>>,
+                                           PortType>())
+                  {
+                    platform::fence_acquire();
+                    return port;
                   }
 
                 if constexpr (cxx::is_same<partial_port_t<1>, PortType>())
