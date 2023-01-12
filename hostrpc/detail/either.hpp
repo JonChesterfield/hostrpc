@@ -262,10 +262,9 @@ struct HOSTRPC_CONSUMABLE_CLASS either
   either(const either &other) = delete;
   either &operator=(const either &other) = delete;
 
+ public:
   // Implement the PortUnderlyingAccess / disassemble / reconstitute hook here
   // to allow constructing SelfType::maybe or either of either instances.
-  // Private as the only classes that can access this are also friends of this
-  // class.
   class PortUnderlyingAccess
   {
    private:

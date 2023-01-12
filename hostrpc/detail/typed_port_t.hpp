@@ -209,6 +209,9 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     // type annotation changed. Internally it handles this by inverting.
     // At least, it would also need to mishandle it's own state to go wrong.
     friend either<typed_port_impl_t<Friend, I, O>,
+                  typed_port_impl_t<Friend, I, O>>;
+
+    friend either<typed_port_impl_t<Friend, I, O>,
                   typed_port_impl_t<Friend, !I, O>>;
 
     friend either<typed_port_impl_t<Friend, I, O>,
@@ -216,10 +219,6 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
 
     friend either<typed_port_impl_t<Friend, I, O>,
                   typed_port_impl_t<Friend, !I, !O>>;
-
-    // Also type preserving to have lhs==rhs
-    friend either<typed_port_impl_t<Friend, I, O>,
-                  typed_port_impl_t<Friend, I, O>>;
 
     HOSTRPC_ANNOTATE PortUnderlyingAccess() {}
     HOSTRPC_ANNOTATE PortUnderlyingAccess(PortUnderlyingAccess const &) {}
@@ -240,6 +239,14 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     friend typename Friend::outbox_t;
     HOSTRPC_ANNOTATE OutboxPermission() {}
     HOSTRPC_ANNOTATE OutboxPermission(OutboxPermission const &) {}
+  };
+
+  class LocksPermission
+  {
+   private:
+    friend typename Friend::lock_t;
+    HOSTRPC_ANNOTATE LocksPermission() {}
+    HOSTRPC_ANNOTATE LocksPermission(LocksPermission const &) {}
   };
 
  public:
@@ -454,6 +461,14 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     friend typename Friend::outbox_t;
     HOSTRPC_ANNOTATE OutboxPermission() {}
     HOSTRPC_ANNOTATE OutboxPermission(OutboxPermission const &) {}
+  };
+
+  class LocksPermission
+  {
+   private:
+    friend typename Friend::lock_t;
+    HOSTRPC_ANNOTATE LocksPermission() {}
+    HOSTRPC_ANNOTATE LocksPermission(LocksPermission const &) {}
   };
 
  public:

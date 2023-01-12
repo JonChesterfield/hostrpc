@@ -220,6 +220,16 @@ struct state_machine_impl : public SZT
     }
   };
 
+  template <>
+  struct port_trait<either<typed_port_t<0, 0>,typed_port_t<1, 1>>>
+  {
+    HOSTRPC_ANNOTATE static constexpr bool openable() { return true; }
+    HOSTRPC_ANNOTATE static constexpr Word available_bitmap(Word i, Word o)
+    {
+      return (~i & ~o) | (i & o);
+    }
+  };
+  
   template <typename T>
   HOSTRPC_ANNOTATE static constexpr Word available_bitmap(Word i, Word o)
   {
@@ -264,6 +274,25 @@ struct state_machine_impl : public SZT
     static_assert(I == O, "");
     return open_typed_port<typed_port_t<I, O>, T>(active_threads, scan_from);
   }
+
+#if 0
+  template <typename T>
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN
+      typename either<typed_port_t<0, 0>, typed_port_t<1, 1>>::maybe
+      rpc_try_open_port(T active_threads, uint32_t scan_from = 0)
+  {
+    return try_open_typed_port<either<typed_port_t<0, 0>, typed_port_t<1, 1>>,
+                               T>(active_threads, scan_from);
+  }
+
+  template <typename T>
+  HOSTRPC_ANNOTATE either<typed_port_t<0, 0>, typed_port_t<1, 1>> rpc_open_port(
+      T active_threads, uint32_t scan_from = 0)
+  {
+    return open_typed_port<either<typed_port_t<0, 0>, typed_port_t<1, 1>>, T>(
+        active_threads, scan_from);
+  }
+#endif
 
   template <unsigned S, typename T>
   HOSTRPC_ANNOTATE void rpc_close_port(T active_threads,
