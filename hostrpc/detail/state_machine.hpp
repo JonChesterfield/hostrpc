@@ -351,7 +351,7 @@ struct state_machine_impl : public SZT
   // passed <0, 0> returns <0, 1>, i.e. output changed
   // passed <1, 1> returns <1, 0>, i.e. output changed
   template <unsigned IandO, typename T, typename Op>
-  HOSTRPC_ANNOTATE void rpc_port_on_element(
+  HOSTRPC_ANNOTATE void rpc_port_use(
       T active_threads,
       HOSTRPC_CONST_REF_ARG typed_port_t<IandO, IandO> const& port, Op&& op)
   {
@@ -362,7 +362,7 @@ struct state_machine_impl : public SZT
   }
 
   template <typename T, typename Op>
-  HOSTRPC_ANNOTATE void rpc_port_on_element(
+  HOSTRPC_ANNOTATE void rpc_port_use(
       T active_threads, HOSTRPC_CONST_REF_ARG partial_port_t<1> const& port,
       Op&& op)
   {
@@ -370,14 +370,11 @@ struct state_machine_impl : public SZT
                                                  cxx::forward<Op>(op));
   }
 
-  template <unsigned IandO, typename T, typename Op>
-  HOSTRPC_ANNOTATE typed_port_t<IandO, !IandO> rpc_port_apply(
-      T active_threads, typed_port_t<IandO, IandO>&& port, Op&& op)
+  template <unsigned IandO, typename T>
+  HOSTRPC_ANNOTATE typed_port_t<IandO, !IandO> rpc_port_send(
+      T active_threads, typed_port_t<IandO, IandO>&& port)
   {
     static_assert(IandO == 0 || IandO == 1, "");
-
-    read_typed_port<typed_port_t<IandO, IandO>, T, Op>(active_threads, port,
-                                                       cxx::forward<Op>(op));
     platform::fence_release();
 
     const uint32_t size = this->size();
@@ -390,6 +387,176 @@ struct state_machine_impl : public SZT
       {
         return outbox.release_slot(active_threads, size, cxx::move(port));
       }
+  }
+  
+  template <unsigned I, typename T>
+  HOSTRPC_ANNOTATE either<
+      /* might want return values swapped over */
+      typed_port_t<I, !I>,  /* no change */
+      typed_port_t<!I, !I>> /* inbox changed */
+
+  rpc_port_query(T active_threads, typed_port_t<I, !I>&& port)
+  {
+    static_assert(I == 0 || I == 1, "");
+    const uint32_t size = this->size();
+    port.unconsumed();
+    return inbox.query(size, active_threads, cxx::move(port));
+  }
+
+  template <typename T>
+  HOSTRPC_ANNOTATE either<partial_port_t<0>, /* no change */
+                          partial_port_t<1>> /* inbox changed */
+  rpc_port_query(T active_threads, partial_port_t<0>&& port)
+  {
+    using EitherTy = typename partial_port_t<0>::partial_to_typed_result_type;
+    EitherTy either = hostrpc::partial_to_typed(cxx::move(port));
+
+#if 0
+    // Visit avoids the builtin unreachable branches but captures active threads by
+    // reference. OpenCL may struggle with that.
+    // Currently ICE in clang for opencl:
+    // Assertion `!MemberQuals.hasAddressSpace()' failed.
+    using ResultTy = hostrpc::either<partial_port_t<0>, partial_port_t<1>>;
+    return either.template visit<ResultTy>(
+        [=](auto&& port) -> ResultTy {
+          return hostrpc::typed_to_partial(
+              rpc_port_query(active_threads, cxx::move(port)));
+        },
+        [=](auto&& port) -> ResultTy {
+          return hostrpc::typed_to_partial(
+              rpc_port_query(active_threads, cxx::move(port)));
+        });
+#else
+    if (either)
+      {
+        auto maybe = either.left(rpc_port_closer(active_threads));
+        if (maybe)
+          {
+            return hostrpc::typed_to_partial(
+                rpc_port_query(active_threads, maybe.value()));
+          }
+        else
+          {
+            __builtin_unreachable();
+          }
+      }
+    else
+      {
+        auto maybe = either.right(rpc_port_closer(active_threads));
+        if (maybe)
+          {
+            return hostrpc::typed_to_partial(
+                rpc_port_query(active_threads, maybe.value()));
+          }
+        else
+          {
+            __builtin_unreachable();
+          }
+      }
+#endif
+  }
+
+  // Can only wait on the inbox to change state as this thread will not change
+  // the outbox during the busy wait (sleep? callback? try/test-wait?)
+  template <unsigned I, typename T>
+  HOSTRPC_ANNOTATE typed_port_t<!I, !I> rpc_port_recv(
+      T active_threads, typed_port_t<I, !I>&& port)
+  {
+    for (;;)
+      {
+        auto an_either = rpc_port_query(active_threads, cxx::move(port));
+        if (an_either)
+          {
+            auto a_maybe = an_either.left(rpc_port_closer(active_threads));
+            if (a_maybe)
+              {
+                auto a = a_maybe.value();
+                port = cxx::move(a);
+              }
+            else
+              {
+                __builtin_unreachable();
+              }
+          }
+        else
+          {
+            auto a_maybe = an_either.right(rpc_port_closer(active_threads));
+            if (a_maybe)
+              {
+                auto a = a_maybe.value();
+                return cxx::move(a);
+              }
+            else
+              {
+                __builtin_unreachable();
+              }
+          }
+      }
+  }
+
+  template <unsigned IandO, typename T>
+  HOSTRPC_ANNOTATE either<typed_port_t<!IandO, !IandO>,
+                          typed_port_t<IandO, IandO>>
+  rpc_port_recv(
+      T active_threads,
+      either<typed_port_t<IandO, !IandO>, typed_port_t<!IandO, IandO>>&& port)
+  {
+    return port.foreach (
+        [&](typed_port_t<IandO, !IandO>&& port) {
+          return rpc_port_recv(active_threads, cxx::move(port));
+        },
+        [&](typed_port_t<!IandO, IandO>&& port) {
+          return rpc_port_recv(active_threads, cxx::move(port));
+        });
+  }
+
+  template <typename T>
+  HOSTRPC_ANNOTATE partial_port_t<1> rpc_port_recv(T active_threads,
+                                                   partial_port_t<0>&& port)
+  {
+    // Implementing via typed port produces two distinct loops, one for each
+    // type it can branch to. Implementing via query resolves to a single loop
+    // todo: fold with typed implementation
+    for (;;)
+      {
+        auto an_either = rpc_port_query(active_threads, cxx::move(port));
+        if (an_either)
+          {
+            auto a_maybe = an_either.left(rpc_port_closer(active_threads));
+            if (a_maybe)
+              {
+                auto a = a_maybe.value();
+                port = cxx::move(a);
+              }
+            else
+              {
+                __builtin_unreachable();
+              }
+          }
+        else
+          {
+            auto a_maybe = an_either.right(rpc_port_closer(active_threads));
+            if (a_maybe)
+              {
+                auto a = a_maybe.value();
+                return cxx::move(a);
+              }
+            else
+              {
+                __builtin_unreachable();
+              }
+          }
+      }
+  }
+
+  template <unsigned IandO, typename T, typename Op>
+  HOSTRPC_ANNOTATE typed_port_t<IandO, !IandO> rpc_port_apply(
+      T active_threads, typed_port_t<IandO, IandO>&& port, Op&& op)
+  {
+    static_assert(IandO == 0 || IandO == 1, "");
+    rpc_port_use<IandO, T, Op>(active_threads, port,
+                               cxx::forward<Op>(op));
+    return rpc_port_send(active_threads, cxx::move(port));
   }
 
   template <unsigned IandO, typename T, typename Op>
@@ -447,167 +614,7 @@ struct state_machine_impl : public SZT
       }
   }
 
-  // Can only wait on the inbox to change state as this thread will not change
-  // the outbox during the busy wait (sleep? callback? try/test-wait?)
-  template <unsigned I, typename T>
-  HOSTRPC_ANNOTATE typed_port_t<!I, !I> rpc_port_wait(
-      T active_threads, typed_port_t<I, !I>&& port)
-  {
-    // todo: fold with below
-    for (;;)
-      {
-        auto an_either = rpc_port_query(active_threads, cxx::move(port));
-        if (an_either)
-          {
-            auto a_maybe = an_either.left(rpc_port_closer(active_threads));
-            if (a_maybe)
-              {
-                auto a = a_maybe.value();
-                port = cxx::move(a);
-              }
-            else
-              {
-                __builtin_unreachable();
-              }
-          }
-        else
-          {
-            auto a_maybe = an_either.right(rpc_port_closer(active_threads));
-            if (a_maybe)
-              {
-                auto a = a_maybe.value();
-                return cxx::move(a);
-              }
-            else
-              {
-                __builtin_unreachable();
-              }
-          }
-      }
-  }
-
-  template <unsigned IandO, typename T>
-  HOSTRPC_ANNOTATE either<typed_port_t<!IandO, !IandO>,
-                          typed_port_t<IandO, IandO>>
-  rpc_port_wait(
-      T active_threads,
-      either<typed_port_t<IandO, !IandO>, typed_port_t<!IandO, IandO>>&& port)
-  {
-    return port.foreach (
-        [&](typed_port_t<IandO, !IandO>&& port) {
-          return rpc_port_wait(active_threads, cxx::move(port));
-        },
-        [&](typed_port_t<!IandO, IandO>&& port) {
-          return rpc_port_wait(active_threads, cxx::move(port));
-        });
-  }
-
-  template <typename T>
-  HOSTRPC_ANNOTATE partial_port_t<1> rpc_port_wait(T active_threads,
-                                                   partial_port_t<0>&& port)
-  {
-    // Implementing via typed port produces two distinct loops, one for each
-    // type it can branch to. Implementing via query resolves to a single loop
-    for (;;)
-      {
-        auto an_either = rpc_port_query(active_threads, cxx::move(port));
-        if (an_either)
-          {
-            auto a_maybe = an_either.left(rpc_port_closer(active_threads));
-            if (a_maybe)
-              {
-                auto a = a_maybe.value();
-                port = cxx::move(a);
-              }
-            else
-              {
-                __builtin_unreachable();
-              }
-          }
-        else
-          {
-            auto a_maybe = an_either.right(rpc_port_closer(active_threads));
-            if (a_maybe)
-              {
-                auto a = a_maybe.value();
-                return cxx::move(a);
-              }
-            else
-              {
-                __builtin_unreachable();
-              }
-          }
-      }
-
-    // Implementing in terms of typed port in the first instance.
-    // Codegens roughly as expected - the two waits turn into distinct loops
-  }
-
-  template <unsigned I, typename T>
-  HOSTRPC_ANNOTATE either<
-      /* might want return values swapped over */
-      typed_port_t<I, !I>,  /* no change */
-      typed_port_t<!I, !I>> /* inbox changed */
-
-  rpc_port_query(T active_threads, typed_port_t<I, !I>&& port)
-  {
-    static_assert(I == 0 || I == 1, "");
-    const uint32_t size = this->size();
-    port.unconsumed();
-    return inbox.query(size, active_threads, cxx::move(port));
-  }
-
-  template <typename T>
-  HOSTRPC_ANNOTATE either<partial_port_t<0>, /* no change */
-                          partial_port_t<1>> /* inbox changed */
-  rpc_port_query(T active_threads, partial_port_t<0>&& port)
-  {
-    using EitherTy = typename partial_port_t<0>::partial_to_typed_result_type;
-    EitherTy either = hostrpc::partial_to_typed(cxx::move(port));
-
-#if 0
-    // Visit avoids the builtin unreachable branches but captures active threads by
-    // reference. OpenCL may struggle with that.
-    using ResultTy = hostrpc::either<partial_port_t<0>, partial_port_t<1>>;
-    return either.template visit<ResultTy>(
-        [=](typename EitherTy::TrueTy&& port) -> ResultTy {
-          return hostrpc::typed_to_partial(
-              rpc_port_query(active_threads, cxx::move(port)));
-        },
-        [=](typename EitherTy::FalseTy&& port) -> ResultTy {
-          return hostrpc::typed_to_partial(
-              rpc_port_query(active_threads, cxx::move(port)));
-        });
-#else
-    if (either)
-      {
-        auto maybe = either.left(rpc_port_closer(active_threads));
-        if (maybe)
-          {
-            return hostrpc::typed_to_partial(
-                rpc_port_query(active_threads, maybe.value()));
-          }
-        else
-          {
-            __builtin_unreachable();
-          }
-      }
-    else
-      {
-        auto maybe = either.right(rpc_port_closer(active_threads));
-        if (maybe)
-          {
-            return hostrpc::typed_to_partial(
-                rpc_port_query(active_threads, maybe.value()));
-          }
-        else
-          {
-            __builtin_unreachable();
-          }
-      }
-#endif
-  }
-
+  
  private:
   template <typename PortType>
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename PortType::maybe

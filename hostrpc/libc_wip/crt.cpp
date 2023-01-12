@@ -25,7 +25,7 @@ int main(int, char**);
 extern "C"
 void __libc_write_stderr(const char* str) {
   // Can extend to > 7*8 bytes. Involves strlen followed by repeated
-  // calls to rpc_port_send then rpc_port_wait_until_available and accumulating
+  // calls to rpc_port_send then rpc_port_recv_until_available and accumulating
   // the result on the host. Main challenge is getting it to pass the consumed checker,
   // see hostrpc_printf_client.hpp __printf_pass_element_cstr for a working example.
   

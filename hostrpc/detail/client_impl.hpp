@@ -134,14 +134,14 @@ struct client_impl
   HOSTRPC_ANNOTATE typed_port_t<0, 0> rpc_port_wait_until_available(
       T active_threads, typed_port_t<1, 0> &&port)
   {
-    return base::template rpc_port_wait(active_threads, cxx::move(port));
+    return base::template rpc_port_recv(active_threads, cxx::move(port));
   }
 
   template <typename T>
   HOSTRPC_ANNOTATE typed_port_t<1, 1> rpc_port_wait_for_result(
       T active_threads, typed_port_t<0, 1> &&port)
   {
-    return base::template rpc_port_wait(active_threads, cxx::move(port));
+    return base::template rpc_port_recv(active_threads, cxx::move(port));
   }
 
   template <typename Op, typename T, unsigned I>

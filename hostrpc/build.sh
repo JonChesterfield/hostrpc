@@ -504,9 +504,6 @@ $CLANGXX $XOPENCL -S -emit-llvm codegen/state_machine.cpp -S -o codegen/state_ma
 # Passing freestanding as a way to say "don't use the stdint headers from the system"
 $CLANGXX $XOPENCL -S -ffreestanding -nogpulib -emit-llvm -target amdgcn-amd-amdhsa -mcpu=$GCNGFX codegen/state_machine.cpp -S -o codegen/state_machine.cl.gcn.ll
 
-$EXTRACT codegen/state_machine.x64.ll -func typed_port_via_wait -S -o codegen/first.ll
-$EXTRACT codegen/state_machine.x64.ll -func typed_port_via_query -S -o codegen/second.ll
-
 $CXX_GCN $CXXVER $CODEGEN codegen/client.cpp -S -o codegen/client.gcn.ll
 $CXX_GCN $CXXVER $CODEGEN codegen/server.cpp -S -o codegen/server.gcn.ll
 $CXX_GCN $CXXVER $CODEGEN codegen/state_machine.cpp -S -o codegen/state_machine.gcn.ll
