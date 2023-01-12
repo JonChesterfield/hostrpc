@@ -12,18 +12,189 @@ This is sufficient for safe remote procedure calls. Examples:
 - A Linux process providing audited syscall access to a seccomp'ed one
 - A gpu calling a function on another gpu on the same pcie bus
 
+The target use case is low level heterogenous programming. The specific use
+that started this project was performing memory allocation and I/O from a GPU.
+Low level in the sense that one should be able to build parts of libc on this.
+It is in the subset of freestanding c++ that is acceptable to opencl.
+
+Correctness and performance are prioritised over programmer ergonomics. For
+example, strictly correct code on Volta is required to pass a thread mask
+representing the CFG to intrinsic functions. This library therefore accepts
+a thread mask to each function. As this mask affects control flow and is
+sometimes known at compile time, the active_threads parameter passed
+everywhere can be a compile time value as well as a runtime value.
+
+
 ## Pseudocode interface
+
+Where a port is a typed wrapper around an index into the array under management.
 
 ```
 port open();                 // Waits for a port
-port use(port, callback);    // Safe, we own it
+void use(port, callback);    // Safe, we own it
 port send(port);             // Also safe
 // port use(port, callback); // Won't compile
 port recv(port);             // Wait for the other side
 port use(port, callback);    // OK again
 close(port);                 // Done
+```
+
+## Pseudocode vs reality
+
+### C++ linear types
+
+The compile time enforced exclusion claim requires using callbacks for the
+entire interface or using the -Werror=consumed Clang extension. For example,
+open could take a callback which is only invoked if a port was available.
+Consumed annotations make for linear control flow instead of CPS and are
+preferred here.
+
+This implementation represents everything which is known at compile time in
+the type of the port object and tracks everything which is discovered at
+runtime using linear types implemented using the consumed annotation. Thus
+each `port` type in the pseudocode above is a move-only type template. The
+representation looks more like:
 
 ```
+template <unsigned I, unsigned O>
+struct port_t;
+
+template <unsigned S>
+port_t<S,S> open(); // I == O from open
+
+template <unsigned S, typename F>
+void use(port_t<S,S> const& port, F cb); // Requires I == O
+
+template <unsigned S>
+port_t<S, !S> send(port_t<S, S> && port); // Changes O parameter
+
+```
+
+The template parameters are sufficient to record that the return value from
+send cannot be passed to use. The two integers do not match, clang will error
+that there is no use() function it can call.
+
+They are not sufficient to prevent all the errors in the following:
+
+```
+// Open a new port and send it
+port_t<0, 0> first open();
+port_t<0, 1> sent send(move(first));
+
+// Can't call send again on the returned type, doesn't have I == 0
+// send(move(sent));
+
+// But can call send again on the original variable
+send(move(first));
+
+// And, maybe worse, can still use the buffer we no longer own
+void use(first, cb);
+
+close(first); // Should also not compile
+close(sent);  // This should compile
+
+```
+
+Linear types are sufficient to prevent the erroneous two calls above. First
+was used exactly once in moving it to send so further uses raise errors.
+
+The only use of sent above that passed the template type checking is to close,
+which compiles successfully.
+
+Further, if that trailing close was missing, the port would leak. The consumed
+annotation rejects programs that miss this cleanup. It's a linear type, not an
+affine type.
+
+
+### Out of resource
+
+The array has finite length and each element corresponds to a port. Literally
+an index into that array with type metadata wrapped around it. Thus open can
+fail when all element indices are currently opened as ports.
+
+This can either be solved by waiting, as in the pseudocode or a open_blocking()
+call, or by indicating failure. The C++ options there are:
+- Throw an exception
+- Return a sentinel value (-1 / ~0 probably)
+- Return std::optional<>
+- Return structure equivalent to optional
+
+Returning a sentinel works but puts a branch (or a runtime assert) at the start
+of each API call. Exceptions also introduce control flow and aren't always
+available on hardware targets. This library doesn't assume libc++ exists yet, so
+no std::optional.
+
+Port open() therefore returns a hostrpc::maybe<port> which is essentially an
+optional with clangs consumed annotation. The canonical usage pattern is:
+
+```
+auto maybe = s.open();
+if (!maybe) {
+  return;
+}
+auto port = maybe.value();
+```
+
+The `.value()` method will raise a error under clang -Werror=consumed if the
+branch on `explicit operator() bool` is missing. Likewise if `.value()` is
+not called, the destructor will raise an error under -Werror=consumed.
+
+### Schedulers may not be fair
+
+In particular, the OpenCL model makes no assurance about whether a descheduled
+thread will run again. HSA is not much stronger. Waiting in a busy spin can
+be a problem there.
+
+
+| Operation | Scheduling properties                     |
+|-----------|-------------------------------------------|
+| open      | Bounded time, fails on out of resource.   |
+| close     | Bounded time, cannot fail.                |
+| use       | Branch free if callback is branch free.   |
+| send      | Bounded time, cannot fail.                |
+| recv      | Unbounded time, cannot fail. Blocking.    |
+| query     | Bounded time, returns either<>.           |  
+
+The difficult case for unfair schedulers is recv. It waits for the other agent,
+potentially for unbounded lengths of time. This is unsound as a primitive.
+
+It is possible to test whether recv will complete without waiting beforehand:
+```
+while (!recv_finite_time(port))
+  ;
+port = recv(port);
+```
+
+The query operation is a similar idea. It does a single load from the other
+agent. If that indicates that the agent is finished with the buffer, it returns
+the same type that recv would do. Otherwise, it returns its argument unchanged.
+Because the element ownership is encoded in the type system, this would be a
+function which returns different types based on a runtime value, that is:
+
+```
+either<typed_port<0, 1>, // unchanged
+       typed_port<1, 1>  // recv succeeded
+      > query(typed_port<0, 1> && port);
+```
+
+The either<> type here is implemented similarly to the maybe<> type used to
+indicate failure to open a port. It is itself a linear type. The port argument
+was consumed by query and the either<> returned owns that same element. Exactly
+one of the two types contained within either<> corresponds to the result.
+
+## Components
+
+### port_t<>
+
+### maybe
+
+### either
+
+### bitmap
+
+## state machine
+
+
 
 ## What is this?
 
