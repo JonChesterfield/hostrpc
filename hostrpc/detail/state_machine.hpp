@@ -330,6 +330,15 @@ struct state_machine_impl : public SZT
     return rpc_port_closer_t<T>(active_threads, this);
   }
 
+  template <unsigned IA, unsigned OA, unsigned IB, unsigned OB, typename T>
+  HOSTRPC_ANNOTATE void rpc_close_port(
+      T active_threads,
+      either<typed_port_t<IA, OA>, typed_port_t<IB, OB>>&& port)
+  {
+    port.template visit<void>(rpc_port_closer(active_threads),
+                              rpc_port_closer(active_threads));
+  }
+
   // TODO: Want a function which can be called on stable ports, the same
   // ones as apply, but takes the port by const& and does not change it
   // This can be used to read the buffer without triggering a request
@@ -369,25 +378,9 @@ struct state_machine_impl : public SZT
 
     read_typed_port<typed_port_t<IandO, IandO>, T, Op>(active_threads, port,
                                                        cxx::forward<Op>(op));
-
-    const uint32_t size = this->size();
-
     platform::fence_release();
 
-    // Toggle the outbox slot
-    // partial port implementation could call outbox.toggle here
-
-    // could pass a typed port representation here and get compile time checking
-    // of the comments 'assumes slot taken' and similar
-
-    // I think the is_master_lane handling needs to be under the control of the
-    // bitmap, which is going to mean passing active threads down into those
-    // operations That means it'll be possible to replace this branch with
-    // having every active thread perform the atomic operation - that would make
-    // the CFG simpler but I don't know what the effect on memory traffic would
-    // be. E.g. one lane fetch_or's in a bit, all the others fetch_or in zero,
-    // but aimed at the same word in memory - what does that mean across pcie?
-    // Don't know, should find out.
+    const uint32_t size = this->size();
 
     if constexpr (IandO == 0)
       {
@@ -397,6 +390,25 @@ struct state_machine_impl : public SZT
       {
         return outbox.release_slot(active_threads, size, cxx::move(port));
       }
+  }
+
+  template <unsigned IandO, typename T, typename Op>
+  HOSTRPC_ANNOTATE either<typed_port_t<IandO, !IandO>,
+                          typed_port_t<!IandO, IandO>>
+  rpc_port_apply(
+      T active_threads,
+      either<typed_port_t<IandO, IandO>, typed_port_t<!IandO, !IandO>>&& port,
+      Op&& op)
+  {
+    return port.foreach (
+        [&](typed_port_t<IandO, IandO>&& port) {
+          return rpc_port_apply(active_threads, cxx::move(port),
+                                cxx::forward<Op>(op));
+        },
+        [&](typed_port_t<!IandO, !IandO>&& port) {
+          return rpc_port_apply(active_threads, cxx::move(port),
+                                cxx::forward<Op>(op));
+        });
   }
 
   template <typename T, typename Op>
@@ -472,6 +484,22 @@ struct state_machine_impl : public SZT
               }
           }
       }
+  }
+
+  template <unsigned IandO, typename T>
+  HOSTRPC_ANNOTATE either<typed_port_t<!IandO, !IandO>,
+                          typed_port_t<IandO, IandO>>
+  rpc_port_wait(
+      T active_threads,
+      either<typed_port_t<IandO, !IandO>, typed_port_t<!IandO, IandO>>&& port)
+  {
+    return port.foreach (
+        [&](typed_port_t<IandO, !IandO>&& port) {
+          return rpc_port_wait(active_threads, cxx::move(port));
+        },
+        [&](typed_port_t<!IandO, IandO>&& port) {
+          return rpc_port_wait(active_threads, cxx::move(port));
+        });
   }
 
   template <typename T>

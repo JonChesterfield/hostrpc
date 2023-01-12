@@ -118,6 +118,26 @@ extern "C"
     state_machine_t::partial_port_t<0> pU = p10;
     s.rpc_close_port(threads, cxx::move(pU));
   }
+  
+  void apply_on_either(state_machine_t &s,
+                       either <state_machine_t::typed_port_t<0,0>,
+                       state_machine_t::typed_port_t<1,1>> && port)
+  {
+    auto threads = platform::active_threads();
+    auto p0 = s.rpc_port_apply(threads, cxx::move(port),
+                               [](uint32_t, buffer_ty *) {});
+    s.rpc_close_port(threads, cxx::move(p0));
+  }
+
+  void wait_on_either(state_machine_t &s,
+                       either <state_machine_t::typed_port_t<0,1>,
+                      state_machine_t::typed_port_t<1,0>> && port)
+  {
+    auto threads = platform::active_threads();
+    auto p0 = s.rpc_port_wait(threads, cxx::move(port));
+    s.rpc_close_port(threads, cxx::move(p0));
+  }
+
 }
 
 template <unsigned S>
@@ -583,4 +603,5 @@ extern "C"
 
     s.rpc_close_port(threads, cxx::move(p10));
   }
+  
 }
