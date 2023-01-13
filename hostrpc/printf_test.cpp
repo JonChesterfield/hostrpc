@@ -18,9 +18,6 @@ TMP
 
 // Functions to be implemented via hostrpc, or possibly as test stubs. Presently
 // calls through the glibc printf, which works other than for %n
-#if 0
-#include "printf_stub.h"
-#endif
 
     static __attribute__((unused)) const char *
     spec_str(enum __printf_spec_t s)
