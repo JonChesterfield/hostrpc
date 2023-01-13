@@ -287,21 +287,6 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     static_assert((I <= 2) && (O <= 2), "");
   }
 
-  template <bool InboxSet, bool OutboxSet>
-  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN static maybe make(uint32_t v)
-  {
-    constexpr unsigned ReqInbox = InboxSet ? 1 : 0;
-    constexpr unsigned ReqOutbox = OutboxSet ? 1 : 0;
-    if (I == ReqInbox && O == ReqOutbox)
-      {
-        return {{}, v};
-      }
-    else
-      {
-        return {};
-      }
-  }
-
   // Trust instances of this type with inbox/outbox inverted but not both
   // to support invert inbox_state/outbox_state
   friend typed_port_impl_t<Friend, I, !O>;

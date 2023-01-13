@@ -641,49 +641,6 @@ struct state_machine_impl : public SZT
   }
 
  private:
-  template <typename PortType>
-  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename PortType::maybe
-  try_construct_port(bool inbox_high, bool outbox_high, uint32_t slot)
-  {
-    // The make functions branch on a compile time constant
-    // Ports can only be opened in inbox==outbox state
-    // TODO: Check codegen.
-
-    using EitherType = either<typed_port_t<0, 0>, typed_port_t<1, 1>>;
-    if constexpr (cxx::is_same<EitherType, PortType>())
-      {
-        if (inbox_high & outbox_high)
-          {
-            typename typed_port_t<1, 1>::maybe p =
-                typed_port_t<1, 1>::template make<true, true>(slot);
-            if (p)
-              {
-                return EitherType::Right(p.value());
-              }
-          }
-        if (!inbox_high & !outbox_high)
-          {
-            typename typed_port_t<0, 0>::maybe p =
-                typed_port_t<0, 0>::template make<false, false>(slot);
-            if (p)
-              {
-                return EitherType::Left(p.value());
-              }
-          }
-      }
-    else
-      {
-        if (inbox_high & outbox_high)
-          {
-            return PortType::template make<true, true>(slot);
-          }
-        if (!inbox_high & !outbox_high)
-          {
-            return PortType::template make<false, false>(slot);
-          }
-      }
-    return {};
-  }
 
   template <typename PortType, typename T>
   HOSTRPC_ANNOTATE PortType open_typed_port(T active_threads,
@@ -726,7 +683,6 @@ struct state_machine_impl : public SZT
     // Neither visit nor open coding look great. Also this is calling
     // rpc_port_closer which will introduce spurious fences.
 
-#if 1
 
     return with_inbox.template visit<typename EitherStable::maybe>(
 
@@ -759,53 +715,6 @@ struct state_machine_impl : public SZT
               return {};
             }
         });
-#else
-
-    if (with_inbox)
-      {
-        // 0, 2
-        auto maybe = with_inbox.left(rpc_port_closer(active_threads));
-        if (!maybe)
-          {
-            __builtin_unreachable();
-          }
-
-        either<typed_port_t<0, 0>, typed_port_t<0, 1>> with_outbox =
-            outbox.refine(size, active_threads, maybe.value(),
-                          outbox_to_update);
-
-        if (auto maybe = with_outbox.left(rpc_port_closer(active_threads)))
-          {
-            return EitherStable::Left(maybe.value());
-          }
-        else
-          {
-            return {};
-          }
-      }
-    else
-      {
-        // 1, 2
-        auto maybe = with_inbox.right(rpc_port_closer(active_threads));
-        if (!maybe)
-          {
-            __builtin_unreachable();
-          }
-
-        either<typed_port_t<1, 0>, typed_port_t<1, 1>> with_outbox =
-            outbox.refine(size, active_threads, maybe.value(),
-                          outbox_to_update);
-
-        if (auto maybe = with_outbox.right(rpc_port_closer(active_threads)))
-          {
-            return EitherStable::Right(maybe.value());
-          }
-        else
-          {
-            return {};
-          }
-      }
-#endif
   }
 
   template <typename PortType, typename T>
@@ -856,34 +765,6 @@ struct state_machine_impl : public SZT
             const uint32_t slot = wordBits() * w + idx;
             assert(slot < size);
 
-#if 1  // current
-            if (active.try_claim_empty_slot(active_threads, size, slot))
-              {
-                // Previous versions had no fence here, relying on the
-                // acquire-release on the lock. I'm 95% sure that was a race,
-                // the acq/rel on the lock CAS has no relation to these loads.
-                // Didn't show up in testing.
-                platform::fence_acquire();
-                static_assert(port_openable<PortType>(), "");
-                Word i = inbox.load_word(size, w);
-                Word o = outbox.load_word(size, w);
-
-                typename PortType::maybe maybe = try_construct_port<PortType>(
-                    bits::nthbitset(i, idx), bits::nthbitset(o, idx), slot);
-                if (maybe)
-                  {
-                    platform::fence_acquire();
-                    return maybe.value();
-                  }
-                else
-                  {
-                    // Failed, drop the lock before continuing to search
-                    active.release_slot(active_threads, size, slot);
-                  }
-
-                available &= port_trait<PortType>::available_bitmap(i, o);
-              }
-#else
             Word latest_known_inbox = i;
             Word latest_known_outbox = o;
 
@@ -939,7 +820,7 @@ struct state_machine_impl : public SZT
 
             available &= port_trait<PortType>::available_bitmap(
                 latest_known_inbox, latest_known_outbox);
-#endif
+
             // Don't try to lock this slot again
             // TODO: Also mask off the locks which we just learned have
             // been taken by other threads

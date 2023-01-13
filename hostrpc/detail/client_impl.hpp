@@ -260,8 +260,8 @@ struct client : public client_impl<BufferElementT, WordT, SZT>
       {
         auto send =
             base::rpc_port_send(active_threads, maybe.value(), cxx::move(fill));
-        auto recv = base::rpc_port_recv(active_threads, cxx::move(send),
-                                        cxx::move(use));
+        auto recv = base::rpc_port_recv(active_threads, cxx::move(send));
+        base::rpc_port_use(active_threads, recv, cxx::move(use));
         base::rpc_close_port(active_threads, cxx::move(recv));
         return true;
       }
