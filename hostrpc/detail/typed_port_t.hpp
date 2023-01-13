@@ -145,6 +145,25 @@ constexpr bool traits_consistent()
          check_from_partial<Friend, 0, true>::consistent() &&
          check_from_partial<Friend, 1, true>::consistent();
 }
+
+// Can't convert an undefined port <2,2> into a partial. This is somewhat
+// captured by the missing state member, and no corresponding inverse.
+template <typename Friend>
+struct typed_to_partial_trait<Friend, typed_port_impl_t<Friend, 2, 2>>
+{
+  using type = void;
+};
+template <typename Friend>
+struct typed_to_partial_trait<Friend, typed_port_impl_t<Friend, 0, 2>>
+{
+  using type = void;
+};
+template <typename Friend>
+struct typed_to_partial_trait<Friend, typed_port_impl_t<Friend, 1, 2>>
+{
+  using type = void;
+};
+
 }  // namespace traits
 
 #if HOSTRPC_USE_TYPESTATE
@@ -265,7 +284,7 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   // Constructor is private. Permissions setup is fairly complicated.
   HOSTRPC_ANNOTATE HOSTRPC_CREATED_RES typed_port_impl_t(uint32_t v) : value(v)
   {
-    static_assert((I <= 1) && (O <= 1), "");
+    static_assert((I <= 2) && (O <= 2), "");
   }
 
   template <bool InboxSet, bool OutboxSet>
@@ -287,6 +306,10 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
   // to support invert inbox_state/outbox_state
   friend typed_port_impl_t<Friend, I, !O>;
   friend typed_port_impl_t<Friend, !I, O>;
+
+  // Allows refining a 2,2 into this type
+  friend typed_port_impl_t<Friend, I, 2>;
+  friend typed_port_impl_t<Friend, 2, O>;
 
 #if HOSTRPC_USE_TYPESTATE
   // so that cxx::move keeps track of the typestate
@@ -334,6 +357,41 @@ class HOSTRPC_CONSUMABLE_CLASS typed_port_impl_t
     kill();
     return {v};
   }
+
+  template <unsigned newI>
+  HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE HOSTRPC_CREATED_RES
+      HOSTRPC_SET_TYPESTATE(consumed)
+          typed_port_impl_t<Friend, newI, O> assign_inbox(InboxPermission)
+  {
+    static_assert(I == 2, "Only valid on unknown types");
+    UnderlyingType v = *this;
+    kill();
+    return {v};
+  }
+
+  template <unsigned newO>
+  HOSTRPC_ANNOTATE HOSTRPC_CALL_ON_LIVE HOSTRPC_CREATED_RES
+      HOSTRPC_SET_TYPESTATE(consumed)
+          typed_port_impl_t<Friend, I, newO> assign_outbox(OutboxPermission)
+  {
+    static_assert(O == 2, "Only valid on unknown types");
+    UnderlyingType v = *this;
+    kill();
+    return {v};
+  }
+
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CREATED_RES
+  static typed_port_impl_t<Friend, 2, 2> raw_construction(LocksPermission,
+                                                          UnderlyingType v)
+  {
+    return {v};
+  }
+
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+  void raw_destruction(LocksPermission) { kill(); }
 
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE
@@ -564,6 +622,11 @@ class HOSTRPC_CONSUMABLE_CLASS partial_port_impl_t
     kill();
     return {tup};
   }
+
+  HOSTRPC_ANNOTATE
+  HOSTRPC_CALL_ON_LIVE
+  HOSTRPC_SET_TYPESTATE(consumed)
+  void raw_destruction(LocksPermission) { kill(); }
 
   HOSTRPC_ANNOTATE
   HOSTRPC_CALL_ON_LIVE

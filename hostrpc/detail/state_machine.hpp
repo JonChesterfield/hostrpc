@@ -221,7 +221,7 @@ struct state_machine_impl : public SZT
   };
 
   template <>
-  struct port_trait<either<typed_port_t<0, 0>,typed_port_t<1, 1>>>
+  struct port_trait<either<typed_port_t<0, 0>, typed_port_t<1, 1>>>
   {
     HOSTRPC_ANNOTATE static constexpr bool openable() { return true; }
     HOSTRPC_ANNOTATE static constexpr Word available_bitmap(Word i, Word o)
@@ -229,7 +229,7 @@ struct state_machine_impl : public SZT
       return (~i & ~o) | (i & o);
     }
   };
-  
+
   template <typename T>
   HOSTRPC_ANNOTATE static constexpr Word available_bitmap(Word i, Word o)
   {
@@ -275,7 +275,6 @@ struct state_machine_impl : public SZT
     return open_typed_port<typed_port_t<I, O>, T>(active_threads, scan_from);
   }
 
-#if 0
   template <typename T>
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN
       typename either<typed_port_t<0, 0>, typed_port_t<1, 1>>::maybe
@@ -292,17 +291,14 @@ struct state_machine_impl : public SZT
     return open_typed_port<either<typed_port_t<0, 0>, typed_port_t<1, 1>>, T>(
         active_threads, scan_from);
   }
-#endif
 
   template <unsigned S, typename T>
   HOSTRPC_ANNOTATE void rpc_close_port(T active_threads,
                                        partial_port_t<S>&& port)
   {
-    const uint32_t size = this->size();
-    const uint32_t slot = static_cast<uint32_t>(port);
     platform::fence_release();
-    active.release_slot(active_threads, size, slot);
-    port.kill();
+    const uint32_t size = this->size();
+    active.close_port(active_threads, size, cxx::move(port));
   }
 
   template <typename T>
@@ -325,7 +321,9 @@ struct state_machine_impl : public SZT
   HOSTRPC_ANNOTATE void rpc_close_port(T active_threads,
                                        typed_port_t<I, O>&& port)
   {
-    rpc_close_port(active_threads, typed_to_partial(cxx::move(port)));
+    platform::fence_release();
+    const uint32_t size = this->size();
+    active.close_port(active_threads, size, cxx::move(port));
   }
 
   template <typename T>
@@ -417,7 +415,7 @@ struct state_machine_impl : public SZT
         return outbox.release_slot(active_threads, size, cxx::move(port));
       }
   }
-  
+
   template <unsigned I, typename T>
   HOSTRPC_ANNOTATE either<
       /* might want return values swapped over */
@@ -583,8 +581,7 @@ struct state_machine_impl : public SZT
       T active_threads, typed_port_t<IandO, IandO>&& port, Op&& op)
   {
     static_assert(IandO == 0 || IandO == 1, "");
-    rpc_port_use<IandO, T, Op>(active_threads, port,
-                               cxx::forward<Op>(op));
+    rpc_port_use<IandO, T, Op>(active_threads, port, cxx::forward<Op>(op));
     return rpc_port_send(active_threads, cxx::move(port));
   }
 
@@ -643,7 +640,6 @@ struct state_machine_impl : public SZT
       }
   }
 
-  
  private:
   template <typename PortType>
   HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN typename PortType::maybe
@@ -653,16 +649,39 @@ struct state_machine_impl : public SZT
     // Ports can only be opened in inbox==outbox state
     // TODO: Check codegen.
 
-    if (inbox_high & outbox_high)
+    using EitherType = either<typed_port_t<0, 0>, typed_port_t<1, 1>>;
+    if constexpr (cxx::is_same<EitherType, PortType>())
       {
-        return PortType::template make<true, true>(slot);
+        if (inbox_high & outbox_high)
+          {
+            typename typed_port_t<1, 1>::maybe p =
+                typed_port_t<1, 1>::template make<true, true>(slot);
+            if (p)
+              {
+                return EitherType::Right(p.value());
+              }
+          }
+        if (!inbox_high & !outbox_high)
+          {
+            typename typed_port_t<0, 0>::maybe p =
+                typed_port_t<0, 0>::template make<false, false>(slot);
+            if (p)
+              {
+                return EitherType::Left(p.value());
+              }
+          }
       }
-
-    if (!inbox_high & !outbox_high)
+    else
       {
-        return PortType::template make<false, false>(slot);
+        if (inbox_high & outbox_high)
+          {
+            return PortType::template make<true, true>(slot);
+          }
+        if (!inbox_high & !outbox_high)
+          {
+            return PortType::template make<false, false>(slot);
+          }
       }
-
     return {};
   }
 
@@ -679,6 +698,114 @@ struct state_machine_impl : public SZT
             return r.value();
           }
       }
+  }
+
+  // Only writes to inbox/outbox pointers if it loaded the corresponding
+  template <typename T>
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN
+      typename either<typed_port_t<0, 0>, typed_port_t<1, 1>>::maybe
+      try_open_specific_port(T active_threads, uint32_t slot,
+                             Word* inbox_to_update, Word* outbox_to_update)
+  {
+    using EitherStable = either<typed_port_t<0, 0>, typed_port_t<1, 1>>;
+
+    const uint32_t size = this->size();
+    auto maybe_port = active.try_open_port(active_threads, size, slot);
+    if (!maybe_port)
+      {
+        return {};
+      }
+
+    // Need reads from inbox, outbox to occur after the locked read
+    platform::fence_acquire();
+
+    // Might be faster to check outbox first
+    either<typed_port_t<0, 2>, typed_port_t<1, 2>> with_inbox =
+        inbox.refine(size, active_threads, maybe_port.value(), inbox_to_update);
+
+    // Neither visit nor open coding look great. Also this is calling
+    // rpc_port_closer which will introduce spurious fences.
+
+#if 1
+
+    return with_inbox.template visit<typename EitherStable::maybe>(
+
+        [&](typed_port_t<0, 2>&& port) HOSTRPC_RETURN_UNKNOWN ->
+        typename EitherStable::maybe {
+          either<typed_port_t<0, 0>, typed_port_t<0, 1>> with_outbox =
+              outbox.refine(size, active_threads, cxx::move(port),
+                            outbox_to_update);
+          if (auto maybe = with_outbox.left(rpc_port_closer(active_threads)))
+            {
+              return EitherStable::Left(maybe.value());
+            }
+          else
+            {
+              return {};
+            }
+        },
+
+        [&](typed_port_t<1, 2>&& port) HOSTRPC_RETURN_UNKNOWN ->
+        typename EitherStable::maybe {
+          either<typed_port_t<1, 0>, typed_port_t<1, 1>> with_outbox =
+              outbox.refine(size, active_threads, cxx::move(port),
+                            outbox_to_update);
+          if (auto maybe = with_outbox.right(rpc_port_closer(active_threads)))
+            {
+              return EitherStable::Right(maybe.value());
+            }
+          else
+            {
+              return {};
+            }
+        });
+#else
+
+    if (with_inbox)
+      {
+        // 0, 2
+        auto maybe = with_inbox.left(rpc_port_closer(active_threads));
+        if (!maybe)
+          {
+            __builtin_unreachable();
+          }
+
+        either<typed_port_t<0, 0>, typed_port_t<0, 1>> with_outbox =
+            outbox.refine(size, active_threads, maybe.value(),
+                          outbox_to_update);
+
+        if (auto maybe = with_outbox.left(rpc_port_closer(active_threads)))
+          {
+            return EitherStable::Left(maybe.value());
+          }
+        else
+          {
+            return {};
+          }
+      }
+    else
+      {
+        // 1, 2
+        auto maybe = with_inbox.right(rpc_port_closer(active_threads));
+        if (!maybe)
+          {
+            __builtin_unreachable();
+          }
+
+        either<typed_port_t<1, 0>, typed_port_t<1, 1>> with_outbox =
+            outbox.refine(size, active_threads, maybe.value(),
+                          outbox_to_update);
+
+        if (auto maybe = with_outbox.right(rpc_port_closer(active_threads)))
+          {
+            return EitherStable::Right(maybe.value());
+          }
+        else
+          {
+            return {};
+          }
+      }
+#endif
   }
 
   template <typename PortType, typename T>
@@ -729,6 +856,7 @@ struct state_machine_impl : public SZT
             const uint32_t slot = wordBits() * w + idx;
             assert(slot < size);
 
+#if 1  // current
             if (active.try_claim_empty_slot(active_threads, size, slot))
               {
                 // Previous versions had no fence here, relying on the
@@ -739,12 +867,12 @@ struct state_machine_impl : public SZT
                 static_assert(port_openable<PortType>(), "");
                 Word i = inbox.load_word(size, w);
                 Word o = outbox.load_word(size, w);
-                platform::fence_acquire();
 
                 typename PortType::maybe maybe = try_construct_port<PortType>(
                     bits::nthbitset(i, idx), bits::nthbitset(o, idx), slot);
                 if (maybe)
                   {
+                    platform::fence_acquire();
                     return maybe.value();
                   }
                 else
@@ -755,7 +883,66 @@ struct state_machine_impl : public SZT
 
                 available &= port_trait<PortType>::available_bitmap(i, o);
               }
+#else
+            Word latest_known_inbox = i;
+            Word latest_known_outbox = o;
 
+            if (auto specific = try_open_specific_port<T>(active_threads, slot,
+                                                          &latest_known_inbox,
+                                                          &latest_known_outbox))
+              {
+                either<typed_port_t<0, 0>, typed_port_t<1, 1>> port =
+                    specific.value();
+
+                if constexpr (cxx::is_same<typed_port_t<0, 0>, PortType>())
+                  {
+                    if (port)
+                      {
+                        platform::fence_acquire();
+                        return port.left(rpc_port_closer(active_threads));
+                      }
+                  }
+
+                if constexpr (cxx::is_same<typed_port_t<1, 1>, PortType>())
+                  {
+                    if (!port)
+                      {
+                        platform::fence_acquire();
+                        return port.right(rpc_port_closer(active_threads));
+                      }
+                  }
+
+                if constexpr (cxx::is_same<either<typed_port_t<0, 0>,
+                                                  typed_port_t<1, 1>>,
+                                           PortType>())
+                  {
+                    platform::fence_acquire();
+                    return port;
+                  }
+
+                if constexpr (cxx::is_same<partial_port_t<1>, PortType>())
+                  {
+                    platform::fence_acquire();
+                    return port.template visit<partial_port_t<1>>(
+                        [](auto&& port) -> partial_port_t<1> {
+                          return hostrpc::typed_to_partial(cxx::move(port));
+                        },
+                        [](auto&& port) -> partial_port_t<1> {
+                          return hostrpc::typed_to_partial(cxx::move(port));
+                        });
+                  }
+
+                // Otherwise the port didn't match what was requested, close it
+                port.template visit<void>(rpc_port_closer(active_threads),
+                                          rpc_port_closer(active_threads));
+              }
+
+            available &= port_trait<PortType>::available_bitmap(
+                latest_known_inbox, latest_known_outbox);
+#endif
+            // Don't try to lock this slot again
+            // TODO: Also mask off the locks which we just learned have
+            // been taken by other threads
             available = bits::clearnthbit(available, idx);
           }
 

@@ -47,7 +47,7 @@ void __libc_write_stderr(const char* str) {
                                             });
 
 
-  auto recv = client.template rpc_port_recv(active_threads, hostrpc::cxx::move(send),
+  auto recv = client.template rpc_port_wait(active_threads, hostrpc::cxx::move(send),
                                   [=](uint32_t, BufferElement *data) {});
 
   

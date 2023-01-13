@@ -373,10 +373,37 @@ struct inbox_bitmap
     return StateMachineType::InvertedInboxLoad() ? ~tmp : tmp;
   }
 
+  template <typename T, unsigned O>
+  HOSTRPC_ANNOTATE either<typed_port_t<0, O>, typed_port_t<1, O>> refine(
+      uint32_t size, T active_threads, typed_port_t<2, O> &&port,
+      Word *loaded_arg = nullptr)
+  {
+    using resultType = either<typed_port_t<0, O>, typed_port_t<1, O>>;
+    (void)active_threads;
+    uint32_t raw = static_cast<uint32_t>(port);
+    const uint32_t w = index_to_element<Word>(raw);
+    const uint32_t subindex = index_to_subindex<Word>(raw);
+
+    Word loaded = load_word(size, w);
+    if (loaded_arg)
+      {
+        *loaded_arg = loaded;
+      }
+    bool in = bits::nthbitset(loaded, subindex);
+
+    if (in)
+      {
+        return resultType::Right(port.template assign_inbox<1>({}));
+      }
+    else
+      {
+        return resultType::Left(port.template assign_inbox<0>({}));
+      }
+  }
+
   template <typename T, unsigned I>
   HOSTRPC_ANNOTATE either<typed_port_t<I, !I>,  /* no change */
                           typed_port_t<!I, !I>> /* inbox changed */
-
   query(uint32_t size, T active_threads, typed_port_t<I, !I> &&port,
         Word *loaded_arg = nullptr)
   {
@@ -442,6 +469,40 @@ struct outbox_bitmap
 
   HOSTRPC_ANNOTATE void dump(uint32_t size) const { a.dump(size); }
 
+  HOSTRPC_ANNOTATE Word load_word(uint32_t size, uint32_t w) const
+  {
+    return a.load_word(size, w);
+  }
+
+  template <typename T, unsigned I>
+  HOSTRPC_ANNOTATE either<typed_port_t<I, 0>, typed_port_t<I, 1>> refine(
+      uint32_t size, T active_threads, typed_port_t<I, 2> &&port,
+      Word *loaded_arg = nullptr)
+  {
+    // TODO: This is extremely similar to the inbox one
+    using resultType = either<typed_port_t<I, 0>, typed_port_t<I, 1>>;
+    (void)active_threads;
+    uint32_t raw = static_cast<uint32_t>(port);
+    const uint32_t w = index_to_element<Word>(raw);
+    const uint32_t subindex = index_to_subindex<Word>(raw);
+
+    Word loaded = load_word(size, w);
+    if (loaded_arg)
+      {
+        *loaded_arg = loaded;
+      }
+    bool out = bits::nthbitset(loaded, subindex);
+
+    if (out)
+      {
+        return resultType::Right(port.template assign_outbox<1>({}));
+      }
+    else
+      {
+        return resultType::Left(port.template assign_outbox<0>({}));
+      }
+  }
+
   template <typename T>
   HOSTRPC_ANNOTATE typed_port_t<0, 1> claim_slot(T active_threads,
                                                  uint32_t size,
@@ -464,11 +525,6 @@ struct outbox_bitmap
         a.release_slot(size, static_cast<uint32_t>(port));
       }
     return port.invert_outbox({});
-  }
-
-  HOSTRPC_ANNOTATE Word load_word(uint32_t size, uint32_t w) const
-  {
-    return a.load_word(size, w);
   }
 };
 
@@ -515,6 +571,44 @@ struct lock_bitmap
       {
         return true;
       }
+  }
+
+  template <typename T>
+  HOSTRPC_ANNOTATE HOSTRPC_RETURN_UNKNOWN
+      typename StateMachineType::template typed_port_t<2, 2>::maybe
+      try_open_port(T active_threads, uint32_t size, uint32_t slot)
+
+  {
+    bool r = try_claim_empty_slot(active_threads, size, slot);
+    if (r)
+      {
+        return StateMachineType::template typed_port_t<2, 2>::raw_construction(
+            {}, slot);
+      }
+    else
+      {
+        return {};
+      }
+  }
+
+  template <typename T, unsigned I, unsigned O>
+  HOSTRPC_ANNOTATE void close_port(
+      T active_threads, uint32_t size,
+      typename StateMachineType::template typed_port_t<I, O> &&port)
+  {
+    const uint32_t slot = static_cast<uint32_t>(port);
+    release_slot(active_threads, size, slot);
+    port.raw_destruction({});
+  }
+
+  template <typename T, unsigned S>
+  HOSTRPC_ANNOTATE void close_port(
+      T active_threads, uint32_t size,
+      typename StateMachineType::template partial_port_t<S> &&port)
+  {
+    const uint32_t slot = static_cast<uint32_t>(port);
+    release_slot(active_threads, size, slot);
+    port.raw_destruction({});
   }
 
   template <typename T>

@@ -53,14 +53,12 @@ extern "C"
     s.rpc_close_port(threads, cxx::move(p));
   }
 
-#if 0
   void open_and_close_port(state_machine_t &s)
   {
     auto threads = platform::active_threads();
     auto p = s.rpc_open_port(threads);
     s.rpc_close_port(threads, cxx::move(p));
   }
-#endif
 
   void try_open_and_close_partial_port(state_machine_t &s)
   {
@@ -92,7 +90,6 @@ extern "C"
       }
   }
 
-#if 0
   void try_open_and_close_port(state_machine_t &s)
   {
     auto threads = platform::active_threads();
@@ -102,7 +99,6 @@ extern "C"
         s.rpc_close_port(threads, m.value());
       }
   }
-#endif
 
   void open_and_close_typed_port_lo_via_partial(state_machine_t &s)
   {

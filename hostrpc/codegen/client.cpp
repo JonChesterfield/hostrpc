@@ -82,7 +82,7 @@ client_instance_invoke_via_typed_port_runtime(client_type& c)
   client_type::typed_port_t<1, 1> p2 =
       c.rpc_port_wait_for_result(active_threads, cxx::move(p1));
   client_type::typed_port_t<1, 0> p3 =
-      c.rpc_port_recv(active_threads, cxx::move(p2), hostrpc::use_nop{});
+      c.rpc_port_wait(active_threads, cxx::move(p2), hostrpc::use_nop{});
   client_type::typed_port_t<0, 0> p4 =
       c.rpc_port_wait_until_available(active_threads, cxx::move(p3));
   c.rpc_close_port(active_threads, cxx::move(p4));

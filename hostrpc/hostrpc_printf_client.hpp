@@ -89,14 +89,14 @@ __printf_print_start(T *client, const char *fmt)
       client->rpc_port_send(active_threads, hostrpc::cxx::move(tport), f);
 
   typename T::template typed_port_t<1, 1> tport3 =
-      client->rpc_port_wait(active_threads, hostrpc::cxx::move(tport2));
+      client->rpc_port_wait_for_result(active_threads, hostrpc::cxx::move(tport2));
 
   typename T::template typed_port_t<1, 0> tport4 =
       client->rpc_port_discard_result(active_threads,
                                       hostrpc::cxx::move(tport3));
 
   typename T::template typed_port_t<0, 0> tport5 =
-      client->rpc_port_wait(active_threads, hostrpc::cxx::move(tport4));
+      client->rpc_port_wait_until_available(active_threads, hostrpc::cxx::move(tport4));
 
   typename T::template typed_port_t<0, 0> tport6 =
       __printf_pass_element_cstr<T>(client, hostrpc::cxx::move(tport5), fmt);
@@ -263,10 +263,10 @@ __printf_pass_element_write_int64(
   typename T::template typed_port_t<0, 1> port1 =
       client->rpc_port_send(active_threads, hostrpc::cxx::move(port0), f);
 
-  // need to recv to get the result
+  // need to wait to get the result
   recv_by_copy<__printf_pass_element_write_t> r(&inst);
   typename T::template typed_port_t<1, 0> port2 =
-      client->rpc_port_recv(active_threads, hostrpc::cxx::move(port1), r);
+      client->rpc_port_wait(active_threads, hostrpc::cxx::move(port1), r);
   *x = inst.payload;
 
   typename T::template typed_port_t<0, 0> port3 =

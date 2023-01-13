@@ -166,7 +166,7 @@ struct client_impl
   }
 
   template <typename Use, typename T, unsigned I>
-  HOSTRPC_ANNOTATE typed_port_t<1, 0> rpc_port_recv(T active_threads,
+  HOSTRPC_ANNOTATE typed_port_t<1, 0> rpc_port_wait(T active_threads,
                                                     typed_port_t<I, 1> &&port,
                                                     Use &&use)
   {
@@ -189,7 +189,7 @@ struct client_impl
   HOSTRPC_ANNOTATE typed_port_t<1, 0> rpc_port_discard_result(
       T active_threads, typed_port_t<1, 1> &&port)
   {
-    return rpc_port_recv(active_threads, hostrpc::cxx::move(port),
+    return rpc_port_wait(active_threads, hostrpc::cxx::move(port),
                          [](uint32_t, BufferElement *) {});
   }
 
@@ -218,7 +218,7 @@ struct client_impl
 
     if constexpr (I == 1 && O == 0)
       {
-        return base::rpc_port_wait(active_threads, cxx::move(port));
+        return base::rpc_port_recv(active_threads, cxx::move(port));
       }
   }
 };
