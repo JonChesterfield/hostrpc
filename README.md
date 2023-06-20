@@ -1,4 +1,69 @@
-# hostrpc
+# Hostrpc
+
+## Archived
+
+Core implementation shipped as plumbing in llvm libc. Future performance work
+and documentation is likely to be found at https://libc.llvm.org/gpu/rpc.html
+
+Credit to my colleague and paper coauthor Joseph Huber for getting this across
+the valley from prototype to production. This project would not have contributed
+to llvm libc were he not determined to make that so.
+
+Thank you also to the external reviewers for their ongoing encouragement.
+
+### Successes
+
+Core state machine works. RPC can be implemented on shared memory. This repo
+has the core structure in detail/state_machine.hpp, the translated class in llvm
+is mostly in [libc/src/__support/RPC/rpc.h](https://github.com/llvm/llvm-project/blob/main/libc/src/__support/RPC/rpc.h)
+
+Loaders for freestanding GPU code that define main() work. In this repo tools/loader,
+in llvm [libc/utils/gpu/loader](https://github.com/llvm/llvm-project/tree/main/libc/utils/gpu/loader). This gives a way to write
+C++ code that defines main() as usual and runs as ./a.out or similar. This is
+mostly used to run test code.
+
+Two papers (llpp and not yet presented) and a talk on linear types.
+
+### Partial results
+
+Correct by construction concurrent data structures can be done. The state
+machine reified in the type system, lifetimes handled by linear types. This
+gives a C++ program which fails to compile if it would deadlock at runtime.
+However, the programmer ergonomics of this are so poor that the production
+code does not have these guard rails, relyng on code review instead.
+
+Running the same code on x64 or on amdgpu is indeed helpful for debugging.
+A partial result because the thread sanitizers I wanted to use do not support
+thread fences and the implementation uses thread fences for most things.
+
+### Failures
+
+Code can be written in the subset of freestanding C++, opencl, cuda. hip,
+openmp. It shouldn't be. The payoff is poor relative to exposing a C header
+and compiling freestanding C++ to LLVM IR. OpenCL in particular rules out
+a lot of C++, e.g. you can't infer types from functions because it errors
+on the mere idea of a function pointer.
+
+Expanding printf in the C preprocessor can be done but you really don't want to.
+
+I thought this could ship as headers included in the OpenMP language runtime. I
+did not sell that idea adequately.
+
+Writing this without compiler patches was reasonable but taken too far, in
+particular some of the nvptx workarounds would have been easier fixed upstream.
+
+This was intended to be ported to Xilinx but I have not (yet?) done so.
+
+### Conclusions taken forward
+
+Correct by construction concurrency is the right thing. It requires linear
+types. In general it probably requires a more expressive type sysem than C++.
+
+Abstracting over amdgpu, nvptx, x64 is a really useful thing for differential
+debugging of compiler implementations.
+
+
+## Readme entry from before archiving below.
 
 Compiler enforced mutual exclusion between heterogenous processors.
 
@@ -548,11 +613,4 @@ H=1 => T->0, because T publishes to H to indicate it's finished
 
 Device G=1 -> host   G->1
 Host   H=1 -> device H->1
-
-
-
-
-
-
-
 
